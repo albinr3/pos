@@ -1,0 +1,159 @@
+"use client"
+
+import { useEffect } from "react"
+
+interface ShippingLabelProps {
+  customerName: string
+  customerAddress: string | null
+  customerPhone: string | null
+  customerProvince: string | null
+  senderName: string
+  packageCount: number
+  onPrintComplete?: () => void
+}
+
+export function ShippingLabel({
+  customerName,
+  customerAddress,
+  customerPhone,
+  customerProvince,
+  senderName,
+  packageCount,
+  onPrintComplete,
+}: ShippingLabelProps) {
+  const handlePrint = () => {
+    window.print()
+    if (onPrintComplete) {
+      setTimeout(onPrintComplete, 100)
+    }
+  }
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      if (onPrintComplete) {
+        onPrintComplete()
+      }
+    }
+
+    window.addEventListener("afterprint", handleAfterPrint)
+    return () => window.removeEventListener("afterprint", handleAfterPrint)
+  }, [onPrintComplete])
+
+  return (
+    <>
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .shipping-label-print,
+          .shipping-label-print * {
+            visibility: visible;
+          }
+          .shipping-label-print {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
+          @page {
+            size: 4in 6in;
+            margin: 0.3in;
+          }
+        }
+      `}</style>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 print:hidden">
+        <div className="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <h3 className="text-lg font-semibold mb-4">Vista previa de etiqueta de envío</h3>
+          <div className="border border-gray-300 p-4 rounded mb-4 bg-white">
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-gray-500 uppercase mb-1">Destinatario</div>
+                <div className="font-semibold text-base">{customerName}</div>
+              </div>
+              {customerAddress && (
+                <div>
+                  <div className="text-xs text-gray-500 uppercase mb-1">Dirección</div>
+                  <div className="text-sm">{customerAddress}</div>
+                </div>
+              )}
+              {customerProvince && (
+                <div>
+                  <div className="text-xs text-gray-500 uppercase mb-1">Provincia</div>
+                  <div className="text-sm">{customerProvince}</div>
+                </div>
+              )}
+              {customerPhone && (
+                <div>
+                  <div className="text-xs text-gray-500 uppercase mb-1">Teléfono</div>
+                  <div className="text-sm">{customerPhone}</div>
+                </div>
+              )}
+              <div className="border-t pt-3 mt-3">
+                <div className="text-xs text-gray-500 uppercase mb-1">Remitente</div>
+                <div className="font-semibold text-sm">{senderName}</div>
+              </div>
+              <div>
+                <div className="text-xs text-gray-500 uppercase mb-1">Cantidad de bultos</div>
+                <div className="font-semibold text-base">{packageCount}</div>
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => onPrintComplete?.()}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handlePrint}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+            >
+              Imprimir
+            </button>
+          </div>
+        </div>
+      </div>
+      <div className="shipping-label-print hidden print:block print:p-4 print:max-w-[4in] print:mx-auto">
+        <div className="print:border print:border-gray-800 print:p-4 print:rounded">
+          <div className="print:space-y-3">
+            <div>
+              <div className="print:text-xs print:text-gray-600 print:uppercase print:mb-1">Destinatario</div>
+              <div className="print:font-bold print:text-lg print:border-b print:border-gray-300 print:pb-1">{customerName}</div>
+            </div>
+            {customerAddress && (
+              <div>
+                <div className="print:text-xs print:text-gray-600 print:uppercase print:mb-1">Dirección</div>
+                <div className="print:text-sm print:font-medium">{customerAddress}</div>
+              </div>
+            )}
+            {customerProvince && (
+              <div>
+                <div className="print:text-xs print:text-gray-600 print:uppercase print:mb-1">Provincia</div>
+                <div className="print:text-sm print:font-medium">{customerProvince}</div>
+              </div>
+            )}
+            {customerPhone && (
+              <div>
+                <div className="print:text-xs print:text-gray-600 print:uppercase print:mb-1">Teléfono</div>
+                <div className="print:text-sm print:font-medium">{customerPhone}</div>
+              </div>
+            )}
+            <div className="print:border-t print:border-gray-400 print:pt-3 print:mt-3">
+              <div className="print:text-xs print:text-gray-600 print:uppercase print:mb-1">Remitente</div>
+              <div className="print:font-semibold print:text-base">{senderName}</div>
+            </div>
+            <div>
+              <div className="print:text-xs print:text-gray-600 print:uppercase print:mb-1">Cantidad de bultos</div>
+              <div className="print:font-bold print:text-xl print:border print:border-gray-400 print:inline-block print:px-3 print:py-1 print:rounded">
+                {packageCount}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+

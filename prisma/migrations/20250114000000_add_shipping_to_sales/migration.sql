@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Sale" ADD COLUMN "shippingCents" INTEGER NOT NULL DEFAULT 0;
+

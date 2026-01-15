@@ -1,0 +1,461 @@
+// Prisma schema for Tejada Auto Adornos POS
+// Money is stored as integer cents (RD$ 1.00 => 100)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  CAJERO
+  ALMACEN
+}
+
+enum SaleType {
+  CONTADO
+  CREDITO
+}
+
+enum AROpenStatus {
+  PENDIENTE
+  PARCIAL
+  PAGADA
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA
+  OTRO
+}
+
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name         String
+  username     String   @unique
+  passwordHash String
+  role         UserRole @default(CAJERO)
+
+  // Granular permissions (so you can enable for a CAJERO, for example)
+  canOverridePrice Boolean @default(false)
+
+  isActive Boolean @default(true)
+
+  sales              Sale[]
+  payments           Payment[]
+  cancelledPayments  Payment[]          @relation("CancelledPayments")
+  purchases          Purchase[]
+  cancelledPurchases Purchase[]         @relation("CancelledPurchases")
+  operatingExpenses  OperatingExpense[]
+  cancelledSales     Sale[]             @relation("CancelledSales")
+  returns            Return[]
+  cancelledReturns   Return[]           @relation("CancelledReturns")
+  quotes             Quote[]
+}
+
+model CompanySettings {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name    String
+  phone   String
+  address String
+
+  // Placeholder logo path (public file). Replace later.
+  logoUrl String?
+
+  // Inventory behavior
+  allowNegativeStock Boolean @default(false)
+
+  // Always 18% included in price (fixed requirement)
+  itbisRateBp Int @default(1800) // basis points (18.00% = 1800)
+}
+
+model InvoiceSequence {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  series     String @unique @default("A")
+  lastNumber Int    @default(0)
+}
+
+model ReturnSequence {
+  id        String   @id @default("main")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lastNumber Int @default(0)
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name     String
+  phone    String?
+  address  String?
+  cedula   String?
+  province String?
+
+  isGeneric Boolean @default(false)
+  isActive  Boolean @default(true)
+
+  sales   Sale[]
+  arItems AccountReceivable[]
+  quotes  Quote[]
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name        String
+  contactName String?
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+
+  // Descuento por defecto del proveedor (en basis points, 1000 = 10%)
+  discountPercentBp Int @default(0)
+
+  isActive Boolean @default(true)
+
+  products Product[]
+
+  @@index([name])
+}
+
+model Product {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ID incremental (no modificable)
+  productId Int @unique @default(autoincrement())
+
+  // Descripción
+  name String
+
+  // Código de proveedor (SKU)
+  sku String? @unique
+
+  // Referencia (campo adicional)
+  reference String?
+
+  // Proveedor
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  // final price (ITBIS included)
+  priceCents Int
+  costCents  Int @default(0)
+
+  stock    Int @default(0)
+  minStock Int @default(0)
+
+  isActive Boolean @default(true)
+
+  saleItems     SaleItem[]
+  purchaseItems PurchaseItem[]
+  returnItems   ReturnItem[]
+  quoteItems    QuoteItem[]
+
+  @@index([name])
+  @@index([sku])
+  @@index([reference])
+  @@index([productId])
+  @@index([supplierId])
+}
+
+model Sale {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  invoiceSeries String @default("A")
+  invoiceNumber Int
+  invoiceCode   String @unique // e.g. A-00001
+
+  soldAt DateTime @default(now())
+
+  type SaleType
+
+  // Método de pago (solo para ventas al contado)
+  paymentMethod PaymentMethod?
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  // totals (derived at creation time)
+  subtotalCents Int
+  itbisCents    Int
+  shippingCents Int @default(0)
+  totalCents    Int
+
+  notes String?
+
+  cancelledAt   DateTime?
+  cancelledBy   String?
+  cancelledUser User?     @relation("CancelledSales", fields: [cancelledBy], references: [id])
+
+  items   SaleItem[]
+  ar      AccountReceivable?
+  returns Return[]
+
+  @@index([soldAt])
+  @@index([customerId])
+  @@index([cancelledAt])
+}
+
+model SaleItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  saleId String
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  qty Int
+
+  // unit final price (ITBIS included). It may be overridden at checkout.
+  unitPriceCents     Int
+  wasPriceOverridden Boolean @default(false)
+
+  lineTotalCents Int
+
+  returnItems ReturnItem[]
+}
+
+model AccountReceivable {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  saleId String @unique
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  totalCents   Int
+  balanceCents Int
+  status       AROpenStatus @default(PENDIENTE)
+
+  payments Payment[]
+
+  @@index([status])
+  @@index([customerId])
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  arId String
+  ar   AccountReceivable @relation(fields: [arId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  paidAt      DateTime      @default(now())
+  amountCents Int
+  method      PaymentMethod @default(EFECTIVO)
+  note        String?
+
+  cancelledAt   DateTime?
+  cancelledBy   String?
+  cancelledUser User?     @relation("CancelledPayments", fields: [cancelledBy], references: [id])
+
+  @@index([paidAt])
+  @@index([cancelledAt])
+}
+
+model Purchase {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  purchasedAt  DateTime @default(now())
+  supplierName String?
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  totalCents Int
+  notes      String?
+
+  cancelledAt   DateTime?
+  cancelledBy   String?
+  cancelledUser User?     @relation("CancelledPurchases", fields: [cancelledBy], references: [id])
+
+  items PurchaseItem[]
+
+  @@index([purchasedAt])
+  @@index([cancelledAt])
+}
+
+model PurchaseItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  purchaseId String
+  purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  qty            Int
+  unitCostCents  Int // Costo unitario original (antes de descuento)
+  discountPercentBp Int @default(0) // Descuento aplicado (en basis points, 1000 = 10%)
+  netCostCents   Int @default(0) // Costo neto después de descuento e ITBIS
+  lineTotalCents Int // Total de la línea (netCostCents * qty)
+}
+
+model OperatingExpense {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  description String
+  amountCents Int
+  expenseDate DateTime @default(now())
+  category    String? // Ej: Sueldos, Arriendo, Servicios, Marketing, etc.
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  notes String?
+
+  @@index([expenseDate])
+}
+
+model Return {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  returnNumber Int    @unique // Número secuencial de devolución
+  returnCode   String @unique // e.g. DEV-00001
+
+  returnedAt DateTime @default(now())
+
+  saleId String
+  sale   Sale   @relation(fields: [saleId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  // totals (derived at creation time)
+  subtotalCents Int
+  itbisCents    Int
+  totalCents    Int
+
+  notes String?
+
+  cancelledAt   DateTime?
+  cancelledBy   String?
+  cancelledUser User?     @relation("CancelledReturns", fields: [cancelledBy], references: [id])
+
+  items ReturnItem[]
+
+  @@index([returnedAt])
+  @@index([saleId])
+  @@index([cancelledAt])
+}
+
+model ReturnItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  returnId String
+  return   Return @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  saleItemId String
+  saleItem   SaleItem @relation(fields: [saleItemId], references: [id])
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  qty Int // Cantidad devuelta (debe ser <= cantidad vendida originalmente)
+
+  // Precios originales de la venta
+  unitPriceCents Int
+  lineTotalCents Int
+}
+
+model QuoteSequence {
+  id        String   @id @default("main")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lastNumber Int @default(0)
+}
+
+model Quote {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quoteNumber Int    @unique // Número secuencial de cotización
+  quoteCode   String @unique // e.g. COT-00001
+
+  quotedAt DateTime @default(now())
+  validUntil DateTime? // Fecha de validez de la cotización
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  // totals (derived at creation time)
+  subtotalCents Int
+  itbisCents    Int
+  shippingCents Int @default(0)
+  totalCents    Int
+
+  notes String?
+
+  items QuoteItem[]
+
+  @@index([quotedAt])
+  @@index([customerId])
+  @@index([validUntil])
+}
+
+model QuoteItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  quoteId String
+  quote   Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  qty Int
+
+  // unit final price (ITBIS included). It may be overridden.
+  unitPriceCents     Int
+  wasPriceOverridden Boolean @default(false)
+
+  lineTotalCents Int
+}

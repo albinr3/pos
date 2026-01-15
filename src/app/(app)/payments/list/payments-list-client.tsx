@@ -1,0 +1,154 @@
+"use client"
+
+import { useEffect, useState, useTransition } from "react"
+import { Receipt, Trash2, Search, Printer } from "lucide-react"
+import Link from "next/link"
+
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { toast } from "@/hooks/use-toast"
+import { formatRD } from "@/lib/money"
+
+import { cancelPayment, listAllPayments } from "../../ar/actions"
+
+type Payment = Awaited<ReturnType<typeof listAllPayments>>[number]
+
+function methodLabel(method: string) {
+  switch (method) {
+    case "EFECTIVO":
+      return "Efectivo"
+    case "TRANSFERENCIA":
+      return "Transferencia"
+    case "TARJETA":
+      return "Tarjeta"
+    default:
+      return "Otro"
+  }
+}
+
+export function PaymentsListClient() {
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [isLoading, startLoading] = useTransition()
+  const [query, setQuery] = useState("")
+
+  function refresh() {
+    startLoading(async () => {
+      try {
+        const r = await listAllPayments()
+        setPayments(r)
+      } catch {
+        setPayments([])
+      }
+    })
+  }
+
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  async function handleCancel(id: string) {
+    if (!confirm("¿Cancelar este recibo? Se recalculará el balance de la cuenta por cobrar.")) return
+    try {
+      await cancelPayment(id, "admin")
+      toast({ title: "Listo", description: "Recibo cancelado" })
+      refresh()
+    } catch (e) {
+      toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo cancelar" })
+    }
+  }
+
+  const filteredPayments = payments.filter((p) => {
+    if (!query.trim()) return true
+    const q = query.toLowerCase()
+    return (
+      p.ar.sale.invoiceCode.toLowerCase().includes(q) ||
+      p.ar.customer.name.toLowerCase().includes(q) ||
+      methodLabel(p.method).toLowerCase().includes(q)
+    )
+  })
+
+  return (
+    <div className="grid gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Receipt className="h-5 w-5" /> Lista de Recibos
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
+            <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por factura, cliente o método" />
+          </div>
+
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Factura</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Método</TableHead>
+                  <TableHead className="text-right">Monto</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPayments.map((p) => (
+                  <TableRow key={p.id} className={p.cancelledAt ? "bg-red-50" : ""}>
+                    <TableCell>
+                      {new Date(p.paidAt).toLocaleDateString("es-DO")}
+                      {p.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADO</div>}
+                    </TableCell>
+                    <TableCell className="font-medium">{p.ar.sale.invoiceCode}</TableCell>
+                    <TableCell>{p.ar.customer.name}</TableCell>
+                    <TableCell>{methodLabel(p.method)}</TableCell>
+                    <TableCell className="text-right font-medium">{formatRD(p.amountCents)}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        {!p.cancelledAt && (
+                          <Button variant="ghost" size="icon" onClick={() => handleCancel(p.id)} aria-label="Cancelar">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Button asChild size="icon" variant="outline">
+                          <Link href={`/receipts/payment/${p.id}`} target="_blank" aria-label="Ver recibo">
+                            <Printer className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                        {p.cancelledAt && (
+                          <span className="text-xs text-red-600">Cancelado {new Date(p.cancelledAt).toLocaleDateString("es-DO")}</span>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+
+                {filteredPayments.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                      {isLoading ? "Cargando…" : query ? "No se encontraron recibos" : "No hay recibos registrados"}
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+
+
+
+
+
+
+
+
+
+
