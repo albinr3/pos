@@ -254,7 +254,23 @@ En `./.env`:
 DATABASE_URL="postgresql://postgres:TU_PASSWORD@localhost:PUERTO/tejada_pos?schema=public"
 ```
 
-> Nota: en tu caso el puerto era **5433**.
+> **Nota importante**: El puerto por defecto de PostgreSQL es `5432`. Si tu instalación usa otro puerto (por ejemplo `5433`), reemplázalo en la URL.
+
+**Formato correcto de la URL:**
+- ✅ `DATABASE_URL="postgresql://postgres:password123@localhost:5433/tejada_pos?schema=public"`
+- ❌ `DATABASE_URL="postgresql://postgres:postgres:password123@localhost:5433/tejada_pos"` (duplicado)
+- ❌ `DATABASE_URL="postgresql://postgres: password @localhost:5433/tejada_pos"` (espacios)
+
+**Si tu contraseña tiene caracteres especiales**, codifícalos en la URL:
+- `@` → `%40`
+- `#` → `%23`
+- `%` → `%25`
+- Espacios → `%20`
+
+Ejemplo: Si tu contraseña es `mi@pass#123`, la URL sería:
+```env
+DATABASE_URL="postgresql://postgres:mi%40pass%23123@localhost:5433/tejada_pos?schema=public"
+```
 
 ### OpenAI (Opcional - para OCR)
 
@@ -270,7 +286,7 @@ OPENAI_API_KEY="tu-api-key-aqui"
 
 ## Comandos
 
-Desde la carpeta `tejada-pos`:
+Desde la carpeta raíz del proyecto:
 
 Instalar dependencias:
 ```bash
@@ -280,6 +296,17 @@ npm install
 Migraciones:
 ```bash
 npm run prisma:migrate
+```
+
+> **Nota**: Si encuentras errores relacionados con "shadow database" al ejecutar migraciones en desarrollo, puedes usar:
+> ```bash
+> npx prisma db push
+> ```
+> Esto sincroniza el esquema directamente sin usar migraciones (útil para desarrollo).
+
+Aplicar migraciones en producción:
+```bash
+npx prisma migrate deploy
 ```
 
 Seed (empresa, cliente genérico, secuencia de factura A, usuario admin):
@@ -297,6 +324,11 @@ Prisma Studio:
 npm run prisma:studio
 ```
 
+Regenerar cliente de Prisma:
+```bash
+npx prisma generate
+```
+
 ---
 
 ## Datos iniciales (Seed)
@@ -308,6 +340,147 @@ npm run prisma:studio
   - password: `admin`
 
 > Nota: el hash actual en seed es SHA-256 (solo demo/local). En producción se cambia a bcrypt/argon2.
+
+---
+
+## Backup y Restauración de Base de Datos
+
+### Exportar Base de Datos (Backup)
+
+**En Windows (PowerShell):**
+```powershell
+$env:PGPASSWORD='TU_CONTRASEÑA'
+pg_dump -h localhost -p PUERTO -U postgres -d tejada_pos > tejada_pos_backup.sql
+```
+
+**En Linux/Mac:**
+```bash
+PGPASSWORD='TU_CONTRASEÑA' pg_dump -h localhost -p PUERTO -U postgres -d tejada_pos > tejada_pos_backup.sql
+```
+
+### Restaurar Base de Datos (Importar)
+
+**⚠️ Advertencia**: La restauración **eliminará todos los datos actuales** de la base de datos.
+
+**En Windows (PowerShell):**
+
+Si el archivo SQL tiene problemas de codificación (error `ÿ_`), primero conviértelo a UTF-8:
+```powershell
+$content = Get-Content tejada_pos_backup.sql -Raw
+[System.IO.File]::WriteAllText("tejada_pos_backup_utf8.sql", $content, [System.Text.UTF8Encoding]::new($false))
+```
+
+Luego restaura:
+```powershell
+# 1. Cerrar conexiones activas (opcional pero recomendado)
+$env:PGPASSWORD='TU_CONTRASEÑA'
+psql -h localhost -p PUERTO -U postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'tejada_pos' AND pid <> pg_backend_pid();"
+
+# 2. Eliminar y recrear la base de datos
+psql -h localhost -p PUERTO -U postgres -c "DROP DATABASE IF EXISTS tejada_pos;"
+psql -h localhost -p PUERTO -U postgres -c "CREATE DATABASE tejada_pos;"
+
+# 3. Importar el backup
+psql -h localhost -p PUERTO -U postgres -d tejada_pos -f tejada_pos_backup_utf8.sql
+```
+
+**En Linux/Mac:**
+```bash
+PGPASSWORD='TU_CONTRASEÑA' psql -h localhost -p PUERTO -U postgres -d tejada_pos < tejada_pos_backup.sql
+```
+
+### Después de Restaurar
+
+Después de restaurar un backup, marca las migraciones como aplicadas:
+```bash
+npx prisma migrate resolve --applied 20260113145330_m1
+npx prisma migrate resolve --applied 20250114000000_add_shipping_to_sales
+# ... (marca todas las migraciones como aplicadas)
+```
+
+O simplemente sincroniza el esquema:
+```bash
+npx prisma db push
+npx prisma generate
+```
+
+---
+
+## Migrar el Proyecto a Otra PC
+
+**Sí, necesitas exportar e importar la base de datos** cuando mueves el proyecto a otra PC. Los datos están almacenados en PostgreSQL, no en el código del proyecto.
+
+**Pasos:**
+
+1. **En la PC original:**
+   - Exporta la base de datos (ver sección Backup y Restauración)
+   - Copia el archivo `.env` y el archivo de backup SQL
+
+2. **En la nueva PC:**
+   - Instala Node.js y PostgreSQL
+   - Copia todo el proyecto (código fuente)
+   - Crea la base de datos `tejada_pos` en PostgreSQL
+   - Actualiza el archivo `.env` con las credenciales correctas de la nueva PC
+   - Restaura la base de datos (ver sección Backup y Restauración)
+   - Ejecuta `npm install` para instalar dependencias
+   - Ejecuta `npx prisma generate` para regenerar el cliente
+   - Ejecuta `npm run db:seed` solo si necesitas datos iniciales (opcional, ya tienes datos del backup)
+
+> **Nota**: Si tienes logos o archivos subidos en `public/uploads/`, también cópialos a la nueva PC.
+
+---
+
+## Problemas Comunes y Soluciones
+
+### Error: "Authentication failed" (P1000)
+
+**Causa**: Credenciales incorrectas en `DATABASE_URL`.
+
+**Solución**:
+1. Verifica que la contraseña en `.env` sea correcta
+2. Verifica que no haya espacios adicionales en la URL
+3. Si la contraseña tiene caracteres especiales, codifícalos en la URL
+4. Verifica que el usuario `postgres` tenga permisos para acceder a la base de datos
+
+### Error: "shadow database" al ejecutar migraciones
+
+**Causa**: Prisma intenta crear una base de datos temporal para validar migraciones.
+
+**Solución**:
+- Usa `npx prisma db push` en lugar de `npm run prisma:migrate` para desarrollo
+- O en producción, usa `npx prisma migrate deploy` que no usa shadow database
+
+### Error: "no existe la relación «Sale»" al aplicar migraciones
+
+**Causa**: Las migraciones están fuera de orden o la base de datos está vacía.
+
+**Solución**:
+```bash
+# Sincroniza el esquema directamente
+npx prisma db push
+
+# Luego marca las migraciones como aplicadas
+npx prisma migrate resolve --applied [nombre_migracion]
+```
+
+### Error: "ÿ_" al importar backup SQL en PowerShell
+
+**Causa**: El archivo SQL está en codificación UTF-16 en lugar de UTF-8.
+
+**Solución**: Convierte el archivo a UTF-8 (ver sección Restaurar Base de Datos).
+
+### Error: PowerShell no reconoce `<` para redirección
+
+**Causa**: PowerShell no soporta redirección `<` igual que bash.
+
+**Solución**: Usa `Get-Content` o el flag `-f`:
+```powershell
+# Método 1
+Get-Content archivo.sql | psql -h localhost -p 5433 -U postgres -d tejada_pos
+
+# Método 2
+psql -h localhost -p 5433 -U postgres -d tejada_pos -f archivo.sql
+```
 
 ---
 
