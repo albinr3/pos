@@ -120,6 +120,11 @@
     --chart-5: 27 87% 67%;
 
     --radius: 0.5rem;
+
+    /* Marketing colors - Purple theme */
+    --marketing-purple: 270 91% 65%;
+    --marketing-purple-dark: 270 91% 45%;
+    --marketing-yellow: 45 93% 58%;
   }
   .dark {
 

@@ -74,3 +74,6 @@ export async function getAllSalesForDiagnosis() {
 
 
 
+
+
+

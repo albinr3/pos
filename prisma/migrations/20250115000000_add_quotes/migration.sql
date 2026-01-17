@@ -74,3 +74,6 @@ ALTER TABLE "QuoteItem" ADD CONSTRAINT "QuoteItem_productId_fkey" FOREIGN KEY ("
 
 
 
+
+
+

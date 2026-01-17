@@ -13,8 +13,26 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Tejada Auto Adornos · POS",
-  description: "Ventas, inventario y cuentas por cobrar",
+  title: {
+    default: "Tejada POS - Sistema de Punto de Venta e Inventario",
+    template: "%s | Tejada POS",
+  },
+  description: "Sistema completo de punto de venta, inventario y gestión empresarial para tu negocio. Gestiona ventas, compras, cuentas por cobrar y más.",
+  keywords: ["POS", "punto de venta", "inventario", "gestión empresarial", "República Dominicana"],
+  authors: [{ name: "Tejada Auto Adornos" }],
+  openGraph: {
+    type: "website",
+    locale: "es_DO",
+    url: "https://tejadapos.com",
+    siteName: "Tejada POS",
+    title: "Tejada POS - Sistema de Punto de Venta e Inventario",
+    description: "Sistema completo de punto de venta, inventario y gestión empresarial para tu negocio.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Tejada POS - Sistema de Punto de Venta e Inventario",
+    description: "Sistema completo de punto de venta, inventario y gestión empresarial para tu negocio.",
+  },
 };
 
 export default function RootLayout({

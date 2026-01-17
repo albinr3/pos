@@ -42,6 +42,16 @@ export default function ReportsPage() {
             </Button>
           </CardContent>
         </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Inventario</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link href="/reports/inventory">Ver reporte de inventario</Link>
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

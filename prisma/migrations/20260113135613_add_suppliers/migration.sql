@@ -36,3 +36,6 @@ CREATE INDEX "Product_supplierId_idx" ON "Product"("supplierId");
 
 
 
+
+
+

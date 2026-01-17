@@ -181,3 +181,28 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     accountsReceivableCount: accountsReceivable.length,
   }
 }
+
+export async function getInventoryReport() {
+  const products = await prisma.product.findMany({
+    where: {
+      isActive: true,
+    },
+    orderBy: { name: "asc" },
+    include: {
+      supplier: {
+        select: { name: true },
+      },
+    },
+  })
+
+  // Calcular el costo total del inventario: suma de (costo * stock) para cada producto
+  const totalInventoryCostCents = products.reduce((total, product) => {
+    return total + (product.costCents * product.stock)
+  }, 0)
+
+  return {
+    products,
+    totalInventoryCostCents,
+    count: products.length,
+  }
+}
