@@ -4,13 +4,26 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { PaymentMethod } from "@prisma/client"
 
-export async function listOpenAR() {
+export async function listOpenAR(options?: { query?: string; skip?: number; take?: number }) {
+  const query = options?.query?.trim()
+  const skip = options?.skip ?? 0
+  const take = options?.take ?? 10
+
+  const where: any = {
+    status: { in: ["PENDIENTE", "PARCIAL"] },
+    sale: { cancelledAt: null }, // Excluir ventas canceladas
+  }
+
+  if (query) {
+    where.OR = [
+      { sale: { invoiceCode: { contains: query, mode: "insensitive" }, cancelledAt: null } },
+      { customer: { name: { contains: query, mode: "insensitive" } } },
+    ]
+  }
+
   return prisma.accountReceivable.findMany({
-    where: {
-      status: { in: ["PENDIENTE", "PARCIAL"] },
-      sale: { cancelledAt: null }, // Excluir ventas canceladas
-    },
-    orderBy: [{ createdAt: "desc" }],
+    where,
+    orderBy: [{ createdAt: "asc" }], // Más antiguas primero
     include: {
       customer: true,
       sale: true,
@@ -19,7 +32,8 @@ export async function listOpenAR() {
         orderBy: { paidAt: "desc" },
       },
     },
-    take: 200,
+    skip,
+    take,
   })
 }
 
@@ -35,6 +49,11 @@ export async function cancelPayment(id: string, username: string) {
 
     const user = await tx.user.findUnique({ where: { username } })
     if (!user) throw new Error("Usuario inválido")
+
+    // Verificar permiso para cancelar pagos
+    if (!user.canCancelPayments && user.role !== "ADMIN") {
+      throw new Error("No tienes permiso para cancelar pagos")
+    }
 
     // Recalcular el balance de la cuenta por cobrar
     const activePayments = await tx.payment.findMany({

@@ -175,9 +175,24 @@ export function ReturnsClient() {
               />
             </div>
 
+            {!isSearching && saleSearchResults.length === 0 && !saleSearchQuery.trim() && (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <img
+                  src="/lupaok.png"
+                  alt="Buscar venta"
+                  width={200}
+                  height={200}
+                  className="mb-4 opacity-60"
+                />
+                <p className="text-lg font-medium text-muted-foreground">
+                  Busca número de factura o cliente para crear una devolución
+                </p>
+              </div>
+            )}
+
             {saleSearchResults.length > 0 && (
-              <div className="rounded-md border">
-                <Table>
+              <div className="rounded-md border overflow-x-auto">
+                <Table className="min-w-[600px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Factura</TableHead>
@@ -243,8 +258,8 @@ export function ReturnsClient() {
               <CardTitle>Productos de la Venta</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border">
-                <Table>
+              <div className="rounded-md border overflow-x-auto">
+                <Table className="min-w-[650px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Producto</TableHead>
@@ -301,8 +316,8 @@ export function ReturnsClient() {
                 <CardTitle>Productos a Devolver</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border">
-                  <Table>
+                <div className="rounded-md border overflow-x-auto">
+                  <Table className="min-w-[600px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Producto</TableHead>

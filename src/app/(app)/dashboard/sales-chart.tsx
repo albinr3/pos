@@ -28,13 +28,6 @@ export function SalesChart({ data }: { data: ChartData[] }) {
   const totalCredit = data.reduce((sum, d) => sum + (Number(d.credit) || 0), 0)
   const total = totalCash + totalCredit
 
-  // Debug temporal
-  console.log("=== DEBUG GRÁFICO ===")
-  console.log("Datos recibidos:", data)
-  console.log("Total Cash:", totalCash)
-  console.log("Total Credit:", totalCredit)
-  console.log("Total:", total)
-
   const pieData = [
     {
       name: "Contado",
@@ -47,9 +40,6 @@ export function SalesChart({ data }: { data: ChartData[] }) {
       formatted: formatRD(totalCredit),
     },
   ].filter((item) => item.value > 0) // Solo mostrar segmentos con valor > 0
-
-  console.log("PieData después del filtro:", pieData)
-  console.log("PieData length:", pieData.length)
 
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
@@ -84,19 +74,15 @@ export function SalesChart({ data }: { data: ChartData[] }) {
 
   // Si no hay datos, mostrar mensaje
   if (pieData.length === 0 || total === 0) {
-    console.log("Mostrando mensaje de 'no hay datos'")
     return (
       <div className="flex h-[300px] items-center justify-center text-muted-foreground">
         <div className="text-center">
           <p className="text-sm">No hay datos de ventas en los últimos 7 días</p>
           <p className="text-xs mt-1">El gráfico aparecerá cuando haya ventas registradas</p>
-          <p className="text-xs mt-2 text-red-500">Debug: Cash={totalCash}, Credit={totalCredit}, Total={total}</p>
         </div>
       </div>
     )
   }
-
-  console.log("Renderizando gráfico con", pieData.length, "segmentos")
 
   return (
     <div style={{ width: "100%", height: "300px", minHeight: "300px" }}>

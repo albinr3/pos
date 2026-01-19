@@ -36,11 +36,6 @@ export async function getSalesChartData(days: number = 7) {
     salesByDay.set(key, { total: 0, cash: 0, credit: 0 })
   }
 
-  // Debug: verificar ventas obtenidas
-  console.log("=== DEBUG SERVER ===")
-  console.log("Total ventas encontradas:", sales.length)
-  console.log("Rango de fechas:", from.toISOString(), "a", to.toISOString())
-  
   // Agregar ventas
   for (const sale of sales) {
     const key = sale.soldAt.toISOString().split("T")[0]
@@ -59,17 +54,11 @@ export async function getSalesChartData(days: number = 7) {
       ? saleTypeRaw.toUpperCase() 
       : String(saleTypeRaw).toUpperCase()
     
-    console.log(`Venta: tipo raw=${saleTypeRaw}, tipo procesado=${saleType}, totalCents=${sale.totalCents}, fecha=${key}`)
-    
     // Comparar con ambos valores posibles
     if (saleType === "CONTADO" || saleTypeRaw === "CONTADO") {
       dayData.cash += sale.totalCents
-      console.log(`  -> Agregado a CASH: ${dayData.cash}`)
     } else if (saleType === "CREDITO" || saleTypeRaw === "CREDITO") {
       dayData.credit += sale.totalCents
-      console.log(`  -> Agregado a CREDIT: ${dayData.credit}`)
-    } else {
-      console.log(`  -> TIPO NO RECONOCIDO: raw=${saleTypeRaw}, processed=${saleType}, typeof=${typeof saleTypeRaw}`)
     }
   }
 
@@ -83,11 +72,6 @@ export async function getSalesChartData(days: number = 7) {
       credit: data.credit,
     }))
     .sort((a, b) => a.date.localeCompare(b.date))
-  
-  console.log("Datos del gráfico:", result)
-  const totalCash = result.reduce((sum, d) => sum + d.cash, 0)
-  const totalCredit = result.reduce((sum, d) => sum + d.credit, 0)
-  console.log("Total Cash:", totalCash, "Total Credit:", totalCredit)
   
   return result
 }

@@ -3,6 +3,17 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcItbisIncluded } from "@/lib/money"
+import { Decimal } from "@prisma/client/runtime/library"
+
+// Helper para convertir Decimal a número
+function decimalToNumber(decimal: unknown): number {
+  if (typeof decimal === "number") return decimal
+  if (typeof decimal === "string") return parseFloat(decimal)
+  if (decimal && typeof decimal === "object" && "toNumber" in decimal) {
+    return (decimal as { toNumber: () => number }).toNumber()
+  }
+  return 0
+}
 
 export async function searchProducts(query: string) {
   const q = query.trim()
@@ -26,10 +37,17 @@ export async function searchProducts(query: string) {
       reference: true,
       priceCents: true,
       stock: true,
+      saleUnit: true,
+      imageUrls: true,
+      itbisRateBp: true,
     },
   })
 
-  return products
+  // Convertir Decimal a número
+  return products.map((p) => ({
+    ...p,
+    stock: decimalToNumber(p.stock),
+  }))
 }
 
 export async function listCustomers() {
@@ -88,7 +106,7 @@ export async function getQuoteById(id: string) {
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true },
+            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true, unit: true },
           },
         },
       },

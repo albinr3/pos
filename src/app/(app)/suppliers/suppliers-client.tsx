@@ -128,7 +128,7 @@ export function SuppliersClient() {
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Distribuidora ABC" />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="grid gap-2">
                     <Label>Contacto</Label>
                     <Input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Nombre del contacto" />
@@ -184,8 +184,8 @@ export function SuppliersClient() {
             <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por nombre, contacto o teléfono" />
           </div>
 
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Nombre</TableHead>
@@ -207,17 +207,24 @@ export function SuppliersClient() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button
-                          variant="secondary"
+                          className="bg-blue-500 hover:bg-blue-600 text-white"
                           size="icon"
                           onClick={() => {
                             resetForm(s)
                             setOpen(true)
                           }}
                           aria-label="Editar"
+                          title="Editar"
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => onDelete(s.id)} aria-label="Desactivar">
+                        <Button
+                          className="bg-red-500 hover:bg-red-600 text-white"
+                          size="icon"
+                          onClick={() => onDelete(s.id)}
+                          aria-label="Desactivar"
+                          title="Desactivar"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -225,10 +232,22 @@ export function SuppliersClient() {
                   </TableRow>
                 ))}
 
-                {items.length === 0 && (
+                {!isLoading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                      {isLoading ? "Cargando…" : "No hay proveedores"}
+                    <TableCell colSpan={6} className="py-12">
+                      <div className="flex flex-col items-center justify-center text-center">
+                        <img
+                          src="/lupa.png"
+                          alt="No hay resultados"
+                          width={192}
+                          height={192}
+                          className="mb-4 opacity-60"
+                        />
+                        <p className="text-lg font-medium text-muted-foreground">No se encontraron proveedores</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {query ? "Intenta con otros términos de búsqueda" : "Aún no se han registrado proveedores"}
+                        </p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}

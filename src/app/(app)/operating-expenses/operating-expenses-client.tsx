@@ -141,7 +141,7 @@ export function OperatingExpensesClient() {
                   <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Ej: Pago de arriendo" />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="grid gap-2">
                     <Label>Monto (RD$) *</Label>
                     <Input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" />
@@ -180,8 +180,8 @@ export function OperatingExpensesClient() {
             <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por descripción, categoría o notas" />
           </div>
 
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[600px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Fecha</TableHead>

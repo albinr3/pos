@@ -177,3 +177,30 @@
     --chart-5: 340 75% 55%;
   }
 }
+
+@layer utilities {
+  .bg-gradient-purple {
+    background: linear-gradient(35deg, rgb(6, 0, 151) 0%, rgb(130, 4, 255) 73%, rgb(193, 15, 255) 100%);
+  }
+  
+  .text-purple-primary {
+    color: rgb(130, 4, 255);
+  }
+  
+  .border-purple-primary {
+    border-color: rgb(130, 4, 255);
+  }
+  
+  .bg-purple-primary {
+    background-color: rgb(130, 4, 255);
+  }
+  
+  .bg-purple-gradient-hover {
+    background: linear-gradient(35deg, rgb(6, 0, 151) 0%, rgb(130, 4, 255) 73%, rgb(193, 15, 255) 100%);
+    transition: opacity 0.2s;
+  }
+  
+  .bg-purple-gradient-hover:hover {
+    opacity: 0.9;
+  }
+}

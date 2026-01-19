@@ -1,11 +1,12 @@
 "use client"
 
 import { useEffect, useState, useTransition, useMemo } from "react"
-import { Edit, Receipt, Trash2, Search } from "lucide-react"
+import { Edit, Receipt, Trash2, Search, Printer } from "lucide-react"
 import Link from "next/link"
 import { SaleType, PaymentMethod } from "@prisma/client"
 
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -14,6 +15,7 @@ import { PriceInput } from "@/components/app/price-input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, calcItbisIncluded } from "@/lib/money"
+import { cn } from "@/lib/utils"
 
 import { cancelSale, getSaleById, listSales, updateSale, searchProducts, listCustomers } from "../actions"
 
@@ -208,7 +210,7 @@ export function SalesListClient() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Receipt className="h-5 w-5" /> Lista de Facturas
+            <Receipt className="h-5 w-5 text-green-600" /> Lista de Facturas
           </CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -217,8 +219,8 @@ export function SalesListClient() {
             <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por factura, cliente o productos" />
           </div>
 
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Factura</TableHead>
@@ -238,25 +240,54 @@ export function SalesListClient() {
                     </TableCell>
                     <TableCell>{new Date(s.soldAt).toLocaleDateString("es-DO")}</TableCell>
                     <TableCell>{s.customer?.name ?? "Cliente"}</TableCell>
-                    <TableCell>{s.type}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "font-semibold",
+                          s.type === SaleType.CONTADO
+                            ? "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700"
+                            : "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-700"
+                        )}
+                      >
+                        {s.type === SaleType.CONTADO ? "Contado" : "Crédito"}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-right font-medium">{formatRD(s.totalCents)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button 
+                          asChild 
+                          size="icon" 
+                          className="bg-green-500 hover:bg-green-600 text-white"
+                          title="Reimprimir"
+                        >
+                          <Link href={`/receipts/sale/${s.invoiceCode}`} target="_blank" aria-label="Reimprimir">
+                            <Printer className="h-4 w-4" />
+                          </Link>
+                        </Button>
                         {!s.cancelledAt && (
                           <>
-                            <Button variant="secondary" size="icon" onClick={() => loadSaleForEdit(s.id)} aria-label="Editar">
+                            <Button 
+                              size="icon" 
+                              onClick={() => loadSaleForEdit(s.id)} 
+                              aria-label="Editar"
+                              className="bg-blue-500 hover:bg-blue-600 text-white"
+                              title="Editar"
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleCancel(s.id)} aria-label="Cancelar">
+                            <Button 
+                              size="icon" 
+                              onClick={() => handleCancel(s.id)} 
+                              aria-label="Cancelar"
+                              className="bg-red-500 hover:bg-red-600 text-white"
+                              title="Cancelar"
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </>
                         )}
-                        <Button asChild size="icon" variant="outline">
-                          <Link href={`/receipts/sale/${s.invoiceCode}`} target="_blank" aria-label="Ver ticket">
-                            <Receipt className="h-4 w-4" />
-                          </Link>
-                        </Button>
                         {s.cancelledAt && (
                           <span className="text-xs text-red-600">Cancelada {new Date(s.cancelledAt).toLocaleDateString("es-DO")}</span>
                         )}
@@ -265,10 +296,22 @@ export function SalesListClient() {
                   </TableRow>
                 ))}
 
-                {filteredSales.length === 0 && (
+                {!isLoading && filteredSales.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                      {isLoading ? "Cargando…" : query ? "No se encontraron ventas" : "No hay ventas registradas"}
+                    <TableCell colSpan={6} className="py-12">
+                      <div className="flex flex-col items-center justify-center text-center">
+                        <img
+                          src="/lupa.png"
+                          alt="No hay resultados"
+                          width={192}
+                          height={192}
+                          className="mb-4 opacity-60"
+                        />
+                        <p className="text-lg font-medium text-muted-foreground">No se encontraron ventas</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {query ? "Intenta con otros términos de búsqueda" : "Aún no se han registrado ventas"}
+                        </p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}
@@ -286,7 +329,7 @@ export function SalesListClient() {
 
           {editingSale && (
             <div className="grid gap-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="grid gap-2">
                   <Label>Tipo de venta</Label>
                   <select
@@ -379,7 +422,7 @@ export function SalesListClient() {
                           </div>
                           <div>
                             <Label className="text-xs">Precio unitario</Label>
-                            <PriceInput value={c.unitPriceCents} onChange={(cents) => setCart((p) => p.map((x) => (x.productId === c.productId ? { ...x, unitPriceCents: cents, wasPriceOverridden: cents !== c.unitPriceCents } : x)))} />
+                            <PriceInput valueCents={c.unitPriceCents} onChangeCents={(cents) => setCart((p) => p.map((x) => (x.productId === c.productId ? { ...x, unitPriceCents: cents, wasPriceOverridden: cents !== c.unitPriceCents } : x)))} />
                           </div>
                           <div>
                             <Label className="text-xs">Total</Label>

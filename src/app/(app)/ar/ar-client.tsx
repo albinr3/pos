@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 
-import { CreditCard, HandCoins, Printer, Receipt } from "lucide-react"
+import { CreditCard, HandCoins, Printer, Receipt, Search } from "lucide-react"
 import { PaymentMethod } from "@prisma/client"
 
 import { Button } from "@/components/ui/button"
@@ -37,6 +37,10 @@ function methodLabel(m: PaymentMethod) {
 export function ARClient() {
   const [items, setItems] = useState<AR[]>([])
   const [isLoading, startLoading] = useTransition()
+  const [query, setQuery] = useState("")
+  const [skip, setSkip] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const [isLoadingMore, startLoadingMore] = useTransition()
 
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<AR | null>(null)
@@ -49,19 +53,36 @@ export function ARClient() {
   const [selectedForReceipts, setSelectedForReceipts] = useState<AR | null>(null)
 
   function refresh() {
+    setSkip(0)
     startLoading(async () => {
       try {
-        const r = await listOpenAR()
+        const r = await listOpenAR({ query, skip: 0, take: 10 })
         setItems(r)
+        setHasMore(r.length === 10)
       } catch {
         setItems([])
+        setHasMore(false)
+      }
+    })
+  }
+
+  function loadMore() {
+    startLoadingMore(async () => {
+      try {
+        const newSkip = skip + 10
+        const r = await listOpenAR({ query, skip: newSkip, take: 10 })
+        setItems((prev) => [...prev, ...r])
+        setSkip(newSkip)
+        setHasMore(r.length === 10)
+      } catch {
+        setHasMore(false)
       }
     })
   }
 
   useEffect(() => {
     refresh()
-  }, [])
+  }, [query])
 
   const totalBalance = useMemo(() => items.reduce((s, i) => s + i.balanceCents, 0), [items])
 
@@ -135,9 +156,19 @@ export function ARClient() {
         <CardHeader>
           <CardTitle>Facturas a crédito</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
+        <CardContent className="grid gap-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
+            <Input
+              className="pl-10"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar por número de factura o cliente..."
+            />
+          </div>
+
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Factura</TableHead>
@@ -156,17 +187,29 @@ export function ARClient() {
                     <TableCell className="text-right">{formatRD(ar.balanceCents)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex flex-wrap justify-end gap-2">
-                        <Button variant="secondary" onClick={() => openPayment(ar)}>
-                          <HandCoins className="mr-2 h-4 w-4" /> Abonar / Saldar
+                        <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white" onClick={() => openPayment(ar)} title="Abonar / Saldar">
+                          <HandCoins className="h-4 w-4 sm:mr-2" />
+                          <span className="hidden sm:inline">Abonar</span>
                         </Button>
                         {ar.payments.length > 0 && (
-                          <Button variant="outline" onClick={() => { setSelectedForReceipts(ar); setOpenReceipts(true) }}>
-                            <Receipt className="mr-2 h-4 w-4" /> Ver Recibos ({ar.payments.length})
+                          <Button
+                            size="sm"
+                            className="bg-purple-primary hover:bg-purple-primary/90 text-white"
+                            onClick={() => {
+                              setSelectedForReceipts(ar)
+                              setOpenReceipts(true)
+                            }}
+                            title="Ver Recibos"
+                          >
+                            <Receipt className="h-4 w-4 sm:mr-2" />
+                            <span className="hidden sm:inline">Recibos ({ar.payments.length})</span>
+                            <span className="sm:hidden">{ar.payments.length}</span>
                           </Button>
                         )}
-                        <Button asChild variant="ghost">
+                        <Button size="sm" asChild className="bg-blue-500 hover:bg-blue-600 text-white" title="Reimprimir">
                           <Link href={`/receipts/sale/${ar.sale.invoiceCode}`} target="_blank">
-                            <Printer className="mr-2 h-4 w-4" /> Reimprimir
+                            <Printer className="h-4 w-4 sm:mr-2" />
+                            <span className="hidden sm:inline">Reimprimir</span>
                           </Link>
                         </Button>
                       </div>
@@ -174,16 +217,41 @@ export function ARClient() {
                   </TableRow>
                 ))}
 
-                {items.length === 0 && (
+                {!isLoading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
-                      {isLoading ? "Cargando…" : "No hay cuentas por cobrar pendientes"}
+                    <TableCell colSpan={5} className="py-12">
+                      <div className="flex flex-col items-center justify-center text-center">
+                        <img
+                          src="/lupa.png"
+                          alt="No hay resultados"
+                          width={192}
+                          height={192}
+                          className="mb-4 opacity-60"
+                        />
+                        <p className="text-lg font-medium text-muted-foreground">No se encontraron cuentas por cobrar</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {query ? "Intenta con otros términos de búsqueda" : "Aún no hay cuentas por cobrar pendientes"}
+                        </p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}
               </TableBody>
             </Table>
           </div>
+
+          {hasMore && (
+            <div className="flex justify-center">
+              <Button
+                variant="outline"
+                onClick={loadMore}
+                disabled={isLoadingMore}
+                className="w-full sm:w-auto"
+              >
+                {isLoadingMore ? "Cargando..." : "Cargar más"}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

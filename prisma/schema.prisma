@@ -34,6 +34,19 @@ enum PaymentMethod {
   OTRO
 }
 
+enum UnitType {
+  UNIDAD // Piezas (default) - solo enteros
+  KG     // Kilogramos
+  LIBRA  // Libras
+  GRAMO  // Gramos
+  LITRO  // Litros
+  ML     // Mililitros
+  GALON  // Galones
+  METRO  // Metros
+  CM     // Centímetros
+  PIE    // Pies
+}
+
 model User {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -45,7 +58,14 @@ model User {
   role         UserRole @default(CAJERO)
 
   // Granular permissions (so you can enable for a CAJERO, for example)
-  canOverridePrice Boolean @default(false)
+  canOverridePrice  Boolean @default(false)
+  canCancelSales    Boolean @default(false)
+  canCancelReturns  Boolean @default(false)
+  canCancelPayments Boolean @default(false)
+  canEditSales      Boolean @default(false)
+  canEditProducts   Boolean @default(false)
+  canChangeSaleType Boolean @default(false) // Cambiar de contado a crédito
+  canSellWithoutStock Boolean @default(false) // Permitir vender sin stock
 
   isActive Boolean @default(true)
 
@@ -76,8 +96,12 @@ model CompanySettings {
   // Inventory behavior
   allowNegativeStock Boolean @default(false)
 
-  // Always 18% included in price (fixed requirement)
+  // Default ITBIS rate (18% = 1800 basis points)
   itbisRateBp Int @default(1800) // basis points (18.00% = 1800)
+
+  // Label sizes for printing
+  barcodeLabelSize  String @default("4x2")  // "4x2", "3x1", "2x1", "2.25x1.25"
+  shippingLabelSize String @default("4x6")  // "4x6", "4x4", "6x4"
 }
 
 model InvoiceSequence {
@@ -159,14 +183,23 @@ model Product {
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
 
-  // final price (ITBIS included)
+  // Precio y costo (obligatorios)
   priceCents Int
-  costCents  Int @default(0)
+  costCents  Int
 
-  stock    Int @default(0)
-  minStock Int @default(0)
+  // ITBIS rate for this product (basis points, 1800 = 18%, 1600 = 16%, 0 = exento)
+  itbisRateBp Int @default(1800)
+
+  // Unidades de compra y venta (obligatorias, pueden ser diferentes)
+  purchaseUnit UnitType @default(UNIDAD)
+  saleUnit     UnitType @default(UNIDAD)
+  stock        Decimal  @default(0)
+  minStock     Decimal  @default(0)
 
   isActive Boolean @default(true)
+
+  // URLs de imágenes del producto (máximo 3)
+  imageUrls String[] @default([])
 
   saleItems     SaleItem[]
   purchaseItems PurchaseItem[]
@@ -233,7 +266,7 @@ model SaleItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty Int
+  qty Decimal
 
   // unit final price (ITBIS included). It may be overridden at checkout.
   unitPriceCents     Int
@@ -322,7 +355,7 @@ model PurchaseItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty            Int
+  qty            Decimal
   unitCostCents  Int // Costo unitario original (antes de descuento)
   discountPercentBp Int @default(0) // Descuento aplicado (en basis points, 1000 = 10%)
   netCostCents   Int @default(0) // Costo neto después de descuento e ITBIS
@@ -394,7 +427,7 @@ model ReturnItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty Int // Cantidad devuelta (debe ser <= cantidad vendida originalmente)
+  qty Decimal // Cantidad devuelta (debe ser <= cantidad vendida originalmente)
 
   // Precios originales de la venta
   unitPriceCents Int
@@ -451,7 +484,7 @@ model QuoteItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty Int
+  qty Decimal
 
   // unit final price (ITBIS included). It may be overridden.
   unitPriceCents     Int

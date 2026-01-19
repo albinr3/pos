@@ -31,6 +31,7 @@ export async function listReturns() {
               name: true,
               sku: true,
               reference: true,
+              saleUnit: true,
             },
           },
         },
@@ -57,6 +58,7 @@ export async function getReturnById(id: string) {
                   reference: true,
                   priceCents: true,
                   stock: true,
+                  saleUnit: true,
                 },
               },
             },
@@ -76,6 +78,7 @@ export async function getReturnById(id: string) {
               name: true,
               sku: true,
               reference: true,
+              unit: true,
             },
           },
           saleItem: true,
@@ -99,6 +102,7 @@ export async function getSaleForReturn(saleId: string) {
               sku: true,
               reference: true,
               priceCents: true,
+              saleUnit: true,
             },
           },
         },
@@ -290,6 +294,11 @@ export async function cancelReturn(id: string) {
   const user = getCurrentUserStub()
   const dbUser = await prisma.user.findUnique({ where: { username: user.username } })
   if (!dbUser) throw new Error("Usuario inválido")
+
+  // Verificar permiso para cancelar devoluciones
+  if (!dbUser.canCancelReturns && dbUser.role !== "ADMIN") {
+    throw new Error("No tienes permiso para cancelar devoluciones")
+  }
 
   return prisma.$transaction(async (tx) => {
     const returnRecord = await tx.return.findUnique({

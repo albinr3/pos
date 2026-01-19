@@ -21,15 +21,16 @@ export function MarketingHeader() {
         background: 'transparent'
       }}
     >
-      <div className="container flex h-20 items-center justify-between">
-        <Link href="/" className="flex items-center space-x-2">
+      <div className="container flex h-20 items-center justify-between px-3 sm:px-4">
+        <Link href="/" className="flex items-center space-x-2 -ml-1 sm:ml-0">
           <Image
-            src="/logo.webp"
-            alt="Tejada POS"
+            src="/movoLogo.png?v=1"
+            alt="MOVOPos"
             width={150}
             height={50}
             className="h-12 w-auto sm:h-14"
             priority
+            unoptimized
           />
         </Link>
 
@@ -44,7 +45,7 @@ export function MarketingHeader() {
             </Link>
           ))}
           <Link
-            href="/about"
+            href="/contact"
             className="text-lg font-medium text-white/90 transition-colors hover:text-white"
           >
             Contacto
@@ -60,19 +61,19 @@ export function MarketingHeader() {
             size="icon"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle menu"
-            className="text-white hover:bg-white/10"
+            className="text-white hover:bg-white/10 focus:bg-transparent active:bg-white/10 focus:text-white active:text-white focus:opacity-100 active:opacity-100 h-11 w-11"
           >
             {mobileMenuOpen ? (
-              <X className="h-5 w-5" />
+              <X className="h-6 w-6" />
             ) : (
-              <Menu className="h-5 w-5" />
+              <Menu className="h-6 w-6" />
             )}
           </Button>
         </div>
       </div>
 
       {mobileMenuOpen && (
-        <div className="md:hidden border-t">
+        <div className="md:hidden border-t max-h-[calc(100vh-5rem)] overflow-y-auto">
           <div className="container flex flex-col space-y-4 py-4">
             {navItems.map((item) => (
               <Link
@@ -85,7 +86,7 @@ export function MarketingHeader() {
               </Link>
             ))}
             <Link
-              href="/about"
+              href="/contact"
               className="text-lg font-medium text-white/90 transition-colors hover:text-white"
               onClick={() => setMobileMenuOpen(false)}
             >

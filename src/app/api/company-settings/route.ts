@@ -7,6 +7,8 @@ export async function GET() {
     return NextResponse.json({
       name: company?.name ?? "Tejada Auto Adornos",
       logoUrl: company?.logoUrl ?? null,
+      address: company?.address ?? "Carretera la Rosa, Moca",
+      phone: company?.phone ?? "829-475-1454",
     })
   } catch (error) {
     return NextResponse.json(

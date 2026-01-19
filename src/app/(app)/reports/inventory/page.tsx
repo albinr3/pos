@@ -4,6 +4,7 @@ import { formatRD } from "@/lib/money"
 
 import { getInventoryReport } from "../actions"
 import { InventoryExportClient } from "./inventory-export-client"
+import { PrintButton } from "@/components/app/print-button"
 
 export default async function InventoryReportPage() {
   const data = await getInventoryReport()
@@ -15,11 +16,14 @@ export default async function InventoryReportPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Reporte de inventario</h1>
           <p className="text-sm text-muted-foreground">Listado de productos con su costo y total de inventario.</p>
         </div>
-        <InventoryExportClient
-          products={data.products}
-          totalInventoryCostCents={data.totalInventoryCostCents}
-          count={data.count}
-        />
+        <div className="flex items-center gap-2">
+          <PrintButton />
+          <InventoryExportClient
+            products={data.products}
+            totalInventoryCostCents={data.totalInventoryCostCents}
+            count={data.count}
+          />
+        </div>
       </div>
 
       <Card>
@@ -29,8 +33,8 @@ export default async function InventoryReportPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Producto</TableHead>

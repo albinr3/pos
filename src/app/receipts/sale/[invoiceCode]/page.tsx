@@ -28,6 +28,7 @@ export default async function SaleReceiptPage({
       include: {
         customer: true,
         items: { include: { product: true } },
+        cancelledUser: { select: { name: true } },
       },
     }),
   ])
@@ -66,6 +67,16 @@ export default async function SaleReceiptPage({
         <div>{company?.address ?? "Carretera la Rosa, Moca"}</div>
         <div>Tel: {company?.phone ?? "829-475-1454"}</div>
       </div>
+
+      {sale.cancelledAt && (
+        <div className="my-2 border-2 border-red-500 bg-red-50 p-2 text-center">
+          <div className="text-[14px] font-bold text-red-600">⚠️ FACTURA CANCELADA</div>
+          <div className="text-[11px] text-red-600">
+            Cancelada el {fmtDate(sale.cancelledAt)}
+            {sale.cancelledUser && ` por ${sale.cancelledUser.name}`}
+          </div>
+        </div>
+      )}
 
       <div className="my-2 border-t border-b border-dashed py-2">
         <div className="flex justify-between">

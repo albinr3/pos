@@ -3,8 +3,6 @@
 import { useEffect, useState, useTransition } from "react"
 import { Trash2, Search, Receipt } from "lucide-react"
 import Link from "next/link"
-import { format } from "date-fns"
-import { es } from "date-fns/locale"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -118,8 +116,20 @@ export function ReturnsListClient() {
                   </TableRow>
                 ) : filtered.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-muted-foreground">
-                      No hay devoluciones
+                    <TableCell colSpan={8} className="py-12">
+                      <div className="flex flex-col items-center justify-center text-center">
+                        <img
+                          src="/lupa.png"
+                          alt="No hay resultados"
+                          width={192}
+                          height={192}
+                          className="mb-4 opacity-60"
+                        />
+                        <p className="text-lg font-medium text-muted-foreground">No se encontraron devoluciones</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {query ? "Intenta con otros términos de búsqueda" : "Aún no se han registrado devoluciones"}
+                        </p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -137,7 +147,13 @@ export function ReturnsListClient() {
                       </TableCell>
                       <TableCell>{r.sale.customer?.name ?? "Cliente genérico"}</TableCell>
                       <TableCell>
-                        {format(new Date(r.returnedAt), "dd/MM/yyyy HH:mm", { locale: es })}
+                        {new Date(r.returnedAt).toLocaleString("es-DO", {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </TableCell>
                       <TableCell>{r.user.name}</TableCell>
                       <TableCell className="text-right">{formatRD(r.totalCents)}</TableCell>
@@ -151,7 +167,7 @@ export function ReturnsListClient() {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button
-                            variant="ghost"
+                            className="bg-blue-500 hover:bg-blue-600 text-white"
                             size="icon"
                             onClick={() => window.open(`/receipts/return/${r.returnCode}`, "_blank")}
                             title="Ver recibo"
@@ -160,12 +176,12 @@ export function ReturnsListClient() {
                           </Button>
                           {!r.cancelledAt && (
                             <Button
-                              variant="ghost"
+                              className="bg-red-500 hover:bg-red-600 text-white"
                               size="icon"
                               onClick={() => handleCancel(r.id)}
                               title="Cancelar devolución"
                             >
-                              <Trash2 className="h-4 w-4 text-destructive" />
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           )}
                         </div>

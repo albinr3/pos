@@ -33,6 +33,7 @@ export function ShippingLabelsClient() {
   const [packageCount, setPackageCount] = useState("1")
 
   const [showLabel, setShowLabel] = useState(false)
+  const [shippingLabelSize, setShippingLabelSize] = useState("4x6")
 
   function loadCustomers(q?: string) {
     startLoadingCustomers(async () => {
@@ -47,9 +48,10 @@ export function ShippingLabelsClient() {
 
   useEffect(() => {
     loadCustomers("")
-    // Cargar nombre de la empresa como remitente por defecto
+    // Cargar nombre de la empresa y tamaño de etiqueta como valores por defecto
     getSettings().then((settings) => {
       setSenderName(settings.name)
+      setShippingLabelSize(settings.shippingLabelSize)
     })
   }, [])
 
@@ -254,6 +256,7 @@ export function ShippingLabelsClient() {
           customerProvince={customerProvince || null}
           senderName={senderName}
           packageCount={parseInt(packageCount) || 1}
+          labelSize={shippingLabelSize}
           onPrintComplete={handlePrintComplete}
         />
       )}

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
+import { Decimal } from "@prisma/client/runtime/library"
 
 // Calcular costo neto: (costo - descuento) * 1.18 (ITBIS)
 function calculateNetCost(unitCostCents: number, discountPercentBp: number): number {
@@ -110,7 +111,7 @@ export async function searchProductsForPurchase(query: string) {
   const q = query.trim()
   if (!q) return []
 
-  return prisma.product.findMany({
+  const products = await prisma.product.findMany({
     where: {
       isActive: true,
       OR: [
@@ -119,20 +120,26 @@ export async function searchProductsForPurchase(query: string) {
         { reference: { contains: q, mode: "insensitive" } },
       ],
     },
-    select: { id: true, name: true, sku: true, reference: true, costCents: true, stock: true },
+    select: { id: true, name: true, sku: true, reference: true, costCents: true, stock: true, purchaseUnit: true, saleUnit: true },
     orderBy: { name: "asc" },
     take: 20,
   })
+  
+  // Convertir Decimal a número
+  return products.map((p) => ({
+    ...p,
+    stock: p.stock instanceof Decimal ? p.stock.toNumber() : Number(p.stock),
+  }))
 }
 
 export async function getPurchaseById(id: string) {
-  return prisma.purchase.findUnique({
+  const purchase = await prisma.purchase.findUnique({
     where: { id },
     include: {
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, reference: true, costCents: true, stock: true },
+            select: { id: true, name: true, sku: true, reference: true, costCents: true, stock: true, purchaseUnit: true, saleUnit: true },
           },
         },
       },
@@ -141,6 +148,20 @@ export async function getPurchaseById(id: string) {
       },
     },
   })
+  
+  if (!purchase) return null
+  
+  // Convertir Decimal a número en items
+  return {
+    ...purchase,
+    items: purchase.items.map((item) => ({
+      ...item,
+      product: {
+        ...item.product,
+        stock: item.product.stock instanceof Decimal ? item.product.stock.toNumber() : Number(item.product.stock),
+      },
+    })),
+  }
 }
 
 export async function cancelPurchase(id: string, username: string) {

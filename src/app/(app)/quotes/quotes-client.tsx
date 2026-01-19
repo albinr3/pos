@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
-import { Plus, Search, Trash2, FileText } from "lucide-react"
+import { Plus, Search, Trash2, FileText, Grid3x3, List } from "lucide-react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { PriceInput } from "@/components/app/price-input"
@@ -10,12 +11,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
 import { formatRD, calcItbisIncluded, toCents } from "@/lib/money"
 import { toast } from "@/hooks/use-toast"
 
 import { getCurrentUserStub } from "@/lib/auth-stub"
 
 import { createQuote, listCustomers, searchProducts } from "./actions"
+import { listAllProductsForSale } from "../sales/actions"
 
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 
@@ -37,6 +40,9 @@ export function QuotesClient() {
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<ProductResult[]>([])
   const [isSearching, startSearch] = useTransition()
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list")
+  const [allProducts, setAllProducts] = useState<ProductResult[]>([])
+  const [isLoadingProducts, startLoadingProducts] = useTransition()
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [customerId, setCustomerId] = useState<string | null>("generic")
@@ -50,25 +56,61 @@ export function QuotesClient() {
 
   useEffect(() => {
     listCustomers().then(setCustomers).catch(() => {})
+    // Cargar preferencia de vista desde localStorage
+    const savedViewMode = localStorage.getItem("quotesViewMode") as "list" | "grid" | null
+    if (savedViewMode) {
+      setViewMode(savedViewMode)
+    }
   }, [])
 
   useEffect(() => {
-    const q = query.trim()
-    if (!q) return
-
-    const handle = setTimeout(() => {
-      startSearch(async () => {
+    // Cargar todos los productos cuando se cambia a vista de grid
+    if (viewMode === "grid") {
+      startLoadingProducts(async () => {
         try {
-          const r = await searchProducts(q)
-          setResults(r)
+          const products = await listAllProductsForSale()
+          setAllProducts(products)
         } catch {
-          setResults([])
+          setAllProducts([])
         }
       })
+    }
+    // Guardar preferencia
+    localStorage.setItem("quotesViewMode", viewMode)
+  }, [viewMode])
+
+  useEffect(() => {
+    const q = query.trim()
+    
+    const handle = setTimeout(() => {
+      if (q) {
+        startSearch(async () => {
+          try {
+            const r = await searchProducts(q)
+            setResults(r)
+          } catch {
+            setResults([])
+          }
+        })
+      } else {
+        // Si no hay query y estamos en vista de grid, cargar todos los productos
+        if (viewMode === "grid") {
+          startLoadingProducts(async () => {
+            try {
+              const products = await listAllProductsForSale()
+              setAllProducts(products)
+            } catch {
+              setAllProducts([])
+            }
+          })
+        } else {
+          setResults([])
+        }
+      }
     }, 200)
 
     return () => clearTimeout(handle)
-  }, [query])
+  }, [query, viewMode])
 
   const itemsTotalCents = useMemo(() => cart.reduce((s, i) => s + i.unitPriceCents * i.qty, 0), [cart])
   const { subtotalCents, itbisCents } = useMemo(() => calcItbisIncluded(itemsTotalCents, 1800), [itemsTotalCents])
@@ -133,12 +175,34 @@ export function QuotesClient() {
     })
   }
 
+  function getCartQuantity(productId: string) {
+    const item = cart.find((c) => c.productId === productId)
+    return item?.qty ?? 0
+  }
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+    <div className={`grid gap-6 ${viewMode === "grid" ? "lg:grid-cols-[1fr_400px]" : "lg:grid-cols-[1fr_380px]"}`}>
       <div className="space-y-4">
         <Card>
           <CardHeader>
-            <CardTitle>Nueva Cotización</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle>Nueva Cotización</CardTitle>
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <List className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Lista</span>
+                </div>
+                <Switch
+                  checked={viewMode === "grid"}
+                  onCheckedChange={(checked) => setViewMode(checked ? "grid" : "list")}
+                  aria-label="Cambiar vista"
+                />
+                <div className="flex items-center gap-2">
+                  <Grid3x3 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">Imágenes</span>
+                </div>
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="grid gap-2">
@@ -178,7 +242,9 @@ export function QuotesClient() {
                   placeholder="Ej: alfombra / 12345 / REF-01"
                 />
               </div>
-              {query.trim() && (
+            {viewMode === "list" ? (
+              // Vista de lista (original)
+              query.trim() && (
                 <div className="rounded-md border">
                   {results.length === 0 ? (
                     <div className="p-3 text-sm text-muted-foreground">
@@ -208,16 +274,135 @@ export function QuotesClient() {
                     </div>
                   )}
                 </div>
-              )}
+              )
+            ) : (
+              // Vista de grid (imágenes)
+              <div className="space-y-4">
+                {query.trim() ? (
+                  // Mostrar resultados de búsqueda en grid
+                  results.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-muted-foreground">
+                      {isSearching ? "Buscando…" : "Sin resultados"}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                      {results.map((p) => (
+                        <button
+                          type="button"
+                          key={p.id}
+                          onClick={() => addToCart(p)}
+                          className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
+                        >
+                          <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
+                            {p.imageUrls && p.imageUrls.length > 0 ? (
+                              <img
+                                src={p.imageUrls[0]}
+                                alt={p.name}
+                                className="object-contain max-w-full max-h-full"
+                              />
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-muted-foreground">
+                                <div className="text-center p-4">
+                                  <div className="text-2xl mb-1">{p.name.charAt(0).toUpperCase()}</div>
+                                  <div className="text-xs">Sin imagen</div>
+                                </div>
+                              </div>
+                            )}
+                            {getCartQuantity(p.id) > 0 ? (
+                              <div className="absolute top-2 right-2 bg-purple-primary text-white rounded-full min-w-[24px] h-6 px-2 flex items-center justify-center text-xs font-semibold shadow-lg">
+                                {getCartQuantity(p.id)}
+                              </div>
+                            ) : (
+                              <div className="absolute top-2 right-2 bg-purple-primary text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Plus className="h-4 w-4" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="p-3 space-y-1">
+                            <div className="font-medium text-sm truncate">{p.name}</div>
+                            <div className="text-sm font-semibold text-purple-primary">{formatRD(p.priceCents)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {p.stock} disponible{p.stock !== 1 ? "s" : ""}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  // Mostrar todos los productos en grid
+                  isLoadingProducts ? (
+                    <div className="p-8 text-center text-sm text-muted-foreground">Cargando productos…</div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+                      {/* Tarjeta para crear producto */}
+                      <Link
+                        href="/products"
+                        className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/30 hover:border-purple-primary transition-colors bg-muted/30 aspect-square p-4 text-center"
+                      >
+                        <Plus className="h-12 w-12 text-muted-foreground mb-2" />
+                        <span className="text-sm font-medium text-muted-foreground">Crear producto</span>
+                      </Link>
+
+                      {allProducts.map((p) => {
+                        const cartQty = getCartQuantity(p.id)
+                        return (
+                          <button
+                            type="button"
+                            key={p.id}
+                            onClick={() => addToCart(p)}
+                            className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
+                          >
+                            <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
+                              {p.imageUrls && p.imageUrls.length > 0 ? (
+                                <img
+                                  src={p.imageUrls[0]}
+                                  alt={p.name}
+                                  className="object-contain max-w-full max-h-full"
+                                />
+                              ) : (
+                                <div className="flex items-center justify-center h-full text-muted-foreground">
+                                  <div className="text-center p-4">
+                                    <div className="text-2xl mb-1">{p.name.charAt(0).toUpperCase()}</div>
+                                    <div className="text-xs">Sin imagen</div>
+                                  </div>
+                                </div>
+                              )}
+                              {cartQty > 0 ? (
+                                <div className="absolute top-2 right-2 bg-purple-primary text-white rounded-full min-w-[24px] h-6 px-2 flex items-center justify-center text-xs font-semibold shadow-lg">
+                                  {cartQty}
+                                </div>
+                              ) : (
+                                <div className="absolute top-2 right-2 bg-purple-primary text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <Plus className="h-4 w-4" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="p-3 space-y-1">
+                              <div className="font-medium text-sm truncate">{p.name}</div>
+                              <div className="text-sm font-semibold text-purple-primary">{formatRD(p.priceCents)}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {p.stock} disponible{p.stock !== 1 ? "s" : ""}
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Carrito</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        {viewMode === "list" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Carrito</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
             {cart.length === 0 ? (
               <div className="text-sm text-muted-foreground">Agrega productos para empezar.</div>
             ) : (
@@ -298,9 +483,39 @@ export function QuotesClient() {
             )}
           </CardContent>
         </Card>
+        )}
+
+        {viewMode === "grid" && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle>Productos</CardTitle>
+              {cart.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const element = document.getElementById("cart-summary")
+                    if (element) {
+                      element.scrollIntoView({ behavior: "smooth", block: "start" })
+                    }
+                  }}
+                  className="text-sm text-purple-primary hover:underline"
+                >
+                  Ver carrito ({cart.length})
+                </button>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground">
+                {cart.length === 0
+                  ? "Agrega productos al carrito haciendo clic en las imágenes."
+                  : `Tienes ${cart.length} producto${cart.length !== 1 ? "s" : ""} en el carrito.`}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-4" id="cart-summary">
         <Card>
           <CardHeader>
             <CardTitle>Total</CardTitle>
@@ -309,6 +524,34 @@ export function QuotesClient() {
             <div className="text-4xl font-semibold tracking-tight" suppressHydrationWarning>
               {formatRD(totalCents)}
             </div>
+            {viewMode === "grid" && cart.length > 0 && (
+              <div className="rounded-md border p-3 space-y-2 max-h-[200px] overflow-y-auto">
+                {cart.map((c) => (
+                  <div key={c.productId} className="flex items-center justify-between text-sm">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{c.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {c.qty} x {formatRD(c.unitPriceCents)}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-semibold">{formatRD(c.unitPriceCents * c.qty)}</div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => setCart((p) => p.filter((x) => x.productId !== c.productId))}
+                        aria-label="Quitar"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="grid gap-2">
               <div className="grid gap-2">
                 <Label>Flete (opcional)</Label>

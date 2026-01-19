@@ -1,8 +1,8 @@
-import { ImagePlaceholder } from "@/components/marketing/image-placeholder"
+import Image from "next/image"
 
 export const metadata = {
-  title: "Sobre Nosotros | Tejada POS",
-  description: "Conoce más sobre Tejada POS y nuestro equipo",
+  title: "Sobre Nosotros | MOVOPos",
+  description: "Conoce más sobre MOVOPos y nuestro equipo",
 }
 
 export default function AboutPage() {
@@ -14,23 +14,25 @@ export default function AboutPage() {
             Sobre Nosotros
           </h1>
           <p className="mt-6 text-lg leading-8 text-muted-foreground">
-            Conoce la historia detrás de Tejada POS y nuestra misión de ayudar a los negocios a crecer.
+            Conoce la historia detrás de MOVOPos y nuestra misión de ayudar a los negocios a crecer.
           </p>
         </div>
 
         <div className="space-y-16">
           <section>
-            <div className="mb-8">
-              <ImagePlaceholder
+            <div className="mb-8 rounded-lg overflow-hidden">
+              <Image
+                src="/person-working-html-computer.jpg"
+                alt="Equipo de MOVOPos trabajando"
                 width={1200}
                 height={600}
-                alt="Equipo de Tejada POS"
-                className="w-full"
+                className="w-full h-auto object-cover"
+                priority
               />
             </div>
             <h2 className="text-2xl font-semibold mb-4">Nuestra Historia</h2>
             <p className="text-muted-foreground mb-4">
-              Tejada POS nació de la necesidad de crear una solución de punto de venta e inventario
+              MOVOPos nació de la necesidad de crear una solución de punto de venta e inventario
               diseñada específicamente para el mercado dominicano. Comenzamos como un proyecto interno
               para Tejada Auto Adornos, y rápidamente nos dimos cuenta de que otras empresas podrían
               beneficiarse de esta herramienta.

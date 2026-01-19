@@ -8,10 +8,19 @@ interface BarcodeLabelProps {
   sku: string | null
   reference: string | null
   priceCents: number
+  labelSize?: string // "4x2", "3x1", "2x1", "2.25x1.25"
   onPrintComplete?: () => void
 }
 
-export function BarcodeLabel({ productName, sku, reference, priceCents, onPrintComplete }: BarcodeLabelProps) {
+// Map label size strings to CSS page sizes
+const BARCODE_LABEL_SIZES: Record<string, { width: string; height: string }> = {
+  "4x2": { width: "4in", height: "2in" },
+  "3x1": { width: "3in", height: "1in" },
+  "2x1": { width: "2in", height: "1in" },
+  "2.25x1.25": { width: "2.25in", height: "1.25in" },
+}
+
+export function BarcodeLabel({ productName, sku, reference, priceCents, labelSize = "4x2", onPrintComplete }: BarcodeLabelProps) {
   const barcodeRefPreview = useRef<SVGSVGElement>(null)
   const barcodeRefPrint = useRef<SVGSVGElement>(null)
 
@@ -70,6 +79,9 @@ export function BarcodeLabel({ productName, sku, reference, priceCents, onPrintC
     return () => window.removeEventListener("afterprint", handleAfterPrint)
   }, [onPrintComplete])
 
+  const size = BARCODE_LABEL_SIZES[labelSize] || BARCODE_LABEL_SIZES["4x2"]
+  const isSmall = labelSize === "2x1" || labelSize === "2.25x1.25"
+
   return (
     <>
       <style jsx global>{`
@@ -88,8 +100,8 @@ export function BarcodeLabel({ productName, sku, reference, priceCents, onPrintC
             width: 100%;
           }
           @page {
-            size: 4in 2in;
-            margin: 0.2in;
+            size: ${size.width} ${size.height};
+            margin: 0.1in;
           }
         }
       `}</style>
@@ -129,22 +141,22 @@ export function BarcodeLabel({ productName, sku, reference, priceCents, onPrintC
           </div>
         </div>
       </div>
-      <div className="barcode-label-print hidden print:block print:p-4 print:max-w-[4in] print:mx-auto">
-        <div className="print:border print:border-gray-300 print:p-2 print:rounded">
-          <div className="print:text-center print:mb-2">
-            <div className="print:text-xs print:font-semibold print:mb-1">{productName}</div>
-            {reference && (
-              <div className="print:text-xs print:text-gray-600 print:mb-1">Ref: {reference}</div>
+      <div className={`barcode-label-print hidden print:block print:p-2 print:mx-auto`} style={{ maxWidth: size.width }}>
+        <div className="print:border print:border-gray-300 print:p-1 print:rounded">
+          <div className="print:text-center">
+            <div className={`print:font-semibold print:mb-0.5 ${isSmall ? "print:text-[8px]" : "print:text-xs"}`}>{productName}</div>
+            {reference && !isSmall && (
+              <div className="print:text-[8px] print:text-gray-600 print:mb-0.5">Ref: {reference}</div>
             )}
             {sku && (
-              <div className="print:flex print:justify-center print:my-2">
+              <div className="print:flex print:justify-center print:my-1">
                 <svg ref={barcodeRefPrint} className="print:max-w-full print:h-auto" />
               </div>
             )}
             {!sku && (
-              <div className="print:text-xs print:text-gray-500 print:py-4">Sin código de barras</div>
+              <div className={`print:text-gray-500 print:py-2 ${isSmall ? "print:text-[8px]" : "print:text-xs"}`}>Sin código de barras</div>
             )}
-            <div className="print:text-sm print:font-bold print:mt-1">{formatPrice(priceCents)}</div>
+            <div className={`print:font-bold ${isSmall ? "print:text-[10px]" : "print:text-sm"}`}>{formatPrice(priceCents)}</div>
           </div>
         </div>
       </div>

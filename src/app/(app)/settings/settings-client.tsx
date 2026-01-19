@@ -12,8 +12,9 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 
-import { getSettings, updateAllowNegativeStock } from "./actions"
+import { getSettings, updateLabelSizes } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
+import { PermissionsTab } from "./permissions-tab"
 
 export function SettingsClient() {
   const [name, setName] = useState("")
@@ -23,7 +24,8 @@ export function SettingsClient() {
   const [isUploadingLogo, setIsUploadingLogo] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [allowNegativeStock, setAllowNegativeStock] = useState(false)
+  const [barcodeLabelSize, setBarcodeLabelSize] = useState("4x2")
+  const [shippingLabelSize, setShippingLabelSize] = useState("4x6")
   const [isSaving, startSaving] = useTransition()
 
   useEffect(() => {
@@ -32,7 +34,8 @@ export function SettingsClient() {
       setPhone(s.phone)
       setAddress(s.address)
       setLogoUrl(s.logoUrl)
-      setAllowNegativeStock(s.allowNegativeStock)
+      setBarcodeLabelSize(s.barcodeLabelSize)
+      setShippingLabelSize(s.shippingLabelSize)
     })
   }, [])
 
@@ -92,18 +95,6 @@ export function SettingsClient() {
     } catch (e) {
       toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo eliminar el logo" })
     }
-  }
-
-  function onToggle(v: boolean) {
-    setAllowNegativeStock(v)
-    startSaving(async () => {
-      try {
-        await updateAllowNegativeStock(v)
-        toast({ title: "Ajustes guardados" })
-      } catch (e) {
-        toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
-      }
-    })
   }
 
   function onSaveCompany() {
@@ -201,28 +192,60 @@ export function SettingsClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Inventario</CardTitle>
+          <CardTitle>Etiquetas de Impresión</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="text-sm text-muted-foreground">Comportamiento al facturar con stock insuficiente.</div>
+          <div className="text-sm text-muted-foreground">Configura los tamaños de las etiquetas para impresión.</div>
           <Separator />
-          <div className="flex items-center justify-between gap-4 rounded-md border p-4">
-            <div className="grid gap-1">
-              <Label className="font-semibold">Permitir vender sin stock</Label>
-              <div className="text-xs text-muted-foreground">
-                Si está activo, se permite facturar aunque el inventario no alcance (el stock puede quedar negativo).
-              </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>Etiqueta de Código de Barras</Label>
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+                value={barcodeLabelSize}
+                onChange={(e) => setBarcodeLabelSize(e.target.value)}
+              >
+                <option value="4x2">4&quot; x 2&quot; (101.6mm x 50.8mm) - Estándar</option>
+                <option value="3x1">3&quot; x 1&quot; (76.2mm x 25.4mm) - Pequeña</option>
+                <option value="2x1">2&quot; x 1&quot; (50.8mm x 25.4mm) - Mini</option>
+                <option value="2.25x1.25">2.25&quot; x 1.25&quot; (57mm x 32mm) - Térmica</option>
+              </select>
             </div>
-            <Switch checked={allowNegativeStock} onCheckedChange={onToggle} disabled={isSaving} />
+            <div className="grid gap-2">
+              <Label>Etiqueta de Envío</Label>
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+                value={shippingLabelSize}
+                onChange={(e) => setShippingLabelSize(e.target.value)}
+              >
+                <option value="4x6">4&quot; x 6&quot; (101.6mm x 152.4mm) - Estándar</option>
+                <option value="4x4">4&quot; x 4&quot; (101.6mm x 101.6mm) - Cuadrada</option>
+                <option value="6x4">6&quot; x 4&quot; (152.4mm x 101.6mm) - Horizontal</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={() => {
+                startSaving(async () => {
+                  try {
+                    await updateLabelSizes(barcodeLabelSize, shippingLabelSize)
+                    toast({ title: "Tamaños de etiquetas actualizados" })
+                  } catch (e) {
+                    toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
+                  }
+                })
+              }}
+              disabled={isSaving}
+            >
+              Guardar etiquetas
+            </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/*
-        Auth (comentado):
-        Aquí luego podemos agregar: Usuarios, Roles, Permisos, Login.
-        Ya existe la tabla User y el campo canOverridePrice.
-      */}
+      <PermissionsTab />
     </div>
   )
 }

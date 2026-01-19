@@ -4,13 +4,28 @@
 export type CurrentUser = {
   username: string
   canOverridePrice: boolean
+  canCancelSales: boolean
+  canCancelReturns: boolean
+  canCancelPayments: boolean
+  canEditSales: boolean
+  canEditProducts: boolean
+  canChangeSaleType: boolean
+  canSellWithoutStock: boolean
 }
 
 export function getCurrentUserStub(): CurrentUser {
   // TODO (enable later): derive from session
+  // For now, admin has all permissions
   return {
     username: "admin",
     canOverridePrice: true,
+    canCancelSales: true,
+    canCancelReturns: true,
+    canCancelPayments: true,
+    canEditSales: true,
+    canEditProducts: true,
+    canChangeSaleType: true,
+    canSellWithoutStock: true,
   }
 }
 

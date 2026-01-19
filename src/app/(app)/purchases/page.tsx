@@ -18,9 +18,11 @@ export default function PurchasesPage() {
               Escanear factura
             </Link>
           </Button>
-          <Button asChild variant="secondary">
-            <Link href="/purchases/list">Ver lista de compras</Link>
-          </Button>
+          <div className="relative p-[3px] rounded-lg bg-gradient-to-r from-purple-dark via-purple-primary to-purple-light">
+            <Button asChild variant="secondary" className="rounded-[5px]">
+              <Link href="/purchases/list">Ver lista de compras</Link>
+            </Button>
+          </div>
         </div>
       </div>
       <PurchasesClient />

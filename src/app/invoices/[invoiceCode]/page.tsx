@@ -32,6 +32,7 @@ export default async function InvoicePrintPage({
         items: {
           include: { product: true },
         },
+        cancelledUser: { select: { name: true } },
       },
     }),
   ])
@@ -56,6 +57,16 @@ export default async function InvoicePrintPage({
 
       <PrintToolbar />
       <div className="no-print mb-6 text-sm text-neutral-600">Factura {sale.invoiceCode}</div>
+
+      {sale.cancelledAt && (
+        <div className="mb-4 border-2 border-red-500 bg-red-50 p-4 text-center">
+          <div className="text-xl font-bold text-red-600">⚠️ FACTURA CANCELADA</div>
+          <div className="mt-1 text-sm text-red-600">
+            Cancelada el {fmtDate(sale.cancelledAt)}
+            {sale.cancelledUser && ` por ${sale.cancelledUser.name}`}
+          </div>
+        </div>
+      )}
 
       <header className="flex items-start justify-between gap-6">
         <div className="flex items-start gap-4">

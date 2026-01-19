@@ -99,8 +99,20 @@ export function QuotesListClient() {
           {isLoading ? (
             <div className="py-10 text-center text-sm text-muted-foreground">Cargando…</div>
           ) : filteredQuotes.length === 0 ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              {query ? "No se encontraron cotizaciones" : "No hay cotizaciones"}
+            <div className="py-12">
+              <div className="flex flex-col items-center justify-center text-center">
+                <img
+                  src="/lupa.png"
+                  alt="No hay resultados"
+                  width={192}
+                  height={192}
+                  className="mb-4 opacity-60"
+                />
+                <p className="text-lg font-medium text-muted-foreground">No se encontraron cotizaciones</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {query ? "Intenta con otros términos de búsqueda" : "Aún no se han registrado cotizaciones"}
+                </p>
+              </div>
             </div>
           ) : (
             <div className="rounded-md border">
@@ -125,18 +137,19 @@ export function QuotesListClient() {
                       <TableCell className="text-right">{formatRD(quote.totalCents)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button asChild variant="secondary" size="sm">
+                          <Button asChild className="bg-blue-500 hover:bg-blue-600 text-white" size="sm" title="Ver PDF">
                             <Link href={`/quotes/${quote.quoteCode}`} target="_blank">
                               <FileText className="mr-2 h-4 w-4" /> Ver PDF
                             </Link>
                           </Button>
                           <Button
-                            variant="ghost"
+                            className="bg-red-500 hover:bg-red-600 text-white"
                             size="sm"
                             onClick={() => {
                               setQuoteToDelete(quote)
                               setDeleteDialogOpen(true)
                             }}
+                            title="Eliminar"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

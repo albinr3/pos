@@ -4,6 +4,17 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcItbisIncluded, invoiceCode } from "@/lib/money"
 import { SaleType, PaymentMethod } from "@prisma/client"
+import { Decimal } from "@prisma/client/runtime/library"
+
+// Helper para convertir Decimal a número
+function decimalToNumber(decimal: unknown): number {
+  if (typeof decimal === "number") return decimal
+  if (typeof decimal === "string") return parseFloat(decimal)
+  if (decimal && typeof decimal === "object" && "toNumber" in decimal) {
+    return (decimal as { toNumber: () => number }).toNumber()
+  }
+  return 0
+}
 
 export async function searchProducts(query: string) {
   const q = query.trim()
@@ -26,11 +37,79 @@ export async function searchProducts(query: string) {
       sku: true,
       reference: true,
       priceCents: true,
+      itbisRateBp: true,
       stock: true,
+      imageUrls: true,
+      saleUnit: true,
     },
   })
 
-  return products
+  // Convertir Decimal a número
+  return products.map((p) => ({
+    ...p,
+    stock: decimalToNumber(p.stock),
+  }))
+}
+
+export async function listAllProductsForSale() {
+  const products = await prisma.product.findMany({
+    where: {
+      isActive: true,
+    },
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      reference: true,
+      priceCents: true,
+      itbisRateBp: true,
+      stock: true,
+      imageUrls: true,
+      saleUnit: true,
+    },
+    take: 500,
+  })
+  
+  // Convertir Decimal a número
+  return products.map((p) => ({
+    ...p,
+    stock: decimalToNumber(p.stock),
+  }))
+}
+
+export async function findProductByBarcode(code: string) {
+  const q = code.trim()
+  if (!q) return null
+
+  const product = await prisma.product.findFirst({
+    where: {
+      isActive: true,
+      OR: [
+        { sku: { equals: q, mode: "insensitive" } },
+        { reference: { equals: q, mode: "insensitive" } },
+      ],
+    },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      reference: true,
+      priceCents: true,
+      itbisRateBp: true,
+      stock: true,
+      imageUrls: true,
+      saleUnit: true,
+    },
+  })
+
+  if (!product) return null
+  
+  // Convertir Decimal a número
+  return {
+    ...product,
+    stock: decimalToNumber(product.stock),
+  }
 }
 
 export async function listCustomers() {
@@ -97,11 +176,13 @@ export async function createSale(input: {
 
   const settings = await prisma.companySettings.findUnique({ where: { id: "company" } })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
-  const allowNegativeStock = settings?.allowNegativeStock ?? false
 
   return prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({ where: { username: input.username } })
     if (!user) throw new Error("Usuario inválido")
+    
+    // Usar el permiso del usuario para vender sin stock
+    const allowNegativeStock = user.canSellWithoutStock || user.role === "ADMIN"
 
     // Invoice sequence
     const seq = await tx.invoiceSequence.upsert({
@@ -197,7 +278,7 @@ export async function getSaleById(id: string) {
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true },
+            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true, saleUnit: true },
           },
         },
       },
@@ -225,6 +306,11 @@ export async function cancelSale(id: string, username: string) {
 
     const user = await tx.user.findUnique({ where: { username } })
     if (!user) throw new Error("Usuario inválido")
+
+    // Verificar permiso para cancelar ventas
+    if (!user.canCancelSales && user.role !== "ADMIN") {
+      throw new Error("No tienes permiso para cancelar ventas")
+    }
 
     // Si tiene cuenta por cobrar, verificar que no tenga pagos no cancelados
     if (sale.ar) {
@@ -273,12 +359,24 @@ export async function updateSale(input: {
   type: SaleType
   paymentMethod?: PaymentMethod | null
   items: CartItemInput[]
+  username?: string
 }) {
   if (!input.items.length) throw new Error("La venta no tiene productos.")
 
   const settings = await prisma.companySettings.findUnique({ where: { id: "company" } })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
-  const allowNegativeStock = settings?.allowNegativeStock ?? false
+  
+  // Obtener usuario para verificar permisos
+  let user = null
+  if (input.username) {
+    user = await prisma.user.findUnique({ where: { username: input.username } })
+    if (user && !user.canEditSales && user.role !== "ADMIN") {
+      throw new Error("No tienes permiso para editar ventas")
+    }
+  }
+  
+  // Usar el permiso del usuario para vender sin stock
+  const allowNegativeStock = user ? (user.canSellWithoutStock || user.role === "ADMIN") : false
 
   return prisma.$transaction(async (tx) => {
     const existingSale = await tx.sale.findUnique({

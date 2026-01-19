@@ -332,7 +332,7 @@ export function PurchasesClient() {
                       </Button>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-3">
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="grid gap-1">
                         <div className="text-xs text-muted-foreground">Cantidad</div>
                         <Input

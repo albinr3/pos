@@ -45,11 +45,20 @@ async function main() {
     create: { id: "main", lastNumber: 0 },
   })
 
-  // Generic customer
+  // Generic customer - ensure correct UTF-8 encoding
   await prisma.customer.upsert({
     where: { id: "generic" },
-    update: { name: "Cliente Genérico", isGeneric: true, isActive: true },
-    create: { id: "generic", name: "Cliente Genérico", isGeneric: true, isActive: true },
+    update: { 
+      name: "Cliente Genérico".normalize("NFC"), 
+      isGeneric: true, 
+      isActive: true 
+    },
+    create: { 
+      id: "generic", 
+      name: "Cliente Genérico".normalize("NFC"), 
+      isGeneric: true, 
+      isActive: true 
+    },
   })
 
   // Admin user (username: admin, password: admin)

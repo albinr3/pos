@@ -20,7 +20,7 @@ export function MarketingFooter() {
       <div className="container py-12 md:py-16">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
           <div className="col-span-2 md:col-span-1">
-            <div className="text-lg font-bold mb-2">Tejada POS</div>
+            <div className="text-lg font-bold mb-2">MOVOPos</div>
             <p className="text-sm text-muted-foreground">
               Sistema de punto de venta e inventario para tu negocio.
             </p>
@@ -76,7 +76,7 @@ export function MarketingFooter() {
         </div>
 
         <div className="mt-12 border-t pt-8 text-center text-sm text-muted-foreground">
-          <p>&copy; {new Date().getFullYear()} Tejada Auto Adornos. Todos los derechos reservados.</p>
+          <p>&copy; {new Date().getFullYear()} MOVOPos. Todos los derechos reservados.</p>
         </div>
       </div>
     </footer>

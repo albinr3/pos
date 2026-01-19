@@ -9,7 +9,15 @@ interface ShippingLabelProps {
   customerProvince: string | null
   senderName: string
   packageCount: number
+  labelSize?: string // "4x6", "4x4", "6x4"
   onPrintComplete?: () => void
+}
+
+// Map label size strings to CSS page sizes
+const SHIPPING_LABEL_SIZES: Record<string, { width: string; height: string }> = {
+  "4x6": { width: "4in", height: "6in" },
+  "4x4": { width: "4in", height: "4in" },
+  "6x4": { width: "6in", height: "4in" },
 }
 
 export function ShippingLabel({
@@ -19,6 +27,7 @@ export function ShippingLabel({
   customerProvince,
   senderName,
   packageCount,
+  labelSize = "4x6",
   onPrintComplete,
 }: ShippingLabelProps) {
   const handlePrint = () => {
@@ -39,6 +48,10 @@ export function ShippingLabel({
     return () => window.removeEventListener("afterprint", handleAfterPrint)
   }, [onPrintComplete])
 
+  const size = SHIPPING_LABEL_SIZES[labelSize] || SHIPPING_LABEL_SIZES["4x6"]
+  const isCompact = labelSize === "4x4"
+  const isHorizontal = labelSize === "6x4"
+
   return (
     <>
       <style jsx global>{`
@@ -57,8 +70,8 @@ export function ShippingLabel({
             width: 100%;
           }
           @page {
-            size: 4in 6in;
-            margin: 0.3in;
+            size: ${size.width} ${size.height};
+            margin: 0.2in;
           }
         }
       `}</style>
@@ -115,9 +128,9 @@ export function ShippingLabel({
           </div>
         </div>
       </div>
-      <div className="shipping-label-print hidden print:block print:p-4 print:max-w-[4in] print:mx-auto">
-        <div className="print:border print:border-gray-800 print:p-4 print:rounded">
-          <div className="print:space-y-3">
+      <div className={`shipping-label-print hidden print:block print:p-3 print:mx-auto`} style={{ maxWidth: size.width }}>
+        <div className={`print:border print:border-gray-800 print:rounded ${isCompact || isHorizontal ? "print:p-2" : "print:p-4"}`}>
+          <div className={`${isCompact || isHorizontal ? "print:space-y-2" : "print:space-y-3"}`}>
             <div>
               <div className="print:text-xs print:text-gray-600 print:uppercase print:mb-1">Destinatario</div>
               <div className="print:font-bold print:text-lg print:border-b print:border-gray-300 print:pb-1">{customerName}</div>

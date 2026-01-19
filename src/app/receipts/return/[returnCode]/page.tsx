@@ -31,6 +31,11 @@ export default async function ReturnReceiptPage({
             name: true,
           },
         },
+        cancelledUser: {
+          select: {
+            name: true,
+          },
+        },
         items: {
           include: {
             product: true,
@@ -70,6 +75,16 @@ export default async function ReturnReceiptPage({
         <div>{company?.address ?? "Carretera la Rosa, Moca"}</div>
         <div>Tel: {company?.phone ?? "829-475-1454"}</div>
       </div>
+
+      {returnRecord.cancelledAt && (
+        <div className="my-2 border-2 border-red-500 bg-red-50 p-2 text-center">
+          <div className="text-[14px] font-bold text-red-600">⚠️ DEVOLUCIÓN CANCELADA</div>
+          <div className="text-[11px] text-red-600">
+            Cancelada el {fmtDate(returnRecord.cancelledAt)}
+            {returnRecord.cancelledUser && ` por ${returnRecord.cancelledUser.name}`}
+          </div>
+        </div>
+      )}
 
       <div className="my-2 border-t border-b border-dashed py-2">
         <div className="text-center text-[14px] font-bold">DEVOLUCIÓN</div>

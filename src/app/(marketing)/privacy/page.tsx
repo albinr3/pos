@@ -1,6 +1,6 @@
 export const metadata = {
-  title: "Política de Privacidad | Tejada POS",
-  description: "Política de privacidad de Tejada POS",
+  title: "Política de Privacidad | MOVOPos",
+  description: "Política de privacidad de MOVOPos",
 }
 
 export default function PrivacyPage() {

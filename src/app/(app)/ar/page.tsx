@@ -12,11 +12,13 @@ export default function AccountsReceivablePage() {
           <h1 className="text-2xl font-semibold tracking-tight">Cuentas por cobrar</h1>
           <p className="text-sm text-muted-foreground">Saldar facturas o registrar abonos parciales.</p>
         </div>
-        <Button asChild variant="secondary">
-          <Link href="/payments/list">
-            <Receipt className="mr-2 h-4 w-4" /> Ver Recibos
-          </Link>
-        </Button>
+        <div className="relative p-[3px] rounded-lg bg-gradient-to-r from-purple-dark via-purple-primary to-purple-light">
+          <Button asChild variant="secondary" className="rounded-[5px]">
+            <Link href="/payments/list">
+              <Receipt className="mr-2 h-4 w-4" /> Ver Recibos
+            </Link>
+          </Button>
+        </div>
       </div>
       <ARClient />
     </div>

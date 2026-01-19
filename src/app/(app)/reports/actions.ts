@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db"
 import { endOfDay, parseDateParam, startOfDay } from "@/lib/dates"
+import { Decimal } from "@prisma/client/runtime/library"
 
 export async function getSalesReport(input: { from?: string; to?: string }) {
   const fromDate = parseDateParam(input.from) ?? new Date()
@@ -195,14 +196,26 @@ export async function getInventoryReport() {
     },
   })
 
+  // Convertir Decimal a número para serialización
+  const serializedProducts = products.map((product) => {
+    const stock = product.stock instanceof Decimal ? product.stock.toNumber() : Number(product.stock)
+    return {
+      ...product,
+      stock,
+      minStock: product.minStock instanceof Decimal ? product.minStock.toNumber() : Number(product.minStock),
+      createdAt: product.createdAt instanceof Date ? product.createdAt.toISOString() : product.createdAt,
+      updatedAt: product.updatedAt instanceof Date ? product.updatedAt.toISOString() : product.updatedAt,
+    }
+  })
+
   // Calcular el costo total del inventario: suma de (costo * stock) para cada producto
-  const totalInventoryCostCents = products.reduce((total, product) => {
+  const totalInventoryCostCents = serializedProducts.reduce((total, product) => {
     return total + (product.costCents * product.stock)
   }, 0)
 
   return {
-    products,
+    products: serializedProducts,
     totalInventoryCostCents,
-    count: products.length,
+    count: serializedProducts.length,
   }
 }

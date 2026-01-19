@@ -32,7 +32,7 @@ export function WorksSection() {
             Nuestros Trabajos
           </h2>
           <p className="mt-6 text-xl text-white/90">
-            Ejemplos de negocios que ya están usando Tejada POS
+            Ejemplos de negocios que ya están usando MOVOPos
           </p>
         </div>
 

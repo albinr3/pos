@@ -1,6 +1,6 @@
 export const metadata = {
-  title: "Términos y Condiciones | Tejada POS",
-  description: "Términos y condiciones de uso de Tejada POS",
+  title: "Términos y Condiciones | MOVOPos",
+  description: "Términos y condiciones de uso de MOVOPos",
 }
 
 export default function TermsPage() {
@@ -13,7 +13,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-semibold mt-8 mb-4">1. Aceptación de los Términos</h2>
             <p className="text-muted-foreground">
-              Al acceder y utilizar Tejada POS, aceptas estar sujeto a estos términos y condiciones de uso.
+              Al acceder y utilizar MOVOPos, aceptas estar sujeto a estos términos y condiciones de uso.
               Si no estás de acuerdo con alguna parte de estos términos, no debes utilizar el servicio.
             </p>
           </section>
@@ -21,7 +21,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-semibold mt-8 mb-4">2. Uso del Servicio</h2>
             <p className="text-muted-foreground">
-              Tejada POS es un sistema de punto de venta e inventario. Te otorgamos una licencia limitada,
+              MOVOPos es un sistema de punto de venta e inventario. Te otorgamos una licencia limitada,
               no exclusiva y no transferible para usar el servicio de acuerdo con estos términos.
             </p>
           </section>
@@ -53,7 +53,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-semibold mt-8 mb-4">6. Limitación de Responsabilidad</h2>
             <p className="text-muted-foreground">
-              En la máxima medida permitida por la ley, Tejada POS no será responsable de daños indirectos,
+              En la máxima medida permitida por la ley, MOVOPos no será responsable de daños indirectos,
               incidentales o consecuentes derivados del uso o la imposibilidad de usar el servicio.
             </p>
           </section>

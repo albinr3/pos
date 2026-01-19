@@ -4,6 +4,7 @@ import { formatRD } from "@/lib/money"
 
 import { ReportDateRangeFilter } from "../filter-client"
 import { getProfitReport } from "../actions"
+import { PrintButton } from "@/components/app/print-button"
 
 export default async function ProfitReportPage({
   searchParams,
@@ -24,7 +25,10 @@ export default async function ProfitReportPage({
           <h1 className="text-2xl font-semibold tracking-tight">Estado de Resultados (Ganancia)</h1>
           <p className="text-sm text-muted-foreground">Ganancia calculada por período.</p>
         </div>
-        <ReportDateRangeFilter basePath="/reports/profit" defaultLastDays={30} />
+        <div className="flex items-center gap-2">
+          <PrintButton />
+          <ReportDateRangeFilter basePath="/reports/profit" defaultLastDays={30} />
+        </div>
       </div>
 
       <Card>

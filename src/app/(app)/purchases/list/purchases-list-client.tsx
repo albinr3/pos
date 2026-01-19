@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
-import { Edit, ShoppingBag, Trash2, Search } from "lucide-react"
+import { Edit, ShoppingBag, Trash2, Search, Printer } from "lucide-react"
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
@@ -213,12 +213,34 @@ export function PurchasesListClient() {
                     <TableCell className="text-right font-medium">{formatRD(p.totalCents)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          asChild
+                          size="icon"
+                          className="bg-green-500 hover:bg-green-600 text-white"
+                          title="Reimprimir"
+                        >
+                          <Link href={`/receipts/purchase/${p.id}`} target="_blank" aria-label="Reimprimir">
+                            <Printer className="h-4 w-4" />
+                          </Link>
+                        </Button>
                         {!p.cancelledAt && (
                           <>
-                            <Button variant="secondary" size="icon" onClick={() => loadPurchaseForEdit(p.id)} aria-label="Editar">
+                            <Button
+                              className="bg-blue-500 hover:bg-blue-600 text-white"
+                              size="icon"
+                              onClick={() => loadPurchaseForEdit(p.id)}
+                              aria-label="Editar"
+                              title="Editar"
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" onClick={() => handleCancel(p.id)} aria-label="Cancelar">
+                            <Button
+                              className="bg-red-500 hover:bg-red-600 text-white"
+                              size="icon"
+                              onClick={() => handleCancel(p.id)}
+                              aria-label="Cancelar"
+                              title="Cancelar"
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </>
@@ -231,10 +253,22 @@ export function PurchasesListClient() {
                   </TableRow>
                 ))}
 
-                {filteredPurchases.length === 0 && (
+                {!isLoading && filteredPurchases.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
-                      {isLoading ? "Cargando…" : query ? "No se encontraron compras" : "No hay compras registradas"}
+                    <TableCell colSpan={5} className="py-12">
+                      <div className="flex flex-col items-center justify-center text-center">
+                        <img
+                          src="/lupa.png"
+                          alt="No hay resultados"
+                          width={192}
+                          height={192}
+                          className="mb-4 opacity-60"
+                        />
+                        <p className="text-lg font-medium text-muted-foreground">No se encontraron compras</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {query ? "Intenta con otros términos de búsqueda" : "Aún no se han registrado compras"}
+                        </p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}

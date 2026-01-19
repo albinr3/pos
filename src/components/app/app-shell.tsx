@@ -1,7 +1,10 @@
 "use client"
 
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { PropsWithChildren } from "react"
+import { useTheme } from "next-themes"
+import { useEffect, useState } from "react"
 import {
   BarChart3,
   CreditCard,
@@ -46,33 +49,64 @@ const nav = [
 ]
 
 export function AppShell({ children }: PropsWithChildren) {
+  const pathname = usePathname()
+  const { theme, resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  const [companyAddress, setCompanyAddress] = useState("Carretera la Rosa, Moca")
+  const [companyPhone, setCompanyPhone] = useState("829-475-1454")
+  
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    // Fetch company settings
+    fetch("/api/company-settings")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.address) setCompanyAddress(data.address)
+        if (data.phone) setCompanyPhone(data.phone)
+      })
+      .catch(() => {
+        // Fallback to default
+      })
+  }, [])
+  
+  // Determinar el tema actual (resuelve "system" a "light" o "dark")
+  const currentTheme = resolvedTheme || theme || "light"
+  const logoPath = currentTheme === "light" ? "/movoLogoDark.png" : "/movoLogo.png"
+  
   return (
     <div className="min-h-dvh bg-background">
       <div className="grid min-h-dvh grid-cols-1 md:grid-cols-[260px_1fr]">
         <aside className="hidden border-r bg-card md:block">
           <div className="flex h-dvh flex-col">
             <div className="px-6 py-5">
-              <div className="text-sm font-semibold text-muted-foreground">Tejada Auto Adornos</div>
-              <div className="text-lg font-semibold leading-6">POS & Inventario</div>
+              <div className="flex items-center justify-center">
+                {mounted && <img src={logoPath} alt="Logo" className="h-auto w-full max-h-16 object-contain" />}
+              </div>
             </div>
             <Separator />
             <nav className="flex-1 space-y-1 px-3 py-3">
-              {nav.map((item) => (
-                <Button
-                  key={item.href}
-                  asChild
-                  variant="ghost"
-                  className={cn(
-                    "w-full justify-start gap-2 text-base",
-                    item.href === "/sales" && "font-semibold"
-                  )}
-                >
-                  <Link href={item.href}>
-                    <item.icon className="h-5 w-5" />
-                    {item.label}
-                  </Link>
-                </Button>
-              ))}
+              {nav.map((item) => {
+                const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
+                return (
+                  <Button
+                    key={item.href}
+                    asChild
+                    variant="ghost"
+                    className={cn(
+                      "w-full justify-start gap-2 text-base transition-colors",
+                      isActive && "bg-purple-primary/10 text-purple-primary font-semibold hover:bg-purple-primary/20 hover:text-purple-primary"
+                    )}
+                  >
+                    <Link href={item.href}>
+                      <item.icon className="h-5 w-5" />
+                      {item.label}
+                    </Link>
+                  </Button>
+                )
+              })}
             </nav>
             <Separator />
             <div className="px-6 py-4 text-xs text-muted-foreground">
@@ -89,27 +123,39 @@ export function AppShell({ children }: PropsWithChildren) {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="w-[280px] p-0">
+              <SheetContent side="left" className="w-[280px] p-0 flex flex-col">
                 <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
-                <div className="px-6 py-5">
-                  <div className="text-sm font-semibold text-muted-foreground">Tejada Auto Adornos</div>
-                  <div className="text-lg font-semibold leading-6">POS & Inventario</div>
+                <div className="px-6 py-5 flex-shrink-0">
+                  <div className="flex items-center justify-center">
+                    {mounted && <img src={logoPath} alt="Logo" className="h-auto w-full max-h-16 object-contain" />}
+                  </div>
                 </div>
-                <Separator />
-                <nav className="space-y-1 px-3 py-3">
-                  {nav.map((item) => (
-                    <Button key={item.href} asChild variant="ghost" className="w-full justify-start gap-2 text-base">
-                      <SheetClose asChild>
-                        <Link href={item.href}>
-                          <item.icon className="h-5 w-5" />
-                          {item.label}
-                        </Link>
-                      </SheetClose>
-                    </Button>
-                  ))}
+                <Separator className="flex-shrink-0" />
+                <nav className="flex-1 space-y-1 px-3 py-3 overflow-y-auto">
+                  {nav.map((item) => {
+                    const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
+                    return (
+                      <Button 
+                        key={item.href} 
+                        asChild 
+                        variant="ghost" 
+                        className={cn(
+                          "w-full justify-start gap-2 text-base transition-colors",
+                          isActive && "bg-purple-primary/10 text-purple-primary font-semibold hover:bg-purple-primary/20 hover:text-purple-primary"
+                        )}
+                      >
+                        <SheetClose asChild>
+                          <Link href={item.href}>
+                            <item.icon className="h-5 w-5" />
+                            {item.label}
+                          </Link>
+                        </SheetClose>
+                      </Button>
+                    )
+                  })}
                 </nav>
-                <Separator />
-                <div className="px-6 py-4 text-xs text-muted-foreground">Local (1 PC) · RD$ · ITBIS incluido</div>
+                <Separator className="flex-shrink-0" />
+                <div className="px-6 py-4 text-xs text-muted-foreground flex-shrink-0">Local (1 PC) · RD$ · ITBIS incluido</div>
               </SheetContent>
             </Sheet>
 
@@ -117,7 +163,7 @@ export function AppShell({ children }: PropsWithChildren) {
             <div className="ml-auto flex items-center gap-3">
               <ThemeToggle />
               <div className="hidden text-xs text-muted-foreground md:block">
-                Carretera la Rosa, Moca · 829-475-1454
+                {companyAddress} · {companyPhone}
               </div>
             </div>
           </header>

@@ -20,6 +20,7 @@ Ruta: `/sales`
   - **Descripción**
   - **Código (SKU)**
   - **Referencia**
+  - **Código de barras** (escaneo automático)
 - Carrito con cantidades y total acumulado
 - Venta **Contado** o **Crédito**
 - Si es crédito: se crea automáticamente la **Cuenta por Cobrar**
@@ -43,7 +44,16 @@ Ruta: `/products`
   - Precio (ITBIS incluido)
   - Costo
   - Stock y Stock mínimo
+  - **Unidades de medida**: Unidad de compra y unidad de venta (pueden ser diferentes)
+    - Unidades disponibles: UNIDAD, KG, LIBRA, GRAMO, LITRO, ML, GALON, METRO, CM, PIE
+    - Productos con medidas permiten decimales (ej: 2.5 kg)
+    - Productos por unidad solo permiten enteros
+  - **Imágenes del producto** (hasta 3 imágenes, máximo 2MB cada una)
   - **Asociación con proveedor** (opcional)
+- **Impresión de etiquetas con código de barras** (formato CODE128)
+  - Vista previa antes de imprimir
+  - Tamaño optimizado para impresoras de etiquetas (4" x 2")
+  - Incluye nombre, referencia, código de barras y precio
 - Desactivar productos
 
 ### Compras
@@ -124,6 +134,12 @@ Ruta: `/reports`
     - Impuestos
     - Utilidad neta
     - Cuentas por cobrar pendientes
+- **Reporte de inventario**: `/reports/inventory`
+  - Listado completo de productos activos
+  - Muestra: Producto, SKU, Proveedor, Stock, Costo unitario, Costo total
+  - **Exportación a Excel** (formato .xlsx)
+  - **Exportación a PDF** (formato horizontal)
+  - Total de inventario en costo calculado automáticamente
 
 ### Cotizaciones
 Ruta: `/quotes`
@@ -131,7 +147,11 @@ Ruta: `/quotes`
 - Similar a ventas pero sin afectar inventario
 - **Fecha de validez** opcional
 - **Costo de envío** opcional
-- **Compartir cotización** (genera URL única)
+- **Compartir cotización**:
+  - URL única para cada cotización
+  - **Compartir por WhatsApp** (con número de teléfono opcional)
+  - **Descargar como PDF** (impresión directa)
+  - En dispositivos móviles: uso de Web Share API nativa
 - Ver todas las cotizaciones: `/quotes/list`
 - Visualización e impresión: `/quotes/[quoteCode]`
 
@@ -224,7 +244,9 @@ CSS incluye:
 ### Etiquetas de Envío
 Ruta: `/shipping-labels`
 - Genera etiquetas para envío de pedidos
-- Incluye información del cliente y productos
+- Incluye información del cliente (nombre, dirección, teléfono, provincia)
+- Permite especificar remitente y cantidad de bultos
+- Formato optimizado para impresión
 
 ---
 
@@ -235,6 +257,8 @@ Ruta: `/shipping-labels`
 - **Gráficos**: Recharts
 - **IA/OCR**: OpenAI Vision API (para extracción de datos de facturas)
 - **Temas**: next-themes (modo claro/oscuro/sistema)
+- **Códigos de barras**: JsBarcode (generación de códigos CODE128)
+- **Exportación**: xlsx (Excel), jsPDF + jsPDF-autotable (PDF)
 
 ---
 
@@ -529,6 +553,7 @@ Hay scaffolding comentado para activarlo más adelante.
 - Reporte de Ventas: `/reports/sales`
 - Reporte de Cobros: `/reports/payments`
 - Reporte de Ganancia: `/reports/profit`
+- Reporte de Inventario: `/reports/inventory`
 
 ---
 
@@ -555,7 +580,16 @@ Hay scaffolding comentado para activarlo más adelante.
 ### Funcionalidades de Productos
 - **ID incremental** (productId) para referencia fácil
 - **Asociación con proveedores**
-- **Búsqueda por múltiples campos**: nombre, SKU, referencia, productId
+- **Búsqueda por múltiples campos**: nombre, SKU, referencia, productId, código de barras
+- **Unidades de medida**: Soporte para productos por unidad o con medidas (peso, volumen, longitud)
+  - Unidades de compra y venta independientes
+  - Validación automática de decimales según tipo de unidad
+- **Imágenes**: Hasta 3 imágenes por producto (máximo 2MB cada una)
+  - Upload con validación de tipo y tamaño
+  - Vista previa y eliminación individual
+- **Etiquetas de código de barras**: Impresión de etiquetas con código CODE128
+  - Vista previa antes de imprimir
+  - Incluye nombre, referencia, código de barras y precio
 
 ### Funcionalidades de Compras
 - **Descuentos por proveedor** (configurables en proveedor)
@@ -564,6 +598,9 @@ Hay scaffolding comentado para activarlo más adelante.
 
 ### Funcionalidades de Cotizaciones
 - **Compartir cotizaciones** con URL única
+  - Compartir por WhatsApp (con número opcional)
+  - Descargar como PDF
+  - Web Share API en dispositivos móviles
 - **Fecha de validez** configurable
 - **No afecta inventario** (solo documento de referencia)
 - Visualización e impresión profesional
@@ -588,6 +625,23 @@ Hay scaffolding comentado para activarlo más adelante.
 
 ### Accesibilidad
 - ✅ Corrección de accesibilidad: Todos los diálogos tienen `DialogTitle` requerido para lectores de pantalla
+
+### Productos
+- ✅ **Sistema de unidades de medida** implementado (UNIDAD, KG, LIBRA, GRAMO, LITRO, ML, GALON, METRO, CM, PIE)
+- ✅ **Unidades de compra y venta independientes** para cada producto
+- ✅ **Validación automática de decimales** según tipo de unidad
+- ✅ **Imágenes de productos** (hasta 3 por producto, máximo 2MB cada una)
+- ✅ **Etiquetas de código de barras** con formato CODE128
+- ✅ **Búsqueda por código de barras** en el módulo de ventas
+
+### Reportes
+- ✅ **Reporte de inventario** con exportación a Excel y PDF
+- ✅ Cálculo automático del costo total de inventario
+
+### Cotizaciones
+- ✅ **Compartir por WhatsApp** con número de teléfono opcional
+- ✅ **Descarga como PDF** desde la visualización de cotizaciones
+- ✅ Soporte para Web Share API en dispositivos móviles
 
 ---
 
@@ -616,5 +670,10 @@ Hay scaffolding comentado para activarlo más adelante.
 
 ### Archivos y Uploads
 - **Logos**: Se guardan en `public/uploads/logos/`
-- **Tamaño máximo**: 5MB
-- **Formatos**: Cualquier formato de imagen válido
+  - Tamaño máximo: 5MB
+  - Formatos: Cualquier formato de imagen válido
+- **Imágenes de productos**: Se guardan en `public/uploads/products/`
+  - Hasta 3 imágenes por producto
+  - Tamaño máximo: 2MB por imagen
+  - Formatos: Cualquier formato de imagen válido
+  - Nombres únicos generados automáticamente

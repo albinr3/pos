@@ -92,8 +92,21 @@ export function CustomersClient() {
     }
   }
 
+  const totalCustomers = items.length
+
   return (
     <div className="grid gap-6">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border-l-4 border-l-purple-primary bg-purple-50 dark:bg-purple-950/20">
+          <CardHeader>
+            <CardTitle className="text-sm text-muted-foreground">Total de clientes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-purple-primary">{totalCustomers}</div>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader className="flex-row items-center justify-between">
           <div>
@@ -119,7 +132,7 @@ export function CustomersClient() {
                   <Label>Nombre</Label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="grid gap-2">
                     <Label>Teléfono (opcional)</Label>
                     <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
@@ -168,8 +181,8 @@ export function CustomersClient() {
             <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar cliente" />
           </div>
 
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[800px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Nombre</TableHead>
@@ -196,16 +209,22 @@ export function CustomersClient() {
                       ) : (
                         <div className="flex justify-end gap-2">
                           <Button
-                            variant="secondary"
+                            className="bg-blue-500 hover:bg-blue-600 text-white"
                             size="icon"
                             onClick={() => {
                               resetForm(c)
                               setOpen(true)
                             }}
+                            title="Editar"
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" onClick={() => onDelete(c.id)}>
+                          <Button
+                            className="bg-red-500 hover:bg-red-600 text-white"
+                            size="icon"
+                            onClick={() => onDelete(c.id)}
+                            title="Desactivar"
+                          >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -214,10 +233,22 @@ export function CustomersClient() {
                   </TableRow>
                 ))}
 
-                {items.length === 0 && (
+                {!isLoading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                      {isLoading ? "Cargando…" : "No hay clientes"}
+                    <TableCell colSpan={6} className="py-12">
+                      <div className="flex flex-col items-center justify-center text-center">
+                        <img
+                          src="/lupa.png"
+                          alt="No hay resultados"
+                          width={192}
+                          height={192}
+                          className="mb-4 opacity-60"
+                        />
+                        <p className="text-lg font-medium text-muted-foreground">No se encontraron clientes</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {query ? "Intenta con otros términos de búsqueda" : "Aún no se han registrado clientes"}
+                        </p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}

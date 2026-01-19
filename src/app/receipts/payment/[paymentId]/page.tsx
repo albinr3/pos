@@ -33,6 +33,7 @@ export default async function PaymentReceiptPage({
           },
         },
         user: true,
+        cancelledUser: { select: { name: true } },
       },
     }),
   ])
@@ -71,6 +72,16 @@ export default async function PaymentReceiptPage({
         <div>{company?.address ?? "Carretera la Rosa, Moca"}</div>
         <div>Tel: {company?.phone ?? "829-475-1454"}</div>
       </div>
+
+      {payment.cancelledAt && (
+        <div className="my-2 border-2 border-red-500 bg-red-50 p-2 text-center">
+          <div className="text-[14px] font-bold text-red-600">⚠️ RECIBO CANCELADO</div>
+          <div className="text-[11px] text-red-600">
+            Cancelado el {fmtDate(payment.cancelledAt)}
+            {payment.cancelledUser && ` por ${payment.cancelledUser.name}`}
+          </div>
+        </div>
+      )}
 
       <div className="my-2 border-t border-b border-dashed py-2">
         <div className="text-center font-bold">RECIBO DE PAGO</div>

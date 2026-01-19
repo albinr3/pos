@@ -109,11 +109,17 @@ export function PaymentsListClient() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         {!p.cancelledAt && (
-                          <Button variant="ghost" size="icon" onClick={() => handleCancel(p.id)} aria-label="Cancelar">
+                          <Button
+                            className="bg-red-500 hover:bg-red-600 text-white"
+                            size="icon"
+                            onClick={() => handleCancel(p.id)}
+                            aria-label="Cancelar"
+                            title="Cancelar"
+                          >
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         )}
-                        <Button asChild size="icon" variant="outline">
+                        <Button asChild size="icon" className="bg-blue-500 hover:bg-blue-600 text-white" title="Ver recibo">
                           <Link href={`/receipts/payment/${p.id}`} target="_blank" aria-label="Ver recibo">
                             <Printer className="h-4 w-4" />
                           </Link>
@@ -126,10 +132,22 @@ export function PaymentsListClient() {
                   </TableRow>
                 ))}
 
-                {filteredPayments.length === 0 && (
+                {!isLoading && filteredPayments.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                      {isLoading ? "Cargando…" : query ? "No se encontraron recibos" : "No hay recibos registrados"}
+                    <TableCell colSpan={6} className="py-12">
+                      <div className="flex flex-col items-center justify-center text-center">
+                        <img
+                          src="/lupa.png"
+                          alt="No hay resultados"
+                          width={192}
+                          height={192}
+                          className="mb-4 opacity-60"
+                        />
+                        <p className="text-lg font-medium text-muted-foreground">No se encontraron recibos</p>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          {query ? "Intenta con otros términos de búsqueda" : "Aún no se han registrado recibos"}
+                        </p>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}

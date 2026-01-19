@@ -43,7 +43,7 @@ export default async function QuotePage({
 
   if (!quote) return notFound()
 
-  const logoUrl = company?.logoUrl || "/logo-placeholder.svg"
+  const logoUrl = company?.logoUrl || "/movoLogo.png"
 
   return (
     <div className="mx-auto max-w-[850px] bg-white p-10 text-black">

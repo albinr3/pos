@@ -7,6 +7,7 @@ import { formatRD } from "@/lib/money"
 
 import { ReportDateRangeFilter } from "../filter-client"
 import { getPaymentsReport } from "../actions"
+import { PrintButton } from "@/components/app/print-button"
 
 export default async function PaymentsReportPage({
   searchParams,
@@ -23,7 +24,10 @@ export default async function PaymentsReportPage({
           <h1 className="text-2xl font-semibold tracking-tight">Reporte de cobros</h1>
           <p className="text-sm text-muted-foreground">Abonos registrados por rango.</p>
         </div>
-        <ReportDateRangeFilter basePath="/reports/payments" />
+        <div className="flex items-center gap-2">
+          <PrintButton />
+          <ReportDateRangeFilter basePath="/reports/payments" />
+        </div>
       </div>
 
       <Card>
@@ -31,8 +35,8 @@ export default async function PaymentsReportPage({
           <CardTitle>Total: {formatRD(data.totalCents)} ({data.count} pagos)</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="min-w-[600px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Factura</TableHead>
