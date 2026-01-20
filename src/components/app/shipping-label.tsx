@@ -1,6 +1,8 @@
 "use client"
 
 import { useEffect } from "react"
+import { useBluetoothPrint } from "@/hooks/use-bluetooth-print"
+import { Bluetooth, Printer } from "lucide-react"
 
 interface ShippingLabelProps {
   customerName: string
@@ -30,23 +32,9 @@ export function ShippingLabel({
   labelSize = "4x6",
   onPrintComplete,
 }: ShippingLabelProps) {
-  const handlePrint = () => {
-    window.print()
-    if (onPrintComplete) {
-      setTimeout(onPrintComplete, 100)
-    }
-  }
-
-  useEffect(() => {
-    const handleAfterPrint = () => {
-      if (onPrintComplete) {
-        onPrintComplete()
-      }
-    }
-
-    window.addEventListener("afterprint", handleAfterPrint)
-    return () => window.removeEventListener("afterprint", handleAfterPrint)
-  }, [onPrintComplete])
+  const { handlePrint, isPrinting, isConnecting, isBluetoothSupported } = useBluetoothPrint({
+    onPrintComplete,
+  })
 
   const size = SHIPPING_LABEL_SIZES[labelSize] || SHIPPING_LABEL_SIZES["4x6"]
   const isCompact = labelSize === "4x4"
@@ -119,11 +107,25 @@ export function ShippingLabel({
             >
               Cancelar
             </button>
+            {isBluetoothSupported ? (
+              <button
+                onClick={() => handlePrint(true)}
+                disabled={isPrinting || isConnecting}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                title="Imprimir a impresora Bluetooth"
+              >
+                <Bluetooth className="h-3 w-3" />
+                {isConnecting ? "Conectando..." : isPrinting ? "Imprimiendo..." : "Bluetooth"}
+              </button>
+            ) : null}
             <button
-              onClick={handlePrint}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+              onClick={() => handlePrint(false)}
+              disabled={isPrinting || isConnecting}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              title="Imprimir (método estándar)"
             >
-              Imprimir
+              <Printer className="h-3 w-3" />
+              {isPrinting ? "Imprimiendo..." : "Imprimir"}
             </button>
           </div>
         </div>

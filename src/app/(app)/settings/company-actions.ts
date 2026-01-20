@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 
 export async function updateCompanyInfo(input: {
   name: string
@@ -9,16 +10,17 @@ export async function updateCompanyInfo(input: {
   address: string
   logoUrl?: string | null
 }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const name = input.name.trim()
   const phone = input.phone.trim()
   const address = input.address.trim()
 
   if (!name) throw new Error("El nombre es requerido")
-  if (!phone) throw new Error("El teléfono es requerido")
-  if (!address) throw new Error("La dirección es requerida")
 
   await prisma.companySettings.upsert({
-    where: { id: "company" },
+    where: { accountId: user.accountId },
     update: { 
       name, 
       phone, 
@@ -26,7 +28,7 @@ export async function updateCompanyInfo(input: {
       ...(input.logoUrl !== undefined && { logoUrl: input.logoUrl }),
     },
     create: {
-      id: "company",
+      accountId: user.accountId,
       name,
       phone,
       address,
@@ -37,7 +39,6 @@ export async function updateCompanyInfo(input: {
   })
 
   revalidatePath("/settings")
-  // invoices read company settings
   revalidatePath("/invoices")
   revalidatePath("/quotes")
 }

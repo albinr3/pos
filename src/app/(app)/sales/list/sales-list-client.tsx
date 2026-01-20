@@ -353,7 +353,7 @@ export function SalesListClient() {
                     value={customerId || "generic"}
                     onChange={(e) => setCustomerId(e.target.value === "generic" ? null : e.target.value)}
                   >
-                    <option value="generic">Cliente Genérico</option>
+                    <option value="generic">Cliente general</option>
                     {customers
                       .filter((c) => !c.isGeneric)
                       .map((c) => (

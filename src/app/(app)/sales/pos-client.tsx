@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { SaleType, PaymentMethod, UnitType } from "@prisma/client"
-import { Plus, Search, Trash2, Grid3x3, List, AlertCircle } from "lucide-react"
+import { Plus, Search, Trash2, Grid3x3, List, AlertCircle, X, WifiOff } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 
@@ -17,6 +17,19 @@ import { Switch } from "@/components/ui/switch"
 import { formatRD, calcItbisIncluded, toCents } from "@/lib/money"
 import { formatQty, formatQtyNumber, parseQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { toast } from "@/hooks/use-toast"
+import { useOnlineStatus } from "@/hooks/use-online-status"
+import {
+  savePendingSale,
+  searchProductsCache,
+  getProductsCache,
+  getCustomersCache,
+  getPendingCounts,
+} from "@/lib/indexed-db"
+import { syncPendingData } from "@/lib/sync-manager"
+import {
+  syncProductsToIndexedDB,
+  syncCustomersToIndexedDB,
+} from "@/app/(app)/sync/actions"
 
 import { getCurrentUserStub } from "@/lib/auth-stub"
 
@@ -40,7 +53,14 @@ type CartItem = {
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
 
 export function PosClient() {
+  const isOnline = useOnlineStatus()
+  const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState("")
+  
+  // Evitar error de hidratación: solo mostrar indicador después de montar
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   const [results, setResults] = useState<ProductResult[]>([])
   const [isSearching, startSearch] = useTransition()
   const [viewMode, setViewMode] = useState<"list" | "grid">("list")
@@ -51,6 +71,7 @@ export function PosClient() {
   const [customerId, setCustomerId] = useState<string | null>("generic")
   const [saleType, setSaleType] = useState<SaleType>(SaleType.CONTADO)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
+  const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [shippingInput, setShippingInput] = useState("")
@@ -60,6 +81,9 @@ export function PosClient() {
   const [isSaving, startSave] = useTransition()
   const [showChangeDialog, setShowChangeDialog] = useState(false)
   const [amountPaidInput, setAmountPaidInput] = useState("")
+  const [showSplitPaymentDialog, setShowSplitPaymentDialog] = useState(false)
+  const [paymentSplits, setPaymentSplits] = useState<Array<{method: PaymentMethod, amountCents: number}>>([])
+  const [editingPaymentAmounts, setEditingPaymentAmounts] = useState<Record<number, string>>({})
   // Estado temporal para valores de cantidad en edición (productId -> string)
   const [editingQuantities, setEditingQuantities] = useState<Record<string, string>>({})
   const [showNavigationDialog, setShowNavigationDialog] = useState(false)
@@ -74,8 +98,30 @@ export function PosClient() {
 
   useEffect(() => {
     const loadInitialData = async () => {
-      // Cargar clientes
-      listCustomers().then(setCustomers).catch(() => {})
+      // Pre-cargar datos a IndexedDB si hay conexión
+      if (isOnline) {
+        try {
+          const [productsData, customersData] = await Promise.all([
+            syncProductsToIndexedDB(),
+            syncCustomersToIndexedDB(),
+          ])
+          
+          // Guardar en IndexedDB
+          const { saveProductsCache, saveCustomersCache } = await import("@/lib/indexed-db")
+          await saveProductsCache(productsData)
+          await saveCustomersCache(customersData)
+        } catch (error) {
+          console.error("Error pre-cargando datos:", error)
+        }
+      }
+
+      // Cargar clientes (desde servidor o cache)
+      if (isOnline) {
+        listCustomers().then(setCustomers).catch(() => {})
+      } else {
+        // Cargar desde cache offline
+        getCustomersCache().then(setCustomers).catch(() => {})
+      }
       
       // Cargar preferencia de vista desde localStorage
       const savedViewMode = localStorage.getItem("posViewMode") as "list" | "grid" | null
@@ -149,15 +195,44 @@ export function PosClient() {
     }
     
     loadInitialData()
-  }, [])
+    
+    // Actualizar contadores de pendientes
+    const updatePendingCounts = async () => {
+      const counts = await getPendingCounts()
+      setPendingCounts(counts)
+    }
+    updatePendingCounts()
+    const interval = setInterval(updatePendingCounts, 5000) // Actualizar cada 5 segundos
+    
+    return () => clearInterval(interval)
+  }, [isOnline])
 
   useEffect(() => {
     // Cargar todos los productos cuando se cambia a vista de grid
     if (viewMode === "grid") {
       startLoadingProducts(async () => {
         try {
-          const products = await listAllProductsForSale()
-          setAllProducts(products)
+          if (isOnline) {
+            const products = await listAllProductsForSale()
+            setAllProducts(products)
+          } else {
+            // Cargar desde cache offline
+            const cached = await getProductsCache()
+            // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
+            const normalized = cached.map((p: any) => {
+              const price = p.priceCents ?? p.unitPriceCents ?? 0
+              if (process.env.NODE_ENV === "development" && price === 0 && p.name) {
+                console.log("[POS] Producto sin precio (grid):", p.name, "Campos:", Object.keys(p), "priceCents:", p.priceCents, "unitPriceCents:", p.unitPriceCents)
+              }
+              return {
+                ...p,
+                priceCents: price,
+                unitPriceCents: price, // Asegurar que también tenga unitPriceCents
+                itbisRateBp: p.itbisRateBp ?? 1800,
+              }
+            })
+            setAllProducts(normalized as any)
+          }
         } catch {
           setAllProducts([])
         }
@@ -165,7 +240,7 @@ export function PosClient() {
     }
     // Guardar preferencia
     localStorage.setItem("posViewMode", viewMode)
-  }, [viewMode])
+  }, [viewMode, isOnline])
 
   // Guardar el estado del carrito cada vez que cambia
   useEffect(() => {
@@ -279,8 +354,27 @@ export function PosClient() {
       if (q) {
         startSearch(async () => {
           try {
-            const r = await searchProducts(q)
-            setResults(r)
+            if (isOnline) {
+              const r = await searchProducts(q)
+              setResults(r)
+            } else {
+              // Buscar en cache offline
+              const r = await searchProductsCache(q)
+              // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
+              const normalized = r.map((p: any) => {
+                const price = p.priceCents ?? p.unitPriceCents ?? 0
+                if (process.env.NODE_ENV === "development" && price === 0 && p.name) {
+                  console.log("[POS] Producto sin precio:", p.name, "Campos:", Object.keys(p), "priceCents:", p.priceCents, "unitPriceCents:", p.unitPriceCents)
+                }
+                return {
+                  ...p,
+                  priceCents: price,
+                  unitPriceCents: price, // Asegurar que también tenga unitPriceCents
+                  itbisRateBp: p.itbisRateBp ?? 1800,
+                }
+              })
+              setResults(normalized as any)
+            }
           } catch {
             setResults([])
           }
@@ -290,8 +384,27 @@ export function PosClient() {
         if (viewMode === "grid") {
           startLoadingProducts(async () => {
             try {
-              const products = await listAllProductsForSale()
-              setAllProducts(products)
+              if (isOnline) {
+                const products = await listAllProductsForSale()
+                setAllProducts(products)
+              } else {
+                // Cargar desde cache offline
+                const cached = await getProductsCache()
+                // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
+                const normalized = cached.map((p: any) => {
+                  const price = p.priceCents ?? p.unitPriceCents ?? 0
+                  if (process.env.NODE_ENV === "development" && price === 0 && p.name) {
+                    console.log("[POS] Producto sin precio (grid):", p.name, "Campos:", Object.keys(p), "priceCents:", p.priceCents, "unitPriceCents:", p.unitPriceCents)
+                  }
+                  return {
+                    ...p,
+                    priceCents: price,
+                    unitPriceCents: price, // Asegurar que también tenga unitPriceCents
+                    itbisRateBp: p.itbisRateBp ?? 1800,
+                  }
+                })
+                setAllProducts(normalized as any)
+              }
             } catch {
               setAllProducts([])
             }
@@ -303,7 +416,7 @@ export function PosClient() {
     }, 200)
 
     return () => clearTimeout(handle)
-  }, [query, viewMode])
+  }, [query, viewMode, isOnline])
 
   const itemsTotalCents = useMemo(() => cart.reduce((s, i) => s + i.unitPriceCents * i.qty, 0), [cart])
   // Calcular ITBIS por línea basado en el itbisRateBp de cada producto
@@ -380,6 +493,14 @@ export function PosClient() {
       return
     }
 
+    // Si es dividir pago, mostrar diálogo de división
+    if (saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.DIVIDIR_PAGO) {
+      setPaymentSplits([])
+      setEditingPaymentAmounts({})
+      setShowSplitPaymentDialog(true)
+      return
+    }
+
     // Si es pago en efectivo, mostrar diálogo de cambio
     if (saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.EFECTIVO) {
       setAmountPaidInput("")
@@ -394,35 +515,71 @@ export function PosClient() {
   async function doSave() {
     startSave(async () => {
       try {
-        const sale = await createSale({
-          customerId: customerId === "generic" ? "generic" : customerId,
-          type: saleType,
-          paymentMethod: saleType === SaleType.CONTADO ? paymentMethod : null,
-          items: cart.map((c) => ({
-            productId: c.productId,
-            qty: c.qty,
-            unitPriceCents: c.unitPriceCents,
-            wasPriceOverridden: c.wasPriceOverridden,
-          })),
-          shippingCents: shippingCents > 0 ? shippingCents : undefined,
-          username: user.username,
-        })
+        if (!isOnline) {
+          // Modo offline: guardar en IndexedDB
+          const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          await savePendingSale({
+            tempId,
+            customerId: customerId === "generic" ? null : customerId,
+            type: saleType,
+            paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
+            paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
+            items: cart.map((c) => ({
+              productId: c.productId,
+              qty: c.qty,
+              unitPriceCents: c.unitPriceCents,
+              wasPriceOverridden: c.wasPriceOverridden,
+            })),
+            shippingCents: shippingCents > 0 ? shippingCents : undefined,
+            username: user.username,
+            createdAt: Date.now(),
+          })
 
-        toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
+          toast({
+            title: "Venta guardada (offline)",
+            description: "Se guardará cuando vuelva la conexión",
+          })
+          
+          // Actualizar contador
+          const counts = await getPendingCounts()
+          setPendingCounts(counts)
+        } else {
+          // Modo online: guardar normalmente
+          const sale = await createSale({
+            customerId: customerId === "generic" ? "generic" : customerId,
+            type: saleType,
+            paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
+            paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
+            items: cart.map((c) => ({
+              productId: c.productId,
+              qty: c.qty,
+              unitPriceCents: c.unitPriceCents,
+              wasPriceOverridden: c.wasPriceOverridden,
+            })),
+            shippingCents: shippingCents > 0 ? shippingCents : undefined,
+            username: user.username,
+          })
+
+          toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
+          
+          // Thermal receipt by default
+          window.open(`/receipts/sale/${sale.invoiceCode}`, "_blank")
+        }
+
         setCart([])
         setShippingInput("")
         setQuery("")
         setResults([])
         setShowChangeDialog(false)
+        setShowSplitPaymentDialog(false)
         setAmountPaidInput("")
+        setPaymentSplits([])
+        setEditingPaymentAmounts({})
         // Limpiar el estado guardado al completar la venta
         localStorage.removeItem("posCartState")
         if (saleType === SaleType.CONTADO) {
           setPaymentMethod(PaymentMethod.EFECTIVO)
         }
-
-        // Thermal receipt by default
-        window.open(`/receipts/sale/${sale.invoiceCode}`, "_blank")
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Error guardando venta"
         toast({ title: "No se pudo guardar", description: msg })
@@ -441,6 +598,21 @@ export function PosClient() {
 
   return (
     <div className={`grid gap-6 ${viewMode === "grid" ? "lg:grid-cols-[1fr_400px]" : "lg:grid-cols-[1fr_380px]"}`}>
+      {/* Indicador de modo offline */}
+      {mounted && !isOnline && (
+        <div className="col-span-full rounded-md border border-yellow-500 bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
+          <div className="flex items-center gap-2">
+            <WifiOff className="h-4 w-4" />
+            <span className="font-semibold">Modo offline</span>
+            <span className="text-muted-foreground">
+              {pendingCounts.sales > 0 && `${pendingCounts.sales} venta(s) pendiente(s)`}
+              {pendingCounts.sales > 0 && pendingCounts.payments > 0 && " • "}
+              {pendingCounts.payments > 0 && `${pendingCounts.payments} pago(s) pendiente(s)`}
+            </span>
+          </div>
+        </div>
+      )}
+      
       <div className="space-y-4">
         <Card>
           <CardHeader>
@@ -473,7 +645,7 @@ export function PosClient() {
               >
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.isGeneric ? "(Genérico) " : ""}{c.name}
+                    {c.isGeneric ? "(General) " : ""}{c.name}
                   </option>
                 ))}
               </select>
@@ -510,6 +682,7 @@ export function PosClient() {
                   <option value={PaymentMethod.EFECTIVO}>Efectivo</option>
                   <option value={PaymentMethod.TRANSFERENCIA}>Transferencia</option>
                   <option value={PaymentMethod.TARJETA}>Tarjeta</option>
+                  <option value={PaymentMethod.DIVIDIR_PAGO}>Dividir pago</option>
                 </select>
               </div>
             )}
@@ -1136,6 +1309,174 @@ export function PosClient() {
             <Button
               onClick={doSave}
               disabled={isSaving || changeCents < 0 || amountPaidCents === 0}
+            >
+              {isSaving ? "Guardando…" : "Confirmar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSplitPaymentDialog} onOpenChange={setShowSplitPaymentDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Dividir pago</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label>Total de la venta</Label>
+              <Input
+                value={formatRD(totalCents)}
+                readOnly
+                disabled
+                className="bg-muted text-lg font-semibold"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Métodos de pago</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setPaymentSplits([...paymentSplits, { method: PaymentMethod.EFECTIVO, amountCents: 0 }])
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Agregar método
+                </Button>
+              </div>
+
+              {paymentSplits.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-4 border rounded-md">
+                  No hay métodos de pago agregados. Haz clic en "Agregar método" para comenzar.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {paymentSplits.map((split, index) => {
+                    const amountInput = editingPaymentAmounts[index] ?? (split.amountCents > 0 ? (split.amountCents / 100).toFixed(2) : "")
+                    const remainingCents = totalCents - paymentSplits.reduce((sum, s, i) => i !== index ? sum + s.amountCents : sum, 0)
+                    
+                    return (
+                      <div key={index} className="flex items-start gap-3 p-3 border rounded-md">
+                        <div className="flex-1 grid gap-2">
+                          <Label>Método</Label>
+                          <select
+                            className="h-10 rounded-md border bg-background px-3 text-sm"
+                            value={split.method}
+                            onChange={(e) => {
+                              const newSplits = [...paymentSplits]
+                              newSplits[index].method = e.target.value as PaymentMethod
+                              setPaymentSplits(newSplits)
+                            }}
+                          >
+                            <option value={PaymentMethod.EFECTIVO}>Efectivo</option>
+                            <option value={PaymentMethod.TRANSFERENCIA}>Transferencia</option>
+                            <option value={PaymentMethod.TARJETA}>Tarjeta</option>
+                            <option value={PaymentMethod.OTRO}>Otro</option>
+                          </select>
+                        </div>
+                        <div className="flex-1 grid gap-2">
+                          <Label>Monto (RD$)</Label>
+                          <Input
+                            value={amountInput}
+                            onChange={(e) => {
+                              const value = e.target.value
+                              const numericValue = value.replace(/[^\d.]/g, "")
+                              const parts = numericValue.split(".")
+                              const filteredValue = parts.length > 2 ? parts[0] + "." + parts.slice(1).join("") : numericValue
+                              
+                              // Actualizar estado temporal mientras el usuario escribe
+                              setEditingPaymentAmounts((prev) => ({ ...prev, [index]: filteredValue }))
+                            }}
+                            onBlur={(e) => {
+                              // Parsear y validar el valor al perder el foco
+                              const rawValue = e.target.value.trim()
+                              const amountCents = toCents(rawValue)
+                              
+                              const newSplits = [...paymentSplits]
+                              newSplits[index].amountCents = amountCents
+                              setPaymentSplits(newSplits)
+                              
+                              // Limpiar el estado de edición
+                              setEditingPaymentAmounts((prev) => {
+                                const next = { ...prev }
+                                delete next[index]
+                                return next
+                              })
+                            }}
+                            onKeyDown={(e) => {
+                              // Permitir Enter para confirmar
+                              if (e.key === "Enter") {
+                                e.currentTarget.blur()
+                              }
+                            }}
+                            inputMode="decimal"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="mt-8"
+                          onClick={() => {
+                            setPaymentSplits(paymentSplits.filter((_, i) => i !== index))
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 border-t space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Total pagado:</span>
+                <span className="font-semibold">
+                  {formatRD(paymentSplits.reduce((sum, s) => sum + s.amountCents, 0))}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Total de la venta:</span>
+                <span className="font-semibold">{formatRD(totalCents)}</span>
+              </div>
+              <div className="flex items-center justify-between text-base font-semibold">
+                <span>Diferencia:</span>
+                <span className={totalCents - paymentSplits.reduce((sum, s) => sum + s.amountCents, 0) === 0 ? "text-green-600" : "text-destructive"}>
+                  {formatRD(totalCents - paymentSplits.reduce((sum, s) => sum + s.amountCents, 0))}
+                </span>
+              </div>
+              {paymentSplits.length > 0 && paymentSplits.reduce((sum, s) => sum + s.amountCents, 0) !== totalCents && (
+                <div className="text-xs text-destructive mt-2">
+                  La suma de los pagos debe ser igual al total de la venta.
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowSplitPaymentDialog(false)
+                setPaymentSplits([])
+                setEditingPaymentAmounts({})
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={doSave}
+              disabled={
+                isSaving ||
+                paymentSplits.length === 0 ||
+                paymentSplits.reduce((sum, s) => sum + s.amountCents, 0) !== totalCents ||
+                paymentSplits.some(s => s.amountCents <= 0)
+              }
             >
               {isSaving ? "Guardando…" : "Confirmar"}
             </Button>

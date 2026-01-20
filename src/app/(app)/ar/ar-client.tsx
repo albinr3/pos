@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 
-import { CreditCard, HandCoins, Printer, Receipt, Search } from "lucide-react"
+import { CreditCard, HandCoins, Printer, Receipt, Search, WifiOff } from "lucide-react"
 import { PaymentMethod } from "@prisma/client"
 
 import { Button } from "@/components/ui/button"
@@ -16,6 +16,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
 import { PriceInput } from "@/components/app/price-input"
+import { useOnlineStatus } from "@/hooks/use-online-status"
+import {
+  savePendingPayment,
+  getARCache,
+  getPendingCounts,
+} from "@/lib/indexed-db"
+import { syncARToIndexedDB } from "@/app/(app)/sync/actions"
+import { saveARCache } from "@/lib/indexed-db"
 
 import { addPayment, listOpenAR } from "./actions"
 
@@ -35,7 +43,14 @@ function methodLabel(m: PaymentMethod) {
 }
 
 export function ARClient() {
+  const isOnline = useOnlineStatus()
+  const [mounted, setMounted] = useState(false)
   const [items, setItems] = useState<AR[]>([])
+  
+  // Evitar error de hidratación: solo mostrar indicador después de montar
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   const [isLoading, startLoading] = useTransition()
   const [query, setQuery] = useState("")
   const [skip, setSkip] = useState(0)
@@ -48,6 +63,7 @@ export function ARClient() {
   const [method, setMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
   const [note, setNote] = useState("")
   const [isSaving, startSaving] = useTransition()
+  const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
 
   const [openReceipts, setOpenReceipts] = useState(false)
   const [selectedForReceipts, setSelectedForReceipts] = useState<AR | null>(null)
@@ -56,9 +72,34 @@ export function ARClient() {
     setSkip(0)
     startLoading(async () => {
       try {
-        const r = await listOpenAR({ query, skip: 0, take: 10 })
-        setItems(r)
-        setHasMore(r.length === 10)
+        if (isOnline) {
+          const r = await listOpenAR({ query, skip: 0, take: 10 })
+          setItems(r as any)
+          setHasMore(r.length === 10)
+          
+          // Pre-cargar a IndexedDB
+          try {
+            const arData = await syncARToIndexedDB()
+            await saveARCache(arData)
+          } catch (error) {
+            console.error("Error pre-cargando AR:", error)
+          }
+        } else {
+          // Cargar desde cache offline
+          const cached = await getARCache()
+          // Filtrar por query si existe
+          let filtered = cached
+          if (query.trim()) {
+            const q = query.toLowerCase()
+            filtered = cached.filter(
+              (ar: any) =>
+                ar.sale?.invoiceCode?.toLowerCase().includes(q) ||
+                ar.customer?.name?.toLowerCase().includes(q)
+            )
+          }
+          setItems(filtered.slice(0, 10) as any)
+          setHasMore(filtered.length > 10)
+        }
       } catch {
         setItems([])
         setHasMore(false)
@@ -69,11 +110,30 @@ export function ARClient() {
   function loadMore() {
     startLoadingMore(async () => {
       try {
-        const newSkip = skip + 10
-        const r = await listOpenAR({ query, skip: newSkip, take: 10 })
-        setItems((prev) => [...prev, ...r])
-        setSkip(newSkip)
-        setHasMore(r.length === 10)
+        if (isOnline) {
+          const newSkip = skip + 10
+          const r = await listOpenAR({ query, skip: newSkip, take: 10 })
+          setItems((prev) => [...prev, ...r])
+          setSkip(newSkip)
+          setHasMore(r.length === 10)
+        } else {
+          // Cargar más desde cache offline
+          const cached = await getARCache()
+          let filtered = cached
+          if (query.trim()) {
+            const q = query.toLowerCase()
+            filtered = cached.filter(
+              (ar: any) =>
+                ar.sale?.invoiceCode?.toLowerCase().includes(q) ||
+                ar.customer?.name?.toLowerCase().includes(q)
+            )
+          }
+          const newSkip = skip + 10
+          const more = filtered.slice(newSkip, newSkip + 10)
+          setItems((prev) => [...prev, ...more] as any)
+          setSkip(newSkip)
+          setHasMore(filtered.length > newSkip + 10)
+        }
       } catch {
         setHasMore(false)
       }
@@ -82,7 +142,17 @@ export function ARClient() {
 
   useEffect(() => {
     refresh()
-  }, [query])
+    
+    // Actualizar contadores de pendientes
+    const updatePendingCounts = async () => {
+      const counts = await getPendingCounts()
+      setPendingCounts(counts)
+    }
+    updatePendingCounts()
+    const interval = setInterval(updatePendingCounts, 5000) // Actualizar cada 5 segundos
+    
+    return () => clearInterval(interval)
+  }, [query, isOnline])
 
   const totalBalance = useMemo(() => items.reduce((s, i) => s + i.balanceCents, 0), [items])
 
@@ -120,19 +190,56 @@ export function ARClient() {
       try {
         // Asegurar que no se exceda el balance (por si acaso)
         const finalAmount = Math.min(amountCents, selected.balanceCents)
-        const result = await addPayment({
-          arId: selected.id,
-          amountCents: finalAmount,
-          method,
-          note: note || null,
-          username: "admin",
-        })
-        toast({ title: "Pago registrado", description: "Abono aplicado correctamente" })
+        
+        if (!isOnline) {
+          // Modo offline: guardar en IndexedDB
+          const tempId = `temp_payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          await savePendingPayment({
+            tempId,
+            arId: selected.id,
+            amountCents: finalAmount,
+            method: method as string,
+            note: note || null,
+            username: "admin",
+            createdAt: Date.now(),
+          })
+
+          toast({
+            title: "Pago guardado (offline)",
+            description: "Se guardará cuando vuelva la conexión",
+          })
+          
+          // Actualizar contador
+          const counts = await getPendingCounts()
+          setPendingCounts(counts)
+          
+          // Actualizar balance localmente (para mostrar en UI)
+          setItems((prev) =>
+            prev.map((item) =>
+              item.id === selected.id
+                ? {
+                    ...item,
+                    balanceCents: item.balanceCents - finalAmount,
+                    status: item.balanceCents - finalAmount === 0 ? "PAGADA" : "PARCIAL",
+                  }
+                : item
+            )
+          )
+        } else {
+          // Modo online: guardar normalmente
+          const result = await addPayment({
+            arId: selected.id,
+            amountCents: finalAmount,
+            method,
+            note: note || null,
+          })
+          toast({ title: "Pago registrado", description: "Abono aplicado correctamente" })
+          window.open(`/receipts/payment/${result.paymentId}`, "_blank")
+        }
+        
         setOpen(false)
         setSelected(null)
         refresh()
-
-        window.open(`/receipts/payment/${result.paymentId}`, "_blank")
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo registrar el pago" })
       }
@@ -141,6 +248,21 @@ export function ARClient() {
 
   return (
     <div className="grid gap-6">
+      {/* Indicador de modo offline */}
+      {mounted && !isOnline && (
+        <div className="rounded-md border border-yellow-500 bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
+          <div className="flex items-center gap-2">
+            <WifiOff className="h-4 w-4" />
+            <span className="font-semibold">Modo offline</span>
+            <span className="text-muted-foreground">
+              {pendingCounts.sales > 0 && `${pendingCounts.sales} venta(s) pendiente(s)`}
+              {pendingCounts.sales > 0 && pendingCounts.payments > 0 && " • "}
+              {pendingCounts.payments > 0 && `${pendingCounts.payments} pago(s) pendiente(s)`}
+            </span>
+          </div>
+        </div>
+      )}
+      
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>

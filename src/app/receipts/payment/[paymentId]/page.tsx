@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation"
 
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
 import { PrintToolbar } from "@/components/app/print-toolbar"
 
@@ -21,10 +22,24 @@ export default async function PaymentReceiptPage({
 }) {
   const { paymentId } = await params
 
+  // Obtener usuario actual para filtrar por accountId
+  const user = await getCurrentUser()
+  if (!user) return notFound()
+
   const [company, payment] = await Promise.all([
-    prisma.companySettings.findUnique({ where: { id: "company" } }),
-    prisma.payment.findUnique({
-      where: { id: paymentId },
+    prisma.companySettings.findFirst({ 
+      where: { accountId: user.accountId } 
+    }),
+    prisma.payment.findFirst({
+      where: { 
+        id: paymentId,
+        // Verificar que el payment pertenece a una venta del mismo account
+        ar: {
+          sale: {
+            accountId: user.accountId,
+          },
+        },
+      },
       include: {
         ar: {
           include: {
@@ -41,7 +56,7 @@ export default async function PaymentReceiptPage({
   if (!payment) return notFound()
 
   return (
-    <div className="mx-auto w-[80mm] bg-white p-3 text-[12px] leading-4 text-black">
+    <div className="mx-auto w-[80mm] bg-white p-3 text-[12px] leading-4 text-black print-content">
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -68,9 +83,9 @@ export default async function PaymentReceiptPage({
             </div>
           </div>
         )}
-        <div className="text-[14px] font-bold">{company?.name ?? "Tejada Auto Adornos"}</div>
-        <div>{company?.address ?? "Carretera la Rosa, Moca"}</div>
-        <div>Tel: {company?.phone ?? "829-475-1454"}</div>
+        <div className="text-[14px] font-bold">{company?.name || "Mi Negocio"}</div>
+        {company?.address && <div>{company.address}</div>}
+        {company?.phone && <div>Tel: {company.phone}</div>}
       </div>
 
       {payment.cancelledAt && (

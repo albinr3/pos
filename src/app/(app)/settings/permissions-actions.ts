@@ -20,6 +20,7 @@ export async function listUsersWithPermissions() {
       canEditProducts: true,
       canChangeSaleType: true,
       canSellWithoutStock: true,
+      canManageBackups: true,
     },
   })
   return users
@@ -35,6 +36,7 @@ export async function updateUserPermissions(input: {
   canEditProducts?: boolean
   canChangeSaleType?: boolean
   canSellWithoutStock?: boolean
+  canManageBackups?: boolean
 }) {
   const { userId, ...permissions } = input
   
@@ -58,6 +60,7 @@ export async function setAllPermissions(userId: string, value: boolean) {
       canEditProducts: value,
       canChangeSaleType: value,
       canSellWithoutStock: value,
+      canManageBackups: value,
     },
   })
 

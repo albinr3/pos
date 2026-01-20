@@ -1,4 +1,4 @@
-// Prisma schema for Tejada Auto Adornos POS
+// Prisma schema for MOVOPos - Multi-tenant POS System
 // Money is stored as integer cents (RD$ 1.00 => 100)
 
 generator client {
@@ -32,6 +32,7 @@ enum PaymentMethod {
   TRANSFERENCIA
   TARJETA
   OTRO
+  DIVIDIR_PAGO // Solo para UI, no se guarda en BD
 }
 
 enum UnitType {
@@ -47,28 +48,77 @@ enum UnitType {
   PIE    // Pies
 }
 
+// ==========================================
+// ACCOUNT (Tenant/Cuenta Principal)
+// ==========================================
+// Representa un negocio/empresa. Todos los datos están aislados por Account.
+model Account {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name        String  // Nombre del negocio
+  clerkUserId String  @unique // ID del usuario Clerk que es dueño
+
+  // Relaciones - todos los datos del tenant
+  users            User[]
+  companySettings  CompanySettings?
+  customers        Customer[]
+  suppliers        Supplier[]
+  categories       Category[]
+  products         Product[]
+  sales            Sale[]
+  purchases        Purchase[]
+  operatingExpenses OperatingExpense[]
+  returns          Return[]
+  quotes           Quote[]
+  invoiceSequences InvoiceSequence[]
+  returnSequence   ReturnSequence?
+  quoteSequence    QuoteSequence?
+
+  @@index([clerkUserId])
+}
+
+// ==========================================
+// USER (Subcuenta/Operador)
+// ==========================================
+// Representa un usuario/empleado dentro de un Account.
 model User {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relación con Account (tenant)
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
   name         String
-  username     String   @unique
-  passwordHash String
+  username     String   // Único dentro del account
+  passwordHash String   // Requerido para autenticación de subcuenta
+  email        String?  // Email opcional
   role         UserRole @default(CAJERO)
 
-  // Granular permissions (so you can enable for a CAJERO, for example)
+  // Si es el dueño/creador del account (admin principal)
+  isOwner Boolean @default(false)
+
+  // Autenticación por WhatsApp (legacy, puede ser removido)
+  whatsappNumber    String?   // Número de WhatsApp en formato E.164
+  whatsappVerifiedAt DateTime? // Fecha de verificación del número
+
+  // Granular permissions
   canOverridePrice  Boolean @default(false)
   canCancelSales    Boolean @default(false)
   canCancelReturns  Boolean @default(false)
   canCancelPayments Boolean @default(false)
   canEditSales      Boolean @default(false)
   canEditProducts   Boolean @default(false)
-  canChangeSaleType Boolean @default(false) // Cambiar de contado a crédito
-  canSellWithoutStock Boolean @default(false) // Permitir vender sin stock
+  canChangeSaleType Boolean @default(false)
+  canSellWithoutStock Boolean @default(false)
+  canManageBackups  Boolean @default(false)
 
   isActive Boolean @default(true)
 
+  // Relaciones
   sales              Sale[]
   payments           Payment[]
   cancelledPayments  Payment[]          @relation("CancelledPayments")
@@ -79,52 +129,96 @@ model User {
   returns            Return[]
   cancelledReturns   Return[]           @relation("CancelledReturns")
   quotes             Quote[]
+  whatsappOtps       WhatsappOtp[]
+
+  // Username único dentro del mismo account
+  @@unique([accountId, username])
+  @@index([accountId])
+  @@index([whatsappNumber])
+  @@index([email])
 }
 
+// ==========================================
+// COMPANY SETTINGS
+// ==========================================
 model CompanySettings {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Relación con Account
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
   name    String
   phone   String
   address String
 
-  // Placeholder logo path (public file). Replace later.
   logoUrl String?
 
-  // Inventory behavior
   allowNegativeStock Boolean @default(false)
+  itbisRateBp Int @default(1800)
 
-  // Default ITBIS rate (18% = 1800 basis points)
-  itbisRateBp Int @default(1800) // basis points (18.00% = 1800)
+  barcodeLabelSize  String @default("4x2")
+  shippingLabelSize String @default("4x6")
 
-  // Label sizes for printing
-  barcodeLabelSize  String @default("4x2")  // "4x2", "3x1", "2x1", "2.25x1.25"
-  shippingLabelSize String @default("4x6")  // "4x6", "4x4", "6x4"
+  @@index([accountId])
 }
 
+// ==========================================
+// SEQUENCES (por Account)
+// ==========================================
 model InvoiceSequence {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  series     String @unique @default("A")
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  series     String @default("A")
   lastNumber Int    @default(0)
+
+  @@unique([accountId, series])
+  @@index([accountId])
 }
 
 model ReturnSequence {
-  id        String   @id @default("main")
+  id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
   lastNumber Int @default(0)
+
+  @@index([accountId])
 }
 
+model QuoteSequence {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  lastNumber Int @default(0)
+
+  @@index([accountId])
+}
+
+// ==========================================
+// CUSTOMER
+// ==========================================
 model Customer {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   name     String
   phone    String?
@@ -138,12 +232,21 @@ model Customer {
   sales   Sale[]
   arItems AccountReceivable[]
   quotes  Quote[]
+
+  @@index([accountId])
+  @@index([accountId, name])
 }
 
+// ==========================================
+// SUPPLIER
+// ==========================================
 model Supplier {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   name        String
   contactName String?
@@ -152,45 +255,69 @@ model Supplier {
   address     String?
   notes       String?
 
-  // Descuento por defecto del proveedor (en basis points, 1000 = 10%)
   discountPercentBp Int @default(0)
 
   isActive Boolean @default(true)
 
   products Product[]
 
-  @@index([name])
+  @@index([accountId])
+  @@index([accountId, name])
 }
 
+// ==========================================
+// CATEGORY
+// ==========================================
+model Category {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  isActive    Boolean @default(true)
+
+  products Product[]
+
+  // Nombre único dentro del account
+  @@unique([accountId, name])
+  @@index([accountId])
+  @@index([accountId, isActive])
+}
+
+// ==========================================
+// PRODUCT
+// ==========================================
 model Product {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // ID incremental (no modificable)
-  productId Int @unique @default(autoincrement())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  // Descripción
+  productId Int @default(autoincrement())
+
   name String
 
-  // Código de proveedor (SKU)
-  sku String? @unique
+  sku String?
 
-  // Referencia (campo adicional)
   reference String?
 
-  // Proveedor
   supplierId String?
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
 
-  // Precio y costo (obligatorios)
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
   priceCents Int
   costCents  Int
 
-  // ITBIS rate for this product (basis points, 1800 = 18%, 1600 = 16%, 0 = exento)
   itbisRateBp Int @default(1800)
 
-  // Unidades de compra y venta (obligatorias, pueden ser diferentes)
   purchaseUnit UnitType @default(UNIDAD)
   saleUnit     UnitType @default(UNIDAD)
   stock        Decimal  @default(0)
@@ -198,7 +325,6 @@ model Product {
 
   isActive Boolean @default(true)
 
-  // URLs de imágenes del producto (máximo 3)
   imageUrls String[] @default([])
 
   saleItems     SaleItem[]
@@ -206,27 +332,36 @@ model Product {
   returnItems   ReturnItem[]
   quoteItems    QuoteItem[]
 
-  @@index([name])
-  @@index([sku])
-  @@index([reference])
-  @@index([productId])
+  // productId único dentro del account
+  @@unique([accountId, productId])
+  // SKU único dentro del account (si existe)
+  @@unique([accountId, sku])
+  @@index([accountId])
+  @@index([accountId, name])
+  @@index([accountId, reference])
   @@index([supplierId])
+  @@index([categoryId])
 }
 
+// ==========================================
+// SALE
+// ==========================================
 model Sale {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
   invoiceSeries String @default("A")
   invoiceNumber Int
-  invoiceCode   String @unique // e.g. A-00001
+  invoiceCode   String // e.g. A-00001
 
   soldAt DateTime @default(now())
 
   type SaleType
 
-  // Método de pago (solo para ventas al contado)
   paymentMethod PaymentMethod?
 
   customerId String?
@@ -235,7 +370,6 @@ model Sale {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
-  // totals (derived at creation time)
   subtotalCents Int
   itbisCents    Int
   shippingCents Int @default(0)
@@ -247,11 +381,15 @@ model Sale {
   cancelledBy   String?
   cancelledUser User?     @relation("CancelledSales", fields: [cancelledBy], references: [id])
 
-  items   SaleItem[]
-  ar      AccountReceivable?
-  returns Return[]
+  items    SaleItem[]
+  payments SalePayment[]
+  ar       AccountReceivable?
+  returns  Return[]
 
-  @@index([soldAt])
+  // invoiceCode único dentro del account
+  @@unique([accountId, invoiceCode])
+  @@index([accountId])
+  @@index([accountId, soldAt])
   @@index([customerId])
   @@index([cancelledAt])
 }
@@ -268,7 +406,6 @@ model SaleItem {
 
   qty Decimal
 
-  // unit final price (ITBIS included). It may be overridden at checkout.
   unitPriceCents     Int
   wasPriceOverridden Boolean @default(false)
 
@@ -277,6 +414,22 @@ model SaleItem {
   returnItems ReturnItem[]
 }
 
+model SalePayment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  saleId String
+  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  method      PaymentMethod
+  amountCents Int
+
+  @@index([saleId])
+}
+
+// ==========================================
+// ACCOUNTS RECEIVABLE
+// ==========================================
 model AccountReceivable {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -321,10 +474,16 @@ model Payment {
   @@index([cancelledAt])
 }
 
+// ==========================================
+// PURCHASE
+// ==========================================
 model Purchase {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   purchasedAt  DateTime @default(now())
   supplierName String?
@@ -341,7 +500,8 @@ model Purchase {
 
   items PurchaseItem[]
 
-  @@index([purchasedAt])
+  @@index([accountId])
+  @@index([accountId, purchasedAt])
   @@index([cancelledAt])
 }
 
@@ -356,37 +516,50 @@ model PurchaseItem {
   product   Product @relation(fields: [productId], references: [id])
 
   qty            Decimal
-  unitCostCents  Int // Costo unitario original (antes de descuento)
-  discountPercentBp Int @default(0) // Descuento aplicado (en basis points, 1000 = 10%)
-  netCostCents   Int @default(0) // Costo neto después de descuento e ITBIS
-  lineTotalCents Int // Total de la línea (netCostCents * qty)
+  unitCostCents  Int
+  discountPercentBp Int @default(0)
+  netCostCents   Int @default(0)
+  lineTotalCents Int
 }
 
+// ==========================================
+// OPERATING EXPENSE
+// ==========================================
 model OperatingExpense {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
   description String
   amountCents Int
   expenseDate DateTime @default(now())
-  category    String? // Ej: Sueldos, Arriendo, Servicios, Marketing, etc.
+  category    String?
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
   notes String?
 
-  @@index([expenseDate])
+  @@index([accountId])
+  @@index([accountId, expenseDate])
 }
 
+// ==========================================
+// RETURN
+// ==========================================
 model Return {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  returnNumber Int    @unique // Número secuencial de devolución
-  returnCode   String @unique // e.g. DEV-00001
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  returnNumber Int
+  returnCode   String // e.g. DEV-00001
 
   returnedAt DateTime @default(now())
 
@@ -396,7 +569,6 @@ model Return {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
-  // totals (derived at creation time)
   subtotalCents Int
   itbisCents    Int
   totalCents    Int
@@ -409,7 +581,11 @@ model Return {
 
   items ReturnItem[]
 
-  @@index([returnedAt])
+  // returnNumber y returnCode únicos dentro del account
+  @@unique([accountId, returnNumber])
+  @@unique([accountId, returnCode])
+  @@index([accountId])
+  @@index([accountId, returnedAt])
   @@index([saleId])
   @@index([cancelledAt])
 }
@@ -427,31 +603,28 @@ model ReturnItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty Decimal // Cantidad devuelta (debe ser <= cantidad vendida originalmente)
+  qty Decimal
 
-  // Precios originales de la venta
   unitPriceCents Int
   lineTotalCents Int
 }
 
-model QuoteSequence {
-  id        String   @id @default("main")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  lastNumber Int @default(0)
-}
-
+// ==========================================
+// QUOTE
+// ==========================================
 model Quote {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  quoteNumber Int    @unique // Número secuencial de cotización
-  quoteCode   String @unique // e.g. COT-00001
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  quoteNumber Int
+  quoteCode   String // e.g. COT-00001
 
   quotedAt DateTime @default(now())
-  validUntil DateTime? // Fecha de validez de la cotización
+  validUntil DateTime?
 
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id])
@@ -459,7 +632,6 @@ model Quote {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
-  // totals (derived at creation time)
   subtotalCents Int
   itbisCents    Int
   shippingCents Int @default(0)
@@ -469,7 +641,11 @@ model Quote {
 
   items QuoteItem[]
 
-  @@index([quotedAt])
+  // quoteNumber y quoteCode únicos dentro del account
+  @@unique([accountId, quoteNumber])
+  @@unique([accountId, quoteCode])
+  @@index([accountId])
+  @@index([accountId, quotedAt])
   @@index([customerId])
   @@index([validUntil])
 }
@@ -486,9 +662,32 @@ model QuoteItem {
 
   qty Decimal
 
-  // unit final price (ITBIS included). It may be overridden.
   unitPriceCents     Int
   wasPriceOverridden Boolean @default(false)
 
   lineTotalCents Int
+}
+
+// ==========================================
+// WHATSAPP OTP (legacy)
+// ==========================================
+model WhatsappOtp {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  phoneNumber String
+  code        String
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  purpose     String
+  attempts    Int    @default(0)
+  ipAddress   String?
+  userAgent   String?
+
+  userId String?
+  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([phoneNumber, createdAt])
+  @@index([phoneNumber, expiresAt])
+  @@index([expiresAt])
 }

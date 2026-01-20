@@ -1,10 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { PropsWithChildren } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import { PropsWithChildren, useMemo } from "react"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
+import type { CurrentUser } from "@/lib/auth"
+import { UserButton, useClerk } from "@clerk/nextjs"
 import {
   BarChart3,
   CreditCard,
@@ -21,6 +23,11 @@ import {
   Building2,
   RotateCcw,
   FileText,
+  Tag,
+  Database,
+  User,
+  LogOut,
+  RefreshCw,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -29,6 +36,16 @@ import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/app/theme-toggle"
 import { HeaderLogoClient } from "@/components/app/header-logo-client"
+import { initAutoSync } from "@/lib/auto-sync"
+import { Badge } from "@/components/ui/badge"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
@@ -37,6 +54,7 @@ const nav = [
   { href: "/returns", label: "Devoluciones", icon: RotateCcw },
   { href: "/customers", label: "Clientes", icon: Users },
   { href: "/products", label: "Productos", icon: Package },
+  { href: "/categories", label: "Categorías", icon: Tag },
   { href: "/suppliers", label: "Proveedores", icon: Building2 },
   { href: "/purchases", label: "Compras", icon: ShoppingBag },
   { href: "/ar", label: "Cuentas por cobrar", icon: CreditCard },
@@ -46,17 +64,78 @@ const nav = [
   { href: "/shipping-labels", label: "Etiquetas de envío", icon: Truck },
   { href: "/operating-expenses", label: "Gastos operativos", icon: DollarSign },
   { href: "/settings", label: "Ajustes", icon: Settings },
+  { href: "/backups", label: "Backups", icon: Database },
 ]
 
 export function AppShell({ children }: PropsWithChildren) {
   const pathname = usePathname()
+  const router = useRouter()
+  const { signOut } = useClerk()
   const { theme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
-  const [companyAddress, setCompanyAddress] = useState("Carretera la Rosa, Moca")
-  const [companyPhone, setCompanyPhone] = useState("829-475-1454")
+  const [companyAddress, setCompanyAddress] = useState("")
+  const [companyPhone, setCompanyPhone] = useState("")
+  const [user, setUser] = useState<CurrentUser | null>(null)
+
+  const handleChangeUser = async () => {
+    // Limpiar sesión de subusuario y redirigir a selección
+    await fetch("/api/auth/logout-subuser", { method: "POST" })
+    router.push("/select-user")
+  }
+
+  const handleLogout = async () => {
+    // Limpiar sesión de subusuario
+    await fetch("/api/auth/logout-subuser", { method: "POST" })
+    // Cerrar sesión de Clerk
+    await signOut({ redirectUrl: "/login" })
+  }
+
+  const getRoleBadge = (role: string, isOwner: boolean) => {
+    if (isOwner) {
+      return <Badge className="bg-purple-100 text-purple-800 border-purple-300 text-xs">Dueño</Badge>
+    }
+    switch (role) {
+      case "ADMIN":
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-300 text-xs">Admin</Badge>
+      case "CAJERO":
+        return <Badge className="bg-green-100 text-green-800 border-green-300 text-xs">Cajero</Badge>
+      case "ALMACEN":
+        return <Badge className="bg-orange-100 text-orange-800 border-orange-300 text-xs">Almacén</Badge>
+      default:
+        return <Badge variant="outline" className="text-xs">{role}</Badge>
+    }
+  }
+  
+  // Filtrar navegación según permisos
+  const filteredNav = useMemo(() => {
+    if (!user) return []
+    return nav.filter((item) => {
+      // Ocultar backups si no tiene permiso
+      if (item.href === "/backups" && !user.canManageBackups && user.username !== "admin") {
+        return false
+      }
+      return true
+    })
+  }, [user])
   
   useEffect(() => {
     setMounted(true)
+    // Inicializar auto-sincronización de cache
+    initAutoSync()
+    
+    // Obtener usuario actual
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.user) {
+          setUser(data.user)
+        }
+        // No redirigir aquí - el layout del servidor ya maneja la redirección
+      })
+      .catch(() => {
+        // Error al obtener usuario - el layout del servidor ya maneja la redirección
+        console.error("Error fetching user")
+      })
   }, [])
 
   useEffect(() => {
@@ -88,7 +167,7 @@ export function AppShell({ children }: PropsWithChildren) {
             </div>
             <Separator />
             <nav className="flex-1 space-y-1 px-3 py-3">
-              {nav.map((item) => {
+              {filteredNav.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
                 return (
                   <Button
@@ -132,7 +211,7 @@ export function AppShell({ children }: PropsWithChildren) {
                 </div>
                 <Separator className="flex-shrink-0" />
                 <nav className="flex-1 space-y-1 px-3 py-3 overflow-y-auto">
-                  {nav.map((item) => {
+                  {filteredNav.map((item) => {
                     const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
                     return (
                       <Button 
@@ -161,10 +240,47 @@ export function AppShell({ children }: PropsWithChildren) {
 
             <HeaderLogoClient />
             <div className="ml-auto flex items-center gap-3">
+              {companyAddress && companyPhone && (
+                <div className="hidden text-xs text-muted-foreground lg:block">
+                  {companyAddress} · {companyPhone}
+                </div>
+              )}
               <ThemeToggle />
-              <div className="hidden text-xs text-muted-foreground md:block">
-                {companyAddress} · {companyPhone}
-              </div>
+              
+              {/* User dropdown */}
+              {user && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="flex items-center gap-2 px-2">
+                      <div className="h-8 w-8 rounded-full bg-purple-100 flex items-center justify-center">
+                        <User className="h-4 w-4 text-purple-600" />
+                      </div>
+                      <div className="hidden md:flex flex-col items-start">
+                        <span className="text-sm font-medium">{user.name}</span>
+                        <span className="text-xs text-muted-foreground">@{user.username}</span>
+                      </div>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>
+                      <div className="flex flex-col gap-1">
+                        <span>{user.name}</span>
+                        <span className="text-xs font-normal text-muted-foreground">@{user.username}</span>
+                        {getRoleBadge(user.role, user.isOwner)}
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleChangeUser}>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Cambiar usuario
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleLogout} className="text-destructive">
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Cerrar sesión
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </header>
           <main className="flex-1 p-4 md:p-6">{children}</main>

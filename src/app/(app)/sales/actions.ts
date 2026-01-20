@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcItbisIncluded, invoiceCode } from "@/lib/money"
 import { SaleType, PaymentMethod } from "@prisma/client"
-import { Decimal } from "@prisma/client/runtime/library"
+import { getCurrentUser } from "@/lib/auth"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -17,11 +17,15 @@ function decimalToNumber(decimal: unknown): number {
 }
 
 export async function searchProducts(query: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const q = query.trim()
   if (!q) return []
 
   const products = await prisma.product.findMany({
     where: {
+      accountId: user.accountId,
       isActive: true,
       OR: [
         { name: { contains: q, mode: "insensitive" } },
@@ -44,7 +48,6 @@ export async function searchProducts(query: string) {
     },
   })
 
-  // Convertir Decimal a número
   return products.map((p) => ({
     ...p,
     stock: decimalToNumber(p.stock),
@@ -52,8 +55,12 @@ export async function searchProducts(query: string) {
 }
 
 export async function listAllProductsForSale() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const products = await prisma.product.findMany({
     where: {
+      accountId: user.accountId,
       isActive: true,
     },
     orderBy: { name: "asc" },
@@ -71,7 +78,6 @@ export async function listAllProductsForSale() {
     take: 500,
   })
   
-  // Convertir Decimal a número
   return products.map((p) => ({
     ...p,
     stock: decimalToNumber(p.stock),
@@ -79,11 +85,15 @@ export async function listAllProductsForSale() {
 }
 
 export async function findProductByBarcode(code: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const q = code.trim()
   if (!q) return null
 
   const product = await prisma.product.findFirst({
     where: {
+      accountId: user.accountId,
       isActive: true,
       OR: [
         { sku: { equals: q, mode: "insensitive" } },
@@ -105,7 +115,6 @@ export async function findProductByBarcode(code: string) {
 
   if (!product) return null
   
-  // Convertir Decimal a número
   return {
     ...product,
     stock: decimalToNumber(product.stock),
@@ -113,8 +122,30 @@ export async function findProductByBarcode(code: string) {
 }
 
 export async function listCustomers() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  // Asegurar que el cliente general existe
+  const existingGeneric = await prisma.customer.findFirst({
+    where: {
+      accountId: user.accountId,
+      isGeneric: true,
+    },
+  })
+
+  if (!existingGeneric) {
+    await prisma.customer.create({
+      data: {
+        accountId: user.accountId,
+        name: "Cliente general",
+        isGeneric: true,
+        isActive: true,
+      },
+    })
+  }
+
   return prisma.customer.findMany({
-    where: { isActive: true },
+    where: { accountId: user.accountId, isActive: true },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }],
     select: { id: true, name: true, isGeneric: true },
     take: 50,
@@ -122,7 +153,11 @@ export async function listCustomers() {
 }
 
 export async function listSales() {
-  return prisma.sale.findMany({
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const sales = await prisma.sale.findMany({
+    where: { accountId: user.accountId },
     orderBy: { soldAt: "desc" },
     include: {
       customer: true,
@@ -135,13 +170,24 @@ export async function listSales() {
       },
       cancelledUser: { select: { name: true, username: true } },
     },
-    take: 500, // Aumentado para mostrar más facturas
+    take: 500,
   })
+  
+  return sales.map((sale) => ({
+    ...sale,
+    items: sale.items.map((item) => ({
+      ...item,
+      qty: decimalToNumber(item.qty),
+    })),
+  }))
 }
 
-export async function getSaleByInvoiceCode(invoiceCode: string) {
-  return prisma.sale.findUnique({
-    where: { invoiceCode },
+export async function getSaleByInvoiceCode(invoiceCodeParam: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const sale = await prisma.sale.findFirst({
+    where: { accountId: user.accountId, invoiceCode: invoiceCodeParam },
     include: {
       customer: true,
       items: {
@@ -154,6 +200,16 @@ export async function getSaleByInvoiceCode(invoiceCode: string) {
       cancelledUser: { select: { name: true, username: true } },
     },
   })
+  
+  if (!sale) return null
+  
+  return {
+    ...sale,
+    items: sale.items.map((item) => ({
+      ...item,
+      qty: decimalToNumber(item.qty),
+    })),
+  }
 }
 
 type CartItemInput = {
@@ -167,36 +223,50 @@ export async function createSale(input: {
   customerId: string | null
   type: SaleType
   paymentMethod?: PaymentMethod | null
+  paymentSplits?: Array<{method: PaymentMethod, amountCents: number}>
   items: CartItemInput[]
   shippingCents?: number
-  // TODO: replace with real session
   username: string
 }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   if (!input.items.length) throw new Error("La venta no tiene productos.")
 
-  const settings = await prisma.companySettings.findUnique({ where: { id: "company" } })
+  const settings = await prisma.companySettings.findFirst({
+    where: { accountId: user.accountId },
+  })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({ where: { username: input.username } })
-    if (!user) throw new Error("Usuario inválido")
-    
     // Usar el permiso del usuario para vender sin stock
     const allowNegativeStock = user.canSellWithoutStock || user.role === "ADMIN"
 
-    // Invoice sequence
+    // Invoice sequence por account
+    // Usar upsert con el constraint compuesto (accountId + series)
     const seq = await tx.invoiceSequence.upsert({
-      where: { series: "A" },
-      update: { lastNumber: { increment: 1 } },
-      create: { series: "A", lastNumber: 1 },
+      where: { 
+        accountId_series: { 
+          accountId: user.accountId, 
+          series: "A" 
+        } 
+      },
+      update: { 
+        lastNumber: { increment: 1 } 
+      },
+      create: { 
+        accountId: user.accountId, 
+        series: "A", 
+        lastNumber: 1 
+      },
     })
 
     const number = seq.lastNumber
     const code = invoiceCode("A", number)
 
-    // Load products to validate stock and keep canonical data
+    // Load products to validate stock
     const products = await tx.product.findMany({
-      where: { id: { in: input.items.map((i) => i.productId) } },
+      where: { id: { in: input.items.map((i) => i.productId) }, accountId: user.accountId },
       select: { id: true, priceCents: true, stock: true, isActive: true },
     })
     const byId = new Map(products.map((p) => [p.id, p]))
@@ -204,7 +274,7 @@ export async function createSale(input: {
     for (const item of input.items) {
       const p = byId.get(item.productId)
       if (!p || !p.isActive) throw new Error("Hay un producto inválido o inactivo en el carrito.")
-      if (!allowNegativeStock && p.stock < item.qty) {
+      if (!allowNegativeStock && Number(p.stock) < item.qty) {
         throw new Error("Stock insuficiente para completar la venta.")
       }
     }
@@ -216,11 +286,12 @@ export async function createSale(input: {
 
     const sale = await tx.sale.create({
       data: {
+        accountId: user.accountId,
         invoiceSeries: "A",
         invoiceNumber: number,
         invoiceCode: code,
         type: input.type,
-        paymentMethod: input.type === SaleType.CONTADO ? input.paymentMethod : null,
+        paymentMethod: input.type === SaleType.CONTADO && !input.paymentSplits ? input.paymentMethod : null,
         customerId: input.customerId || null,
         userId: user.id,
         subtotalCents,
@@ -236,6 +307,12 @@ export async function createSale(input: {
             lineTotalCents: i.unitPriceCents * i.qty,
           })),
         },
+        payments: input.paymentSplits && input.paymentSplits.length > 0 ? {
+          create: input.paymentSplits.map((split) => ({
+            method: split.method,
+            amountCents: split.amountCents,
+          })),
+        } : undefined,
       },
       select: { id: true, invoiceCode: true, type: true },
     })
@@ -272,8 +349,11 @@ export async function createSale(input: {
 }
 
 export async function getSaleById(id: string) {
-  return prisma.sale.findUnique({
-    where: { id },
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const sale = await prisma.sale.findFirst({
+    where: { id, accountId: user.accountId },
     include: {
       items: {
         include: {
@@ -289,12 +369,29 @@ export async function getSaleById(id: string) {
       ar: true,
     },
   })
+  
+  if (!sale) return null
+  
+  return {
+    ...sale,
+    items: sale.items.map((item) => ({
+      ...item,
+      qty: decimalToNumber(item.qty),
+      product: {
+        ...item.product,
+        stock: decimalToNumber(item.product.stock),
+      },
+    })),
+  }
 }
 
 export async function cancelSale(id: string, username: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   return prisma.$transaction(async (tx) => {
-    const sale = await tx.sale.findUnique({
-      where: { id },
+    const sale = await tx.sale.findFirst({
+      where: { id, accountId: user.accountId },
       include: {
         items: true,
         ar: true,
@@ -303,9 +400,6 @@ export async function cancelSale(id: string, username: string) {
 
     if (!sale) throw new Error("Venta no encontrada")
     if (sale.cancelledAt) throw new Error("Esta venta ya está cancelada")
-
-    const user = await tx.user.findUnique({ where: { username } })
-    if (!user) throw new Error("Usuario inválido")
 
     // Verificar permiso para cancelar ventas
     if (!user.canCancelSales && user.role !== "ADMIN") {
@@ -361,26 +455,26 @@ export async function updateSale(input: {
   items: CartItemInput[]
   username?: string
 }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   if (!input.items.length) throw new Error("La venta no tiene productos.")
 
-  const settings = await prisma.companySettings.findUnique({ where: { id: "company" } })
+  const settings = await prisma.companySettings.findFirst({
+    where: { accountId: user.accountId },
+  })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
   
-  // Obtener usuario para verificar permisos
-  let user = null
-  if (input.username) {
-    user = await prisma.user.findUnique({ where: { username: input.username } })
-    if (user && !user.canEditSales && user.role !== "ADMIN") {
-      throw new Error("No tienes permiso para editar ventas")
-    }
+  // Verificar permiso para editar ventas
+  if (!user.canEditSales && user.role !== "ADMIN") {
+    throw new Error("No tienes permiso para editar ventas")
   }
   
-  // Usar el permiso del usuario para vender sin stock
-  const allowNegativeStock = user ? (user.canSellWithoutStock || user.role === "ADMIN") : false
+  const allowNegativeStock = user.canSellWithoutStock || user.role === "ADMIN"
 
   return prisma.$transaction(async (tx) => {
-    const existingSale = await tx.sale.findUnique({
-      where: { id: input.id },
+    const existingSale = await tx.sale.findFirst({
+      where: { id: input.id, accountId: user.accountId },
       include: {
         items: true,
         ar: true,
@@ -415,7 +509,7 @@ export async function updateSale(input: {
 
     // Validar productos nuevos
     const products = await tx.product.findMany({
-      where: { id: { in: input.items.map((i) => i.productId) } },
+      where: { id: { in: input.items.map((i) => i.productId) }, accountId: user.accountId },
       select: { id: true, priceCents: true, stock: true, isActive: true },
     })
     const byId = new Map(products.map((p) => [p.id, p]))
@@ -423,7 +517,7 @@ export async function updateSale(input: {
     for (const item of input.items) {
       const p = byId.get(item.productId)
       if (!p || !p.isActive) throw new Error("Hay un producto inválido o inactivo en el carrito.")
-      if (!allowNegativeStock && p.stock < item.qty) {
+      if (!allowNegativeStock && Number(p.stock) < item.qty) {
         throw new Error("Stock insuficiente para completar la venta.")
       }
     }

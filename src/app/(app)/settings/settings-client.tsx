@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useTransition, useRef } from "react"
-import { Upload, X, Image as ImageIcon } from "lucide-react"
+import { Upload, X, Image as ImageIcon, RefreshCw, WifiOff, Database } from "lucide-react"
 import Image from "next/image"
 
 import { Button } from "@/components/ui/button"
@@ -11,12 +11,29 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
+import { useOnlineStatus } from "@/hooks/use-online-status"
+import { getPendingCounts } from "@/lib/indexed-db"
+import { syncPendingData } from "@/lib/sync-manager"
+import {
+  syncProductsToIndexedDB,
+  syncCustomersToIndexedDB,
+  syncARToIndexedDB,
+} from "@/app/(app)/sync/actions"
+import {
+  saveProductsCache,
+  saveCustomersCache,
+  saveARCache,
+} from "@/lib/indexed-db"
 
 import { getSettings, updateLabelSizes } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
-import { PermissionsTab } from "./permissions-tab"
+import { UsersTab } from "./users-tab"
 
-export function SettingsClient() {
+type Props = {
+  isOwner: boolean
+}
+
+export function SettingsClient({ isOwner }: Props) {
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
@@ -27,6 +44,10 @@ export function SettingsClient() {
   const [barcodeLabelSize, setBarcodeLabelSize] = useState("4x2")
   const [shippingLabelSize, setShippingLabelSize] = useState("4x6")
   const [isSaving, startSaving] = useTransition()
+  const isOnline = useOnlineStatus()
+  const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [isPreloading, setIsPreloading] = useState(false)
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -37,7 +58,82 @@ export function SettingsClient() {
       setBarcodeLabelSize(s.barcodeLabelSize)
       setShippingLabelSize(s.shippingLabelSize)
     })
+    
+    // Actualizar contadores de pendientes
+    const updatePendingCounts = async () => {
+      const counts = await getPendingCounts()
+      setPendingCounts(counts)
+    }
+    updatePendingCounts()
+    const interval = setInterval(updatePendingCounts, 5000)
+    
+    return () => clearInterval(interval)
   }, [])
+  
+  async function handleSync() {
+    if (!isOnline) {
+      toast({
+        title: "Sin conexión",
+        description: "No puedes sincronizar sin conexión a internet",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    setIsSyncing(true)
+    try {
+      await syncPendingData()
+      const counts = await getPendingCounts()
+      setPendingCounts(counts)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al sincronizar",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSyncing(false)
+    }
+  }
+  
+  async function handlePreload() {
+    if (!isOnline) {
+      toast({
+        title: "Sin conexión",
+        description: "No puedes pre-cargar datos sin conexión a internet",
+        variant: "destructive",
+      })
+      return
+    }
+    
+    setIsPreloading(true)
+    try {
+      const [productsData, customersData, arData] = await Promise.all([
+        syncProductsToIndexedDB(),
+        syncCustomersToIndexedDB(),
+        syncARToIndexedDB(),
+      ])
+      
+      await Promise.all([
+        saveProductsCache(productsData),
+        saveCustomersCache(customersData),
+        saveARCache(arData),
+      ])
+      
+      toast({
+        title: "Datos pre-cargados",
+        description: "Los datos están listos para usar en modo offline",
+      })
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Error al pre-cargar datos",
+        variant: "destructive",
+      })
+    } finally {
+      setIsPreloading(false)
+    }
+  }
 
   async function handleLogoUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
@@ -245,7 +341,81 @@ export function SettingsClient() {
         </CardContent>
       </Card>
 
-      <PermissionsTab />
+      <Card>
+        <CardHeader>
+          <CardTitle>Modo Offline</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="text-sm text-muted-foreground">
+            Gestiona la sincronización de datos para usar la aplicación sin conexión a internet.
+          </div>
+          <Separator />
+          
+          <div className="grid gap-4">
+            <div className="flex items-center justify-between rounded-md border p-4">
+              <div className="flex items-center gap-3">
+                {isOnline ? (
+                  <div className="h-3 w-3 rounded-full bg-green-500" />
+                ) : (
+                  <WifiOff className="h-4 w-4 text-yellow-600" />
+                )}
+                <div>
+                  <div className="font-medium">
+                    {isOnline ? "Conectado" : "Sin conexión"}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {isOnline
+                      ? "La aplicación está conectada a internet"
+                      : "La aplicación está funcionando en modo offline"}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            {(pendingCounts.sales > 0 || pendingCounts.payments > 0) && (
+              <div className="rounded-md border border-yellow-500 bg-yellow-50 p-4 dark:bg-yellow-900/20">
+                <div className="font-medium text-yellow-800 dark:text-yellow-200">
+                  Datos pendientes de sincronizar
+                </div>
+                <div className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
+                  {pendingCounts.sales > 0 && `${pendingCounts.sales} venta(s)`}
+                  {pendingCounts.sales > 0 && pendingCounts.payments > 0 && " • "}
+                  {pendingCounts.payments > 0 && `${pendingCounts.payments} pago(s)`}
+                </div>
+              </div>
+            )}
+            
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSync}
+                disabled={isSyncing || !isOnline || (pendingCounts.sales === 0 && pendingCounts.payments === 0)}
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+                {isSyncing ? "Sincronizando..." : "Sincronizar ahora"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handlePreload}
+                disabled={isPreloading || !isOnline}
+              >
+                <Database className={`mr-2 h-4 w-4 ${isPreloading ? "animate-spin" : ""}`} />
+                {isPreloading ? "Pre-cargando..." : "Pre-cargar datos offline"}
+              </Button>
+            </div>
+            
+            <div className="text-xs text-muted-foreground">
+              <p>• Los datos se sincronizan automáticamente cuando vuelve la conexión</p>
+              <p>• Pre-carga los datos cuando tengas conexión para usarlos offline</p>
+              <p>• Las ventas y pagos realizados offline se guardan localmente</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <UsersTab isOwner={isOwner} />
     </div>
   )
 }

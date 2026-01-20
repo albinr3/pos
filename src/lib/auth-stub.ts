@@ -11,6 +11,7 @@ export type CurrentUser = {
   canEditProducts: boolean
   canChangeSaleType: boolean
   canSellWithoutStock: boolean
+  canManageBackups: boolean
 }
 
 export function getCurrentUserStub(): CurrentUser {
@@ -26,6 +27,7 @@ export function getCurrentUserStub(): CurrentUser {
     canEditProducts: true,
     canChangeSaleType: true,
     canSellWithoutStock: true,
+    canManageBackups: true,
   }
 }
 

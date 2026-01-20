@@ -24,6 +24,7 @@ const PERMISSION_LABELS: Record<string, string> = {
   canEditProducts: "Editar productos",
   canChangeSaleType: "Cambiar tipo de venta",
   canSellWithoutStock: "Vender sin stock",
+  canManageBackups: "Gestionar backups",
 }
 
 const PERMISSION_KEYS = [
@@ -35,6 +36,7 @@ const PERMISSION_KEYS = [
   "canEditProducts",
   "canChangeSaleType",
   "canSellWithoutStock",
+  "canManageBackups",
 ] as const
 
 export function PermissionsTab() {
@@ -88,6 +90,7 @@ export function PermissionsTab() {
               canEditProducts: value,
               canChangeSaleType: value,
               canSellWithoutStock: value,
+              canManageBackups: value,
             }
           : u
       )

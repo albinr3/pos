@@ -206,7 +206,7 @@ export function ReturnsClient() {
                     {saleSearchResults.map((sale) => (
                       <TableRow key={sale.id}>
                         <TableCell className="font-medium">{sale.invoiceCode}</TableCell>
-                        <TableCell>{sale.customer?.name ?? "Cliente genérico"}</TableCell>
+                        <TableCell>{sale.customer?.name ?? "Cliente general"}</TableCell>
                         <TableCell>{new Date(sale.soldAt).toLocaleDateString("es-DO")}</TableCell>
                         <TableCell className="text-right">{formatRD(sale.totalCents)}</TableCell>
                         <TableCell className="text-right">
@@ -240,7 +240,7 @@ export function ReturnsClient() {
             <CardContent>
               <div className="space-y-2 text-sm">
                 <div>
-                  <span className="font-semibold">Cliente:</span> {selectedSale.customer?.name ?? "Cliente genérico"}
+                  <span className="font-semibold">Cliente:</span> {selectedSale.customer?.name ?? "Cliente general"}
                 </div>
                 <div>
                   <span className="font-semibold">Fecha:</span>{" "}
@@ -430,6 +430,7 @@ export function ReturnsClient() {
     </div>
   )
 }
+
 
 
 

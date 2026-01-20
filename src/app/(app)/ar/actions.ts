@@ -2,16 +2,23 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 import { PaymentMethod } from "@prisma/client"
 
 export async function listOpenAR(options?: { query?: string; skip?: number; take?: number }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const query = options?.query?.trim()
   const skip = options?.skip ?? 0
   const take = options?.take ?? 10
 
   const where: any = {
     status: { in: ["PENDIENTE", "PARCIAL"] },
-    sale: { cancelledAt: null }, // Excluir ventas canceladas
+    sale: { 
+      accountId: user.accountId,
+      cancelledAt: null, // Excluir ventas canceladas
+    },
   }
 
   if (query) {
@@ -37,18 +44,29 @@ export async function listOpenAR(options?: { query?: string; skip?: number; take
   })
 }
 
-export async function cancelPayment(id: string, username: string) {
+export async function cancelPayment(id: string) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   return prisma.$transaction(async (tx) => {
-    const payment = await tx.payment.findUnique({
-      where: { id },
+    // Verificar que el pago pertenece al account del usuario
+    const payment = await tx.payment.findFirst({
+      where: { 
+        id,
+        ar: {
+          sale: {
+            accountId: currentUser.accountId,
+          },
+        },
+      },
       include: { ar: true },
     })
 
     if (!payment) throw new Error("Pago no encontrado")
     if (payment.cancelledAt) throw new Error("Este pago ya está cancelado")
 
-    const user = await tx.user.findUnique({ where: { username } })
-    if (!user) throw new Error("Usuario inválido")
+    // Usar el usuario actual en lugar de buscar por username
+    const user = currentUser
 
     // Verificar permiso para cancelar pagos
     if (!user.canCancelPayments && user.role !== "ADMIN") {
@@ -94,7 +112,17 @@ export async function cancelPayment(id: string, username: string) {
 }
 
 export async function listAllPayments() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   return prisma.payment.findMany({
+    where: {
+      ar: {
+        sale: {
+          accountId: user.accountId,
+        },
+      },
+    },
     orderBy: { paidAt: "desc" },
     include: {
       ar: {
@@ -116,15 +144,22 @@ export async function addPayment(input: {
   amountCents: number
   method: PaymentMethod
   note?: string | null
-  username: string
 }) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   if (input.amountCents <= 0) throw new Error("El abono debe ser mayor a 0")
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({ where: { username: input.username } })
-    if (!user) throw new Error("Usuario inválido")
-
-    const ar = await tx.accountReceivable.findUnique({ where: { id: input.arId } })
+    // Verificar que la cuenta por cobrar pertenece al account del usuario
+    const ar = await tx.accountReceivable.findFirst({
+      where: { 
+        id: input.arId,
+        sale: {
+          accountId: currentUser.accountId,
+        },
+      },
+    })
     if (!ar) throw new Error("Cuenta por cobrar no encontrada")
     if (ar.status === "PAGADA" || ar.balanceCents <= 0) throw new Error("Esta factura ya está pagada")
 
@@ -133,7 +168,7 @@ export async function addPayment(input: {
     const payment = await tx.payment.create({
       data: {
         arId: ar.id,
-        userId: user.id,
+        userId: currentUser.id,
         amountCents: amount,
         method: input.method,
         note: input.note || null,

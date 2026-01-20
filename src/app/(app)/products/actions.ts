@@ -4,11 +4,16 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { UnitType } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
+import { getCurrentUser } from "@/lib/auth"
 
 export async function listProducts(query?: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const q = query?.trim()
   const products = await prisma.product.findMany({
     where: {
+      accountId: user.accountId,
       isActive: true,
       ...(q
         ? {
@@ -20,7 +25,7 @@ export async function listProducts(query?: string) {
           }
         : {}),
     },
-    include: { supplier: true },
+    include: { supplier: true, category: true },
     orderBy: { productId: "asc" },
     take: 200,
   })
@@ -37,6 +42,11 @@ export async function listProducts(query?: string) {
       createdAt: p.supplier.createdAt instanceof Date ? p.supplier.createdAt.toISOString() : p.supplier.createdAt,
       updatedAt: p.supplier.updatedAt instanceof Date ? p.supplier.updatedAt.toISOString() : p.supplier.updatedAt,
     } : null,
+    category: p.category ? {
+      ...p.category,
+      createdAt: p.category.createdAt instanceof Date ? p.category.createdAt.toISOString() : p.category.createdAt,
+      updatedAt: p.category.updatedAt instanceof Date ? p.category.updatedAt.toISOString() : p.category.updatedAt,
+    } : null,
   }))
 }
 
@@ -46,6 +56,7 @@ export async function upsertProduct(input: {
   sku?: string | null
   reference?: string | null
   supplierId?: string | null
+  categoryId?: string | null
   priceCents: number
   costCents: number
   itbisRateBp?: number
@@ -55,6 +66,9 @@ export async function upsertProduct(input: {
   purchaseUnit: UnitType
   saleUnit: UnitType
 }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const name = input.name.trim()
   if (!name) throw new Error("El nombre del producto es requerido")
   if (!input.priceCents || input.priceCents <= 0) throw new Error("El precio de venta es requerido")
@@ -67,6 +81,12 @@ export async function upsertProduct(input: {
   const imageUrls = input.imageUrls || []
 
   if (input.id) {
+    // Verificar que el producto pertenece al account
+    const existing = await prisma.product.findFirst({
+      where: { id: input.id, accountId: user.accountId },
+    })
+    if (!existing) throw new Error("Producto no encontrado")
+
     await prisma.product.update({
       where: { id: input.id },
       data: {
@@ -74,6 +94,7 @@ export async function upsertProduct(input: {
         sku,
         reference,
         supplierId: input.supplierId || null,
+        categoryId: input.categoryId || null,
         priceCents: input.priceCents,
         costCents: input.costCents,
         itbisRateBp: input.itbisRateBp ?? 1800,
@@ -87,10 +108,12 @@ export async function upsertProduct(input: {
   } else {
     await prisma.product.create({
       data: {
+        accountId: user.accountId,
         name,
         sku,
         reference,
         supplierId: input.supplierId || null,
+        categoryId: input.categoryId || null,
         priceCents: input.priceCents,
         costCents: input.costCents,
         itbisRateBp: input.itbisRateBp ?? 1800,
@@ -107,6 +130,15 @@ export async function upsertProduct(input: {
 }
 
 export async function deactivateProduct(productId: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  // Verificar que el producto pertenece al account
+  const existing = await prisma.product.findFirst({
+    where: { id: productId, accountId: user.accountId },
+  })
+  if (!existing) throw new Error("Producto no encontrado")
+
   await prisma.product.update({
     where: { id: productId },
     data: { isActive: false },

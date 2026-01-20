@@ -43,7 +43,7 @@ export async function checkSaleExists(invoiceCode: string) {
       soldAt: sale.soldAt,
       totalCents: sale.totalCents,
       cancelledAt: sale.cancelledAt,
-      customer: sale.customer?.name || "Cliente Genérico",
+      customer: sale.customer?.name || "Cliente general",
     },
   }
 }
@@ -63,6 +63,7 @@ export async function getAllSalesForDiagnosis() {
     take: 100,
   })
 }
+
 
 
 

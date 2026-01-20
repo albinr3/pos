@@ -1,8 +1,20 @@
 import { notFound } from "next/navigation"
+import { Decimal } from "@prisma/client/runtime/library"
+import { PaymentMethod } from "@prisma/client"
 
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
 import { PrintToolbar } from "@/components/app/print-toolbar"
+
+function decimalToNumber(decimal: unknown): number {
+  if (typeof decimal === "number") return decimal
+  if (typeof decimal === "string") return parseFloat(decimal)
+  if (decimal && typeof decimal === "object" && "toNumber" in decimal) {
+    return (decimal as { toNumber: () => number }).toNumber()
+  }
+  return 0
+}
 
 function fmtDate(d: Date) {
   return new Intl.DateTimeFormat("es-DO", {
@@ -21,22 +33,53 @@ export default async function SaleReceiptPage({
 }) {
   const { invoiceCode } = await params
 
+  // Obtener usuario actual para filtrar por accountId
+  const user = await getCurrentUser()
+  if (!user) return notFound()
+
   const [company, sale] = await Promise.all([
-    prisma.companySettings.findUnique({ where: { id: "company" } }),
-    prisma.sale.findUnique({
-      where: { invoiceCode },
+    prisma.companySettings.findFirst({ 
+      where: { accountId: user.accountId } 
+    }),
+    prisma.sale.findFirst({
+      where: { 
+        accountId: user.accountId,
+        invoiceCode 
+      },
       include: {
         customer: true,
         items: { include: { product: true } },
         cancelledUser: { select: { name: true } },
+        payments: true,
       },
     }),
   ])
 
   if (!sale) return notFound()
 
+  const paymentMethod = sale.paymentMethod
+  const saleWithPayments = sale as typeof sale & {
+    payments?: Array<{ id: string; method: PaymentMethod; amountCents: number }>
+  }
+  const splitPayments = saleWithPayments.payments ?? []
+
+  function formatPaymentMethod(method: PaymentMethod) {
+    switch (method) {
+      case "EFECTIVO":
+        return "Efectivo"
+      case "TRANSFERENCIA":
+        return "Transferencia"
+      case "TARJETA":
+        return "Tarjeta"
+      case "OTRO":
+        return "Otro"
+      default:
+        return method
+    }
+  }
+
   return (
-    <div className="mx-auto w-[80mm] bg-white p-3 text-[12px] leading-4 text-black">
+    <div className="mx-auto w-[80mm] bg-white p-3 text-[12px] leading-4 text-black print-content">
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -63,9 +106,9 @@ export default async function SaleReceiptPage({
             </div>
           </div>
         )}
-        <div className="text-[14px] font-bold">{company?.name ?? "Tejada Auto Adornos"}</div>
-        <div>{company?.address ?? "Carretera la Rosa, Moca"}</div>
-        <div>Tel: {company?.phone ?? "829-475-1454"}</div>
+        <div className="text-[14px] font-bold">{company?.name || "Mi Negocio"}</div>
+        {company?.address && <div>{company.address}</div>}
+        {company?.phone && <div>Tel: {company.phone}</div>}
       </div>
 
       {sale.cancelledAt && (
@@ -99,7 +142,7 @@ export default async function SaleReceiptPage({
             <div className="text-[11px] text-neutral-700">Cod: {it.product.sku ?? "—"} · Ref: {it.product.reference ?? "—"}</div>
             <div className="mt-1 flex justify-between">
               <span>
-                {it.qty} x {formatRD(it.unitPriceCents)}
+                {decimalToNumber(it.qty)} x {formatRD(it.unitPriceCents)}
               </span>
               <span className="font-semibold">{formatRD(it.lineTotalCents)}</span>
             </div>
@@ -127,6 +170,27 @@ export default async function SaleReceiptPage({
           <span>{formatRD(sale.totalCents)}</span>
         </div>
       </div>
+
+      {sale.type === "CONTADO" && (
+        <div className="mt-2 border-t border-dashed pt-2 text-[11px]">
+          {splitPayments.length > 0 ? (
+            <div>
+              <span className="font-semibold">Pago:</span>{" "}
+              {splitPayments.map((p, idx) => (
+                <span key={p.id}>
+                  {idx > 0 && " + "}
+                  {formatPaymentMethod(p.method)} {formatRD(p.amountCents)}
+                </span>
+              ))}
+            </div>
+          ) : paymentMethod ? (
+            <div>
+              <span className="font-semibold">Pago:</span>{" "}
+              {formatPaymentMethod(paymentMethod)}
+            </div>
+          ) : null}
+        </div>
+      )}
 
       <div className="mt-3 text-center">
         <div className="font-semibold">Gracias por su compra</div>

@@ -1,10 +1,21 @@
 /* eslint-disable @next/next/no-img-element */
 import { notFound } from "next/navigation"
+import { Decimal } from "@prisma/client/runtime/library"
 
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
 import { PrintToolbar } from "@/components/app/print-toolbar"
 import { PaymentMethod } from "@prisma/client"
+
+function decimalToNumber(decimal: unknown): number {
+  if (typeof decimal === "number") return decimal
+  if (typeof decimal === "string") return parseFloat(decimal)
+  if (decimal && typeof decimal === "object" && "toNumber" in decimal) {
+    return (decimal as { toNumber: () => number }).toNumber()
+  }
+  return 0
+}
 
 function fmtDate(d: Date) {
   return new Intl.DateTimeFormat("es-DO", {
@@ -23,16 +34,26 @@ export default async function InvoicePrintPage({
 }) {
   const { invoiceCode } = await params
 
+  // Obtener usuario actual para filtrar por accountId
+  const user = await getCurrentUser()
+  if (!user) return notFound()
+
   const [company, sale] = await Promise.all([
-    prisma.companySettings.findUnique({ where: { id: "company" } }),
-    prisma.sale.findUnique({
-      where: { invoiceCode },
+    prisma.companySettings.findFirst({ 
+      where: { accountId: user.accountId } 
+    }),
+    prisma.sale.findFirst({
+      where: { 
+        accountId: user.accountId,
+        invoiceCode 
+      },
       include: {
         customer: true,
         items: {
           include: { product: true },
         },
         cancelledUser: { select: { name: true } },
+        payments: true,
       },
     }),
   ])
@@ -40,10 +61,28 @@ export default async function InvoicePrintPage({
   if (!sale) return notFound()
 
   const logoUrl = company?.logoUrl
-  const paymentMethod = (sale as typeof sale & { paymentMethod: PaymentMethod | null }).paymentMethod
+  const paymentMethod = sale.paymentMethod
+  // Asegurarse de que payments esté disponible
+  const saleWithPayments = sale as typeof sale & { payments?: Array<{ id: string; method: PaymentMethod; amountCents: number }> }
+  const splitPayments = saleWithPayments.payments ?? []
+
+  function formatPaymentMethod(method: PaymentMethod) {
+    switch (method) {
+      case "EFECTIVO":
+        return "Efectivo"
+      case "TRANSFERENCIA":
+        return "Transferencia"
+      case "TARJETA":
+        return "Tarjeta"
+      case "OTRO":
+        return "Otro"
+      default:
+        return method
+    }
+  }
 
   return (
-    <div className="mx-auto max-w-[850px] bg-white p-10 text-black">
+    <div className="mx-auto max-w-[850px] bg-white p-10 text-black print-content">
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -77,9 +116,9 @@ export default async function InvoicePrintPage({
             </div>
           )}
           <div>
-            <div className="text-xl font-bold">{company?.name ?? "Tejada Auto Adornos"}</div>
-            <div className="text-sm">{company?.address ?? "Carretera la Rosa, Moca"}</div>
-            <div className="text-sm">Tel: {company?.phone ?? "829-475-1454"}</div>
+            <div className="text-xl font-bold">{company?.name || "Mi Negocio"}</div>
+            {company?.address && <div className="text-sm">{company.address}</div>}
+            {company?.phone && <div className="text-sm">Tel: {company.phone}</div>}
           </div>
         </div>
 
@@ -100,16 +139,25 @@ export default async function InvoicePrintPage({
         <div className="text-sm">
           <span className="font-semibold">Cliente:</span> {sale.customer?.name ?? "Cliente"}
         </div>
-        {sale.type === "CONTADO" && paymentMethod && (
+        {sale.type === "CONTADO" && (
           <div className="mt-2 text-sm">
-            <span className="font-semibold">Método de pago:</span>{" "}
-            {paymentMethod === "EFECTIVO"
-              ? "Efectivo"
-              : paymentMethod === "TRANSFERENCIA"
-                ? "Transferencia"
-                : paymentMethod === "TARJETA"
-                  ? "Tarjeta"
-                  : paymentMethod}
+            {splitPayments && splitPayments.length > 0 ? (
+              <div>
+                <span className="font-semibold">Métodos de pago:</span>
+                <ul className="ml-4 mt-1 list-disc space-y-0.5">
+                  {splitPayments.map((p) => (
+                    <li key={p.id}>
+                      {formatPaymentMethod(p.method)} — {formatRD(p.amountCents)}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : paymentMethod ? (
+              <div>
+                <span className="font-semibold">Método de pago:</span>{" "}
+                {formatPaymentMethod(paymentMethod)}
+              </div>
+            ) : null}
           </div>
         )}
       </div>
@@ -131,7 +179,7 @@ export default async function InvoicePrintPage({
               <td className="py-2 pr-2">{it.product.name}</td>
               <td className="py-2 pr-2">{it.product.sku ?? "—"}</td>
               <td className="py-2 pr-2">{it.product.reference ?? "—"}</td>
-              <td className="py-2 text-right">{it.qty}</td>
+              <td className="py-2 text-right">{decimalToNumber(it.qty)}</td>
               <td className="py-2 text-right">{formatRD(it.unitPriceCents)}</td>
               <td className="py-2 text-right">{formatRD(it.lineTotalCents)}</td>
             </tr>

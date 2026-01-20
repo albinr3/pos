@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react"
 import JsBarcode from "jsbarcode"
+import { useBluetoothPrint } from "@/hooks/use-bluetooth-print"
+import { Bluetooth, Printer } from "lucide-react"
 
 interface BarcodeLabelProps {
   productName: string
@@ -23,6 +25,9 @@ const BARCODE_LABEL_SIZES: Record<string, { width: string; height: string }> = {
 export function BarcodeLabel({ productName, sku, reference, priceCents, labelSize = "4x2", onPrintComplete }: BarcodeLabelProps) {
   const barcodeRefPreview = useRef<SVGSVGElement>(null)
   const barcodeRefPrint = useRef<SVGSVGElement>(null)
+  const { handlePrint, isPrinting, isConnecting, isBluetoothSupported } = useBluetoothPrint({
+    onPrintComplete,
+  })
 
   useEffect(() => {
     if (sku) {
@@ -60,24 +65,6 @@ export function BarcodeLabel({ productName, sku, reference, priceCents, labelSiz
   const formatPrice = (cents: number) => {
     return `RD$ ${(cents / 100).toFixed(2)}`
   }
-
-  const handlePrint = () => {
-    window.print()
-    if (onPrintComplete) {
-      setTimeout(onPrintComplete, 100)
-    }
-  }
-
-  useEffect(() => {
-    const handleAfterPrint = () => {
-      if (onPrintComplete) {
-        onPrintComplete()
-      }
-    }
-
-    window.addEventListener("afterprint", handleAfterPrint)
-    return () => window.removeEventListener("afterprint", handleAfterPrint)
-  }, [onPrintComplete])
 
   const size = BARCODE_LABEL_SIZES[labelSize] || BARCODE_LABEL_SIZES["4x2"]
   const isSmall = labelSize === "2x1" || labelSize === "2.25x1.25"
@@ -132,11 +119,25 @@ export function BarcodeLabel({ productName, sku, reference, priceCents, labelSiz
             >
               Cancelar
             </button>
+            {isBluetoothSupported ? (
+              <button
+                onClick={() => handlePrint(true)}
+                disabled={isPrinting || isConnecting}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                title="Imprimir a impresora Bluetooth"
+              >
+                <Bluetooth className="h-3 w-3" />
+                {isConnecting ? "Conectando..." : isPrinting ? "Imprimiendo..." : "Bluetooth"}
+              </button>
+            ) : null}
             <button
-              onClick={handlePrint}
-              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700"
+              onClick={() => handlePrint(false)}
+              disabled={isPrinting || isConnecting}
+              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              title="Imprimir (método estándar)"
             >
-              Imprimir
+              <Printer className="h-3 w-3" />
+              {isPrinting ? "Imprimiendo..." : "Imprimir"}
             </button>
           </div>
         </div>

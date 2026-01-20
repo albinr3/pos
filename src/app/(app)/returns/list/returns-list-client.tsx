@@ -145,7 +145,7 @@ export function ReturnsListClient() {
                           {r.sale.invoiceCode}
                         </Link>
                       </TableCell>
-                      <TableCell>{r.sale.customer?.name ?? "Cliente genérico"}</TableCell>
+                      <TableCell>{r.sale.customer?.name ?? "Cliente general"}</TableCell>
                       <TableCell>
                         {new Date(r.returnedAt).toLocaleString("es-DO", {
                           year: "numeric",

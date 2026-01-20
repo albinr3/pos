@@ -20,6 +20,7 @@ import { ProductImageUpload } from "@/components/app/product-image-upload"
 
 import { deactivateProduct, listProducts, upsertProduct } from "./actions"
 import { getAllSuppliers } from "../suppliers/actions"
+import { getAllCategories } from "../categories/actions"
 import { getSettings } from "../settings/actions"
 
 type Product = Awaited<ReturnType<typeof listProducts>>[number]
@@ -55,6 +56,8 @@ export function ProductsClient() {
   const [minStock, setMinStock] = useState("0")
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [suppliers, setSuppliers] = useState<Awaited<ReturnType<typeof getAllSuppliers>>>([])
+  const [categories, setCategories] = useState<Awaited<ReturnType<typeof getAllCategories>>>([])
+  const [categoryId, setCategoryId] = useState("")
   const [isSaving, startSaving] = useTransition()
   
   // Estado para producto básico o con medidas
@@ -77,6 +80,7 @@ export function ProductsClient() {
   useEffect(() => {
     refresh("")
     getAllSuppliers().then(setSuppliers).catch(() => setSuppliers([]))
+    getAllCategories().then(setCategories).catch(() => setCategories([]))
     getSettings().then((s) => setBarcodeLabelSize(s.barcodeLabelSize)).catch(() => {})
   }, [])
 
@@ -93,6 +97,7 @@ export function ProductsClient() {
     setSku(x?.sku ?? "")
     setReference(x?.reference ?? "")
     setSupplierId(x?.supplierId ?? "")
+    setCategoryId(x?.categoryId ?? "")
     setPrice(((x?.priceCents ?? 0) / 100).toFixed(2))
     setCost(((x?.costCents ?? 0) / 100).toFixed(2))
     setItbisRateBp(x?.itbisRateBp ?? 1800)
@@ -136,6 +141,7 @@ export function ProductsClient() {
           sku: sku || null,
           reference: reference || null,
           supplierId: supplierId || null,
+          categoryId: categoryId || null,
           priceCents: toCents(price),
           costCents: toCents(cost),
           itbisRateBp,
@@ -222,20 +228,37 @@ export function ProductsClient() {
                       <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Alfombra" required />
                     </div>
 
-                    <div className="grid gap-2">
-                      <Label>Proveedor (opcional)</Label>
-                      <select
-                        value={supplierId}
-                        onChange={(e) => setSupplierId(e.target.value)}
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <option value="">Sin proveedor</option>
-                        {suppliers.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.name}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid gap-2">
+                        <Label>Proveedor (opcional)</Label>
+                        <select
+                          value={supplierId}
+                          onChange={(e) => setSupplierId(e.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Sin proveedor</option>
+                          {suppliers.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Categoría (opcional)</Label>
+                        <select
+                          value={categoryId}
+                          onChange={(e) => setCategoryId(e.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Sin categoría</option>
+                          {categories.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

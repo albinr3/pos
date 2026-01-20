@@ -1,14 +1,26 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 
 export async function GET() {
   try {
-    const company = await prisma.companySettings.findUnique({ where: { id: "company" } })
+    const user = await getCurrentUser()
+    if (!user) {
+      return NextResponse.json(
+        { error: "No autenticado" },
+        { status: 401 }
+      )
+    }
+
+    const company = await prisma.companySettings.findFirst({ 
+      where: { accountId: user.accountId } 
+    })
+    
     return NextResponse.json({
-      name: company?.name ?? "Tejada Auto Adornos",
+      name: company?.name || "",
       logoUrl: company?.logoUrl ?? null,
-      address: company?.address ?? "Carretera la Rosa, Moca",
-      phone: company?.phone ?? "829-475-1454",
+      address: company?.address || "",
+      phone: company?.phone || "",
     })
   } catch (error) {
     return NextResponse.json(
@@ -17,6 +29,7 @@ export async function GET() {
     )
   }
 }
+
 
 
 

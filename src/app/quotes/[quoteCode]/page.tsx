@@ -2,6 +2,7 @@
 import { notFound } from "next/navigation"
 
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
 import { PrintToolbar } from "@/components/app/print-toolbar"
 import { QuoteShareButton } from "@/components/app/quote-share-button"
@@ -23,10 +24,19 @@ export default async function QuotePage({
 }) {
   const { quoteCode } = await params
 
+  // Obtener usuario actual para filtrar por accountId
+  const user = await getCurrentUser()
+  if (!user) return notFound()
+
   const [company, quote] = await Promise.all([
-    prisma.companySettings.findUnique({ where: { id: "company" } }),
-    prisma.quote.findUnique({
-      where: { quoteCode },
+    prisma.companySettings.findFirst({ 
+      where: { accountId: user.accountId } 
+    }),
+    prisma.quote.findFirst({
+      where: { 
+        accountId: user.accountId,
+        quoteCode 
+      },
       include: {
         customer: true,
         items: {
@@ -72,9 +82,9 @@ export default async function QuotePage({
             </div>
           )}
           <div>
-            <div className="text-xl font-bold">{company?.name ?? "Tejada Auto Adornos"}</div>
-            <div className="text-sm">{company?.address ?? "Carretera la Rosa, Moca"}</div>
-            <div className="text-sm">Tel: {company?.phone ?? "829-475-1454"}</div>
+            <div className="text-xl font-bold">{company?.name || "Mi Negocio"}</div>
+            {company?.address && <div className="text-sm">{company.address}</div>}
+            {company?.phone && <div className="text-sm">Tel: {company.phone}</div>}
           </div>
         </div>
 

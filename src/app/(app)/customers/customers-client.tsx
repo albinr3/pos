@@ -197,7 +197,7 @@ export function CustomersClient() {
                 {items.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell className="font-medium">
-                      {c.isGeneric ? "(Genérico) " : ""}{c.name}
+                      {c.isGeneric ? "(General) " : ""}{c.name}
                     </TableCell>
                     <TableCell>{c.phone ?? "—"}</TableCell>
                     <TableCell>{c.cedula ?? "—"}</TableCell>

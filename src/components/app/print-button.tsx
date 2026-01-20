@@ -1,17 +1,36 @@
 "use client"
 
-import { Printer } from "lucide-react"
+import { Printer, Bluetooth } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useBluetoothPrint } from "@/hooks/use-bluetooth-print"
 
 export function PrintButton() {
-  const handlePrint = () => {
-    window.print()
-  }
+  const { handlePrint, isPrinting, isConnecting, isBluetoothSupported } = useBluetoothPrint()
 
   return (
-    <Button onClick={handlePrint} variant="outline" size="sm">
-      <Printer className="h-4 w-4" />
-      Imprimir
-    </Button>
+    <div className="flex gap-2">
+      {isBluetoothSupported ? (
+        <Button
+          onClick={() => handlePrint(true)}
+          variant="outline"
+          size="sm"
+          disabled={isPrinting || isConnecting}
+          title="Imprimir a impresora Bluetooth"
+        >
+          <Bluetooth className="h-4 w-4" />
+          {isConnecting ? "Conectando..." : isPrinting ? "Imprimiendo..." : "Bluetooth"}
+        </Button>
+      ) : null}
+      <Button
+        onClick={() => handlePrint(false)}
+        variant="outline"
+        size="sm"
+        disabled={isPrinting || isConnecting}
+        title="Imprimir (método estándar)"
+      >
+        <Printer className="h-4 w-4" />
+        {isPrinting ? "Imprimiendo..." : "Imprimir"}
+      </Button>
+    </div>
   )
 }

@@ -51,7 +51,7 @@ export function PaymentsListClient() {
   async function handleCancel(id: string) {
     if (!confirm("¿Cancelar este recibo? Se recalculará el balance de la cuenta por cobrar.")) return
     try {
-      await cancelPayment(id, "admin")
+      await cancelPayment(id)
       toast({ title: "Listo", description: "Recibo cancelado" })
       refresh()
     } catch (e) {
@@ -159,6 +159,7 @@ export function PaymentsListClient() {
     </div>
   )
 }
+
 
 
 

@@ -2,11 +2,47 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
+
+/**
+ * Asegura que el cliente general existe y devuelve su ID
+ */
+async function ensureGenericCustomer(accountId: string): Promise<string> {
+  const existingGeneric = await prisma.customer.findFirst({
+    where: {
+      accountId,
+      isGeneric: true,
+    },
+  })
+
+  if (existingGeneric) {
+    return existingGeneric.id
+  }
+
+  // Crear cliente general si no existe
+  const newGeneric = await prisma.customer.create({
+    data: {
+      accountId,
+      name: "Cliente general",
+      isGeneric: true,
+      isActive: true,
+    },
+  })
+
+  return newGeneric.id
+}
 
 export async function listCustomers(query?: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  // Asegurar que el cliente general existe
+  await ensureGenericCustomer(user.accountId)
+
   const q = query?.trim()
   return prisma.customer.findMany({
     where: {
+      accountId: user.accountId,
       isActive: true,
       ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
     },
@@ -23,6 +59,9 @@ export async function upsertCustomer(input: {
   cedula?: string | null
   province?: string | null
 }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const name = input.name.trim()
   if (!name) throw new Error("El nombre es requerido")
 
@@ -32,9 +71,11 @@ export async function upsertCustomer(input: {
   const province = input.province?.trim() || null
 
   if (input.id) {
-    const existing = await prisma.customer.findUnique({ where: { id: input.id } })
+    const existing = await prisma.customer.findFirst({
+      where: { id: input.id, accountId: user.accountId },
+    })
     if (!existing) throw new Error("Cliente no encontrado")
-    if (existing.isGeneric) throw new Error("No se puede modificar el Cliente Genérico")
+    if (existing.isGeneric) throw new Error("No se puede modificar el Cliente general")
 
     await prisma.customer.update({
       where: { id: input.id },
@@ -42,7 +83,16 @@ export async function upsertCustomer(input: {
     })
   } else {
     await prisma.customer.create({
-      data: { name, phone, address, cedula, province, isGeneric: false, isActive: true },
+      data: {
+        accountId: user.accountId,
+        name,
+        phone,
+        address,
+        cedula,
+        province,
+        isGeneric: false,
+        isActive: true,
+      },
     })
   }
 
@@ -52,9 +102,14 @@ export async function upsertCustomer(input: {
 }
 
 export async function deactivateCustomer(id: string) {
-  const existing = await prisma.customer.findUnique({ where: { id } })
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const existing = await prisma.customer.findFirst({
+    where: { id, accountId: user.accountId },
+  })
   if (!existing) throw new Error("Cliente no encontrado")
-  if (existing.isGeneric) throw new Error("No se puede desactivar el Cliente Genérico")
+    if (existing.isGeneric) throw new Error("No se puede desactivar el Cliente general")
 
   await prisma.customer.update({ where: { id }, data: { isActive: false } })
 

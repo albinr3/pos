@@ -1,9 +1,20 @@
 import { notFound } from "next/navigation"
+import { Decimal } from "@prisma/client/runtime/library"
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { PrintToolbar } from "@/components/app/print-toolbar"
 import { formatRD } from "@/lib/money"
+
+function decimalToNumber(decimal: unknown): number {
+  if (typeof decimal === "number") return decimal
+  if (typeof decimal === "string") return parseFloat(decimal)
+  if (decimal && typeof decimal === "object" && "toNumber" in decimal) {
+    return (decimal as { toNumber: () => number }).toNumber()
+  }
+  return 0
+}
 
 function fmtDate(d: Date) {
   return format(d, "dd/MM/yyyy HH:mm", { locale: es })
@@ -16,10 +27,19 @@ export default async function ReturnReceiptPage({
 }) {
   const { returnCode } = await params
 
+  // Obtener usuario actual para filtrar por accountId
+  const user = await getCurrentUser()
+  if (!user) return notFound()
+
   const [company, returnRecord] = await Promise.all([
-    prisma.companySettings.findUnique({ where: { id: "company" } }),
-    prisma.return.findUnique({
-      where: { returnCode },
+    prisma.companySettings.findFirst({ 
+      where: { accountId: user.accountId } 
+    }),
+    prisma.return.findFirst({
+      where: { 
+        accountId: user.accountId,
+        returnCode 
+      },
       include: {
         sale: {
           include: {
@@ -71,9 +91,9 @@ export default async function ReturnReceiptPage({
             </div>
           </div>
         )}
-        <div className="text-[14px] font-bold">{company?.name ?? "Tejada Auto Adornos"}</div>
-        <div>{company?.address ?? "Carretera la Rosa, Moca"}</div>
-        <div>Tel: {company?.phone ?? "829-475-1454"}</div>
+        <div className="text-[14px] font-bold">{company?.name || "Mi Negocio"}</div>
+        {company?.address && <div>{company.address}</div>}
+        {company?.phone && <div>Tel: {company.phone}</div>}
       </div>
 
       {returnRecord.cancelledAt && (
@@ -116,7 +136,7 @@ export default async function ReturnReceiptPage({
             </div>
             <div className="flex justify-between text-[11px] text-gray-600">
               <span>
-                {item.qty} x {formatRD(item.unitPriceCents)}
+                {decimalToNumber(item.qty)} x {formatRD(item.unitPriceCents)}
               </span>
               <span>{formatRD(item.lineTotalCents)}</span>
             </div>

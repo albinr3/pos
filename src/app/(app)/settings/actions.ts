@@ -2,13 +2,20 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 
 export async function getSettings() {
-  const s = await prisma.companySettings.findUnique({ where: { id: "company" } })
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const s = await prisma.companySettings.findFirst({
+    where: { accountId: user.accountId },
+  })
+  
   return {
-    name: s?.name ?? "Tejada Auto Adornos",
-    phone: s?.phone ?? "829-475-1454",
-    address: s?.address ?? "Carretera la Rosa, Moca",
+    name: s?.name ?? "Mi Negocio",
+    phone: s?.phone ?? "",
+    address: s?.address ?? "",
     logoUrl: s?.logoUrl ?? null,
     allowNegativeStock: s?.allowNegativeStock ?? false,
     barcodeLabelSize: s?.barcodeLabelSize ?? "4x2",
@@ -17,14 +24,17 @@ export async function getSettings() {
 }
 
 export async function updateAllowNegativeStock(allow: boolean) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   await prisma.companySettings.upsert({
-    where: { id: "company" },
+    where: { accountId: user.accountId },
     update: { allowNegativeStock: allow },
     create: {
-      id: "company",
-      name: "Tejada Auto Adornos",
-      phone: "829-475-1454",
-      address: "Carretera la Rosa, Moca",
+      accountId: user.accountId,
+      name: "Mi Negocio",
+      phone: "",
+      address: "",
       allowNegativeStock: allow,
       itbisRateBp: 1800,
     },
@@ -35,14 +45,17 @@ export async function updateAllowNegativeStock(allow: boolean) {
 }
 
 export async function updateLabelSizes(barcodeLabelSize: string, shippingLabelSize: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   await prisma.companySettings.upsert({
-    where: { id: "company" },
+    where: { accountId: user.accountId },
     update: { barcodeLabelSize, shippingLabelSize },
     create: {
-      id: "company",
-      name: "Tejada Auto Adornos",
-      phone: "829-475-1454",
-      address: "Carretera la Rosa, Moca",
+      accountId: user.accountId,
+      name: "Mi Negocio",
+      phone: "",
+      address: "",
       allowNegativeStock: false,
       itbisRateBp: 1800,
       barcodeLabelSize,

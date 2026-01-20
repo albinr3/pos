@@ -5,6 +5,7 @@ import Image from "next/image"
 import { useState } from "react"
 import { Menu, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 
 const navItems = [
   { href: "/pricing", label: "Precios" },
@@ -50,9 +51,26 @@ export function MarketingHeader() {
           >
             Contacto
           </Link>
-          <Button asChild className="bg-white text-[#6B46C1] hover:bg-white/90">
-            <Link href="/app">Iniciar Sesión</Link>
-          </Button>
+          <SignedOut>
+            <Button asChild className="bg-white text-[#6B46C1] hover:bg-white/90">
+              <Link href="/login">Iniciar Sesión</Link>
+            </Button>
+          </SignedOut>
+          <SignedIn>
+            <div className="flex items-center gap-3">
+              <Button asChild variant="ghost" className="text-white hover:bg-white/10">
+                <Link href="/dashboard">Ir a la App</Link>
+              </Button>
+              <UserButton 
+                afterSignOutUrl="/"
+                appearance={{
+                  elements: {
+                    avatarBox: "w-9 h-9 ring-2 ring-white/30"
+                  }
+                }}
+              />
+            </div>
+          </SignedIn>
         </nav>
 
         <div className="md:hidden">
@@ -92,11 +110,30 @@ export function MarketingHeader() {
             >
               Contacto
             </Link>
-            <Button asChild className="w-full bg-white text-[#6B46C1] hover:bg-white/90">
-              <Link href="/app" onClick={() => setMobileMenuOpen(false)}>
-                Iniciar Sesión
-              </Link>
-            </Button>
+            <SignedOut>
+              <Button asChild className="w-full bg-white text-[#6B46C1] hover:bg-white/90">
+                <Link href="/login" onClick={() => setMobileMenuOpen(false)}>
+                  Iniciar Sesión
+                </Link>
+              </Button>
+            </SignedOut>
+            <SignedIn>
+              <Button asChild className="w-full bg-white text-[#6B46C1] hover:bg-white/90">
+                <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)}>
+                  Ir a la App
+                </Link>
+              </Button>
+              <div className="flex items-center justify-center pt-2">
+                <UserButton 
+                  afterSignOutUrl="/"
+                  appearance={{
+                    elements: {
+                      avatarBox: "w-10 h-10 ring-2 ring-white/30"
+                    }
+                  }}
+                />
+              </div>
+            </SignedIn>
           </div>
         </div>
       )}

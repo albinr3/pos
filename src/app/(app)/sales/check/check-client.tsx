@@ -199,7 +199,7 @@ export function CheckSaleClient() {
                             <span className="ml-2 text-xs text-red-600 font-semibold">[CANCELADA]</span>
                           )}
                         </div>
-                        <div className="text-muted-foreground">{s.customer?.name || "Cliente Genérico"}</div>
+                        <div className="text-muted-foreground">{s.customer?.name || "Cliente general"}</div>
                       </div>
                     </div>
                   ))}
