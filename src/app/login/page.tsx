@@ -7,22 +7,87 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Mail, Loader2 } from "lucide-react"
 
 export default function LoginPage() {
-  const { isLoaded, isSignedIn } = useUser()
+  const { isLoaded, isSignedIn, user } = useUser()
   const [showSignIn, setShowSignIn] = useState(false)
   const [isRedirecting, setIsRedirecting] = useState(false)
 
-  // Redirigir a selección de usuario cuando está autenticado con Clerk
+  // Detectar si hay un callback de SSO en la URL y mostrar SignIn
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    
+    const hash = window.location.hash
+    // Si hay un callback de SSO, mostrar el componente SignIn automáticamente
+    if (hash.includes("sso-callback") || hash.includes("sign-in")) {
+      setShowSignIn(true)
+    }
+  }, [])
+
+  // Escuchar cambios en el hash para detectar cuando Clerk procesa el callback
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const handleHashChange = () => {
+      const hash = window.location.hash
+      if (hash.includes("sso-callback") || hash.includes("sign-in")) {
+        setShowSignIn(true)
+      }
+    }
+
+    window.addEventListener("hashchange", handleHashChange)
+    return () => window.removeEventListener("hashchange", handleHashChange)
+  }, [])
+
+  // Verificar periódicamente el estado de autenticación cuando hay un callback
   useEffect(() => {
     if (!isLoaded) return
+    if (typeof window === "undefined") return
+
+    const hash = window.location.hash
+    const hasCallback = hash.includes("sso-callback") || hash.includes("sign-in")
     
-    if (isSignedIn && !isRedirecting) {
-      setIsRedirecting(true)
-      // Redirigir a selección de subusuario
-      setTimeout(() => {
-        window.location.href = "/select-user"
-      }, 100)
+    // Si hay un callback, verificar el estado de autenticación periódicamente
+    if (hasCallback) {
+      const checkAuth = () => {
+        const isAuthenticated = isSignedIn || !!user
+        if (isAuthenticated && !isRedirecting) {
+          setIsRedirecting(true)
+          window.location.href = "/select-user"
+        }
+      }
+
+      // Verificar inmediatamente
+      checkAuth()
+
+      // Verificar cada 500ms hasta que se autentique o pasen 10 segundos
+      const interval = setInterval(checkAuth, 500)
+      const timeout = setTimeout(() => clearInterval(interval), 10000)
+
+      return () => {
+        clearInterval(interval)
+        clearTimeout(timeout)
+      }
     }
-  }, [isLoaded, isSignedIn, isRedirecting])
+  }, [isLoaded, isSignedIn, user, isRedirecting])
+
+  // Redirigir a selección de usuario cuando está autenticado con Clerk (sin callback)
+  useEffect(() => {
+    if (!isLoaded) return
+    if (typeof window === "undefined") return
+
+    const hash = window.location.hash
+    const hasCallback = hash.includes("sso-callback") || hash.includes("sign-in")
+    
+    // Solo redirigir si no hay callback (el callback se maneja en el otro useEffect)
+    if (hasCallback) return
+    
+    // Verificar autenticación - usar isSignedIn y también verificar user como respaldo
+    const isAuthenticated = isSignedIn || !!user
+    
+    if (isAuthenticated && !isRedirecting) {
+      setIsRedirecting(true)
+      window.location.href = "/select-user"
+    }
+  }, [isLoaded, isSignedIn, user, isRedirecting])
 
   // Mostrar pantalla de carga mientras Clerk se inicializa o mientras redirigimos
   if (!isLoaded || isRedirecting) {
