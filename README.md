@@ -378,6 +378,11 @@ CLERK_WEBHOOK_SECRET="whsec_..."  # Para webhook de Clerk
 # JWT Secret (requerido para sesiones de subusuarios)
 JWT_SECRET="tu_secret_key_segura_minimo_32_caracteres"
 
+# Uploadthing (requerido para subida de archivos)
+UPLOADTHING_SECRET="sk_live_..."
+UPLOADTHING_APP_ID="..."
+NEXT_PUBLIC_UPLOADTHING_APP_ID="..."  # Mismo valor que UPLOADTHING_APP_ID
+
 # OpenAI (opcional - para OCR de facturas)
 OPENAI_API_KEY="sk-..."
 
@@ -601,11 +606,13 @@ npx prisma generate
 - **Stock**: Se restaura automáticamente al cancelar ventas o compras
 
 ### Archivos y Uploads
-- **Logos**: Se guardan en `public/uploads/logos/`
+- **Logos**: Se guardan en **Uploadthing** (CDN)
   - Tamaño máximo: 5MB
-- **Imágenes de productos**: Se guardan en `public/uploads/products/`
+  - Configurar `UPLOADTHING_SECRET` y `UPLOADTHING_APP_ID`
+- **Imágenes de productos**: Se guardan en **Uploadthing** (CDN)
   - Hasta 3 imágenes por producto
   - Tamaño máximo: 2MB por imagen
+  - Las imágenes se almacenan en CDN de Uploadthing
 
 ---
 

@@ -1,8 +1,10 @@
 "use client"
 
-import { useEffect, useState, useTransition, useRef } from "react"
-import { Upload, X, Image as ImageIcon, RefreshCw, WifiOff, Database } from "lucide-react"
+import { useEffect, useState, useTransition } from "react"
+import { X, Image as ImageIcon, RefreshCw, WifiOff, Database } from "lucide-react"
 import Image from "next/image"
+import { UploadButton } from "@uploadthing/react"
+import type { OurFileRouter } from "@/app/api/uploadthing/core"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -38,8 +40,6 @@ export function SettingsClient({ isOwner }: Props) {
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
-  const [isUploadingLogo, setIsUploadingLogo] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [barcodeLabelSize, setBarcodeLabelSize] = useState("4x2")
   const [shippingLabelSize, setShippingLabelSize] = useState("4x6")
@@ -135,51 +135,14 @@ export function SettingsClient({ isOwner }: Props) {
     }
   }
 
-  async function handleLogoUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    if (!file) return
-
-    // Validar tipo
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Error", description: "El archivo debe ser una imagen" })
-      return
-    }
-
-    // Validar tamaño (5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: "Error", description: "El archivo es demasiado grande (máximo 5MB)" })
-      return
-    }
-
-    setIsUploadingLogo(true)
-
+  async function handleLogoUpload(url: string) {
     try {
-      const formData = new FormData()
-      formData.append("file", file)
-
-      const response = await fetch("/api/upload-logo", {
-        method: "POST",
-        body: formData,
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || "Error al subir el logo")
-      }
-
-      const data = await response.json()
-      setLogoUrl(data.url)
-
+      setLogoUrl(url)
       // Guardar en la base de datos
-      await updateCompanyInfo({ name, phone, address, logoUrl: data.url })
+      await updateCompanyInfo({ name, phone, address, logoUrl: url })
       toast({ title: "Logo actualizado" })
     } catch (e) {
-      toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo subir el logo" })
-    } finally {
-      setIsUploadingLogo(false)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ""
-      }
+      toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar el logo" })
     }
   }
 
@@ -241,24 +204,33 @@ export function SettingsClient({ isOwner }: Props) {
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleLogoUpload}
-                  className="hidden"
-                  id="logo-upload"
+                <UploadButton<OurFileRouter>
+                  endpoint="logoUploader"
+                  onClientUploadComplete={(res) => {
+                    if (res?.[0]?.url) {
+                      handleLogoUpload(res[0].url)
+                    }
+                  }}
+                  onUploadError={(error: Error) => {
+                    toast({
+                      title: "Error",
+                      description: error.message,
+                      variant: "destructive",
+                    })
+                  }}
+                  content={{
+                    button({ ready, isUploading }) {
+                      if (isUploading) return "Subiendo..."
+                      if (ready) return logoUrl ? "Cambiar logo" : "Subir logo"
+                      return "Preparando..."
+                    },
+                    allowedContent({ ready, fileTypes, isUploading }) {
+                      if (!ready) return "Preparando..."
+                      if (isUploading) return "Subiendo..."
+                      return `Formatos: JPG, PNG, GIF. Máximo 5MB`
+                    },
+                  }}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isUploadingLogo}
-                  className="w-fit"
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  {isUploadingLogo ? "Subiendo..." : logoUrl ? "Cambiar logo" : "Subir logo"}
-                </Button>
                 <p className="text-xs text-muted-foreground">
                   Formatos: JPG, PNG, GIF. Máximo 5MB
                 </p>

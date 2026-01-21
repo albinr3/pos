@@ -64,6 +64,9 @@ En el dashboard de Vercel → Settings → Environment Variables:
 | `CLERK_SECRET_KEY` | `sk_live_...` | Todos |
 | `JWT_SECRET` | (generado) | Todos |
 | `CLERK_WEBHOOK_SECRET` | `whsec_...` | Todos |
+| `UPLOADTHING_SECRET` | `sk_live_...` | Todos |
+| `UPLOADTHING_APP_ID` | `...` | Todos |
+| `NEXT_PUBLIC_UPLOADTHING_APP_ID` | `...` (mismo que UPLOADTHING_APP_ID) | Todos |
 | `OPENAI_API_KEY` | `sk-...` (opcional) | Todos |
 
 ---
@@ -131,23 +134,18 @@ Ahora que tienes URL de producción:
 
 ### Archivos Subidos (Logos, Imágenes de Productos)
 
-**Problema**: Vercel es serverless, los archivos subidos a `public/uploads/` NO persisten entre despliegues ni entre funciones.
+✅ **Implementado**: El proyecto usa **Uploadthing** para almacenar logos e imágenes de productos.
 
-**Soluciones:**
+**Configuración:**
+1. Crear cuenta en [Uploadthing](https://uploadthing.com/)
+2. Crear proyecto
+3. Obtener keys:
+   - `UPLOADTHING_SECRET` (secret key)
+   - `UPLOADTHING_APP_ID` (app ID)
+4. Agregar ambas variables en Vercel
+5. Agregar `NEXT_PUBLIC_UPLOADTHING_APP_ID` (mismo valor que `UPLOADTHING_APP_ID`)
 
-1. **Usar almacenamiento externo** (recomendado):
-   - [Uploadthing](https://uploadthing.com/) - Fácil integración con Next.js
-   - [Cloudinary](https://cloudinary.com/) - Transformación de imágenes
-   - [AWS S3](https://aws.amazon.com/s3/) - Más control
-
-2. **Usar Vercel Blob** (beta):
-   - Integración nativa de Vercel
-   - Requiere plan Pro
-
-**Migración necesaria**: 
-- Cambiar `src/app/api/upload-logo/route.ts`
-- Cambiar `src/app/api/upload-product-image/route.ts`
-- Actualizar referencias en la base de datos
+**Nota**: Las imágenes existentes en `public/uploads/` seguirán funcionando mientras existan en el repositorio, pero las nuevas se subirán a Uploadthing.
 
 ### Sistema de Backups
 
