@@ -127,7 +127,7 @@ export function InventoryExportClient({
     // Agregar total al final
     const finalY = (doc as any).lastAutoTable?.finalY || 35
     doc.setFontSize(12)
-    doc.setFont(undefined, "bold")
+    doc.setFont("helvetica", "bold")
     doc.text(
       `Total de Inventario: ${formatRD(totalInventoryCostCents)} (${count} productos)`,
       14,
