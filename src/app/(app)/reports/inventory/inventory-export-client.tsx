@@ -44,10 +44,10 @@ export function InventoryExportClient({
     // Agregar fila de total
     excelData.push({
       Producto: "TOTAL",
-      SKU: "",
-      Proveedor: "",
-      Stock: products.reduce((sum, p) => sum + p.stock, 0),
-      "Costo Unitario": "",
+      SKU: "-",
+      Proveedor: "-",
+      Stock: products.reduce((sum, p) => sum + Number(p.stock), 0),
+      "Costo Unitario": 0,
       "Costo Total": totalInventoryCostCents / 100,
     })
 
