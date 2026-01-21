@@ -141,7 +141,7 @@ export default async function QuotePage({
               <td className="py-2 pr-2">{it.product.name}</td>
               <td className="py-2 pr-2">{it.product.sku ?? "—"}</td>
               <td className="py-2 pr-2">{it.product.reference ?? "—"}</td>
-              <td className="py-2 text-right">{it.qty}</td>
+              <td className="py-2 text-right">{Number(it.qty)}</td>
               <td className="py-2 text-right">{formatRD(it.unitPriceCents)}</td>
               <td className="py-2 text-right">{formatRD(it.lineTotalCents)}</td>
             </tr>

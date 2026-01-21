@@ -25,6 +25,8 @@ export async function listUsersWithPermissions() {
       canChangeSaleType: true,
       canSellWithoutStock: true,
       canManageBackups: true,
+      canViewProductCosts: true,
+      canViewProfitReport: true,
     },
   })
   return users
@@ -41,6 +43,8 @@ export async function updateUserPermissions(input: {
   canChangeSaleType?: boolean
   canSellWithoutStock?: boolean
   canManageBackups?: boolean
+  canViewProductCosts?: boolean
+  canViewProfitReport?: boolean
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
@@ -83,6 +87,8 @@ export async function setAllPermissions(userId: string, value: boolean) {
       canChangeSaleType: value,
       canSellWithoutStock: value,
       canManageBackups: value,
+      canViewProductCosts: value,
+      canViewProfitReport: value,
     },
   })
 

@@ -42,7 +42,7 @@ export function ProductImageUpload({
     <div className="space-y-4">
       {images.length === 0 ? (
         <div className="relative rounded-lg border-2 border-dashed border-purple-primary/50 bg-purple-50/50 dark:bg-purple-950/10 p-8 flex flex-col items-center justify-center">
-          <UploadButton<OurFileRouter>
+          <UploadButton<OurFileRouter, "productImageUploader">
             endpoint="productImageUploader"
             onClientUploadComplete={handleUploadComplete}
             onUploadError={(error: Error) => {
@@ -53,7 +53,7 @@ export function ProductImageUpload({
               })
             }}
             content={{
-              button({ ready, isUploading }) {
+              button({ ready, isUploading }: { ready: boolean; isUploading: boolean }) {
                 if (isUploading) return "Subiendo..."
                 if (ready) return "Cargar imágenes"
                 return "Preparando..."
@@ -93,7 +93,7 @@ export function ProductImageUpload({
 
             {canUploadMore && (
               <div className="relative aspect-square rounded-lg border-2 border-dashed border-purple-primary/50 bg-purple-50/50 dark:bg-purple-950/10 flex items-center justify-center">
-                <UploadButton<OurFileRouter>
+                <UploadButton<OurFileRouter, "productImageUploader">
                   endpoint="productImageUploader"
                   onClientUploadComplete={handleUploadComplete}
                   onUploadError={(error: Error) => {
@@ -104,7 +104,7 @@ export function ProductImageUpload({
                     })
                   }}
                   content={{
-                    button({ ready, isUploading }) {
+                    button({ ready, isUploading }: { ready: boolean; isUploading: boolean }) {
                       if (isUploading) return "Subiendo..."
                       if (ready) return "Agregar"
                       return "Preparando..."

@@ -69,7 +69,19 @@ type NewUserForm = {
   password: string
   email: string
   role: "ADMIN" | "CAJERO" | "ALMACEN"
-  permissions: Record<string, boolean>
+  permissions: {
+    canOverridePrice: boolean
+    canCancelSales: boolean
+    canCancelReturns: boolean
+    canCancelPayments: boolean
+    canEditSales: boolean
+    canEditProducts: boolean
+    canChangeSaleType: boolean
+    canSellWithoutStock: boolean
+    canManageBackups: boolean
+    canViewProductCosts: boolean
+    canViewProfitReport: boolean
+  }
 }
 
 const DEFAULT_NEW_USER: NewUserForm = {

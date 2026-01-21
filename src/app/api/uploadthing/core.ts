@@ -4,7 +4,7 @@ const f = createUploadthing()
 
 export const ourFileRouter = {
   // Logo de empresa (máx 5MB)
-  logoUploader: f({ image: { maxFileSize: "5MB" } })
+        logoUploader: f({ image: { maxFileSize: "4MB" } })
     .onUploadComplete(async ({ metadata, file }) => {
       return { url: file.url }
     }),

@@ -83,7 +83,7 @@ export function CheckSaleClient() {
 
           {result && (
             <div className="rounded-md border p-4">
-              {result.exists ? (
+              {result.exists && result.sale ? (
                 <div className="space-y-2">
                   <div className="font-semibold text-green-600">✓ Factura encontrada</div>
                   <div className="grid gap-1 text-sm">
@@ -109,7 +109,7 @@ export function CheckSaleClient() {
               ) : (
                 <div className="space-y-2">
                   <div className="font-semibold text-red-600">✗ Factura NO encontrada</div>
-                  {result.similarCodes.length > 0 && (
+                  {result.similarCodes && result.similarCodes.length > 0 && (
                     <div className="text-sm">
                       <div className="font-medium">Códigos similares encontrados:</div>
                       <ul className="list-disc list-inside mt-1">
@@ -147,12 +147,12 @@ export function CheckSaleClient() {
                   <div>
                     <div className="font-semibold">Estado de la Base de Datos:</div>
                     <div className="text-sm mt-1">
-                      <div>Total de facturas: <span className="font-medium">{diagnosis.totalSales}</span></div>
-                      <div>Columnas de cancelación encontradas: {diagnosis.saleColumns.length}/2</div>
+                      <div>Total de facturas: <span className="font-medium">{diagnosis.totalSales ?? 0}</span></div>
+                      <div>Columnas de cancelación encontradas: {(diagnosis.saleColumns?.length ?? 0)}/2</div>
                     </div>
                   </div>
 
-                  {diagnosis.saleColumns.length < 2 && (
+                  {diagnosis.saleColumns && diagnosis.saleColumns.length < 2 && (
                     <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
                       <div className="font-semibold text-yellow-800">⚠️ Advertencia</div>
                       <div className="text-sm text-yellow-700 mt-1">
@@ -162,7 +162,7 @@ export function CheckSaleClient() {
                     </div>
                   )}
 
-                  {diagnosis.lastSales.length > 0 && (
+                  {diagnosis.lastSales && diagnosis.lastSales.length > 0 && (
                     <div>
                       <div className="font-semibold mb-2">Últimas 10 facturas:</div>
                       <div className="space-y-1 text-sm">
@@ -177,7 +177,7 @@ export function CheckSaleClient() {
                   )}
                 </>
               ) : (
-                <div className="text-red-600">Error: {diagnosis.error}</div>
+                <div className="text-red-600">Error: {diagnosis.error ?? "Error desconocido"}</div>
               )}
             </div>
           )}

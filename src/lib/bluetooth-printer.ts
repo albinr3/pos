@@ -3,8 +3,10 @@
  * Requiere HTTPS (excepto en localhost)
  */
 
+// BluetoothDevice solo está disponible en el navegador
+// Usamos un tipo condicional para TypeScript
 export interface BluetoothPrinter {
-  device: BluetoothDevice
+  device: typeof globalThis extends { BluetoothDevice: infer T } ? T : any
   name: string
   id: string
 }

@@ -9,6 +9,9 @@ if (!WEBHOOK_SECRET) {
   throw new Error("CLERK_WEBHOOK_SECRET no está configurado")
 }
 
+// TypeScript assertion: después del check, sabemos que no es undefined
+const secret: string = WEBHOOK_SECRET
+
 export async function POST(request: NextRequest) {
   const headerPayload = await headers()
   const svix_id = headerPayload.get("svix-id")
@@ -25,7 +28,7 @@ export async function POST(request: NextRequest) {
   const payload = await request.json()
   const body = JSON.stringify(payload)
 
-  const wh = new Webhook(WEBHOOK_SECRET)
+  const wh = new Webhook(secret)
 
   let evt: any
 
@@ -51,52 +54,55 @@ export async function POST(request: NextRequest) {
       const email = email_addresses?.[0]?.email_address
       const name = `${first_name || ""} ${last_name || ""}`.trim() || email?.split("@")[0] || "Usuario"
 
-      // Buscar usuario existente por clerkUserId o email
-      let user = await prisma.user.findFirst({
-        where: {
-          OR: [
-            { clerkUserId: id },
-            ...(email ? [{ email }] : []),
-          ],
-        },
+      // Buscar o crear Account basado en clerkUserId
+      let account = await prisma.account.findUnique({
+        where: { clerkUserId: id },
+        include: { users: { where: { isOwner: true }, take: 1 } },
       })
 
-      if (user) {
-        // Actualizar usuario existente
-        await prisma.user.update({
-          where: { id: user.id },
+      if (!account) {
+        // Crear nuevo Account y usuario owner
+        const baseUsername = email ? email.split("@")[0] : `user_${id.slice(0, 8)}`
+        let username = baseUsername
+
+        // Crear Account primero
+        const newAccount = await prisma.account.create({
           data: {
+            name: name || "Mi Negocio",
             clerkUserId: id,
-            email: email || user.email,
-            name,
-            // No sobrescribir campos importantes si ya existen
-            ...(user.passwordHash === null ? {} : {}),
           },
         })
-      } else {
-        // Crear nuevo usuario
-        // Generar username único
-        const baseUsername = email
-          ? email.split("@")[0]
-          : `user_${id.slice(0, 8)}`
-        let username = baseUsername
-        let counter = 1
 
-        while (await prisma.user.findUnique({ where: { username } })) {
-          username = `${baseUsername}_${counter}`
-          counter++
-        }
-
+        // Crear usuario owner asociado al account
         await prisma.user.create({
           data: {
+            accountId: newAccount.id,
             name,
             username,
             email: email || null,
-            clerkUserId: id,
-            passwordHash: null, // Usuarios de Clerk no tienen passwordHash
-            role: "CAJERO", // Rol por defecto
+            passwordHash: "$2b$10$placeholder", // Usuarios de Clerk no usan passwordHash local
+            role: "ADMIN",
+            isOwner: true,
           },
         })
+
+        // Recargar account con users
+        account = await prisma.account.findUnique({
+          where: { clerkUserId: id },
+          include: { users: { where: { isOwner: true }, take: 1 } },
+        })
+      } else {
+        // Actualizar usuario owner si existe
+        const ownerUser = account.users[0]
+        if (ownerUser) {
+          await prisma.user.update({
+            where: { id: ownerUser.id },
+            data: {
+              email: email || ownerUser.email,
+              name,
+            },
+          })
+        }
       }
     } catch (error) {
       console.error("Error procesando webhook de Clerk:", error)

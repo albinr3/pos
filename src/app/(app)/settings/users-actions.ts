@@ -23,6 +23,8 @@ export type UserWithPermissions = {
   canChangeSaleType: boolean
   canSellWithoutStock: boolean
   canManageBackups: boolean
+  canViewProductCosts: boolean
+  canViewProfitReport: boolean
   createdAt: Date
 }
 
@@ -52,6 +54,8 @@ export async function listAccountUsers(): Promise<UserWithPermissions[]> {
       canChangeSaleType: true,
       canSellWithoutStock: true,
       canManageBackups: true,
+      canViewProductCosts: true,
+      canViewProfitReport: true,
       createdAt: true,
     },
   })
@@ -75,6 +79,8 @@ export async function createUser(data: {
     canChangeSaleType: boolean
     canSellWithoutStock: boolean
     canManageBackups: boolean
+    canViewProductCosts: boolean
+    canViewProfitReport: boolean
   }
 }) {
   const currentUser = await getCurrentUser()
@@ -143,6 +149,8 @@ export async function updateUser(
       canChangeSaleType?: boolean
       canSellWithoutStock?: boolean
       canManageBackups?: boolean
+      canViewProductCosts?: boolean
+      canViewProfitReport?: boolean
     }
   }
 ) {
@@ -283,6 +291,8 @@ export async function setAllUserPermissions(userId: string, value: boolean) {
       canChangeSaleType: value,
       canSellWithoutStock: value,
       canManageBackups: value,
+      canViewProductCosts: value,
+      canViewProfitReport: value,
     },
   })
 

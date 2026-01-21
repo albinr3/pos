@@ -107,14 +107,30 @@ export async function POST(request: NextRequest) {
         counter++
       }
 
+      // Obtener o crear account default para usuarios de WhatsApp
+      let account = await prisma.account.findFirst({
+        where: { id: "default_account" },
+      })
+
+      if (!account) {
+        account = await prisma.account.create({
+          data: {
+            id: "default_account",
+            name: "Mi Negocio",
+            clerkUserId: "whatsapp_users",
+          },
+        })
+      }
+
       user = await prisma.user.create({
         data: {
+          accountId: account.id,
           name: `Usuario ${normalizedPhone.slice(-4)}`, // Últimos 4 dígitos
           username,
           whatsappNumber: normalizedPhone,
           whatsappVerifiedAt: new Date(),
           role: "CAJERO", // Rol por defecto
-          passwordHash: null, // No hay password para usuarios de WhatsApp
+          passwordHash: "$2b$10$placeholder", // Usuarios de WhatsApp no usan passwordHash local
         },
       })
     } else {

@@ -204,7 +204,7 @@ export function SettingsClient({ isOwner }: Props) {
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <UploadButton<OurFileRouter>
+                <UploadButton<OurFileRouter, "logoUploader">
                   endpoint="logoUploader"
                   onClientUploadComplete={(res) => {
                     if (res?.[0]?.url) {
@@ -219,15 +219,10 @@ export function SettingsClient({ isOwner }: Props) {
                     })
                   }}
                   content={{
-                    button({ ready, isUploading }) {
+                    button({ ready, isUploading }: { ready: boolean; isUploading: boolean }) {
                       if (isUploading) return "Subiendo..."
                       if (ready) return logoUrl ? "Cambiar logo" : "Subir logo"
                       return "Preparando..."
-                    },
-                    allowedContent({ ready, fileTypes, isUploading }) {
-                      if (!ready) return "Preparando..."
-                      if (isUploading) return "Subiendo..."
-                      return `Formatos: JPG, PNG, GIF. Máximo 5MB`
                     },
                   }}
                 />
