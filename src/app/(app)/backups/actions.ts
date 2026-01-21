@@ -4,20 +4,15 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import { exec } from "child_process"
 import { promisify } from "util"
-import { prisma } from "@/lib/db"
-
-const execAsync = promisify(exec)
+import { getCurrentUser } from "@/lib/auth"
 
 const BACKUPS_DIR = path.join(process.cwd(), "backups")
 
-async function checkBackupPermission(username: string) {
-  const user = await prisma.user.findUnique({
-    where: { username },
-    select: { canManageBackups: true, role: true },
-  })
+async function checkBackupPermission() {
+  const user = await getCurrentUser()
   
   if (!user) {
-    throw new Error("Usuario inválido")
+    throw new Error("No autenticado")
   }
   
   if (!user.canManageBackups && user.role !== "ADMIN") {
@@ -64,8 +59,8 @@ export async function listBackups(): Promise<BackupFile[]> {
   }
 }
 
-export async function createBackup(username: string): Promise<{ filename: string }> {
-  await checkBackupPermission(username)
+export async function createBackup(): Promise<{ filename: string }> {
+  await checkBackupPermission()
   const { exec } = await import("child_process")
   const { promisify } = await import("util")
   const execAsync = promisify(exec)
@@ -122,8 +117,8 @@ export async function createBackup(username: string): Promise<{ filename: string
   }
 }
 
-export async function deleteBackup(filename: string, username: string): Promise<void> {
-  await checkBackupPermission(username)
+export async function deleteBackup(filename: string): Promise<void> {
+  await checkBackupPermission()
   // Validar que el filename es seguro (acepta formato con T o con _)
   if (!/^backup_\d{4}-\d{2}-\d{2}[T_]\d{2}-\d{2}-\d{2}\.sql$/.test(filename)) {
     throw new Error("Nombre de archivo inválido")
@@ -157,8 +152,8 @@ export async function getBackupPath(filename: string): Promise<string> {
   }
 }
 
-export async function restoreBackup(filename: string, username: string): Promise<void> {
-  await checkBackupPermission(username)
+export async function restoreBackup(filename: string): Promise<void> {
+  await checkBackupPermission()
   // Validar que el filename es seguro (acepta formato con T o con _)
   if (!/^backup_\d{4}-\d{2}-\d{2}[T_]\d{2}-\d{2}-\d{2}\.sql$/.test(filename)) {
     throw new Error("Nombre de archivo inválido")
@@ -189,6 +184,10 @@ export async function restoreBackup(filename: string, username: string): Promise
 
   // Restaurar usando psql
   // Usar variables de entorno directamente (funciona en todas las plataformas)
+  const { exec } = await import("child_process")
+  const { promisify } = await import("util")
+  const execAsync = promisify(exec)
+  
   const command = `psql -h ${host} -p ${port} -U ${user} -d ${database} -f "${filepath}"`
 
   try {

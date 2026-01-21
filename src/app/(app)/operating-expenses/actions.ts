@@ -3,8 +3,12 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { startOfDay, endOfDay, parseDateParam } from "@/lib/dates"
+import { getCurrentUser } from "@/lib/auth"
 
 export async function listOperatingExpenses(input?: { from?: string; to?: string }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const fromDate = parseDateParam(input?.from) ?? new Date()
   const toDate = parseDateParam(input?.to) ?? fromDate
 
@@ -13,6 +17,7 @@ export async function listOperatingExpenses(input?: { from?: string; to?: string
 
   return prisma.operatingExpense.findMany({
     where: {
+      accountId: user.accountId,
       expenseDate: { gte: from, lte: to },
     },
     orderBy: { expenseDate: "desc" },
@@ -33,15 +38,21 @@ export async function createOperatingExpense(input: {
   notes?: string | null
   username: string
 }) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   const description = input.description.trim()
   if (!description) throw new Error("La descripción es requerida")
   if (input.amountCents <= 0) throw new Error("El monto debe ser mayor a 0")
 
-  const user = await prisma.user.findUnique({ where: { username: input.username } })
+  const user = await prisma.user.findFirst({ 
+    where: { accountId: currentUser.accountId, username: input.username } 
+  })
   if (!user) throw new Error("Usuario inválido")
 
   await prisma.operatingExpense.create({
     data: {
+      accountId: currentUser.accountId,
       description,
       amountCents: input.amountCents,
       expenseDate: input.expenseDate ?? new Date(),
@@ -63,11 +74,16 @@ export async function updateOperatingExpense(input: {
   category?: string | null
   notes?: string | null
 }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const description = input.description.trim()
   if (!description) throw new Error("La descripción es requerida")
   if (input.amountCents <= 0) throw new Error("El monto debe ser mayor a 0")
 
-  const existing = await prisma.operatingExpense.findUnique({ where: { id: input.id } })
+  const existing = await prisma.operatingExpense.findFirst({ 
+    where: { accountId: user.accountId, id: input.id } 
+  })
   if (!existing) throw new Error("Gasto operativo no encontrado")
 
   await prisma.operatingExpense.update({
@@ -86,7 +102,12 @@ export async function updateOperatingExpense(input: {
 }
 
 export async function deleteOperatingExpense(id: string) {
-  const existing = await prisma.operatingExpense.findUnique({ where: { id } })
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const existing = await prisma.operatingExpense.findFirst({ 
+    where: { accountId: user.accountId, id } 
+  })
   if (!existing) throw new Error("Gasto operativo no encontrado")
 
   await prisma.operatingExpense.delete({ where: { id } })
@@ -96,6 +117,9 @@ export async function deleteOperatingExpense(id: string) {
 }
 
 export async function getOperatingExpensesTotal(input?: { from?: string; to?: string }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const fromDate = parseDateParam(input?.from) ?? new Date()
   const toDate = parseDateParam(input?.to) ?? fromDate
 
@@ -104,6 +128,7 @@ export async function getOperatingExpensesTotal(input?: { from?: string; to?: st
 
   const result = await prisma.operatingExpense.aggregate({
     where: {
+      accountId: user.accountId,
       expenseDate: { gte: from, lte: to },
     },
     _sum: { amountCents: true },

@@ -78,7 +78,7 @@ export function BackupsClient() {
   async function handleCreateBackup() {
     startCreating(async () => {
       try {
-        const { filename } = await createBackup(user.username)
+        const { filename } = await createBackup()
         toast({ title: "Backup creado", description: filename })
         refresh()
       } catch (error) {
@@ -95,7 +95,7 @@ export function BackupsClient() {
     if (!confirm(`¿Eliminar el backup ${filename}?`)) return
 
     try {
-      await deleteBackup(filename, user.username)
+      await deleteBackup(filename)
       toast({ title: "Backup eliminado" })
       refresh()
     } catch (error) {
@@ -142,7 +142,7 @@ export function BackupsClient() {
 
     startRestoring(async () => {
       try {
-        await restoreBackup(filename, user.username)
+        await restoreBackup(filename)
         
         // Limpiar cache de IndexedDB para forzar re-sincronización con los nuevos datos
         const { clearAllCache } = await import("@/lib/indexed-db")

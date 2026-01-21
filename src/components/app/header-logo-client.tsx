@@ -6,7 +6,7 @@ import { useTheme } from "next-themes"
 
 export function HeaderLogoClient() {
   const [logoUrl, setLogoUrl] = useState<string>("/movoLogoDark.png")
-  const [companyName, setCompanyName] = useState("Tejada Auto Adornos")
+  const [companyName, setCompanyName] = useState("Mi Negocio")
   const { theme, resolvedTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
 
@@ -26,7 +26,11 @@ export function HeaderLogoClient() {
           const currentTheme = resolvedTheme || theme || "light"
           setLogoUrl(currentTheme === "light" ? "/movoLogoDark.png" : "/movoLogo.png")
         }
-        if (data.name) setCompanyName(data.name)
+        if (data.name) {
+          setCompanyName(data.name)
+        } else {
+          setCompanyName("Mi Negocio")
+        }
       })
       .catch(() => {
         // Fallback to default
@@ -50,7 +54,7 @@ export function HeaderLogoClient() {
       <div className="h-8 w-8 overflow-hidden rounded-md border bg-white dark:bg-card">
         <img src={logoUrl} alt="Logo" className="h-full w-full object-contain" />
       </div>
-      <div className="hidden text-sm font-semibold md:block">{companyName}</div>
+      <div className="text-sm font-semibold">{companyName}</div>
     </div>
   )
 }

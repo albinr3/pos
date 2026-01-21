@@ -42,8 +42,6 @@ export function SelectUserClient({ account, users }: Props) {
   
   // Estado para crear primer usuario
   const [showCreateForm, setShowCreateForm] = useState(users.length === 0)
-  const [newUserName, setNewUserName] = useState("")
-  const [newUserUsername, setNewUserUsername] = useState("")
   const [newUserPassword, setNewUserPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
 
@@ -80,13 +78,14 @@ export function SelectUserClient({ account, users }: Props) {
   const handleCreateFirstUser = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    if (!newUserName.trim() || !newUserUsername.trim() || !newUserPassword) {
-      setError("Todos los campos son requeridos")
+    if (!newUserPassword) {
+      setError("La contraseña es requerida")
       return
     }
 
-    if (newUserPassword.length < 4) {
-      setError("La contraseña debe tener al menos 4 caracteres")
+    // Validar que sea exactamente 4 dígitos
+    if (!/^\d{4}$/.test(newUserPassword)) {
+      setError("La contraseña debe ser exactamente 4 dígitos")
       return
     }
 
@@ -99,8 +98,6 @@ export function SelectUserClient({ account, users }: Props) {
 
     const formData = new FormData()
     formData.set("accountId", account.id)
-    formData.set("name", newUserName.trim())
-    formData.set("username", newUserUsername.trim().toLowerCase())
     formData.set("password", newUserPassword)
 
     startTransition(async () => {
@@ -142,14 +139,14 @@ export function SelectUserClient({ account, users }: Props) {
           </div>
           <CardTitle className="text-2xl">
             {showCreateForm && users.length === 0
-              ? "Crea tu primer usuario"
+              ? "Crea tu contraseña"
               : selectedUser
               ? "Ingresa tu contraseña"
               : "Selecciona tu usuario"}
           </CardTitle>
           <CardDescription>
             {showCreateForm && users.length === 0
-              ? "Configura tu cuenta para comenzar"
+              ? "Crea una contraseña de 4 dígitos para comenzar"
               : selectedUser
               ? `Ingresa la contraseña para ${selectedUser.name}`
               : "Elige el usuario con el que deseas trabajar"}
@@ -157,52 +154,41 @@ export function SelectUserClient({ account, users }: Props) {
         </CardHeader>
         <CardContent>
           {showCreateForm && users.length === 0 ? (
-            // Formulario para crear primer usuario
+            // Formulario para crear primer usuario (solo contraseña de 4 dígitos)
             <form onSubmit={handleCreateFirstUser} className="space-y-4">
               <div className="text-center mb-4">
                 <UserPlus className="h-12 w-12 mx-auto text-purple-600 mb-2" />
                 <p className="text-sm text-muted-foreground">
-                  Crea tu primer usuario para comenzar a usar el sistema
+                  Crea una contraseña de 4 dígitos para comenzar a usar el sistema
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="new-name">Nombre completo</Label>
-                <Input
-                  id="new-name"
-                  value={newUserName}
-                  onChange={(e) => setNewUserName(e.target.value)}
-                  placeholder="Juan Pérez"
-                  disabled={isPending}
-                  autoFocus
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="new-username">Nombre de usuario</Label>
-                <Input
-                  id="new-username"
-                  value={newUserUsername}
-                  onChange={(e) => setNewUserUsername(e.target.value.toLowerCase().replace(/\s/g, ""))}
-                  placeholder="juanperez"
-                  disabled={isPending}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="new-password">Contraseña</Label>
+                <Label htmlFor="new-password">Contraseña (4 dígitos)</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="new-password"
                     type="password"
+                    inputMode="numeric"
+                    maxLength={4}
                     value={newUserPassword}
-                    onChange={(e) => setNewUserPassword(e.target.value)}
-                    placeholder="Mínimo 4 caracteres"
-                    className="pl-10"
+                    onChange={(e) => {
+                      // Solo permitir números
+                      const value = e.target.value.replace(/\D/g, "")
+                      if (value.length <= 4) {
+                        setNewUserPassword(value)
+                      }
+                    }}
+                    placeholder="0000"
+                    className="pl-10 text-center text-2xl tracking-widest"
                     disabled={isPending}
+                    autoFocus
                   />
                 </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  Ingresa exactamente 4 dígitos numéricos
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -212,10 +198,18 @@ export function SelectUserClient({ account, users }: Props) {
                   <Input
                     id="confirm-password"
                     type="password"
+                    inputMode="numeric"
+                    maxLength={4}
                     value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Repite la contraseña"
-                    className="pl-10"
+                    onChange={(e) => {
+                      // Solo permitir números
+                      const value = e.target.value.replace(/\D/g, "")
+                      if (value.length <= 4) {
+                        setConfirmPassword(value)
+                      }
+                    }}
+                    placeholder="0000"
+                    className="pl-10 text-center text-2xl tracking-widest"
                     disabled={isPending}
                   />
                 </div>
@@ -227,7 +221,7 @@ export function SelectUserClient({ account, users }: Props) {
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={isPending || !newUserName || !newUserUsername || !newUserPassword || !confirmPassword}>
+              <Button type="submit" className="w-full" disabled={isPending || newUserPassword.length !== 4 || confirmPassword.length !== 4}>
                 {isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -236,7 +230,7 @@ export function SelectUserClient({ account, users }: Props) {
                 ) : (
                   <>
                     <UserPlus className="mr-2 h-4 w-4" />
-                    Crear usuario e iniciar sesión
+                    Crear contraseña e iniciar sesión
                   </>
                 )}
               </Button>

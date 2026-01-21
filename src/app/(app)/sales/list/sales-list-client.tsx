@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/hooks/use-toast"
 import { formatRD, calcItbisIncluded } from "@/lib/money"
 import { cn } from "@/lib/utils"
+import type { CurrentUser } from "@/lib/auth"
 
 import { cancelSale, getSaleById, listSales, updateSale, searchProducts, listCustomers } from "../actions"
 
@@ -57,6 +58,21 @@ export function SalesListClient() {
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<ProductResult[]>([])
   const [isSearching, startSearch] = useTransition()
+  const [user, setUser] = useState<CurrentUser | null>(null)
+
+  useEffect(() => {
+    // Obtener usuario actual con permisos
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.user) {
+          setUser(data.user)
+        }
+      })
+      .catch(() => {
+        console.error("Error fetching user")
+      })
+  }, [])
 
   function refresh() {
     startLoading(async () => {
@@ -274,6 +290,7 @@ export function SalesListClient() {
                               aria-label="Editar"
                               className="bg-blue-500 hover:bg-blue-600 text-white"
                               title="Editar"
+                              disabled={!user || (!user.canEditSales && user.role !== "ADMIN")}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -283,6 +300,7 @@ export function SalesListClient() {
                               aria-label="Cancelar"
                               className="bg-red-500 hover:bg-red-600 text-white"
                               title="Cancelar"
+                              disabled={!user || (!user.canCancelSales && user.role !== "ADMIN")}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -333,7 +351,7 @@ export function SalesListClient() {
                 <div className="grid gap-2">
                   <Label>Tipo de venta</Label>
                   <select
-                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                    className="h-10 rounded-md border bg-background px-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
                     value={saleType}
                     onChange={(e) => {
                       setSaleType(e.target.value as SaleType)
@@ -341,6 +359,7 @@ export function SalesListClient() {
                         setPaymentMethod(PaymentMethod.EFECTIVO)
                       }
                     }}
+                    disabled={!user || (!user.canChangeSaleType && user.role !== "ADMIN")}
                   >
                     <option value={SaleType.CONTADO}>Contado</option>
                     <option value={SaleType.CREDITO}>Crédito</option>
@@ -422,7 +441,19 @@ export function SalesListClient() {
                           </div>
                           <div>
                             <Label className="text-xs">Precio unitario</Label>
-                            <PriceInput valueCents={c.unitPriceCents} onChangeCents={(cents) => setCart((p) => p.map((x) => (x.productId === c.productId ? { ...x, unitPriceCents: cents, wasPriceOverridden: cents !== c.unitPriceCents } : x)))} />
+                            {user && user.canOverridePrice ? (
+                              <PriceInput 
+                                valueCents={c.unitPriceCents} 
+                                onChangeCents={(cents) => {
+                                  // Obtener el precio original del producto
+                                  const product = searchResults.find((p) => p.id === c.productId) || editingSale?.items.find((item) => item.productId === c.productId)?.product
+                                  const originalPriceCents = product?.priceCents || c.unitPriceCents
+                                  setCart((p) => p.map((x) => (x.productId === c.productId ? { ...x, unitPriceCents: cents, wasPriceOverridden: cents !== originalPriceCents } : x)))
+                                }} 
+                              />
+                            ) : (
+                              <div className="h-10 rounded-md border bg-muted px-3 py-2 text-sm font-semibold">{formatRD(c.unitPriceCents)}</div>
+                            )}
                           </div>
                           <div>
                             <Label className="text-xs">Total</Label>

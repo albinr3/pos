@@ -3,14 +3,18 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcItbisIncluded } from "@/lib/money"
-import { getCurrentUserStub } from "@/lib/auth-stub"
+import { getCurrentUser } from "@/lib/auth"
 
 function returnCode(number: number): string {
   return `DEV-${String(number).padStart(5, "0")}`
 }
 
 export async function listReturns() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   return prisma.return.findMany({
+    where: { accountId: user.accountId },
     orderBy: { returnedAt: "desc" },
     include: {
       sale: {
@@ -42,8 +46,11 @@ export async function listReturns() {
 }
 
 export async function getReturnById(id: string) {
-  return prisma.return.findUnique({
-    where: { id },
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  return prisma.return.findFirst({
+    where: { accountId: user.accountId, id },
     include: {
       sale: {
         include: {
@@ -78,7 +85,7 @@ export async function getReturnById(id: string) {
               name: true,
               sku: true,
               reference: true,
-              unit: true,
+              saleUnit: true,
             },
           },
           saleItem: true,
@@ -89,8 +96,11 @@ export async function getReturnById(id: string) {
 }
 
 export async function getSaleForReturn(saleId: string) {
-  const sale = await prisma.sale.findUnique({
-    where: { id: saleId },
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const sale = await prisma.sale.findFirst({
+    where: { accountId: user.accountId, id: saleId },
     include: {
       customer: true,
       items: {
@@ -159,19 +169,23 @@ export async function createReturn(input: {
   items: ReturnItemInput[]
   notes?: string | null
 }) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   if (!input.items.length) throw new Error("La devolución no tiene productos.")
 
-  const user = getCurrentUserStub()
-  const dbUser = await prisma.user.findUnique({ where: { username: user.username } })
+  const dbUser = await prisma.user.findFirst({ 
+    where: { accountId: currentUser.accountId, id: currentUser.id } 
+  })
   if (!dbUser) throw new Error("Usuario inválido")
 
-  const settings = await prisma.companySettings.findUnique({ where: { id: "company" } })
+  const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
 
   return prisma.$transaction(async (tx) => {
-    // Verificar que la venta existe y no está cancelada
-    const sale = await tx.sale.findUnique({
-      where: { id: input.saleId },
+    // Verificar que la venta existe, pertenece al account y no está cancelada
+    const sale = await tx.sale.findFirst({
+      where: { accountId: currentUser.accountId, id: input.saleId },
       include: {
         items: true,
         returns: {
@@ -201,20 +215,20 @@ export async function createReturn(input: {
       if (saleItem.productId !== item.productId) throw new Error("Producto no coincide con el item de venta")
 
       const returnedQty = returnedQtys.get(item.saleItemId) ?? 0
-      const availableQty = saleItem.qty - returnedQty
+      const availableQty = Number(saleItem.qty) - returnedQty
       if (item.qty > availableQty) {
-        throw new Error(`No se puede devolver más de ${availableQty} unidades de ${saleItem.product.name}`)
+        throw new Error(`No se puede devolver más de ${availableQty} unidades`)
       }
       if (item.qty <= 0) {
         throw new Error("La cantidad devuelta debe ser mayor a 0")
       }
     }
 
-    // Secuencia de devolución
+    // Secuencia de devolución por account
     const seq = await tx.returnSequence.upsert({
-      where: { id: "main" },
+      where: { accountId: currentUser.accountId },
       update: { lastNumber: { increment: 1 } },
-      create: { id: "main", lastNumber: 1 },
+      create: { accountId: currentUser.accountId, lastNumber: 1 },
     })
 
     const number = seq.lastNumber
@@ -227,6 +241,7 @@ export async function createReturn(input: {
     // Crear devolución
     const returnRecord = await tx.return.create({
       data: {
+        accountId: currentUser.accountId,
         returnNumber: number,
         returnCode: code,
         saleId: input.saleId,
@@ -257,7 +272,7 @@ export async function createReturn(input: {
     }
 
     // Si la venta era a crédito, reducir el balance de la cuenta por cobrar
-    if (sale.type === "CREDITO" && sale.ar) {
+    if (sale.type === "CREDITO") {
       const ar = await tx.accountReceivable.findUnique({
         where: { saleId: sale.id },
         include: { payments: { where: { cancelledAt: null } } },
@@ -291,8 +306,12 @@ export async function createReturn(input: {
 }
 
 export async function cancelReturn(id: string) {
-  const user = getCurrentUserStub()
-  const dbUser = await prisma.user.findUnique({ where: { username: user.username } })
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
+  const dbUser = await prisma.user.findFirst({ 
+    where: { accountId: currentUser.accountId, id: currentUser.id } 
+  })
   if (!dbUser) throw new Error("Usuario inválido")
 
   // Verificar permiso para cancelar devoluciones
@@ -301,8 +320,8 @@ export async function cancelReturn(id: string) {
   }
 
   return prisma.$transaction(async (tx) => {
-    const returnRecord = await tx.return.findUnique({
-      where: { id },
+    const returnRecord = await tx.return.findFirst({
+      where: { accountId: currentUser.accountId, id },
       include: {
         items: true,
         sale: {
@@ -366,11 +385,15 @@ export async function cancelReturn(id: string) {
 }
 
 export async function searchSalesForReturn(query: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const q = query.trim()
   if (!q) return []
 
   const sales = await prisma.sale.findMany({
     where: {
+      accountId: user.accountId,
       cancelledAt: null,
       OR: [
         { invoiceCode: { contains: q, mode: "insensitive" } },

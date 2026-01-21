@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/hooks/use-toast"
 import { formatRD } from "@/lib/money"
+import type { CurrentUser } from "@/lib/auth"
 
 import { cancelReturn, listReturns } from "../actions"
 
@@ -24,6 +25,21 @@ export function ReturnsListClient() {
   const [openCancel, setOpenCancel] = useState(false)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [isCancelling, startCancelling] = useTransition()
+  const [user, setUser] = useState<CurrentUser | null>(null)
+
+  useEffect(() => {
+    // Obtener usuario actual con permisos
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.user) {
+          setUser(data.user)
+        }
+      })
+      .catch(() => {
+        console.error("Error fetching user")
+      })
+  }, [])
 
   function refresh() {
     startLoading(async () => {
@@ -180,6 +196,7 @@ export function ReturnsListClient() {
                               size="icon"
                               onClick={() => handleCancel(r.id)}
                               title="Cancelar devolución"
+                              disabled={!user || (!user.canCancelReturns && user.role !== "ADMIN")}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>

@@ -1,13 +1,54 @@
-# Tejada Auto Adornos · POS & Inventario
+# MOVOPos - Sistema POS & Inventario Multi-Tenant
 
-App web para **ventas**, **inventario**, **compras**, **cuentas por cobrar (CxC)**, **cuadre diario**, **reportes**, **cotizaciones**, **devoluciones**, **gastos operativos**, y **gestión de proveedores**.
+App web SaaS para **ventas**, **inventario**, **compras**, **cuentas por cobrar (CxC)**, **cuadre diario**, **reportes**, **cotizaciones**, **devoluciones**, **gastos operativos**, y **gestión de proveedores**.
 
+- **Multi-tenant**: Cada cuenta es un negocio aislado con sus propios datos
+- **Autenticación**: Clerk (Google/Email) + Subusuarios con contraseña
 - Moneda: **RD$ (DOP)**
 - ITBIS: **18% incluido en el precio** (se desglosa en subtotal/itbis/total)
 - Facturación:
   - **Ticket térmico 80mm** (por defecto)
   - Factura **carta** (opcional)
-- Modo de uso: pensado para **local (1 PC)**, listo para migrar a nube.
+- **Modo offline**: Funciona sin conexión usando IndexedDB
+
+---
+
+## 🚀 Características Principales
+
+### Sistema Multi-Tenant
+- Cada usuario de Clerk tiene su propia **cuenta/negocio** (Account)
+- Datos completamente aislados entre cuentas
+- Al registrarse, se crea automáticamente:
+  - Account (tenant)
+  - Configuración de empresa
+  - Secuencias de facturación
+  - Cliente genérico
+
+### Autenticación en Dos Niveles
+1. **Clerk** (Cuenta principal): Google, Email/Password
+2. **Subusuario** (Operador): Username + contraseña de 4 dígitos o más
+   - Flujo: Login con Clerk → Seleccionar usuario → Ingresar contraseña
+   - Permite múltiples cajeros/operadores por cuenta
+
+### Sistema de Permisos Granular
+Permisos configurables por usuario:
+- `canOverridePrice`: Modificar precios al facturar
+- `canCancelSales`: Cancelar facturas
+- `canCancelReturns`: Cancelar devoluciones
+- `canCancelPayments`: Cancelar pagos
+- `canEditSales`: Editar facturas
+- `canEditProducts`: Editar productos
+- `canChangeSaleType`: Cambiar tipo de venta (contado/crédito)
+- `canSellWithoutStock`: Vender sin stock disponible
+- `canManageBackups`: Gestionar backups de base de datos
+- `canViewProductCosts`: Ver costos de productos
+- `canViewProfitReport`: Ver reporte de ganancia
+
+### Modo Offline
+- **Ventas offline**: Se guardan en IndexedDB y sincronizan al volver la conexión
+- **Pagos offline**: Abonos a CxC se guardan localmente
+- **Pre-carga de datos**: Productos, clientes y CxC se cachean para uso offline
+- **Sincronización automática**: Al detectar conexión, sincroniza pendientes
 
 ---
 
@@ -23,11 +64,13 @@ Ruta: `/sales`
   - **Código de barras** (escaneo automático)
 - Carrito con cantidades y total acumulado
 - Venta **Contado** o **Crédito**
+- **Pago dividido**: Permite dividir el pago entre múltiples métodos
 - Si es crédito: se crea automáticamente la **Cuenta por Cobrar**
 - **Costo de envío** opcional (se suma al total)
 - **Notas** opcionales en la venta
 - **Impresión**: al guardar se abre el **ticket térmico**
 - **Edición y cancelación** de ventas (ver Lista de Ventas)
+- **Funciona offline**: Las ventas se guardan localmente si no hay conexión
 
 ### Clientes
 Ruta: `/customers`
@@ -50,11 +93,19 @@ Ruta: `/products`
     - Productos por unidad solo permiten enteros
   - **Imágenes del producto** (hasta 3 imágenes, máximo 2MB cada una)
   - **Asociación con proveedor** (opcional)
+  - **Asociación con categoría** (opcional)
 - **Impresión de etiquetas con código de barras** (formato CODE128)
   - Vista previa antes de imprimir
-  - Tamaño optimizado para impresoras de etiquetas (4" x 2")
+  - Tamaño configurable en ajustes
   - Incluye nombre, referencia, código de barras y precio
 - Desactivar productos
+
+### Categorías
+Ruta: `/categories`
+- Crear/editar categorías de productos
+- Campos: Nombre, descripción
+- Desactivar categorías
+- Asociar productos a categorías
 
 ### Compras
 Ruta: `/purchases`
@@ -95,6 +146,7 @@ Ruta: `/ar`
   - Botón deshabilitado cuando el monto es inválido
 - **Botón de acceso rápido** a la página de Recibos de Pago
 - **Cancelación de pagos** (ver Lista de Pagos)
+- **Funciona offline**: Los pagos se guardan localmente si no hay conexión
 
 ### Cuadre diario
 Ruta: `/daily-close`
@@ -134,6 +186,7 @@ Ruta: `/reports`
     - Impuestos
     - Utilidad neta
     - Cuentas por cobrar pendientes
+  - **Requiere permiso**: `canViewProfitReport`
 - **Reporte de inventario**: `/reports/inventory`
   - Listado completo de productos activos
   - Muestra: Producto, SKU, Proveedor, Stock, Costo unitario, Costo total
@@ -183,11 +236,38 @@ Ruta: `/operating-expenses`
 
 ### Ajustes
 Ruta: `/settings`
-- Datos de empresa (se reflejan en facturas/recibos):
-  - Nombre, teléfono, dirección
-  - **Upload de logo** (máximo 5MB, formatos de imagen)
-- Inventario:
-  - **Permitir vender sin stock** (si está activo, puede dejar stock negativo)
+
+#### Datos de empresa
+- Nombre, teléfono, dirección
+- **Upload de logo** (máximo 5MB, formatos de imagen)
+
+#### Etiquetas de Impresión
+- **Tamaño de etiqueta de código de barras**: 4x2, 3x1, 2x1, 2.25x1.25
+- **Tamaño de etiqueta de envío**: 4x6, 4x4, 6x4
+
+#### Modo Offline
+- Indicador de estado de conexión
+- Contador de datos pendientes de sincronizar
+- Botón "Sincronizar ahora"
+- Botón "Pre-cargar datos offline"
+
+#### Gestión de Usuarios (solo dueño)
+- Crear nuevos usuarios/operadores
+- Editar usuarios existentes
+- Cambiar contraseñas
+- Asignar roles: ADMIN, CAJERO, ALMACEN
+- Configurar permisos individuales
+- Activar/desactivar usuarios
+- Eliminar usuarios
+
+### Backups de Base de Datos
+Ruta: `/backups`
+- **Requiere permiso**: `canManageBackups` o rol ADMIN
+- Crear backups manuales
+- Ver lista de backups disponibles
+- Descargar backups
+- Restaurar backups (⚠️ reemplaza todos los datos)
+- Eliminar backups
 
 ---
 
@@ -250,179 +330,226 @@ Ruta: `/shipping-labels`
 
 ---
 
+## Landing Page (Marketing)
+Rutas públicas:
+- `/` - Página principal con hero, features, demo, precios, FAQ
+- `/about` - Acerca de
+- `/contact` - Contacto
+- `/pricing` - Precios detallados
+- `/privacy` - Política de privacidad
+- `/terms` - Términos de servicio
+
+---
+
 ## Stack
 - **Framework**: Next.js 16 (App Router) + TypeScript
 - **Estilos**: TailwindCSS + shadcn/ui
 - **Base de datos**: Prisma + PostgreSQL
+- **Autenticación**: Clerk (OAuth) + JWT (subusuarios)
 - **Gráficos**: Recharts
 - **IA/OCR**: OpenAI Vision API (para extracción de datos de facturas)
 - **Temas**: next-themes (modo claro/oscuro/sistema)
 - **Códigos de barras**: JsBarcode (generación de códigos CODE128)
 - **Exportación**: xlsx (Excel), jsPDF + jsPDF-autotable (PDF)
+- **Almacenamiento offline**: IndexedDB
 
 ---
 
 ## Requisitos
-- Node.js
-- PostgreSQL
+- Node.js 18+
+- PostgreSQL 14+
+- Cuenta de Clerk (para autenticación)
 
 ---
 
-## Configuración
+## Variables de Entorno
 
-### Base de Datos
-
-En `./.env`:
+Crear archivo `.env` en la raíz:
 
 ```env
-DATABASE_URL="postgresql://postgres:TU_PASSWORD@localhost:PUERTO/tejada_pos?schema=public"
+# Base de datos (requerido)
+DATABASE_URL="postgresql://postgres:TU_PASSWORD@localhost:PUERTO/movopos?schema=public"
+
+# Clerk (requerido para autenticación)
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+CLERK_SECRET_KEY="sk_test_..."
+CLERK_WEBHOOK_SECRET="whsec_..."  # Para webhook de Clerk
+
+# JWT Secret (requerido para sesiones de subusuarios)
+JWT_SECRET="tu_secret_key_segura_minimo_32_caracteres"
+
+# OpenAI (opcional - para OCR de facturas)
+OPENAI_API_KEY="sk-..."
+
+# WhatsApp Cloud API (opcional - para OTP por WhatsApp)
+WHATSAPP_PHONE_NUMBER_ID="tu_phone_number_id"
+WHATSAPP_ACCESS_TOKEN="tu_access_token"
 ```
 
-> **Nota importante**: El puerto por defecto de PostgreSQL es `5432`. Si tu instalación usa otro puerto (por ejemplo `5433`), reemplázalo en la URL.
-
-**Formato correcto de la URL:**
-- ✅ `DATABASE_URL="postgresql://postgres:password123@localhost:5433/tejada_pos?schema=public"`
-- ❌ `DATABASE_URL="postgresql://postgres:postgres:password123@localhost:5433/tejada_pos"` (duplicado)
-- ❌ `DATABASE_URL="postgresql://postgres: password @localhost:5433/tejada_pos"` (espacios)
-
-**Si tu contraseña tiene caracteres especiales**, codifícalos en la URL:
-- `@` → `%40`
-- `#` → `%23`
-- `%` → `%25`
-- Espacios → `%20`
-
-Ejemplo: Si tu contraseña es `mi@pass#123`, la URL sería:
-```env
-DATABASE_URL="postgresql://postgres:mi%40pass%23123@localhost:5433/tejada_pos?schema=public"
+### Generar JWT_SECRET
+```bash
+openssl rand -base64 32
 ```
 
-### OpenAI (Opcional - para OCR)
+### Formato de DATABASE_URL
+- Puerto por defecto de PostgreSQL: `5432`
+- Si tu contraseña tiene caracteres especiales, codifícalos:
+  - `@` → `%40`
+  - `#` → `%23`
+  - `%` → `%25`
 
-Si quieres usar la funcionalidad de escaneo de facturas, agrega en `./.env`:
+---
 
-```env
-OPENAI_API_KEY="tu-api-key-aqui"
-```
+## Configuración de Clerk
 
-> Nota: Sin esta variable, la funcionalidad de OCR no estará disponible.
+1. Ve a [Clerk Dashboard](https://dashboard.clerk.com/)
+2. Crea una nueva aplicación
+3. Habilita métodos de autenticación:
+   - Email (con email link o email code)
+   - Google OAuth
+4. Configura webhook (para producción):
+   - URL: `https://tu-dominio.com/api/auth/clerk-webhook`
+   - Eventos: `user.created`, `user.updated`
+   - Copia el Signing Secret a `CLERK_WEBHOOK_SECRET`
 
 ---
 
 ## Comandos
 
-Desde la carpeta raíz del proyecto:
-
-Instalar dependencias:
+### Instalación
 ```bash
 npm install
 ```
 
-Migraciones:
-```bash
-npm run prisma:migrate
-```
-
-> **Nota**: Si encuentras errores relacionados con "shadow database" al ejecutar migraciones en desarrollo, puedes usar:
-> ```bash
-> npx prisma db push
-> ```
-> Esto sincroniza el esquema directamente sin usar migraciones (útil para desarrollo).
-
-Aplicar migraciones en producción:
-```bash
-npx prisma migrate deploy
-```
-
-Seed (empresa, cliente genérico, secuencia de factura A, usuario admin):
-```bash
-npm run db:seed
-```
-
-Desarrollo:
+### Desarrollo
 ```bash
 npm run dev
 ```
 
-Prisma Studio:
+### Migraciones (desarrollo)
+```bash
+npm run prisma:migrate
+```
+
+> **Nota**: Si hay errores de "shadow database", usa:
+> ```bash
+> npx prisma db push
+> ```
+
+### Migraciones (producción)
+```bash
+npx prisma migrate deploy
+```
+
+### Seed (datos iniciales)
+```bash
+npm run db:seed
+```
+
+Crea:
+- Account por defecto
+- Configuración de empresa
+- Cliente genérico
+- Usuario admin (username: `admin`, password: `admin`)
+- Secuencias de facturación
+
+### Prisma Studio
 ```bash
 npm run prisma:studio
 ```
 
-Regenerar cliente de Prisma:
+### Regenerar cliente Prisma
 ```bash
 npx prisma generate
 ```
 
+### Build de producción
+```bash
+npm run build
+```
+
 ---
 
-## Datos iniciales (Seed)
-- Empresa: **Tejada Auto Adornos**
-- Cliente: **Cliente Genérico**
-- Secuencia de factura: serie **A** (`A-00001`)
-- Usuario admin (para modo local):
-  - username: `admin`
-  - password: `admin`
+## Despliegue en Vercel
 
-> Nota: el hash actual en seed es SHA-256 (solo demo/local). En producción se cambia a bcrypt/argon2.
+### Requisitos previos
+1. Base de datos PostgreSQL accesible desde internet (ej: Supabase, Neon, Railway)
+2. Cuenta de Clerk configurada
+3. Variables de entorno configuradas en Vercel
+
+### Variables de entorno en Vercel
+Configura estas variables en Settings → Environment Variables:
+
+| Variable | Requerido | Descripción |
+|----------|-----------|-------------|
+| `DATABASE_URL` | ✅ | URL de conexión a PostgreSQL |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | ✅ | Clerk public key |
+| `CLERK_SECRET_KEY` | ✅ | Clerk secret key |
+| `JWT_SECRET` | ✅ | Secret para sesiones de subusuarios |
+| `CLERK_WEBHOOK_SECRET` | ✅ | Signing secret del webhook de Clerk |
+| `OPENAI_API_KEY` | ❌ | Para OCR de facturas (opcional) |
+
+### Configurar Clerk Webhook en producción
+1. En Clerk Dashboard → Webhooks
+2. Crear nuevo webhook:
+   - URL: `https://tu-app.vercel.app/api/auth/clerk-webhook`
+   - Eventos: `user.created`, `user.updated`
+3. Copiar Signing Secret a variable `CLERK_WEBHOOK_SECRET`
+
+### Limitaciones en Vercel (Serverless)
+
+⚠️ **Archivos estáticos**: Vercel no persiste archivos subidos. Para producción, considera:
+- Usar un servicio de almacenamiento externo (S3, Cloudinary, Uploadthing)
+- Los logos y imágenes de productos necesitan migrar a almacenamiento externo
+
+⚠️ **Backups**: La funcionalidad de backups usa el sistema de archivos local y **no funcionará en Vercel**. Para producción:
+- Usar backups automáticos de tu proveedor de base de datos
+- O implementar backups a S3/almacenamiento externo
+
+### Build Command
+```bash
+npx prisma generate && npm run build
+```
+
+### Después del despliegue
+1. Ejecutar migraciones en la base de datos de producción:
+   ```bash
+   npx prisma migrate deploy
+   ```
+2. Opcionalmente ejecutar seed para datos iniciales
 
 ---
 
 ## Backup y Restauración de Base de Datos
 
-### Exportar Base de Datos (Backup)
+### Usando la interfaz web (desarrollo/local)
+1. Ir a `/backups`
+2. Click en "Crear Backup"
+3. Descargar el archivo .sql
 
-**En Windows (PowerShell):**
+### Exportar manualmente (PowerShell/Windows)
 ```powershell
 $env:PGPASSWORD='TU_CONTRASEÑA'
-pg_dump -h localhost -p PUERTO -U postgres -d tejada_pos > tejada_pos_backup.sql
+pg_dump -h localhost -p PUERTO -U postgres -d movopos > backup.sql
 ```
 
-**En Linux/Mac:**
+### Exportar manualmente (Linux/Mac)
 ```bash
-PGPASSWORD='TU_CONTRASEÑA' pg_dump -h localhost -p PUERTO -U postgres -d tejada_pos > tejada_pos_backup.sql
+PGPASSWORD='TU_CONTRASEÑA' pg_dump -h localhost -p PUERTO -U postgres -d movopos > backup.sql
 ```
 
-### Restaurar Base de Datos (Importar)
+### Restaurar
+**⚠️ Advertencia**: La restauración eliminará todos los datos actuales.
 
-**⚠️ Advertencia**: La restauración **eliminará todos los datos actuales** de la base de datos.
-
-**En Windows (PowerShell):**
-
-Si el archivo SQL tiene problemas de codificación (error `ÿ_`), primero conviértelo a UTF-8:
 ```powershell
-$content = Get-Content tejada_pos_backup.sql -Raw
-[System.IO.File]::WriteAllText("tejada_pos_backup_utf8.sql", $content, [System.Text.UTF8Encoding]::new($false))
-```
-
-Luego restaura:
-```powershell
-# 1. Cerrar conexiones activas (opcional pero recomendado)
+# Windows PowerShell
 $env:PGPASSWORD='TU_CONTRASEÑA'
-psql -h localhost -p PUERTO -U postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'tejada_pos' AND pid <> pg_backend_pid();"
-
-# 2. Eliminar y recrear la base de datos
-psql -h localhost -p PUERTO -U postgres -c "DROP DATABASE IF EXISTS tejada_pos;"
-psql -h localhost -p PUERTO -U postgres -c "CREATE DATABASE tejada_pos;"
-
-# 3. Importar el backup
-psql -h localhost -p PUERTO -U postgres -d tejada_pos -f tejada_pos_backup_utf8.sql
+psql -h localhost -p PUERTO -U postgres -c "DROP DATABASE IF EXISTS movopos;"
+psql -h localhost -p PUERTO -U postgres -c "CREATE DATABASE movopos;"
+psql -h localhost -p PUERTO -U postgres -d movopos -f backup.sql
 ```
 
-**En Linux/Mac:**
-```bash
-PGPASSWORD='TU_CONTRASEÑA' psql -h localhost -p PUERTO -U postgres -d tejada_pos < tejada_pos_backup.sql
-```
-
-### Después de Restaurar
-
-Después de restaurar un backup, marca las migraciones como aplicadas:
-```bash
-npx prisma migrate resolve --applied 20260113145330_m1
-npx prisma migrate resolve --applied 20250114000000_add_shipping_to_sales
-# ... (marca todas las migraciones como aplicadas)
-```
-
-O simplemente sincroniza el esquema:
+### Después de restaurar
 ```bash
 npx prisma db push
 npx prisma generate
@@ -430,108 +557,96 @@ npx prisma generate
 
 ---
 
-## Migrar el Proyecto a Otra PC
-
-**Sí, necesitas exportar e importar la base de datos** cuando mueves el proyecto a otra PC. Los datos están almacenados en PostgreSQL, no en el código del proyecto.
-
-**Pasos:**
+## Migrar a Otra PC
 
 1. **En la PC original:**
-   - Exporta la base de datos (ver sección Backup y Restauración)
-   - Copia el archivo `.env` y el archivo de backup SQL
+   - Crear backup de base de datos
+   - Copiar archivo `.env` y backup
 
 2. **En la nueva PC:**
-   - Instala Node.js y PostgreSQL
-   - Copia todo el proyecto (código fuente)
-   - Crea la base de datos `tejada_pos` en PostgreSQL
-   - Actualiza el archivo `.env` con las credenciales correctas de la nueva PC
-   - Restaura la base de datos (ver sección Backup y Restauración)
-   - Ejecuta `npm install` para instalar dependencias
-   - Ejecuta `npx prisma generate` para regenerar el cliente
-   - Ejecuta `npm run db:seed` solo si necesitas datos iniciales (opcional, ya tienes datos del backup)
+   - Instalar Node.js y PostgreSQL
+   - Clonar/copiar el proyecto
+   - Crear base de datos
+   - Actualizar `.env` con credenciales correctas
+   - Restaurar backup
+   - `npm install`
+   - `npx prisma generate`
 
-> **Nota**: Si tienes logos o archivos subidos en `public/uploads/`, también cópialos a la nueva PC.
+> **Nota**: Copiar también `public/uploads/` si tienes logos o imágenes
 
 ---
 
-## Problemas Comunes y Soluciones
+## Notas Técnicas
+
+### Almacenamiento de Datos
+- **Dinero**: Se guarda en centavos (ej. RD$ 100.00 => `10000`)
+- **ITBIS**: Siempre 18% incluido en el precio (se desglosa en subtotal/itbis/total)
+- **Porcentajes**: Se almacenan en basis points (1000 = 10%, 1800 = 18%)
+
+### Secuencias y Códigos
+- **Facturas**: Serie `A-00001`, `A-00002`, etc.
+- **Cotizaciones**: `COT-00001`, `COT-00002`, etc.
+- **Devoluciones**: `DEV-00001`, `DEV-00002`, etc.
+- **Productos**: ID incremental automático (productId)
+
+### Multi-Tenancy
+- Cada tabla principal tiene `accountId` para aislamiento de datos
+- Las secuencias son por cuenta (cada negocio tiene sus propios números)
+- Los usernames son únicos solo dentro de cada cuenta
+
+### Validaciones Importantes
+- **Stock negativo**: Solo permitido si `allowNegativeStock` está activo en ajustes
+- **Cancelación de ventas a crédito**: Solo si no tiene pagos registrados
+- **Balance de CxC**: Se recalcula automáticamente al cancelar pagos
+- **Stock**: Se restaura automáticamente al cancelar ventas o compras
+
+### Archivos y Uploads
+- **Logos**: Se guardan en `public/uploads/logos/`
+  - Tamaño máximo: 5MB
+- **Imágenes de productos**: Se guardan en `public/uploads/products/`
+  - Hasta 3 imágenes por producto
+  - Tamaño máximo: 2MB por imagen
+
+---
+
+## Problemas Comunes
 
 ### Error: "Authentication failed" (P1000)
+- Verificar credenciales en `DATABASE_URL`
+- Codificar caracteres especiales en la contraseña
 
-**Causa**: Credenciales incorrectas en `DATABASE_URL`.
+### Error: "shadow database"
+- Usar `npx prisma db push` en lugar de `npm run prisma:migrate`
 
-**Solución**:
-1. Verifica que la contraseña en `.env` sea correcta
-2. Verifica que no haya espacios adicionales en la URL
-3. Si la contraseña tiene caracteres especiales, codifícalos en la URL
-4. Verifica que el usuario `postgres` tenga permisos para acceder a la base de datos
+### Error: Clerk no redirige después de login
+- Verificar que el webhook esté configurado
+- Verificar `CLERK_WEBHOOK_SECRET`
 
-### Error: "shadow database" al ejecutar migraciones
-
-**Causa**: Prisma intenta crear una base de datos temporal para validar migraciones.
-
-**Solución**:
-- Usa `npx prisma db push` en lugar de `npm run prisma:migrate` para desarrollo
-- O en producción, usa `npx prisma migrate deploy` que no usa shadow database
-
-### Error: "no existe la relación «Sale»" al aplicar migraciones
-
-**Causa**: Las migraciones están fuera de orden o la base de datos está vacía.
-
-**Solución**:
-```bash
-# Sincroniza el esquema directamente
-npx prisma db push
-
-# Luego marca las migraciones como aplicadas
-npx prisma migrate resolve --applied [nombre_migracion]
-```
-
-### Error: "ÿ_" al importar backup SQL en PowerShell
-
-**Causa**: El archivo SQL está en codificación UTF-16 en lugar de UTF-8.
-
-**Solución**: Convierte el archivo a UTF-8 (ver sección Restaurar Base de Datos).
-
-### Error: PowerShell no reconoce `<` para redirección
-
-**Causa**: PowerShell no soporta redirección `<` igual que bash.
-
-**Solución**: Usa `Get-Content` o el flag `-f`:
-```powershell
-# Método 1
-Get-Content archivo.sql | psql -h localhost -p 5433 -U postgres -d tejada_pos
-
-# Método 2
-psql -h localhost -p 5433 -U postgres -d tejada_pos -f archivo.sql
-```
-
----
-
-## Login / Permisos (pendiente intencional)
-
-Por ahora **NO** se activó login real. Se usa un stub:
-
-- `src/lib/auth-stub.ts` retorna un usuario local.
-- Permiso relevante:
-  - `canOverridePrice`: permite modificar el precio al facturar.
-
-Hay scaffolding comentado para activarlo más adelante.
+### Ventas offline no sincronizan
+- Verificar conexión a internet
+- Ir a Ajustes → Modo Offline → "Sincronizar ahora"
+- Verificar que no haya errores en la consola
 
 ---
 
 ## Rutas principales (resumen)
+
+### Autenticación
+- Login: `/login`
+- Selección de usuario: `/select-user`
 
 ### Módulos principales
 - Dashboard: `/dashboard`
 - Ventas: `/sales`
 - Clientes: `/customers`
 - Productos: `/products`
+- Categorías: `/categories`
 - Compras: `/purchases`
 - CxC: `/ar`
 - Cuadre diario: `/daily-close`
 - Reportes: `/reports`
 - Ajustes: `/settings`
+- Backups: `/backups`
 
 ### Módulos adicionales
 - Cotizaciones: `/quotes`
@@ -557,123 +672,6 @@ Hay scaffolding comentado para activarlo más adelante.
 
 ---
 
-## Características Adicionales
+## Licencia
 
-### Tema Claro/Oscuro
-- **Toggle de tema** en el header
-- Modos: Claro, Oscuro, Sistema (sigue preferencias del sistema)
-- Persistencia de preferencia del usuario
-
-### Cancelaciones
-- **Ventas**: Se pueden cancelar si no tienen pagos registrados (restaura stock)
-- **Compras**: Se pueden cancelar (restaura stock y costos)
-- **Pagos**: Se pueden cancelar (recalcula balance de CxC)
-- **Devoluciones**: Se pueden cancelar (restaura cambios de stock)
-- Todas las cancelaciones registran usuario y fecha
-
-### Funcionalidades de Ventas
-- **Costo de envío** configurable por venta
-- **Notas** opcionales en cada venta
-- **Edición** de ventas después de creadas
-- **Modificación de precios** (requiere permiso `canOverridePrice`)
-
-### Funcionalidades de Productos
-- **ID incremental** (productId) para referencia fácil
-- **Asociación con proveedores**
-- **Búsqueda por múltiples campos**: nombre, SKU, referencia, productId, código de barras
-- **Unidades de medida**: Soporte para productos por unidad o con medidas (peso, volumen, longitud)
-  - Unidades de compra y venta independientes
-  - Validación automática de decimales según tipo de unidad
-- **Imágenes**: Hasta 3 imágenes por producto (máximo 2MB cada una)
-  - Upload con validación de tipo y tamaño
-  - Vista previa y eliminación individual
-- **Etiquetas de código de barras**: Impresión de etiquetas con código CODE128
-  - Vista previa antes de imprimir
-  - Incluye nombre, referencia, código de barras y precio
-
-### Funcionalidades de Compras
-- **Descuentos por proveedor** (configurables en proveedor)
-- **Descuentos por línea** en compras individuales
-- **Actualización opcional de costos** de productos
-
-### Funcionalidades de Cotizaciones
-- **Compartir cotizaciones** con URL única
-  - Compartir por WhatsApp (con número opcional)
-  - Descargar como PDF
-  - Web Share API en dispositivos móviles
-- **Fecha de validez** configurable
-- **No afecta inventario** (solo documento de referencia)
-- Visualización e impresión profesional
-
-## Mejoras y Correcciones Recientes
-
-### Dashboard
-- ✅ **Gráfico de pastel circular** implementado para visualizar distribución de ventas (Contado vs Crédito)
-- ✅ Colores distintivos y tooltips informativos
-- ✅ Muestra porcentajes y montos formateados
-
-### Cuentas por Cobrar
-- ✅ **Validaciones de entrada**: Solo números permitidos en campo de monto
-- ✅ **Validación de balance**: No permite abonar más del balance pendiente
-- ✅ Mensajes de error claros y en tiempo real
-- ✅ Botón de acceso rápido a Recibos de Pago
-
-### Compras
-- ✅ Interfaz de búsqueda optimizada (eliminado mensaje "Escribe para buscar")
-- ✅ **Escaneo de facturas con OCR** usando OpenAI Vision API
-- ✅ Coincidencia automática de productos existentes
-
-### Accesibilidad
-- ✅ Corrección de accesibilidad: Todos los diálogos tienen `DialogTitle` requerido para lectores de pantalla
-
-### Productos
-- ✅ **Sistema de unidades de medida** implementado (UNIDAD, KG, LIBRA, GRAMO, LITRO, ML, GALON, METRO, CM, PIE)
-- ✅ **Unidades de compra y venta independientes** para cada producto
-- ✅ **Validación automática de decimales** según tipo de unidad
-- ✅ **Imágenes de productos** (hasta 3 por producto, máximo 2MB cada una)
-- ✅ **Etiquetas de código de barras** con formato CODE128
-- ✅ **Búsqueda por código de barras** en el módulo de ventas
-
-### Reportes
-- ✅ **Reporte de inventario** con exportación a Excel y PDF
-- ✅ Cálculo automático del costo total de inventario
-
-### Cotizaciones
-- ✅ **Compartir por WhatsApp** con número de teléfono opcional
-- ✅ **Descarga como PDF** desde la visualización de cotizaciones
-- ✅ Soporte para Web Share API en dispositivos móviles
-
----
-
-## Notas Técnicas
-
-### Almacenamiento de Datos
-- **Dinero**: Se guarda en centavos (ej. RD$ 100.00 => `10000`)
-- **ITBIS**: Siempre 18% incluido en el precio (se desglosa en subtotal/itbis/total)
-- **Porcentajes**: Se almacenan en basis points (1000 = 10%, 1800 = 18%)
-
-### Secuencias y Códigos
-- **Facturas**: Serie `A-00001`, `A-00002`, etc.
-- **Cotizaciones**: `COT-00001`, `COT-00002`, etc.
-- **Devoluciones**: `DEV-00001`, `DEV-00002`, etc.
-- **Productos**: ID incremental automático (productId)
-
-### Validaciones Importantes
-- **Stock negativo**: Solo permitido si `allowNegativeStock` está activo en ajustes
-- **Cancelación de ventas a crédito**: Solo si no tiene pagos registrados
-- **Balance de CxC**: Se recalcula automáticamente al cancelar pagos
-- **Stock**: Se restaura automáticamente al cancelar ventas o compras
-
-### Permisos de Usuario
-- **canOverridePrice**: Permite modificar precios al facturar (útil para descuentos especiales)
-- Roles: ADMIN, CAJERO, ALMACEN (preparado para futuro uso)
-
-### Archivos y Uploads
-- **Logos**: Se guardan en `public/uploads/logos/`
-  - Tamaño máximo: 5MB
-  - Formatos: Cualquier formato de imagen válido
-- **Imágenes de productos**: Se guardan en `public/uploads/products/`
-  - Hasta 3 imágenes por producto
-  - Tamaño máximo: 2MB por imagen
-  - Formatos: Cualquier formato de imagen válido
-  - Nombres únicos generados automáticamente
+Proyecto privado. Todos los derechos reservados.

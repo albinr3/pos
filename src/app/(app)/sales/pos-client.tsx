@@ -31,7 +31,7 @@ import {
   syncCustomersToIndexedDB,
 } from "@/app/(app)/sync/actions"
 
-import { getCurrentUserStub } from "@/lib/auth-stub"
+import type { CurrentUser } from "@/lib/auth"
 
 import { createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode } from "./actions"
 
@@ -75,9 +75,9 @@ export function PosClient() {
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [shippingInput, setShippingInput] = useState("")
-  const user = useMemo(() => getCurrentUserStub(), [])
+  const [user, setUser] = useState<CurrentUser | null>(null)
   // Usar el permiso del usuario para vender sin stock
-  const allowNegativeStock = useMemo(() => user.canSellWithoutStock || user.username === "admin", [user])
+  const allowNegativeStock = useMemo(() => user?.canSellWithoutStock || user?.role === "ADMIN" || false, [user])
   const [isSaving, startSave] = useTransition()
   const [showChangeDialog, setShowChangeDialog] = useState(false)
   const [amountPaidInput, setAmountPaidInput] = useState("")
@@ -95,6 +95,20 @@ export function PosClient() {
   
   const router = useRouter()
   const pathname = usePathname()
+
+  useEffect(() => {
+    // Obtener usuario actual con permisos
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.user) {
+          setUser(data.user)
+        }
+      })
+      .catch(() => {
+        console.error("Error fetching user")
+      })
+  }, [])
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -513,6 +527,11 @@ export function PosClient() {
   }
 
   async function doSave() {
+    if (!user) {
+      toast({ title: "Error", description: "Usuario no disponible. Por favor, recarga la página.", variant: "destructive" })
+      return
+    }
+
     startSave(async () => {
       try {
         if (!isOnline) {
@@ -1013,23 +1032,26 @@ export function PosClient() {
                               +
                             </Button>
                             <div className="ml-2 text-sm text-muted-foreground">x</div>
-                            {user.canOverridePrice ? (
+                            {user && user.canOverridePrice ? (
                               <div className="w-28">
                                 <PriceInput
                                   valueCents={c.unitPriceCents}
-                                  onChangeCents={(unitPriceCents) =>
+                                  onChangeCents={(unitPriceCents) => {
+                                    // Obtener el precio original del producto para comparar
+                                    const product = allProducts.find((p) => p.id === c.productId) || results.find((p) => p.id === c.productId)
+                                    const originalPriceCents = product?.priceCents || c.unitPriceCents
                                     setCart((p) =>
                                       p.map((x) =>
                                         x.productId === c.productId
                                           ? {
                                               ...x,
                                               unitPriceCents,
-                                              wasPriceOverridden: unitPriceCents !== c.unitPriceCents ? true : x.wasPriceOverridden,
+                                              wasPriceOverridden: unitPriceCents !== originalPriceCents,
                                             }
                                           : x
                                       )
                                     )
-                                  }
+                                  }}
                                 />
                               </div>
                             ) : (

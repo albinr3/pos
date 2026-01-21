@@ -1,10 +1,14 @@
 "use server"
 
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 import { endOfDay, parseDateParam, startOfDay } from "@/lib/dates"
 import { Decimal } from "@prisma/client/runtime/library"
 
 export async function getSalesReport(input: { from?: string; to?: string }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const fromDate = parseDateParam(input.from) ?? new Date()
   const toDate = parseDateParam(input.to) ?? fromDate
 
@@ -13,6 +17,7 @@ export async function getSalesReport(input: { from?: string; to?: string }) {
 
   const sales = await prisma.sale.findMany({
     where: {
+      accountId: user.accountId,
       soldAt: { gte: from, lte: to },
       cancelledAt: null, // Excluir canceladas
     },
@@ -27,6 +32,9 @@ export async function getSalesReport(input: { from?: string; to?: string }) {
 }
 
 export async function getPaymentsReport(input: { from?: string; to?: string }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const fromDate = parseDateParam(input.from) ?? new Date()
   const toDate = parseDateParam(input.to) ?? fromDate
 
@@ -37,6 +45,11 @@ export async function getPaymentsReport(input: { from?: string; to?: string }) {
     where: {
       paidAt: { gte: from, lte: to },
       cancelledAt: null, // Excluir cancelados
+      ar: {
+        sale: {
+          accountId: user.accountId,
+        },
+      },
     },
     orderBy: { paidAt: "desc" },
     include: { ar: { include: { customer: true, sale: true } } },
@@ -49,6 +62,9 @@ export async function getPaymentsReport(input: { from?: string; to?: string }) {
 }
 
 export async function getProfitReport(input: { from?: string; to?: string }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   // Por defecto últimos 30 días
   const defaultTo = new Date()
   const defaultFrom = new Date()
@@ -75,6 +91,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   const [cashSales, payments] = await Promise.all([
     prisma.sale.findMany({
       where: {
+        accountId: user.accountId,
         type: "CONTADO",
         soldAt: { gte: from, lte: to },
         cancelledAt: null, // Excluir canceladas
@@ -84,6 +101,11 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
       where: {
         paidAt: { gte: from, lte: to },
         cancelledAt: null, // Excluir cancelados
+        ar: {
+          sale: {
+            accountId: user.accountId,
+          },
+        },
       },
     }),
   ])
@@ -96,6 +118,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   // Obtener todas las ventas del período (contado y crédito) con sus items
   const allSales = await prisma.sale.findMany({
     where: {
+      accountId: user.accountId,
       soldAt: { gte: from, lte: to },
       cancelledAt: null, // Excluir canceladas
     },
@@ -126,6 +149,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   // 4. GASTOS OPERATIVOS: Total de gastos operativos en el período
   const operatingExpenses = await prisma.operatingExpense.findMany({
     where: {
+      accountId: user.accountId,
       expenseDate: { gte: from, lte: to },
       // OperatingExpense no tiene campo de cancelación por ahora
     },
@@ -148,6 +172,9 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   const accountsReceivable = await prisma.accountReceivable.findMany({
     where: {
       status: { in: ["PENDIENTE", "PARCIAL"] },
+      sale: {
+        accountId: user.accountId,
+      },
     },
   })
   const accountsReceivableTotalCents = accountsReceivable.reduce((s, ar) => s + ar.balanceCents, 0)
@@ -184,8 +211,12 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
 }
 
 export async function getInventoryReport() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const products = await prisma.product.findMany({
     where: {
+      accountId: user.accountId,
       isActive: true,
     },
     orderBy: { name: "asc" },

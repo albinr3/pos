@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { Decimal } from "@prisma/client/runtime/library"
+import { getCurrentUser } from "@/lib/auth"
 
 // Calcular costo neto: (costo - descuento) * 1.18 (ITBIS)
 function calculateNetCost(unitCostCents: number, discountPercentBp: number): number {
@@ -15,7 +16,11 @@ function calculateNetCost(unitCostCents: number, discountPercentBp: number): num
 }
 
 export async function listPurchases() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   return prisma.purchase.findMany({
+    where: { accountId: user.accountId },
     orderBy: { purchasedAt: "desc" },
     include: { items: { include: { product: true } } },
     take: 50,
@@ -23,7 +28,11 @@ export async function listPurchases() {
 }
 
 export async function listAllPurchases() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   return prisma.purchase.findMany({
+    where: { accountId: user.accountId },
     orderBy: { purchasedAt: "desc" },
     include: {
       items: { include: { product: true } },
@@ -41,16 +50,32 @@ export async function createPurchase(input: {
   username: string
   updateProductCost?: boolean
 }) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   if (!input.items.length) throw new Error("La compra no tiene productos")
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({ where: { username: input.username } })
+    const user = await tx.user.findFirst({ 
+      where: { accountId: currentUser.accountId, username: input.username } 
+    })
     if (!user) throw new Error("Usuario inválido")
 
     // Obtener el proveedor si se proporcionó supplierId
     let supplier = null
     if (input.supplierId) {
-      supplier = await tx.supplier.findUnique({ where: { id: input.supplierId } })
+      supplier = await tx.supplier.findFirst({ 
+        where: { accountId: currentUser.accountId, id: input.supplierId } 
+      })
+    }
+
+    // Verificar que todos los productos pertenecen al account
+    const products = await tx.product.findMany({
+      where: { accountId: currentUser.accountId, id: { in: input.items.map(i => i.productId) } },
+      select: { id: true },
+    })
+    if (products.length !== input.items.length) {
+      throw new Error("Algunos productos no existen o no pertenecen a esta cuenta")
     }
 
     // Calcular items con descuento e ITBIS
@@ -70,6 +95,7 @@ export async function createPurchase(input: {
 
     const purchase = await tx.purchase.create({
       data: {
+        accountId: currentUser.accountId,
         supplierName: input.supplierName?.trim() || supplier?.name || null,
         notes: input.notes?.trim() || null,
         userId: user.id,
@@ -108,11 +134,15 @@ export async function createPurchase(input: {
 }
 
 export async function searchProductsForPurchase(query: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const q = query.trim()
   if (!q) return []
 
   const products = await prisma.product.findMany({
     where: {
+      accountId: user.accountId,
       isActive: true,
       OR: [
         { name: { contains: q, mode: "insensitive" } },
@@ -133,8 +163,11 @@ export async function searchProductsForPurchase(query: string) {
 }
 
 export async function getPurchaseById(id: string) {
-  const purchase = await prisma.purchase.findUnique({
-    where: { id },
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const purchase = await prisma.purchase.findFirst({
+    where: { accountId: user.accountId, id },
     include: {
       items: {
         include: {
@@ -165,16 +198,21 @@ export async function getPurchaseById(id: string) {
 }
 
 export async function cancelPurchase(id: string, username: string) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   return prisma.$transaction(async (tx) => {
-    const purchase = await tx.purchase.findUnique({
-      where: { id },
+    const purchase = await tx.purchase.findFirst({
+      where: { accountId: currentUser.accountId, id },
       include: { items: true },
     })
 
     if (!purchase) throw new Error("Compra no encontrada")
     if (purchase.cancelledAt) throw new Error("Esta compra ya está cancelada")
 
-    const user = await tx.user.findUnique({ where: { username } })
+    const user = await tx.user.findFirst({ 
+      where: { accountId: currentUser.accountId, username } 
+    })
     if (!user) throw new Error("Usuario inválido")
 
     // Revertir el stock que se agregó
@@ -212,11 +250,14 @@ export async function updatePurchase(input: {
   items: { productId: string; qty: number; unitCostCents: number; discountPercentBp?: number }[]
   updateProductCost?: boolean
 }) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   if (!input.items.length) throw new Error("La compra no tiene productos")
 
   return prisma.$transaction(async (tx) => {
-    const existingPurchase = await tx.purchase.findUnique({
-      where: { id: input.id },
+    const existingPurchase = await tx.purchase.findFirst({
+      where: { accountId: currentUser.accountId, id: input.id },
       include: { items: true },
     })
 
@@ -226,7 +267,18 @@ export async function updatePurchase(input: {
     // Obtener el proveedor si se proporcionó supplierId
     let supplier = null
     if (input.supplierId) {
-      supplier = await tx.supplier.findUnique({ where: { id: input.supplierId } })
+      supplier = await tx.supplier.findFirst({ 
+        where: { accountId: currentUser.accountId, id: input.supplierId } 
+      })
+    }
+
+    // Verificar que todos los productos pertenecen al account
+    const products = await tx.product.findMany({
+      where: { accountId: currentUser.accountId, id: { in: input.items.map(i => i.productId) } },
+      select: { id: true },
+    })
+    if (products.length !== input.items.length) {
+      throw new Error("Algunos productos no existen o no pertenecen a esta cuenta")
     }
 
     // Revertir el stock de los items anteriores

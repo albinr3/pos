@@ -17,6 +17,7 @@ import { formatRD, toCents } from "@/lib/money"
 import { UNIT_OPTIONS, formatQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { BarcodeLabel } from "@/components/app/barcode-label"
 import { ProductImageUpload } from "@/components/app/product-image-upload"
+import type { CurrentUser } from "@/lib/auth"
 
 import { deactivateProduct, listProducts, upsertProduct } from "./actions"
 import { getAllSuppliers } from "../suppliers/actions"
@@ -59,12 +60,27 @@ export function ProductsClient() {
   const [categories, setCategories] = useState<Awaited<ReturnType<typeof getAllCategories>>>([])
   const [categoryId, setCategoryId] = useState("")
   const [isSaving, startSaving] = useTransition()
+  const [user, setUser] = useState<CurrentUser | null>(null)
   
   // Estado para producto básico o con medidas
   const [productType, setProductType] = useState<"basic" | "measured">("basic")
   // Unidades de compra y venta
   const [purchaseUnit, setPurchaseUnit] = useState<UnitType>("KG")
   const [saleUnit, setSaleUnit] = useState<UnitType>("KG")
+
+  useEffect(() => {
+    // Obtener usuario actual con permisos
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.user) {
+          setUser(data.user)
+        }
+      })
+      .catch(() => {
+        console.error("Error fetching user")
+      })
+  }, [])
 
   function refresh(q?: string) {
     startLoading(async () => {
@@ -284,14 +300,22 @@ export function ProductsClient() {
                           <Label>
                             Precio de venta por ({getUnitInfo("UNIDAD").abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
                           </Label>
-                          <Input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" required />
+                          <Input 
+                            value={price} 
+                            onChange={(e) => setPrice(e.target.value)} 
+                            inputMode="decimal" 
+                            required 
+                            disabled={editing ? (!user || (!user.canOverridePrice && user.role !== "ADMIN")) : false}
+                          />
                         </div>
-                        <div className="grid gap-2">
-                          <Label>
-                            Costo por ({getUnitInfo("UNIDAD").abbr}) (RD$) <span className="text-red-500">*</span>
-                          </Label>
-                          <Input value={cost} onChange={(e) => setCost(e.target.value)} inputMode="decimal" required />
-                        </div>
+                        {(user?.canViewProductCosts || user?.role === "ADMIN") && (
+                          <div className="grid gap-2">
+                            <Label>
+                              Costo por ({getUnitInfo("UNIDAD").abbr}) (RD$) <span className="text-red-500">*</span>
+                            </Label>
+                            <Input value={cost} onChange={(e) => setCost(e.target.value)} inputMode="decimal" required />
+                          </div>
+                        )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="grid gap-2">
@@ -350,14 +374,22 @@ export function ProductsClient() {
                           <Label>
                             Precio de venta por ({getUnitInfo(saleUnit).abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
                           </Label>
-                          <Input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="decimal" required />
+                          <Input 
+                            value={price} 
+                            onChange={(e) => setPrice(e.target.value)} 
+                            inputMode="decimal" 
+                            required 
+                            disabled={editing ? (!user || (!user.canOverridePrice && user.role !== "ADMIN")) : false}
+                          />
                         </div>
-                        <div className="grid gap-2">
-                          <Label>
-                            Costo por ({getUnitInfo(purchaseUnit).abbr}) (RD$) <span className="text-red-500">*</span>
-                          </Label>
-                          <Input value={cost} onChange={(e) => setCost(e.target.value)} inputMode="decimal" required />
-                        </div>
+                        {(user?.canViewProductCosts || user?.role === "ADMIN") && (
+                          <div className="grid gap-2">
+                            <Label>
+                              Costo por ({getUnitInfo(purchaseUnit).abbr}) (RD$) <span className="text-red-500">*</span>
+                            </Label>
+                            <Input value={cost} onChange={(e) => setCost(e.target.value)} inputMode="decimal" required />
+                          </div>
+                        )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="grid gap-2">
@@ -464,6 +496,7 @@ export function ProductsClient() {
                           }}
                           aria-label="Editar"
                           title="Editar"
+                          disabled={!user || (!user.canEditProducts && user.role !== "ADMIN")}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>

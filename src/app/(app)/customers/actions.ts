@@ -6,8 +6,10 @@ import { getCurrentUser } from "@/lib/auth"
 
 /**
  * Asegura que el cliente general existe y devuelve su ID
+ * Maneja condiciones de carrera donde múltiples solicitudes pueden intentar crear el cliente
  */
 async function ensureGenericCustomer(accountId: string): Promise<string> {
+  // Primero verificar si ya existe
   const existingGeneric = await prisma.customer.findFirst({
     where: {
       accountId,
@@ -19,17 +21,33 @@ async function ensureGenericCustomer(accountId: string): Promise<string> {
     return existingGeneric.id
   }
 
-  // Crear cliente general si no existe
-  const newGeneric = await prisma.customer.create({
-    data: {
-      accountId,
-      name: "Cliente general",
-      isGeneric: true,
-      isActive: true,
-    },
-  })
-
-  return newGeneric.id
+  // Intentar crear el cliente genérico
+  try {
+    const newGeneric = await prisma.customer.create({
+      data: {
+        accountId,
+        name: "Cliente general",
+        isGeneric: true,
+        isActive: true,
+      },
+    })
+    return newGeneric.id
+  } catch (error: any) {
+    // Si ya existe por condición de carrera, buscarlo nuevamente
+    if (error?.code === "P2002") {
+      const retryGeneric = await prisma.customer.findFirst({
+        where: {
+          accountId,
+          isGeneric: true,
+        },
+      })
+      if (retryGeneric) {
+        return retryGeneric.id
+      }
+    }
+    // Re-lanzar el error si no es un error de duplicación
+    throw error
+  }
 }
 
 export async function listCustomers(query?: string) {

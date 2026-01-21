@@ -12,8 +12,16 @@ import { auth, currentUser } from "@clerk/nextjs/server"
 import { cookies } from "next/headers"
 import jwt from "jsonwebtoken"
 import bcrypt from "bcryptjs"
-import { prisma } from "@/lib/db"
 import type { UserRole } from "@prisma/client"
+
+// Función helper para obtener prisma de forma segura
+async function getPrisma() {
+  const { prisma } = await import("@/lib/db")
+  if (!prisma) {
+    throw new Error("Prisma client no está inicializado")
+  }
+  return prisma
+}
 
 // ==========================================
 // TYPES
@@ -36,6 +44,8 @@ export type CurrentUser = {
   canChangeSaleType: boolean
   canSellWithoutStock: boolean
   canManageBackups: boolean
+  canViewProductCosts: boolean
+  canViewProfitReport: boolean
 }
 
 export type AccountInfo = {
@@ -111,107 +121,109 @@ export async function getOrCreateAccount(): Promise<AccountInfo | null> {
     }
 
     // Buscar Account existente
+    const prisma = await getPrisma()
     let account = await prisma.account.findUnique({
       where: { clerkUserId: clerkAuth.userId },
     })
 
     // Si no existe, crear nuevo Account con usuario owner
+    let accountWasJustCreated = false
     if (!account) {
       const email = clerkUser.emailAddresses?.[0]?.emailAddress
       const name = `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || "Mi Negocio"
 
-      account = await prisma.account.create({
-        data: {
-          name: name,
-          clerkUserId: clerkAuth.userId,
-        },
-      })
-
-      // Crear usuario owner por defecto
-      const ownerUsername = email ? email.split("@")[0] : "admin"
-      const defaultPassword = await bcrypt.hash("admin123", 10)
-
-      await prisma.user.create({
-        data: {
-          accountId: account.id,
-          name: name,
-          username: ownerUsername,
-          passwordHash: defaultPassword,
-          email: email,
-          role: "ADMIN",
-          isOwner: true,
-          canOverridePrice: true,
-          canCancelSales: true,
-          canCancelReturns: true,
-          canCancelPayments: true,
-          canEditSales: true,
-          canEditProducts: true,
-          canChangeSaleType: true,
-          canSellWithoutStock: true,
-          canManageBackups: true,
-        },
-      })
-
-      // Crear configuraciones iniciales
-      await prisma.companySettings.create({
-        data: {
-          accountId: account.id,
-          name: name,
-          phone: "",
-          address: "",
-        },
-      })
-
-      await prisma.invoiceSequence.create({
-        data: {
-          accountId: account.id,
-          series: "A",
-          lastNumber: 0,
-        },
-      })
-
-      await prisma.returnSequence.create({
-        data: {
-          accountId: account.id,
-          lastNumber: 0,
-        },
-      })
-
-      await prisma.quoteSequence.create({
-        data: {
-          accountId: account.id,
-          lastNumber: 0,
-        },
-      })
-
-      // Crear cliente genérico (si no existe)
-      const existingGeneric = await prisma.customer.findFirst({
-        where: {
-          accountId: account.id,
-          isGeneric: true,
-        },
-      })
-
-      if (!existingGeneric) {
-        await prisma.customer.create({
+      try {
+        account = await prisma.account.create({
           data: {
-            accountId: account.id,
-            name: "Cliente general",
-            isGeneric: true,
-            isActive: true,
+            name: name,
+            clerkUserId: clerkAuth.userId,
           },
         })
+        accountWasJustCreated = true
+      } catch (createError: any) {
+        // Si hay una violación de restricción única (otra solicitud ya creó el Account),
+        // buscar nuevamente el Account existente
+        if (createError?.code === "P2002") {
+          account = await prisma.account.findUnique({
+            where: { clerkUserId: clerkAuth.userId },
+          })
+          if (!account) {
+            // Si aún no existe, lanzar el error original
+            throw createError
+          }
+          // Account ya existe, no fue creado en esta ejecución
+          accountWasJustCreated = false
+        } else {
+          throw createError
+        }
       }
-    } else {
-      // Si el Account ya existe, asegurarse de que tenga cliente genérico
-      const existingGeneric = await prisma.customer.findFirst({
-        where: {
-          accountId: account.id,
-          isGeneric: true,
-        },
-      })
 
-      if (!existingGeneric) {
+      // Solo crear configuraciones iniciales si acabamos de crear el Account
+      // NOTA: No creamos usuario automáticamente, el usuario debe crear su contraseña
+      if (accountWasJustCreated) {
+        // Crear configuraciones iniciales
+        await prisma.companySettings.create({
+          data: {
+            accountId: account.id,
+            name: name,
+            phone: "",
+            address: "",
+          },
+        })
+
+        await prisma.invoiceSequence.create({
+          data: {
+            accountId: account.id,
+            series: "A",
+            lastNumber: 0,
+          },
+        })
+
+        await prisma.returnSequence.create({
+          data: {
+            accountId: account.id,
+            lastNumber: 0,
+          },
+        })
+
+        await prisma.quoteSequence.create({
+          data: {
+            accountId: account.id,
+            lastNumber: 0,
+          },
+        })
+
+        // Crear cliente genérico
+        try {
+          await prisma.customer.create({
+            data: {
+              accountId: account.id,
+              name: "Cliente general",
+              isGeneric: true,
+              isActive: true,
+            },
+          })
+        } catch (error: any) {
+          // Si ya existe (error de constraint o condición de carrera), ignorar
+          if (error?.code !== "P2002") {
+            throw error
+          }
+        }
+      }
+    }
+
+    // Asegurarse de que el cliente genérico exista (verificación final)
+    // Usar findFirst para evitar crear duplicados en condiciones de carrera
+    const existingGeneric = await prisma.customer.findFirst({
+      where: {
+        accountId: account.id,
+        isGeneric: true,
+      },
+    })
+
+    // Solo crear si realmente no existe
+    if (!existingGeneric) {
+      try {
         await prisma.customer.create({
           data: {
             accountId: account.id,
@@ -220,6 +232,11 @@ export async function getOrCreateAccount(): Promise<AccountInfo | null> {
             isActive: true,
           },
         })
+      } catch (error: any) {
+        // Si ya existe por condición de carrera, ignorar silenciosamente
+        if (error?.code !== "P2002") {
+          console.error("Error creando cliente genérico:", error)
+        }
       }
     }
 
@@ -239,6 +256,7 @@ export async function getOrCreateAccount(): Promise<AccountInfo | null> {
  */
 export async function linkAccountToClerk(accountId: string, clerkUserId: string): Promise<boolean> {
   try {
+    const prisma = await getPrisma()
     await prisma.account.update({
       where: { id: accountId },
       data: { clerkUserId },
@@ -257,6 +275,7 @@ export async function linkAccountToClerk(accountId: string, clerkUserId: string)
  * Lista los subusuarios de un Account
  */
 export async function listSubUsers(accountId: string): Promise<SubUser[]> {
+  const prisma = await getPrisma()
   const users = await prisma.user.findMany({
     where: {
       accountId,
@@ -287,6 +306,7 @@ export async function authenticateSubUser(
   password: string
 ): Promise<{ success: boolean; user?: CurrentUser; error?: string }> {
   try {
+    const prisma = await getPrisma()
     const user = await prisma.user.findUnique({
       where: {
         accountId_username: {
@@ -328,6 +348,8 @@ export async function authenticateSubUser(
         canChangeSaleType: user.canChangeSaleType,
         canSellWithoutStock: user.canSellWithoutStock,
         canManageBackups: user.canManageBackups,
+        canViewProductCosts: user.canViewProductCosts,
+        canViewProfitReport: user.canViewProfitReport,
       },
     }
   } catch (error) {
@@ -356,10 +378,13 @@ export async function createSubUser(
       canChangeSaleType: boolean
       canSellWithoutStock: boolean
       canManageBackups: boolean
+      canViewProductCosts: boolean
+      canViewProfitReport: boolean
     }>
   }
 ): Promise<{ success: boolean; user?: SubUser; error?: string }> {
   try {
+    const prisma = await getPrisma()
     // Verificar que el username no exista en el account
     const existing = await prisma.user.findUnique({
       where: {
@@ -483,6 +508,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   }
 
   // Verificar que el Account corresponde al clerkUserId
+  const prisma = await getPrisma()
   const account = await prisma.account.findUnique({
     where: { clerkUserId },
   })
@@ -503,7 +529,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     return null
   }
 
-  return {
+  const currentUser = {
     id: user.id,
     accountId: user.accountId,
     username: user.username,
@@ -520,7 +546,11 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     canChangeSaleType: user.canChangeSaleType,
     canSellWithoutStock: user.canSellWithoutStock,
     canManageBackups: user.canManageBackups,
+    canViewProductCosts: user.canViewProductCosts,
+    canViewProfitReport: user.canViewProfitReport,
   }
+  
+  return currentUser
 }
 
 /**
@@ -555,6 +585,7 @@ export async function hasSubUserSession(): Promise<boolean> {
 
 export async function createSession(userId: string): Promise<string> {
   // Buscar el accountId del usuario
+  const prisma = await getPrisma()
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { accountId: true },

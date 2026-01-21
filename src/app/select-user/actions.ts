@@ -1,6 +1,7 @@
 "use server"
 
 import { redirect } from "next/navigation"
+import { currentUser } from "@clerk/nextjs/server"
 import {
   getOrCreateAccount,
   listSubUsers,
@@ -67,22 +68,27 @@ export async function loginSubUser(formData: FormData) {
 
 export async function createFirstUser(formData: FormData) {
   const accountId = formData.get("accountId") as string
-  const name = formData.get("name") as string
-  const username = formData.get("username") as string
   const password = formData.get("password") as string
 
-  if (!accountId || !name || !username || !password) {
+  if (!accountId || !password) {
     return { error: "Todos los campos son requeridos" }
   }
 
-  if (password.length < 4) {
-    return { error: "La contraseña debe tener al menos 4 caracteres" }
+  // Validar que la contraseña sea exactamente 4 dígitos
+  if (!/^\d{4}$/.test(password)) {
+    return { error: "La contraseña debe ser exactamente 4 dígitos" }
   }
 
   // Verificar autenticación de Clerk
   const isAuthenticated = await isClerkAuthenticated()
   if (!isAuthenticated) {
     return { error: "Sesión de cuenta principal expirada. Por favor, inicia sesión de nuevo." }
+  }
+
+  // Obtener datos del usuario de Clerk
+  const clerkUser = await currentUser()
+  if (!clerkUser) {
+    return { error: "No se pudo obtener la información del usuario" }
   }
 
   // Verificar que no existan usuarios
@@ -94,11 +100,16 @@ export async function createFirstUser(formData: FormData) {
   const { prisma } = await import("@/lib/db")
   const bcrypt = await import("bcryptjs")
 
+  // Obtener datos del usuario de Clerk
+  const email = clerkUser.emailAddresses?.[0]?.emailAddress
+  const name = `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || "Usuario"
+  const ownerUsername = email ? email.split("@")[0] : "admin"
+
   // Crear el primer usuario directamente como owner
   const passwordHash = await bcrypt.hash(password, 10)
-  const trimmedUsername = username.trim().toLowerCase()
+  const trimmedUsername = ownerUsername.trim().toLowerCase()
 
-  // Verificar que el username no exista
+  // Verificar que el username no exista (por si acaso)
   const existing = await prisma.user.findUnique({
     where: {
       accountId_username: {
@@ -116,9 +127,10 @@ export async function createFirstUser(formData: FormData) {
   const newUser = await prisma.user.create({
     data: {
       accountId,
-      name: name.trim(),
+      name: name,
       username: trimmedUsername,
       passwordHash,
+      email: email,
       role: "ADMIN",
       isOwner: true,
       canOverridePrice: true,
@@ -130,6 +142,8 @@ export async function createFirstUser(formData: FormData) {
       canChangeSaleType: true,
       canSellWithoutStock: true,
       canManageBackups: true,
+      canViewProductCosts: true,
+      canViewProfitReport: true,
     },
   })
 

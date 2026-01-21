@@ -1,6 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { formatRD } from "@/lib/money"
+import { getCurrentUser } from "@/lib/auth"
+import { redirect } from "next/navigation"
 
 import { ReportDateRangeFilter } from "../filter-client"
 import { getProfitReport } from "../actions"
@@ -11,6 +13,16 @@ export default async function ProfitReportPage({
 }: {
   searchParams: Promise<{ from?: string; to?: string }>
 }) {
+  const user = await getCurrentUser()
+  if (!user) {
+    redirect("/login")
+  }
+
+  // Verificar permiso para ver reporte de ganancia
+  if (!user.canViewProfitReport && user.role !== "ADMIN") {
+    redirect("/reports")
+  }
+
   const sp = await searchParams
   // Pasar los parámetros explícitamente, incluso si están vacíos
   const data = await getProfitReport({ 

@@ -25,6 +25,8 @@ const PERMISSION_LABELS: Record<string, string> = {
   canChangeSaleType: "Cambiar tipo de venta",
   canSellWithoutStock: "Vender sin stock",
   canManageBackups: "Gestionar backups",
+  canViewProductCosts: "Ver costos de productos",
+  canViewProfitReport: "Ver reporte de ganancia",
 }
 
 const PERMISSION_KEYS = [
@@ -37,6 +39,8 @@ const PERMISSION_KEYS = [
   "canChangeSaleType",
   "canSellWithoutStock",
   "canManageBackups",
+  "canViewProductCosts",
+  "canViewProfitReport",
 ] as const
 
 export function PermissionsTab() {
@@ -68,6 +72,11 @@ export function PermissionsTab() {
     startSaving(async () => {
       try {
         await updateUserPermissions({ userId, [permission]: value })
+        toast({ 
+          title: "Cambio aplicado",
+          description: `${PERMISSION_LABELS[permission]} ${value ? "activado" : "desactivado"}`,
+          duration: 2000
+        })
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
         loadUsers() // Revertir
@@ -91,6 +100,8 @@ export function PermissionsTab() {
               canChangeSaleType: value,
               canSellWithoutStock: value,
               canManageBackups: value,
+              canViewProductCosts: value,
+              canViewProfitReport: value,
             }
           : u
       )

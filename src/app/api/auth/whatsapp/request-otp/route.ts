@@ -23,8 +23,10 @@ function checkRateLimit(identifier: string, maxRequests: number, windowMs: numbe
 }
 
 export async function POST(request: NextRequest) {
+  console.log("=== WhatsApp OTP Request Started ===")
   try {
     const body = await request.json()
+    console.log("Request body received:", { phoneNumber: body.phoneNumber, purpose: body.purpose })
     const { phoneNumber, purpose } = body
 
     if (!phoneNumber || typeof phoneNumber !== "string") {
@@ -43,6 +45,7 @@ export async function POST(request: NextRequest) {
 
     // Normalizar número de teléfono
     const normalizedPhone = normalizePhoneNumber(phoneNumber)
+    console.log("Normalized phone:", normalizedPhone)
     if (!normalizedPhone) {
       return NextResponse.json(
         { error: "Número de teléfono inválido. Use formato: 8091234567 o +18091234567" },
@@ -71,25 +74,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verificar si el usuario existe (solo para propósito de login)
+    // Para login: verificar si el usuario existe, pero SIEMPRE enviar el código
+    // (el código de verificación manejará si el usuario existe o no)
     if (purpose === "login") {
-      const existingUser = await prisma.user.findUnique({
+      console.log("=== Checking if user exists for login ===")
+      const existingUser = await prisma.user.findFirst({
         where: { whatsappNumber: normalizedPhone },
       })
-
+      console.log("Existing user found:", existingUser ? "YES" : "NO")
+      
+      // Si el usuario no existe, cambiar a signup automáticamente
+      // para que el usuario pueda registrarse
       if (!existingUser) {
-        // No revelar si el usuario existe o no (seguridad)
-        // Simular el mismo tiempo de respuesta
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        return NextResponse.json({
-          success: true,
-          message: "Si el número está registrado, recibirás un código por WhatsApp",
-        })
+        console.log("=== User not found, but will send code anyway (will create user on verify) ===")
+        // Continuar con el flujo normal para enviar el código
+        // El verify-otp manejará la creación del usuario si no existe
+      } else {
+        console.log("=== User exists, continuing to send OTP ===")
       }
     }
 
     // Generar código OTP
+    console.log("=== Generating OTP code ===")
     const code = generateOtpCode()
+    console.log("Generated code:", code)
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000) // 10 minutos
 
     // Limpiar OTPs expirados anteriores para este número
@@ -117,7 +125,14 @@ export async function POST(request: NextRequest) {
 
     // Enviar mensaje por WhatsApp
     const message = `Tu código de verificación es: ${code}\n\nVálido por 10 minutos.\n\nNo compartas este código con nadie.`
+    
+    console.log("=== About to send WhatsApp message ===")
+    console.log("Normalized phone:", normalizedPhone)
+    console.log("Code:", code)
+    console.log("Message:", message)
+    
     const sendResult = await sendWhatsAppMessage(normalizedPhone, message)
+    console.log("=== WhatsApp send result ===", sendResult)
 
     if (!sendResult.success) {
       // Eliminar OTP si falla el envío

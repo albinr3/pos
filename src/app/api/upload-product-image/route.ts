@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { writeFile, mkdir } from "fs/promises"
-import { join } from "path"
-import { existsSync } from "fs"
+import { buildFilename, buildPublicUrl, PRODUCTS_SUBDIR, saveUploadFile } from "@/lib/uploads"
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,25 +23,12 @@ export async function POST(request: NextRequest) {
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
 
-    // Crear directorio si no existe
-    const uploadsDir = join(process.cwd(), "public", "uploads", "products")
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true })
-    }
-
     // Generar nombre único
-    const timestamp = Date.now()
-    const randomStr = Math.random().toString(36).substring(2, 9)
-    const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_")
-    const extension = originalName.split(".").pop() || "png"
-    const filename = `product_${timestamp}_${randomStr}.${extension}`
-    const filepath = join(uploadsDir, filename)
-
-    // Guardar archivo
-    await writeFile(filepath, buffer)
+    const filename = buildFilename("product", file.name, { random: true })
+    await saveUploadFile(PRODUCTS_SUBDIR, filename, buffer)
 
     // Retornar la URL relativa
-    const url = `/uploads/products/${filename}`
+    const url = buildPublicUrl(PRODUCTS_SUBDIR, filename)
     return NextResponse.json({ url })
   } catch (error) {
     console.error("Error al subir imagen de producto:", error)

@@ -1,12 +1,13 @@
 "use server"
 
 import { prisma } from "@/lib/db"
-
-import { endOfDay, startOfDay } from "@/lib/dates"
-
-import { parseDateParam } from "@/lib/dates"
+import { endOfDay, startOfDay, parseDateParam } from "@/lib/dates"
+import { getCurrentUser } from "@/lib/auth"
 
 export async function getDailyClose(input?: { from?: string; to?: string }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const fromDate = parseDateParam(input?.from) ?? new Date()
   const toDate = parseDateParam(input?.to) ?? fromDate
   const from = startOfDay(fromDate)
@@ -15,6 +16,7 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
   const [sales, payments] = await Promise.all([
     prisma.sale.findMany({
       where: {
+        accountId: user.accountId,
         soldAt: { gte: from, lte: to },
         cancelledAt: null, // Excluir canceladas
       },
@@ -22,6 +24,11 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
     }),
     prisma.payment.findMany({
       where: {
+        ar: {
+          sale: {
+            accountId: user.accountId,
+          },
+        },
         paidAt: { gte: from, lte: to },
         cancelledAt: null, // Excluir cancelados
       },

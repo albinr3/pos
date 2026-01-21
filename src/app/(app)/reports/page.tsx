@@ -2,8 +2,11 @@ import Link from "next/link"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { getCurrentUser } from "@/lib/auth"
 
-export default function ReportsPage() {
+export default async function ReportsPage() {
+  const user = await getCurrentUser()
+  
   return (
     <div className="grid gap-6">
       <div>
@@ -32,16 +35,18 @@ export default function ReportsPage() {
             </Button>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Ganancia</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Button asChild>
-              <Link href="/reports/profit">Ver estado de resultados</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        {(user?.canViewProfitReport || user?.role === "ADMIN") && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Ganancia</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link href="/reports/profit">Ver estado de resultados</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader>
             <CardTitle>Inventario</CardTitle>

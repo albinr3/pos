@@ -1,19 +1,23 @@
 "use server"
 
 import { prisma } from "@/lib/db"
-
+import { getCurrentUser } from "@/lib/auth"
 import { endOfDay, startOfDay } from "@/lib/dates"
 
 export async function getSalesChartData(days: number = 7) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const today = new Date()
   const from = new Date(today)
   from.setDate(from.getDate() - days)
   from.setHours(0, 0, 0, 0)
   const to = endOfDay(today)
 
-  // Obtener todas las ventas del período
+  // Obtener todas las ventas del período del usuario actual
   const sales = await prisma.sale.findMany({
     where: {
+      accountId: user.accountId,
       soldAt: { gte: from, lte: to },
       cancelledAt: null,
     },
@@ -77,12 +81,16 @@ export async function getSalesChartData(days: number = 7) {
 }
 
 export async function getDashboardStats() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const from = startOfDay()
   const to = endOfDay()
 
   const [salesToday, salesCash, salesCredit, arOpen, paymentsToday, lowStockCountRow] = await Promise.all([
     prisma.sale.aggregate({
       where: {
+        accountId: user.accountId,
         soldAt: { gte: from, lte: to },
         cancelledAt: null, // Excluir canceladas
       },
@@ -91,6 +99,7 @@ export async function getDashboardStats() {
     }),
     prisma.sale.aggregate({
       where: {
+        accountId: user.accountId,
         soldAt: { gte: from, lte: to },
         cancelledAt: null,
         type: "CONTADO",
@@ -100,6 +109,7 @@ export async function getDashboardStats() {
     }),
     prisma.sale.aggregate({
       where: {
+        accountId: user.accountId,
         soldAt: { gte: from, lte: to },
         cancelledAt: null,
         type: "CREDITO",
@@ -110,7 +120,10 @@ export async function getDashboardStats() {
     prisma.accountReceivable.aggregate({
       where: {
         status: { in: ["PENDIENTE", "PARCIAL"] },
-        sale: { cancelledAt: null }, // Excluir ventas canceladas
+        sale: { 
+          accountId: user.accountId,
+          cancelledAt: null, // Excluir ventas canceladas
+        },
       },
       _sum: { balanceCents: true },
       _count: true,
@@ -119,6 +132,11 @@ export async function getDashboardStats() {
       where: {
         paidAt: { gte: from, lte: to },
         cancelledAt: null, // Excluir cancelados
+        ar: {
+          sale: {
+            accountId: user.accountId,
+          },
+        },
       },
       _sum: { amountCents: true },
       _count: true,
@@ -126,7 +144,8 @@ export async function getDashboardStats() {
     prisma.$queryRaw<{ count: bigint }[]>`
       SELECT COUNT(*)::bigint as count
       FROM "Product"
-      WHERE "isActive" = true
+      WHERE "accountId" = ${user.accountId}
+        AND "isActive" = true
         AND "minStock" > 0
         AND "stock" <= "minStock";
     `,

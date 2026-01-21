@@ -1,12 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatRD } from "@/lib/money"
+import { getCurrentUser } from "@/lib/auth"
 
 import { getInventoryReport } from "../actions"
 import { InventoryExportClient } from "./inventory-export-client"
 import { PrintButton } from "@/components/app/print-button"
 
 export default async function InventoryReportPage() {
+  const user = await getCurrentUser()
+  const canViewCosts = user?.canViewProductCosts || user?.role === "ADMIN"
   const data = await getInventoryReport()
 
   return (
@@ -29,7 +32,9 @@ export default async function InventoryReportPage() {
       <Card>
         <CardHeader>
           <CardTitle>
-            Total de inventario en costo: {formatRD(data.totalInventoryCostCents)} ({data.count} productos)
+            {canViewCosts 
+              ? `Total de inventario en costo: ${formatRD(data.totalInventoryCostCents)} (${data.count} productos)`
+              : `Inventario: ${data.count} productos`}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -41,8 +46,12 @@ export default async function InventoryReportPage() {
                   <TableHead>SKU</TableHead>
                   <TableHead>Proveedor</TableHead>
                   <TableHead className="text-right">Stock</TableHead>
-                  <TableHead className="text-right">Costo unitario</TableHead>
-                  <TableHead className="text-right">Costo total</TableHead>
+                  {canViewCosts && (
+                    <>
+                      <TableHead className="text-right">Costo unitario</TableHead>
+                      <TableHead className="text-right">Costo total</TableHead>
+                    </>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -54,15 +63,19 @@ export default async function InventoryReportPage() {
                       <TableCell>{product.sku ?? "-"}</TableCell>
                       <TableCell>{product.supplier?.name ?? "-"}</TableCell>
                       <TableCell className="text-right">{product.stock}</TableCell>
-                      <TableCell className="text-right">{formatRD(product.costCents)}</TableCell>
-                      <TableCell className="text-right font-medium">{formatRD(totalCostCents)}</TableCell>
+                      {canViewCosts && (
+                        <>
+                          <TableCell className="text-right">{formatRD(product.costCents)}</TableCell>
+                          <TableCell className="text-right font-medium">{formatRD(totalCostCents)}</TableCell>
+                        </>
+                      )}
                     </TableRow>
                   )
                 })}
 
                 {data.products.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={canViewCosts ? 6 : 4} className="py-10 text-center text-sm text-muted-foreground">
                       No hay productos activos en el inventario.
                     </TableCell>
                   </TableRow>

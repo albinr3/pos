@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatRD } from "@/lib/money"
+import type { CurrentUser } from "@/lib/auth"
 
 import { cancelPayment, listAllPayments } from "../../ar/actions"
 
@@ -32,6 +33,21 @@ export function PaymentsListClient() {
   const [payments, setPayments] = useState<Payment[]>([])
   const [isLoading, startLoading] = useTransition()
   const [query, setQuery] = useState("")
+  const [user, setUser] = useState<CurrentUser | null>(null)
+
+  useEffect(() => {
+    // Obtener usuario actual con permisos
+    fetch("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.user) {
+          setUser(data.user)
+        }
+      })
+      .catch(() => {
+        console.error("Error fetching user")
+      })
+  }, [])
 
   function refresh() {
     startLoading(async () => {
@@ -115,6 +131,7 @@ export function PaymentsListClient() {
                             onClick={() => handleCancel(p.id)}
                             aria-label="Cancelar"
                             title="Cancelar"
+                            disabled={!user || (!user.canCancelPayments && user.role !== "ADMIN")}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Buscar o crear usuario
-    let user = await prisma.user.findUnique({
+    let user = await prisma.user.findFirst({
       where: { whatsappNumber: normalizedPhone },
     })
 
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
       let username = baseUsername
       let counter = 1
 
-      while (await prisma.user.findUnique({ where: { username } })) {
+      while (await prisma.user.findFirst({ where: { username } })) {
         username = `${baseUsername}_${counter}`
         counter++
       }

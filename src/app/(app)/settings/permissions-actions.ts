@@ -2,10 +2,14 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 
 export async function listUsersWithPermissions() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const users = await prisma.user.findMany({
-    where: { isActive: true },
+    where: { accountId: user.accountId, isActive: true },
     orderBy: { name: "asc" },
     select: {
       id: true,
@@ -38,6 +42,15 @@ export async function updateUserPermissions(input: {
   canSellWithoutStock?: boolean
   canManageBackups?: boolean
 }) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
+  // Verificar que el usuario pertenece al account
+  const targetUser = await prisma.user.findFirst({
+    where: { accountId: currentUser.accountId, id: input.userId },
+  })
+  if (!targetUser) throw new Error("Usuario no encontrado")
+
   const { userId, ...permissions } = input
   
   await prisma.user.update({
@@ -49,6 +62,15 @@ export async function updateUserPermissions(input: {
 }
 
 export async function setAllPermissions(userId: string, value: boolean) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
+  // Verificar que el usuario pertenece al account
+  const targetUser = await prisma.user.findFirst({
+    where: { accountId: currentUser.accountId, id: userId },
+  })
+  if (!targetUser) throw new Error("Usuario no encontrado")
+
   await prisma.user.update({
     where: { id: userId },
     data: {

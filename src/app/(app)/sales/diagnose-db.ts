@@ -1,9 +1,13 @@
 "use server"
 
 import { prisma } from "@/lib/db"
+import { getCurrentUser } from "@/lib/auth"
 
 // Función de diagnóstico para verificar el estado de la base de datos
 export async function diagnoseDatabase() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   try {
     // Verificar si existen las columnas de cancelación
     const saleColumns = await prisma.$queryRaw<Array<{ column_name: string; data_type: string; is_nullable: string }>>`
@@ -13,11 +17,14 @@ export async function diagnoseDatabase() {
       AND column_name IN ('cancelledAt', 'cancelledBy')
     `
 
-    // Contar facturas
-    const totalSales = await prisma.sale.count()
+    // Contar facturas del account
+    const totalSales = await prisma.sale.count({
+      where: { accountId: user.accountId },
+    })
 
-    // Ver las últimas 10 facturas
+    // Ver las últimas 10 facturas del account
     const lastSales = await prisma.sale.findMany({
+      where: { accountId: user.accountId },
       orderBy: { soldAt: "desc" },
       take: 10,
       select: {

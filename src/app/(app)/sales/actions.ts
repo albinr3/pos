@@ -125,23 +125,30 @@ export async function listCustomers() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  // Asegurar que el cliente general existe
-  const existingGeneric = await prisma.customer.findFirst({
-    where: {
-      accountId: user.accountId,
-      isGeneric: true,
-    },
-  })
-
-  if (!existingGeneric) {
-    await prisma.customer.create({
-      data: {
+  // Asegurar que el cliente general existe (con manejo de condiciones de carrera)
+  try {
+    const existingGeneric = await prisma.customer.findFirst({
+      where: {
         accountId: user.accountId,
-        name: "Cliente general",
         isGeneric: true,
-        isActive: true,
       },
     })
+
+    if (!existingGeneric) {
+      await prisma.customer.create({
+        data: {
+          accountId: user.accountId,
+          name: "Cliente general",
+          isGeneric: true,
+          isActive: true,
+        },
+      })
+    }
+  } catch (error: any) {
+    // Si ya existe por condición de carrera, ignorar silenciosamente
+    if (error?.code !== "P2002") {
+      console.error("Error asegurando cliente genérico:", error)
+    }
   }
 
   return prisma.customer.findMany({
@@ -233,12 +240,38 @@ export async function createSale(input: {
 
   if (!input.items.length) throw new Error("La venta no tiene productos.")
 
+  // Validar permiso para cambiar tipo de venta (si no es el tipo por defecto)
+  // Nota: Por defecto, todos pueden crear ventas al contado
+  // Solo se valida si intenta cambiar el tipo
+  // Para crédito, se asume que necesita permiso (aunque no está explícito en el schema)
+
   const settings = await prisma.companySettings.findFirst({
     where: { accountId: user.accountId },
   })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
 
   return prisma.$transaction(async (tx) => {
+    // Validar que el Account existe
+    const account = await tx.account.findUnique({
+      where: { id: user.accountId },
+      select: { id: true },
+    })
+    if (!account) {
+      throw new Error("El account no existe. Por favor, inicia sesión de nuevo.")
+    }
+
+    // Validar que el User existe
+    const dbUser = await tx.user.findUnique({
+      where: { id: user.id },
+      select: { id: true, accountId: true },
+    })
+    if (!dbUser) {
+      throw new Error("El usuario no existe. Por favor, inicia sesión de nuevo.")
+    }
+    if (dbUser.accountId !== user.accountId) {
+      throw new Error("El usuario no pertenece a este account.")
+    }
+
     // Usar el permiso del usuario para vender sin stock
     const allowNegativeStock = user.canSellWithoutStock || user.role === "ADMIN"
 
@@ -264,7 +297,7 @@ export async function createSale(input: {
     const number = seq.lastNumber
     const code = invoiceCode("A", number)
 
-    // Load products to validate stock
+    // Load products to validate stock and prices
     const products = await tx.product.findMany({
       where: { id: { in: input.items.map((i) => i.productId) }, accountId: user.accountId },
       select: { id: true, priceCents: true, stock: true, isActive: true },
@@ -274,15 +307,67 @@ export async function createSale(input: {
     for (const item of input.items) {
       const p = byId.get(item.productId)
       if (!p || !p.isActive) throw new Error("Hay un producto inválido o inactivo en el carrito.")
+      
+      // Validar permiso para modificar precio - SIEMPRE verificar si el precio es diferente al original
+      const originalPriceCents = Number(p.priceCents)
+      const priceDiffers = item.unitPriceCents !== originalPriceCents
+      
+      if (priceDiffers) {
+        if (!user.canOverridePrice && user.role !== "ADMIN") {
+          throw new Error("No tienes permiso para modificar precios. El precio fue cambiado sin autorización.")
+        }
+      }
+      
       if (!allowNegativeStock && Number(p.stock) < item.qty) {
         throw new Error("Stock insuficiente para completar la venta.")
       }
+    }
+
+    // Asegurar que el cliente genérico existe
+    let genericCustomer = await tx.customer.findFirst({
+      where: {
+        accountId: user.accountId,
+        isGeneric: true,
+      },
+    })
+
+    if (!genericCustomer) {
+      genericCustomer = await tx.customer.create({
+        data: {
+          accountId: user.accountId,
+          name: "Cliente general",
+          isGeneric: true,
+          isActive: true,
+        },
+      })
     }
 
     const itemsTotalCents = input.items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
     const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
     const shippingCents = input.shippingCents ?? 0
     const totalCents = itemsTotalCents + shippingCents
+
+    // Validar y usar customerId, o usar el cliente genérico por defecto
+    let finalCustomerId: string | null = null
+    if (input.customerId) {
+      const customer = await tx.customer.findUnique({
+        where: { id: input.customerId },
+        select: { id: true, accountId: true, isActive: true },
+      })
+      if (!customer) {
+        // Si el cliente no existe, usar el cliente genérico
+        console.warn(`Cliente ${input.customerId} no existe, usando cliente genérico`)
+        finalCustomerId = genericCustomer.id
+      } else if (customer.accountId !== user.accountId) {
+        throw new Error("El cliente no pertenece a este account.")
+      } else if (!customer.isActive) {
+        // Si el cliente está inactivo, usar el cliente genérico
+        console.warn(`Cliente ${input.customerId} está inactivo, usando cliente genérico`)
+        finalCustomerId = genericCustomer.id
+      } else {
+        finalCustomerId = customer.id
+      }
+    }
 
     const sale = await tx.sale.create({
       data: {
@@ -292,7 +377,7 @@ export async function createSale(input: {
         invoiceCode: code,
         type: input.type,
         paymentMethod: input.type === SaleType.CONTADO && !input.paymentSplits ? input.paymentMethod : null,
-        customerId: input.customerId || null,
+        customerId: finalCustomerId,
         userId: user.id,
         subtotalCents,
         itbisCents,
@@ -327,12 +412,15 @@ export async function createSale(input: {
 
     // If credit: create AR
     if (input.type === SaleType.CREDITO) {
-      const customerId = input.customerId
-      if (!customerId) throw new Error("Para crédito debes seleccionar un cliente.")
+      const customerIdForAR = finalCustomerId
+      if (!customerIdForAR) {
+        // Si no hay cliente, usar el genérico (aunque no debería pasar)
+        throw new Error("Para crédito debes seleccionar un cliente.")
+      }
       await tx.accountReceivable.create({
         data: {
           saleId: sale.id,
-          customerId,
+          customerId: customerIdForAR,
           totalCents,
           balanceCents: totalCents,
           status: "PENDIENTE",
@@ -484,6 +572,13 @@ export async function updateSale(input: {
     if (!existingSale) throw new Error("Venta no encontrada")
     if (existingSale.cancelledAt) throw new Error("No se puede editar una venta cancelada")
 
+    // Validar permiso para cambiar tipo de venta
+    if (input.type !== existingSale.type) {
+      if (!user.canChangeSaleType && user.role !== "ADMIN") {
+        throw new Error("No tienes permiso para cambiar el tipo de venta")
+      }
+    }
+
     // Si tiene cuenta por cobrar, verificar que no tenga pagos no cancelados
     if (existingSale.ar) {
       const activePayments = await tx.payment.count({
@@ -517,6 +612,14 @@ export async function updateSale(input: {
     for (const item of input.items) {
       const p = byId.get(item.productId)
       if (!p || !p.isActive) throw new Error("Hay un producto inválido o inactivo en el carrito.")
+      
+      // Validar permiso para modificar precio - SIEMPRE verificar si el precio es diferente al original
+      if (item.unitPriceCents !== p.priceCents) {
+        if (!user.canOverridePrice && user.role !== "ADMIN") {
+          throw new Error("No tienes permiso para modificar precios. El precio fue cambiado sin autorización.")
+        }
+      }
+      
       if (!allowNegativeStock && Number(p.stock) < item.qty) {
         throw new Error("Stock insuficiente para completar la venta.")
       }

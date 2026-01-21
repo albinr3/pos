@@ -3,6 +3,7 @@
 import { openai } from "@/lib/openai"
 import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
+import { getCurrentUser } from "@/lib/auth"
 
 // Tipos para los datos extraídos del OCR
 export type ExtractedProduct = {
@@ -57,6 +58,9 @@ Si no puedes leer algún dato, usa null. Si no hay productos, usa un array vací
 Los precios deben ser números (no strings). Las cantidades deben ser enteros.`
 
 export async function processInvoiceImage(base64Image: string): Promise<ExtractedInvoiceData> {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY no está configurada. Agrega tu API key en el archivo .env")
   }
@@ -114,7 +118,7 @@ export async function processInvoiceImage(base64Image: string): Promise<Extracte
       throw new Error("Error al procesar la respuesta. La imagen puede no ser una factura válida.")
     }
 
-    // Buscar productos existentes por SKU o referencia
+    // Buscar productos existentes por SKU o referencia (filtrado por accountId)
     const productsWithMatches: ExtractedProduct[] = await Promise.all(
       (parsedData.products || []).map(async (p) => {
         let matchedProduct = null
@@ -123,6 +127,7 @@ export async function processInvoiceImage(base64Image: string): Promise<Extracte
         if (p.sku) {
           matchedProduct = await prisma.product.findFirst({
             where: {
+              accountId: user.accountId,
               isActive: true,
               sku: { equals: p.sku, mode: "insensitive" },
             },
@@ -134,6 +139,7 @@ export async function processInvoiceImage(base64Image: string): Promise<Extracte
         if (!matchedProduct && p.reference) {
           matchedProduct = await prisma.product.findFirst({
             where: {
+              accountId: user.accountId,
               isActive: true,
               reference: { equals: p.reference, mode: "insensitive" },
             },
@@ -192,16 +198,23 @@ export async function createPurchaseFromOCR(input: {
   username: string
   updateProductCost?: boolean
 }) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   if (!input.products.length) throw new Error("La compra no tiene productos")
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({ where: { username: input.username } })
+    const user = await tx.user.findFirst({ 
+      where: { accountId: currentUser.accountId, username: input.username } 
+    })
     if (!user) throw new Error("Usuario inválido")
 
-    // Obtener el proveedor si se proporcionó supplierId
+    // Obtener el proveedor si se proporcionó supplierId (filtrado por accountId)
     let supplier = null
     if (input.supplierId) {
-      supplier = await tx.supplier.findUnique({ where: { id: input.supplierId } })
+      supplier = await tx.supplier.findFirst({ 
+        where: { accountId: currentUser.accountId, id: input.supplierId } 
+      })
     }
 
     // Calcular costo neto: (costo - descuento) * 1.18 (ITBIS)
@@ -222,10 +235,22 @@ export async function createPurchaseFromOCR(input: {
       const discountBp = p.discountPercentBp ?? (supplier as typeof supplier & { discountPercentBp?: number })?.discountPercentBp ?? 0
       const netCostCents = p.netCostCents ?? calculateNetCost(p.unitCostCents, discountBp)
 
+      // Verificar que el producto existente pertenece al account
+      if (productId) {
+        const existingProduct = await tx.product.findFirst({
+          where: { accountId: currentUser.accountId, id: productId },
+          select: { id: true },
+        })
+        if (!existingProduct) {
+          productId = null // Ignorar si no pertenece al account
+        }
+      }
+
       // Si es producto nuevo y se debe crear
       if (!productId && p.createNew) {
         const newProduct = await tx.product.create({
           data: {
+            accountId: currentUser.accountId,
             name: p.description,
             sku: p.sku || null,
             reference: p.reference || null,
@@ -258,6 +283,7 @@ export async function createPurchaseFromOCR(input: {
     // Crear la compra
     const purchase = await tx.purchase.create({
       data: {
+        accountId: currentUser.accountId,
         supplierName: input.supplierName?.trim() || supplier?.name || null,
         userId: user.id,
         totalCents,
@@ -297,10 +323,14 @@ export async function createPurchaseFromOCR(input: {
 
 // Función para buscar producto por SKU o referencia (para matching manual)
 export async function findProductByCode(code: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   if (!code.trim()) return null
 
   return prisma.product.findFirst({
     where: {
+      accountId: user.accountId,
       isActive: true,
       OR: [
         { sku: { equals: code, mode: "insensitive" } },

@@ -115,6 +115,8 @@ model User {
   canChangeSaleType Boolean @default(false)
   canSellWithoutStock Boolean @default(false)
   canManageBackups  Boolean @default(false)
+  canViewProductCosts Boolean @default(false)
+  canViewProfitReport Boolean @default(false)
 
   isActive Boolean @default(true)
 
@@ -235,6 +237,7 @@ model Customer {
 
   @@index([accountId])
   @@index([accountId, name])
+  @@index([accountId, isGeneric])
 }
 
 // ==========================================

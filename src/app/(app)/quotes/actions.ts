@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcItbisIncluded } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
+import { getCurrentUser } from "@/lib/auth"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -16,11 +17,15 @@ function decimalToNumber(decimal: unknown): number {
 }
 
 export async function searchProducts(query: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const q = query.trim()
   if (!q) return []
 
   const products = await prisma.product.findMany({
     where: {
+      accountId: user.accountId,
       isActive: true,
       OR: [
         { name: { contains: q, mode: "insensitive" } },
@@ -51,8 +56,11 @@ export async function searchProducts(query: string) {
 }
 
 export async function listCustomers() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   return prisma.customer.findMany({
-    where: { isActive: true },
+    where: { accountId: user.accountId, isActive: true },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }],
     select: { id: true, name: true, isGeneric: true },
     take: 50,
@@ -60,7 +68,11 @@ export async function listCustomers() {
 }
 
 export async function listQuotes() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   return prisma.quote.findMany({
+    where: { accountId: user.accountId },
     orderBy: { quotedAt: "desc" },
     include: {
       customer: true,
@@ -80,8 +92,11 @@ export async function listQuotes() {
 }
 
 export async function getQuoteByCode(quoteCode: string) {
-  return prisma.quote.findUnique({
-    where: { quoteCode },
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  return prisma.quote.findFirst({
+    where: { accountId: user.accountId, quoteCode },
     include: {
       customer: true,
       items: {
@@ -99,14 +114,17 @@ export async function getQuoteByCode(quoteCode: string) {
 }
 
 export async function getQuoteById(id: string) {
-  return prisma.quote.findUnique({
-    where: { id },
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  return prisma.quote.findFirst({
+    where: { accountId: user.accountId, id },
     include: {
       customer: true,
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true, unit: true },
+            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true, saleUnit: true },
           },
         },
       },
@@ -136,20 +154,25 @@ export async function createQuote(input: {
   notes?: string
   username: string
 }) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   if (!input.items.length) throw new Error("La cotización no tiene productos.")
 
-  const settings = await prisma.companySettings.findUnique({ where: { id: "company" } })
+  const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findUnique({ where: { username: input.username } })
+    const user = await tx.user.findFirst({ 
+      where: { accountId: currentUser.accountId, username: input.username } 
+    })
     if (!user) throw new Error("Usuario inválido")
 
-    // Quote sequence
+    // Quote sequence por account
     const seq = await tx.quoteSequence.upsert({
-      where: { id: "main" },
+      where: { accountId: currentUser.accountId },
       update: { lastNumber: { increment: 1 } },
-      create: { id: "main", lastNumber: 1 },
+      create: { accountId: currentUser.accountId, lastNumber: 1 },
     })
 
     const number = seq.lastNumber
@@ -157,7 +180,7 @@ export async function createQuote(input: {
 
     // Load products to validate (no stock check for quotes)
     const products = await tx.product.findMany({
-      where: { id: { in: input.items.map((i) => i.productId) } },
+      where: { accountId: currentUser.accountId, id: { in: input.items.map((i) => i.productId) } },
       select: { id: true, priceCents: true, isActive: true },
     })
     const byId = new Map(products.map((p) => [p.id, p]))
@@ -174,6 +197,7 @@ export async function createQuote(input: {
 
     const quote = await tx.quote.create({
       data: {
+        accountId: currentUser.accountId,
         quoteNumber: number,
         quoteCode: code,
         customerId: input.customerId || null,
@@ -211,14 +235,17 @@ export async function updateQuote(input: {
   validUntil?: Date | null
   notes?: string
 }) {
+  const currentUser = await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
+
   if (!input.items.length) throw new Error("La cotización no tiene productos.")
 
-  const settings = await prisma.companySettings.findUnique({ where: { id: "company" } })
+  const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
 
   return prisma.$transaction(async (tx) => {
-    const existingQuote = await tx.quote.findUnique({
-      where: { id: input.id },
+    const existingQuote = await tx.quote.findFirst({
+      where: { accountId: currentUser.accountId, id: input.id },
       include: {
         items: true,
       },
@@ -228,7 +255,7 @@ export async function updateQuote(input: {
 
     // Validar productos
     const products = await tx.product.findMany({
-      where: { id: { in: input.items.map((i) => i.productId) } },
+      where: { accountId: currentUser.accountId, id: { in: input.items.map((i) => i.productId) } },
       select: { id: true, priceCents: true, isActive: true },
     })
     const byId = new Map(products.map((p) => [p.id, p]))
@@ -277,6 +304,15 @@ export async function updateQuote(input: {
 }
 
 export async function deleteQuote(id: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  // Verificar que la cotización pertenece al account
+  const quote = await prisma.quote.findFirst({
+    where: { accountId: user.accountId, id },
+  })
+  if (!quote) throw new Error("Cotización no encontrada")
+
   await prisma.quote.delete({
     where: { id },
   })

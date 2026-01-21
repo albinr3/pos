@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db"
 import { Decimal } from "@prisma/client/runtime/library"
+import { getCurrentUser } from "@/lib/auth"
 
 function decimalToNumber(decimal: unknown): number {
   if (typeof decimal === "number") return decimal
@@ -13,8 +14,11 @@ function decimalToNumber(decimal: unknown): number {
 }
 
 export async function syncProductsToIndexedDB() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const products = await prisma.product.findMany({
-    where: { isActive: true },
+    where: { accountId: user.accountId, isActive: true },
     orderBy: { productId: "asc" },
     take: 1000, // Límite razonable para cache
     select: {
@@ -87,8 +91,11 @@ export async function syncProductsToIndexedDB() {
 }
 
 export async function syncCustomersToIndexedDB() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const customers = await prisma.customer.findMany({
-    where: { isActive: true },
+    where: { accountId: user.accountId, isActive: true },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }],
     take: 1000, // Límite razonable para cache
   })
@@ -105,10 +112,13 @@ export async function syncCustomersToIndexedDB() {
 }
 
 export async function syncARToIndexedDB() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
   const arItems = await prisma.accountReceivable.findMany({
     where: {
       status: { in: ["PENDIENTE", "PARCIAL"] },
-      sale: { cancelledAt: null },
+      sale: { accountId: user.accountId, cancelledAt: null },
     },
     include: {
       customer: true,

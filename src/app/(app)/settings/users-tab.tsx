@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { toast } from "@/hooks/use-toast"
 import {
   Dialog,
@@ -56,6 +57,8 @@ const PERMISSION_LABELS: Record<string, string> = {
   canChangeSaleType: "Cambiar tipo de venta",
   canSellWithoutStock: "Vender sin stock",
   canManageBackups: "Gestionar backups",
+  canViewProductCosts: "Ver costos de productos",
+  canViewProfitReport: "Ver reporte de ganancia",
 }
 
 const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS) as (keyof typeof PERMISSION_LABELS)[]
@@ -85,6 +88,8 @@ const DEFAULT_NEW_USER: NewUserForm = {
     canChangeSaleType: false,
     canSellWithoutStock: false,
     canManageBackups: false,
+    canViewProductCosts: false,
+    canViewProfitReport: false,
   },
 }
 
@@ -167,6 +172,8 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
             canChangeSaleType: selectedUser.canChangeSaleType,
             canSellWithoutStock: selectedUser.canSellWithoutStock,
             canManageBackups: selectedUser.canManageBackups,
+            canViewProductCosts: selectedUser.canViewProductCosts,
+            canViewProfitReport: selectedUser.canViewProfitReport,
           },
         })
         toast({ title: "Usuario actualizado" })
@@ -207,6 +214,11 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
         await updateUser(userId, {
           permissions: { [permission]: value },
         })
+        toast({ 
+          title: "Cambio aplicado",
+          description: `${PERMISSION_LABELS[permission as keyof typeof PERMISSION_LABELS]} ${value ? "activado" : "desactivado"}`,
+          duration: 2000
+        })
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "Error al guardar", variant: "destructive" })
         loadUsers()
@@ -230,6 +242,8 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
               canChangeSaleType: value,
               canSellWithoutStock: value,
               canManageBackups: value,
+              canViewProductCosts: value,
+              canViewProfitReport: value,
             }
           : u
       )
@@ -341,51 +355,55 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
                 </div>
 
                 {/* Permisos */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium flex items-center gap-1">
-                      <Shield className="h-4 w-4" />
-                      Permisos
-                    </span>
-                    {isOwner && (
-                      <div className="flex gap-1">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleSetAllPermissions(user.id, true)}
-                          disabled={isSaving}
-                        >
-                          <Check className="h-4 w-4 mr-1" />
-                          Todos
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleSetAllPermissions(user.id, false)}
-                          disabled={isSaving}
-                        >
-                          <X className="h-4 w-4 mr-1" />
-                          Ninguno
-                        </Button>
+                <Accordion type="single" collapsible className="w-full">
+                  <AccordionItem value={`permissions-${user.id}`}>
+                    <div className="flex items-center justify-between">
+                      <AccordionTrigger className="flex items-center gap-2 hover:no-underline flex-1">
+                        <Shield className="h-4 w-4" />
+                        <span className="text-sm font-medium">Permisos</span>
+                      </AccordionTrigger>
+                      {isOwner && (
+                        <div className="flex gap-1 ml-4">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSetAllPermissions(user.id, true)}
+                            disabled={isSaving}
+                          >
+                            <Check className="h-4 w-4 mr-1" />
+                            Todos
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSetAllPermissions(user.id, false)}
+                            disabled={isSaving}
+                          >
+                            <X className="h-4 w-4 mr-1" />
+                            Ninguno
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    <AccordionContent>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                        {PERMISSION_KEYS.map((permission) => (
+                          <div
+                            key={permission}
+                            className="flex items-center justify-between gap-2 rounded-md border p-3"
+                          >
+                            <Label className="text-sm">{PERMISSION_LABELS[permission]}</Label>
+                            <Switch
+                              checked={user[permission as keyof UserWithPermissions] as boolean}
+                              onCheckedChange={(v) => handleTogglePermission(user.id, permission, v)}
+                              disabled={isSaving || !isOwner}
+                            />
+                          </div>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {PERMISSION_KEYS.map((permission) => (
-                      <div
-                        key={permission}
-                        className="flex items-center justify-between gap-2 rounded-md border p-3"
-                      >
-                        <Label className="text-sm">{PERMISSION_LABELS[permission]}</Label>
-                        <Switch
-                          checked={user[permission as keyof UserWithPermissions] as boolean}
-                          onCheckedChange={(v) => handleTogglePermission(user.id, permission, v)}
-                          disabled={isSaving || !isOwner}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               </div>
             ))}
           </div>

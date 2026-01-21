@@ -81,11 +81,24 @@ export async function upsertProduct(input: {
   const imageUrls = input.imageUrls || []
 
   if (input.id) {
+    // Verificar permiso para editar productos
+    if (!user.canEditProducts && user.role !== "ADMIN") {
+      throw new Error("No tienes permiso para editar productos")
+    }
+
     // Verificar que el producto pertenece al account
     const existing = await prisma.product.findFirst({
       where: { id: input.id, accountId: user.accountId },
     })
     if (!existing) throw new Error("Producto no encontrado")
+
+    // Verificar permiso para modificar precio si es diferente al original
+    const originalPriceCents = Number(existing.priceCents)
+    if (input.priceCents !== originalPriceCents) {
+      if (!user.canOverridePrice && user.role !== "ADMIN") {
+        throw new Error("No tienes permiso para modificar el precio del producto")
+      }
+    }
 
     await prisma.product.update({
       where: { id: input.id },

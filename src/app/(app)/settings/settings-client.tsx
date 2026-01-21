@@ -415,7 +415,7 @@ export function SettingsClient({ isOwner }: Props) {
         </CardContent>
       </Card>
 
-      <UsersTab isOwner={isOwner} />
+      {isOwner && <UsersTab isOwner={isOwner} />}
     </div>
   )
 }
