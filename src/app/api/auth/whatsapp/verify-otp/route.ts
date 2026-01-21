@@ -3,6 +3,10 @@ import { prisma } from "@/lib/db"
 import { normalizePhoneNumber } from "@/lib/whatsapp"
 import { createSession, setSessionCookie } from "@/lib/auth"
 
+// Marcar como dinámica para evitar ejecución durante el build
+export const dynamic = "force-dynamic"
+export const runtime = "nodejs"
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { normalizePhoneNumber, generateOtpCode, sendWhatsAppMessage } from "@/lib/whatsapp"
 
+// Marcar como dinámica para evitar ejecución durante el build
+export const dynamic = "force-dynamic"
+export const runtime = "nodejs"
+
 // Rate limiting simple en memoria (en producción usar Redis)
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
 
