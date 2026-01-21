@@ -136,7 +136,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   // Calcular el costo de ventas: suma de (costo del producto * cantidad vendida) para cada item
   const costOfSalesCents = allSales.reduce((total, sale) => {
     const saleCost = sale.items.reduce((itemTotal, item) => {
-      return itemTotal + (item.product.costCents * item.qty)
+      return itemTotal + (item.product.costCents * Number(item.qty))
     }, 0)
     return total + saleCost
   }, 0)
