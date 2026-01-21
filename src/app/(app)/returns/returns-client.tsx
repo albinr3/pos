@@ -15,7 +15,7 @@ import { formatRD } from "@/lib/money"
 
 import { createReturn, getSaleForReturn, searchSalesForReturn } from "./actions"
 
-type SaleForReturn = Awaited<ReturnType<typeof getSaleForReturn>>
+type SaleForReturn = NonNullable<Awaited<ReturnType<typeof getSaleForReturn>>>
 type SaleSearchResult = Awaited<ReturnType<typeof searchSalesForReturn>>[number]
 
 type ReturnItem = {
