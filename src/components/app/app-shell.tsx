@@ -36,7 +36,8 @@ import { Separator } from "@/components/ui/separator"
 import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { ThemeToggle } from "@/components/app/theme-toggle"
 import { HeaderLogoClient } from "@/components/app/header-logo-client"
-import { initAutoSync } from "@/lib/auto-sync"
+import { initAutoSync, syncCacheData } from "@/lib/auto-sync"
+import { syncPendingData } from "@/lib/sync-manager"
 import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
@@ -122,6 +123,11 @@ export function AppShell({ children }: PropsWithChildren) {
     setMounted(true)
     // Inicializar auto-sincronización de cache
     initAutoSync()
+    // Intentar precargar cache y sincronizar pendientes al cargar si hay conexión
+    if (navigator.onLine) {
+      syncCacheData()
+      syncPendingData()
+    }
     
     // Obtener usuario actual
     fetch("/api/auth/me")

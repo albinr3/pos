@@ -24,6 +24,7 @@ import {
   getProductsCache,
   getCustomersCache,
   getPendingCounts,
+  findProductByBarcodeCache,
 } from "@/lib/indexed-db"
 import { syncPendingData } from "@/lib/sync-manager"
 import {
@@ -134,7 +135,29 @@ export function PosClient() {
         listCustomers().then(setCustomers).catch(() => {})
       } else {
         // Cargar desde cache offline
-        getCustomersCache().then(setCustomers).catch(() => {})
+        getCustomersCache()
+          .then((cached) => {
+            setCustomers(cached)
+            if (cached.length === 0) {
+              toast({
+                title: "Sin datos offline",
+                description: "Conéctate y precarga clientes/productos para vender sin internet.",
+                variant: "destructive",
+              })
+            }
+            getProductsCache()
+              .then((products) => {
+                if (products.length === 0) {
+                  toast({
+                    title: "Productos no disponibles offline",
+                    description: "Necesitas precargar los productos con internet.",
+                    variant: "destructive",
+                  })
+                }
+              })
+              .catch(() => {})
+          })
+          .catch(() => {})
       }
       
       // Cargar preferencia de vista desde localStorage
@@ -482,9 +505,16 @@ export function PosClient() {
     if (!trimmedCode) return
 
     try {
-      const product = await findProductByBarcode(trimmedCode)
+      const product = isOnline
+        ? await findProductByBarcode(trimmedCode)
+        : await findProductByBarcodeCache(trimmedCode)
       if (product) {
-        addToCart(product)
+        const normalized = {
+          ...product,
+          priceCents: product.priceCents ?? product.unitPriceCents ?? 0,
+          itbisRateBp: product.itbisRateBp ?? 1800,
+        }
+        addToCart(normalized as any)
         setQuery("")
         toast({ title: "Producto agregado", description: product.name })
       } else {

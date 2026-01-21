@@ -196,6 +196,19 @@ export async function searchProductsCache(query: string): Promise<any[]> {
   )
 }
 
+export async function findProductByBarcodeCache(code: string): Promise<any | null> {
+  const trimmed = code.trim().toLowerCase()
+  if (!trimmed) return null
+
+  const products = await getProductsCache()
+  const match = products.find(
+    (p) =>
+      (p.sku && String(p.sku).toLowerCase() === trimmed) ||
+      (p.reference && String(p.reference).toLowerCase() === trimmed)
+  )
+  return match || null
+}
+
 // Customers Cache
 export async function saveCustomersCache(customers: any[]) {
   const db = await openDB()
