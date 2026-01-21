@@ -102,7 +102,7 @@ export function PurchasesListClient() {
           name: item.product.name,
           sku: item.product.sku,
           reference: item.product.reference,
-          qty: item.qty,
+          qty: Number(item.qty),
           unitCostCents: item.unitCostCents,
         }))
       )
