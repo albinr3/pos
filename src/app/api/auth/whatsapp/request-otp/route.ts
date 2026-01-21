@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/db"
 import { normalizePhoneNumber, generateOtpCode, sendWhatsAppMessage } from "@/lib/whatsapp"
 
 // Marcar como dinámica para evitar ejecución durante el build
@@ -27,6 +26,9 @@ function checkRateLimit(identifier: string, maxRequests: number, windowMs: numbe
 }
 
 export async function POST(request: NextRequest) {
+  // Lazy import de Prisma para evitar inicialización durante el build
+  const { prisma } = await import("@/lib/db")
+  
   console.log("=== WhatsApp OTP Request Started ===")
   try {
     const body = await request.json()

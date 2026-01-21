@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server"
-import { prisma } from "@/lib/db"
 import { normalizePhoneNumber } from "@/lib/whatsapp"
 import { createSession, setSessionCookie } from "@/lib/auth"
 
@@ -8,6 +7,8 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
+  // Lazy import de Prisma para evitar inicialización durante el build
+  const { prisma } = await import("@/lib/db")
   try {
     const body = await request.json()
     const { phoneNumber, code } = body

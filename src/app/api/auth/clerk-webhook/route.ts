@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { Webhook } from "svix"
 import { headers } from "next/headers"
-import { prisma } from "@/lib/db"
 
 // Marcar como dinámica para evitar ejecución durante el build
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
+  // Lazy import de Prisma para evitar inicialización durante el build
+  const { prisma } = await import("@/lib/db")
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
 
   if (!WEBHOOK_SECRET) {
