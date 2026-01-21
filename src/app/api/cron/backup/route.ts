@@ -5,6 +5,9 @@ import { createBackup } from "@/app/(app)/backups/actions"
 // Para usar con Vercel Cron: https://vercel.com/docs/cron-jobs
 // Para usar con node-cron localmente, crear un script separado
 
+export const dynamic = "force-dynamic"
+export const runtime = "nodejs"
+
 export async function GET(request: Request) {
   // Verificar que la solicitud viene de una fuente autorizada
   const authHeader = request.headers.get("authorization")
