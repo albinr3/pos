@@ -135,6 +135,10 @@ export function AppShell({ children }: PropsWithChildren) {
       .then((data) => {
         if (data.user) {
           setUser(data.user)
+          if (navigator.onLine) {
+            syncCacheData()
+            syncPendingData()
+          }
         }
         // No redirigir aquí - el layout del servidor ya maneja la redirección
       })
