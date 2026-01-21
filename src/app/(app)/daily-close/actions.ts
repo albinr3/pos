@@ -1,10 +1,12 @@
 "use server"
 
-import { prisma } from "@/lib/db"
 import { endOfDay, startOfDay, parseDateParam } from "@/lib/dates"
 import { getCurrentUser } from "@/lib/auth"
 
 export async function getDailyClose(input?: { from?: string; to?: string }) {
+  // Lazy import de Prisma para evitar inicialización durante el build
+  const { prisma } = await import("@/lib/db")
+  
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
