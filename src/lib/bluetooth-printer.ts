@@ -4,9 +4,10 @@
  */
 
 // BluetoothDevice solo está disponible en el navegador
-// Usamos un tipo condicional para TypeScript
+// Usamos 'any' para evitar errores de tipo durante el build de Next.js
+// En runtime, estos tipos estarán disponibles en el navegador
 export interface BluetoothPrinter {
-  device: typeof globalThis extends { BluetoothDevice: infer T } ? T : any
+  device: any // BluetoothDevice - solo disponible en navegador
   name: string
   id: string
 }
@@ -185,7 +186,7 @@ export async function requestBluetoothPrinter(): Promise<BluetoothPrinter | null
 /**
  * Conecta a una impresora Bluetooth y obtiene el servicio de impresión
  */
-async function connectToPrinter(printer: BluetoothPrinter): Promise<BluetoothRemoteGATTCharacteristic> {
+async function connectToPrinter(printer: BluetoothPrinter): Promise<any> { // BluetoothRemoteGATTCharacteristic - solo disponible en navegador
   if (!printer.device.gatt) {
     throw new Error("Dispositivo no tiene GATT disponible")
   }
@@ -201,7 +202,7 @@ async function connectToPrinter(printer: BluetoothPrinter): Promise<BluetoothRem
 
   // Buscar la característica de escritura (RX - Receive)
   // Muchas impresoras ESC/POS usan diferentes UUIDs, intentar varios
-  let characteristic: BluetoothRemoteGATTCharacteristic | null = null
+  let characteristic: any | null = null // BluetoothRemoteGATTCharacteristic - solo disponible en navegador
 
   // Intentar UUIDs comunes para escritura en impresoras ESC/POS
   const writeUUIDs = [

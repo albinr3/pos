@@ -79,7 +79,6 @@ export async function syncPendingData() {
           amountCents: payment.amountCents,
           method: payment.method as any,
           note: payment.note || undefined,
-          username: payment.username,
         })
 
         // Eliminar de IndexedDB solo si se sincronizó exitosamente
