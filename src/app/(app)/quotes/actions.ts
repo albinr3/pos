@@ -16,20 +16,28 @@ function decimalToNumber(decimal: unknown): number {
   return 0
 }
 
-function normalizeQuote(quote: { items: { qty: Decimal | number; product?: { stock?: Decimal | number } }[] }) {
+function normalizeQuote<T extends { items: { qty: Decimal | number; product?: unknown }[] }>(quote: T): T {
   return {
     ...quote,
-    items: quote.items.map((item) => ({
-      ...item,
-      qty: decimalToNumber(item.qty),
-      product: item.product
-        ? {
-            ...item.product,
-            stock: item.product.stock === undefined ? item.product.stock : decimalToNumber(item.product.stock),
-          }
-        : item.product,
-    })),
-  }
+    items: quote.items.map((item) => {
+      const product = item.product
+      let normalizedProduct = product
+
+      if (product && typeof product === "object" && "stock" in product) {
+        const productWithStock = product as { stock?: Decimal | number }
+        normalizedProduct = {
+          ...(product as Record<string, unknown>),
+          stock: productWithStock.stock === undefined ? productWithStock.stock : decimalToNumber(productWithStock.stock),
+        }
+      }
+
+      return {
+        ...item,
+        qty: decimalToNumber(item.qty),
+        product: normalizedProduct,
+      }
+    }),
+  } as T
 }
 
 export async function searchProducts(query: string) {

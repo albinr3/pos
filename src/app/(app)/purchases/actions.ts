@@ -19,7 +19,9 @@ function toNumber(value: Decimal | number) {
   return value instanceof Decimal ? value.toNumber() : Number(value)
 }
 
-function normalizePurchase(purchase: { items: { qty: Decimal | number; product?: { stock?: Decimal | number; minStock?: Decimal | number } }[] }) {
+function normalizePurchase<T extends { items: { qty: Decimal | number; product?: { stock?: Decimal | number; minStock?: Decimal | number } }[] }>(
+  purchase: T
+): T {
   return {
     ...purchase,
     items: purchase.items.map((item) => ({
@@ -33,7 +35,7 @@ function normalizePurchase(purchase: { items: { qty: Decimal | number; product?:
           }
         : item.product,
     })),
-  }
+  } as T
 }
 
 export async function listPurchases() {
@@ -192,7 +194,7 @@ export async function getPurchaseById(id: string) {
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, reference: true, costCents: true, stock: true, purchaseUnit: true, saleUnit: true },
+            select: { id: true, name: true, sku: true, reference: true, costCents: true, stock: true, minStock: true, purchaseUnit: true, saleUnit: true },
           },
         },
       },
