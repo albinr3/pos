@@ -68,38 +68,53 @@ export function ARClient() {
   const [openReceipts, setOpenReceipts] = useState(false)
   const [selectedForReceipts, setSelectedForReceipts] = useState<AR | null>(null)
 
+  function isLikelyOfflineError(error: unknown) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) return true
+    if (error instanceof TypeError) return true
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase()
+      return msg.includes("failed to fetch") || msg.includes("network") || msg.includes("fetch")
+    }
+    return false
+  }
+
   function refresh() {
     setSkip(0)
     startLoading(async () => {
       try {
         if (isOnline) {
-          const r = await listOpenAR({ query, skip: 0, take: 10 })
-          setItems(r as any)
-          setHasMore(r.length === 10)
-          
-          // Pre-cargar a IndexedDB
           try {
-            const arData = await syncARToIndexedDB()
-            await saveARCache(arData)
-          } catch (error) {
-            console.error("Error pre-cargando AR:", error)
+            const r = await listOpenAR({ query, skip: 0, take: 10 })
+            setItems(r as any)
+            setHasMore(r.length === 10)
+
+            // Pre-cargar a IndexedDB
+            try {
+              const arData = await syncARToIndexedDB()
+              await saveARCache(arData)
+            } catch (error) {
+              console.error("Error pre-cargando AR:", error)
+            }
+            return
+          } catch {
+            // Fallback a cache local
           }
-        } else {
-          // Cargar desde cache offline
-          const cached = await getARCache()
-          // Filtrar por query si existe
-          let filtered = cached
-          if (query.trim()) {
-            const q = query.toLowerCase()
-            filtered = cached.filter(
-              (ar: any) =>
-                ar.sale?.invoiceCode?.toLowerCase().includes(q) ||
-                ar.customer?.name?.toLowerCase().includes(q)
-            )
-          }
-          setItems(filtered.slice(0, 10) as any)
-          setHasMore(filtered.length > 10)
         }
+
+        // Cargar desde cache offline
+        const cached = await getARCache()
+        // Filtrar por query si existe
+        let filtered = cached
+        if (query.trim()) {
+          const q = query.toLowerCase()
+          filtered = cached.filter(
+            (ar: any) =>
+              ar.sale?.invoiceCode?.toLowerCase().includes(q) ||
+              ar.customer?.name?.toLowerCase().includes(q)
+          )
+        }
+        setItems(filtered.slice(0, 10) as any)
+        setHasMore(filtered.length > 10)
       } catch {
         setItems([])
         setHasMore(false)
@@ -111,29 +126,34 @@ export function ARClient() {
     startLoadingMore(async () => {
       try {
         if (isOnline) {
-          const newSkip = skip + 10
-          const r = await listOpenAR({ query, skip: newSkip, take: 10 })
-          setItems((prev) => [...prev, ...r])
-          setSkip(newSkip)
-          setHasMore(r.length === 10)
-        } else {
-          // Cargar más desde cache offline
-          const cached = await getARCache()
-          let filtered = cached
-          if (query.trim()) {
-            const q = query.toLowerCase()
-            filtered = cached.filter(
-              (ar: any) =>
-                ar.sale?.invoiceCode?.toLowerCase().includes(q) ||
-                ar.customer?.name?.toLowerCase().includes(q)
-            )
+          try {
+            const newSkip = skip + 10
+            const r = await listOpenAR({ query, skip: newSkip, take: 10 })
+            setItems((prev) => [...prev, ...r])
+            setSkip(newSkip)
+            setHasMore(r.length === 10)
+            return
+          } catch {
+            // Fallback a cache local
           }
-          const newSkip = skip + 10
-          const more = filtered.slice(newSkip, newSkip + 10)
-          setItems((prev) => [...prev, ...more] as any)
-          setSkip(newSkip)
-          setHasMore(filtered.length > newSkip + 10)
         }
+
+        // Cargar mas desde cache offline
+        const cached = await getARCache()
+        let filtered = cached
+        if (query.trim()) {
+          const q = query.toLowerCase()
+          filtered = cached.filter(
+            (ar: any) =>
+              ar.sale?.invoiceCode?.toLowerCase().includes(q) ||
+              ar.customer?.name?.toLowerCase().includes(q)
+          )
+        }
+        const newSkip = skip + 10
+        const more = filtered.slice(newSkip, newSkip + 10)
+        setItems((prev) => [...prev, ...more] as any)
+        setSkip(newSkip)
+        setHasMore(filtered.length > newSkip + 10)
       } catch {
         setHasMore(false)
       }
@@ -169,74 +189,83 @@ export function ARClient() {
 
     // Validar que el monto no exceda el balance
     if (amountCents > selected.balanceCents) {
-      toast({ 
-        title: "Error", 
-        description: `No puedes abonar más del balance pendiente (${formatRD(selected.balanceCents)})`,
-        variant: "destructive"
+      toast({
+        title: "Error",
+        description: `No puedes abonar m s del balance pendiente (${formatRD(selected.balanceCents)})`,
+        variant: "destructive",
       })
       return
     }
 
     if (amountCents <= 0) {
-      toast({ 
-        title: "Error", 
+      toast({
+        title: "Error",
         description: "El monto debe ser mayor a cero",
-        variant: "destructive"
+        variant: "destructive",
       })
       return
+    }
+
+    const savePaymentOffline = async (finalAmount: number) => {
+      const tempId = `temp_payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      await savePendingPayment({
+        tempId,
+        arId: selected.id,
+        amountCents: finalAmount,
+        method: method as string,
+        note: note || null,
+        username: "admin",
+        createdAt: Date.now(),
+      })
+
+      toast({
+        title: "Pago guardado (offline)",
+        description: "Se guardar  cuando vuelva la conexi¢n",
+      })
+
+      const counts = await getPendingCounts()
+      setPendingCounts(counts)
+
+      // Actualizar balance localmente (para mostrar en UI)
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === selected.id
+            ? {
+                ...item,
+                balanceCents: item.balanceCents - finalAmount,
+                status: item.balanceCents - finalAmount === 0 ? "PAGADA" : "PARCIAL",
+              }
+            : item
+        )
+      )
     }
 
     startSaving(async () => {
       try {
         // Asegurar que no se exceda el balance (por si acaso)
         const finalAmount = Math.min(amountCents, selected.balanceCents)
-        
-        if (!isOnline) {
-          // Modo offline: guardar en IndexedDB
-          const tempId = `temp_payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-          await savePendingPayment({
-            tempId,
-            arId: selected.id,
-            amountCents: finalAmount,
-            method: method as string,
-            note: note || null,
-            username: "admin",
-            createdAt: Date.now(),
-          })
 
-          toast({
-            title: "Pago guardado (offline)",
-            description: "Se guardará cuando vuelva la conexión",
-          })
-          
-          // Actualizar contador
-          const counts = await getPendingCounts()
-          setPendingCounts(counts)
-          
-          // Actualizar balance localmente (para mostrar en UI)
-          setItems((prev) =>
-            prev.map((item) =>
-              item.id === selected.id
-                ? {
-                    ...item,
-                    balanceCents: item.balanceCents - finalAmount,
-                    status: item.balanceCents - finalAmount === 0 ? "PAGADA" : "PARCIAL",
-                  }
-                : item
-            )
-          )
+        if (!isOnline) {
+          await savePaymentOffline(finalAmount)
         } else {
-          // Modo online: guardar normalmente
-          const result = await addPayment({
-            arId: selected.id,
-            amountCents: finalAmount,
-            method,
-            note: note || null,
-          })
-          toast({ title: "Pago registrado", description: "Abono aplicado correctamente" })
-          window.open(`/receipts/payment/${result.paymentId}`, "_blank")
+          try {
+            const result = await addPayment({
+              arId: selected.id,
+              amountCents: finalAmount,
+              method,
+              note: note || null,
+            })
+            toast({ title: "Pago registrado", description: "Abono aplicado correctamente" })
+            window.open(`/receipts/payment/${result.paymentId}`, "_blank")
+          } catch (e) {
+            if (isLikelyOfflineError(e)) {
+              await savePaymentOffline(finalAmount)
+            } else {
+              throw e
+            }
+          }
         }
-        
+
         setOpen(false)
         setSelected(null)
         refresh()

@@ -130,36 +130,42 @@ export function PosClient() {
         }
       }
 
+      const loadCustomersFromCache = async () => {
+        const cached = await getCustomersCache()
+        setCustomers(cached)
+        if (cached.length === 0) {
+          toast({
+            title: "Sin datos offline",
+            description: "Con‚ctate y precarga clientes/productos para vender sin internet.",
+            variant: "destructive",
+          })
+        }
+        try {
+          const products = await getProductsCache()
+          if (products.length === 0) {
+            toast({
+              title: "Productos no disponibles offline",
+              description: "Necesitas precargar los productos con internet.",
+              variant: "destructive",
+            })
+          }
+        } catch {
+          // Ignore cache errors
+        }
+        return cached
+      }
+
       // Cargar clientes (desde servidor o cache)
       if (isOnline) {
-        listCustomers().then(setCustomers).catch(() => {})
-      } else {
-        // Cargar desde cache offline
-        getCustomersCache()
-          .then((cached) => {
-            setCustomers(cached)
-            if (cached.length === 0) {
-              toast({
-                title: "Sin datos offline",
-                description: "Conéctate y precarga clientes/productos para vender sin internet.",
-                variant: "destructive",
-              })
-            }
-            getProductsCache()
-              .then((products) => {
-                if (products.length === 0) {
-                  toast({
-                    title: "Productos no disponibles offline",
-                    description: "Necesitas precargar los productos con internet.",
-                    variant: "destructive",
-                  })
-                }
-              })
-              .catch(() => {})
+        listCustomers()
+          .then(setCustomers)
+          .catch(async () => {
+            await loadCustomersFromCache()
           })
-          .catch(() => {})
+      } else {
+        await loadCustomersFromCache()
       }
-      
+
       // Cargar preferencia de vista desde localStorage
       const savedViewMode = localStorage.getItem("posViewMode") as "list" | "grid" | null
       if (savedViewMode) {
@@ -175,7 +181,7 @@ export function PosClient() {
           const maxAge = 24 * 60 * 60 * 1000 // 24 horas en milisegundos
           if (Date.now() - state.timestamp < maxAge && state.cart && Array.isArray(state.cart)) {
             // Cargar clientes primero para validar el customerId
-            const customersList = await listCustomers()
+            const customersList = await listCustomers().catch(() => loadCustomersFromCache())
             setCustomers(customersList)
             
             // Validar que el cliente aún existe
@@ -250,26 +256,31 @@ export function PosClient() {
       startLoadingProducts(async () => {
         try {
           if (isOnline) {
-            const products = await listAllProductsForSale()
-            setAllProducts(products)
-          } else {
-            // Cargar desde cache offline
-            const cached = await getProductsCache()
-            // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
-            const normalized = cached.map((p: any) => {
-              const price = p.priceCents ?? p.unitPriceCents ?? 0
-              if (process.env.NODE_ENV === "development" && price === 0 && p.name) {
-                console.log("[POS] Producto sin precio (grid):", p.name, "Campos:", Object.keys(p), "priceCents:", p.priceCents, "unitPriceCents:", p.unitPriceCents)
-              }
-              return {
-                ...p,
-                priceCents: price,
-                unitPriceCents: price, // Asegurar que también tenga unitPriceCents
-                itbisRateBp: p.itbisRateBp ?? 1800,
-              }
-            })
-            setAllProducts(normalized as any)
+            try {
+              const products = await listAllProductsForSale()
+              setAllProducts(products)
+              return
+            } catch {
+              // Fallback a cache local
+            }
           }
+
+          // Cargar desde cache offline
+          const cached = await getProductsCache()
+          // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
+          const normalized = cached.map((p: any) => {
+            const price = p.priceCents ?? p.unitPriceCents ?? 0
+            if (process.env.NODE_ENV === "development" && price === 0 && p.name) {
+              console.log("[POS] Producto sin precio (grid):", p.name, "Campos:", Object.keys(p), "priceCents:", p.priceCents, "unitPriceCents:", p.unitPriceCents)
+            }
+            return {
+              ...p,
+              priceCents: price,
+              unitPriceCents: price, // Asegurar que también tenga unitPriceCents
+              itbisRateBp: p.itbisRateBp ?? 1800,
+            }
+          })
+          setAllProducts(normalized as any)
         } catch {
           setAllProducts([])
         }
@@ -392,26 +403,31 @@ export function PosClient() {
         startSearch(async () => {
           try {
             if (isOnline) {
-              const r = await searchProducts(q)
-              setResults(r)
-            } else {
-              // Buscar en cache offline
-              const r = await searchProductsCache(q)
-              // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
-              const normalized = r.map((p: any) => {
-                const price = p.priceCents ?? p.unitPriceCents ?? 0
-                if (process.env.NODE_ENV === "development" && price === 0 && p.name) {
-                  console.log("[POS] Producto sin precio:", p.name, "Campos:", Object.keys(p), "priceCents:", p.priceCents, "unitPriceCents:", p.unitPriceCents)
-                }
-                return {
-                  ...p,
-                  priceCents: price,
-                  unitPriceCents: price, // Asegurar que también tenga unitPriceCents
-                  itbisRateBp: p.itbisRateBp ?? 1800,
-                }
-              })
-              setResults(normalized as any)
+              try {
+                const r = await searchProducts(q)
+                setResults(r)
+                return
+              } catch {
+                // Fallback a cache local
+              }
             }
+
+            // Buscar en cache offline
+            const r = await searchProductsCache(q)
+            // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
+            const normalized = r.map((p: any) => {
+              const price = p.priceCents ?? p.unitPriceCents ?? 0
+              if (process.env.NODE_ENV === "development" && price === 0 && p.name) {
+                console.log("[POS] Producto sin precio:", p.name, "Campos:", Object.keys(p), "priceCents:", p.priceCents, "unitPriceCents:", p.unitPriceCents)
+              }
+              return {
+                ...p,
+                priceCents: price,
+                unitPriceCents: price, // Asegurar que también tenga unitPriceCents
+                itbisRateBp: p.itbisRateBp ?? 1800,
+              }
+            })
+            setResults(normalized as any)
           } catch {
             setResults([])
           }
@@ -422,26 +438,31 @@ export function PosClient() {
           startLoadingProducts(async () => {
             try {
               if (isOnline) {
-                const products = await listAllProductsForSale()
-                setAllProducts(products)
-              } else {
-                // Cargar desde cache offline
-                const cached = await getProductsCache()
-                // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
-                const normalized = cached.map((p: any) => {
-                  const price = p.priceCents ?? p.unitPriceCents ?? 0
-                  if (process.env.NODE_ENV === "development" && price === 0 && p.name) {
-                    console.log("[POS] Producto sin precio (grid):", p.name, "Campos:", Object.keys(p), "priceCents:", p.priceCents, "unitPriceCents:", p.unitPriceCents)
-                  }
-                  return {
-                    ...p,
-                    priceCents: price,
-                    unitPriceCents: price, // Asegurar que también tenga unitPriceCents
-                    itbisRateBp: p.itbisRateBp ?? 1800,
-                  }
-                })
-                setAllProducts(normalized as any)
+                try {
+                  const products = await listAllProductsForSale()
+                  setAllProducts(products)
+                  return
+                } catch {
+                  // Fallback a cache local
+                }
               }
+
+              // Cargar desde cache offline
+              const cached = await getProductsCache()
+              // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
+              const normalized = cached.map((p: any) => {
+                const price = p.priceCents ?? p.unitPriceCents ?? 0
+                if (process.env.NODE_ENV === "development" && price === 0 && p.name) {
+                  console.log("[POS] Producto sin precio (grid):", p.name, "Campos:", Object.keys(p), "priceCents:", p.priceCents, "unitPriceCents:", p.unitPriceCents)
+                }
+                return {
+                  ...p,
+                  priceCents: price,
+                  unitPriceCents: price, // Asegurar que también tenga unitPriceCents
+                  itbisRateBp: p.itbisRateBp ?? 1800,
+                }
+              })
+              setAllProducts(normalized as any)
             } catch {
               setAllProducts([])
             }
@@ -505,9 +526,17 @@ export function PosClient() {
     if (!trimmedCode) return
 
     try {
-      const product = isOnline
-        ? await findProductByBarcode(trimmedCode)
-        : await findProductByBarcodeCache(trimmedCode)
+      let product = null
+      if (isOnline) {
+        try {
+          product = await findProductByBarcode(trimmedCode)
+        } catch {
+          product = await findProductByBarcodeCache(trimmedCode)
+        }
+      } else {
+        product = await findProductByBarcodeCache(trimmedCode)
+      }
+
       if (product) {
         const normalized = {
           ...product,
@@ -523,6 +552,16 @@ export function PosClient() {
     } catch (error) {
       toast({ title: "Error", description: "No se pudo buscar el producto", variant: "destructive" })
     }
+  }
+
+  function isLikelyOfflineError(error: unknown) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) return true
+    if (error instanceof TypeError) return true
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase()
+      return msg.includes("failed to fetch") || msg.includes("network") || msg.includes("fetch")
+    }
+    return false
   }
 
   async function onSave() {
@@ -558,61 +597,70 @@ export function PosClient() {
 
   async function doSave() {
     if (!user) {
-      toast({ title: "Error", description: "Usuario no disponible. Por favor, recarga la página.", variant: "destructive" })
+      toast({ title: "Error", description: "Usuario no disponible. Por favor, recarga la p gina.", variant: "destructive" })
       return
+    }
+
+    const saveSaleOffline = async () => {
+      const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      await savePendingSale({
+        tempId,
+        customerId: customerId === "generic" ? null : customerId,
+        type: saleType,
+        paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
+        paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
+        items: cart.map((c) => ({
+          productId: c.productId,
+          qty: c.qty,
+          unitPriceCents: c.unitPriceCents,
+          wasPriceOverridden: c.wasPriceOverridden,
+        })),
+        shippingCents: shippingCents > 0 ? shippingCents : undefined,
+        username: user.username,
+        createdAt: Date.now(),
+      })
+
+      toast({
+        title: "Venta guardada (offline)",
+        description: "Se guardar  cuando vuelva la conexi¢n",
+      })
+
+      const counts = await getPendingCounts()
+      setPendingCounts(counts)
     }
 
     startSave(async () => {
       try {
         if (!isOnline) {
-          // Modo offline: guardar en IndexedDB
-          const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-          await savePendingSale({
-            tempId,
-            customerId: customerId === "generic" ? null : customerId,
-            type: saleType,
-            paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
-            paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
-            items: cart.map((c) => ({
-              productId: c.productId,
-              qty: c.qty,
-              unitPriceCents: c.unitPriceCents,
-              wasPriceOverridden: c.wasPriceOverridden,
-            })),
-            shippingCents: shippingCents > 0 ? shippingCents : undefined,
-            username: user.username,
-            createdAt: Date.now(),
-          })
-
-          toast({
-            title: "Venta guardada (offline)",
-            description: "Se guardará cuando vuelva la conexión",
-          })
-          
-          // Actualizar contador
-          const counts = await getPendingCounts()
-          setPendingCounts(counts)
+          await saveSaleOffline()
         } else {
-          // Modo online: guardar normalmente
-          const sale = await createSale({
-            customerId: customerId === "generic" ? "generic" : customerId,
-            type: saleType,
-            paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
-            paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
-            items: cart.map((c) => ({
-              productId: c.productId,
-              qty: c.qty,
-              unitPriceCents: c.unitPriceCents,
-              wasPriceOverridden: c.wasPriceOverridden,
-            })),
-            shippingCents: shippingCents > 0 ? shippingCents : undefined,
-            username: user.username,
-          })
+          try {
+            const sale = await createSale({
+              customerId: customerId === "generic" ? "generic" : customerId,
+              type: saleType,
+              paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
+              paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
+              items: cart.map((c) => ({
+                productId: c.productId,
+                qty: c.qty,
+                unitPriceCents: c.unitPriceCents,
+                wasPriceOverridden: c.wasPriceOverridden,
+              })),
+              shippingCents: shippingCents > 0 ? shippingCents : undefined,
+              username: user.username,
+            })
 
-          toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
-          
-          // Thermal receipt by default
-          window.open(`/receipts/sale/${sale.invoiceCode}`, "_blank")
+            toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
+
+            // Thermal receipt by default
+            window.open(`/receipts/sale/${sale.invoiceCode}`, "_blank")
+          } catch (e) {
+            if (isLikelyOfflineError(e)) {
+              await saveSaleOffline()
+            } else {
+              throw e
+            }
+          }
         }
 
         setCart([])

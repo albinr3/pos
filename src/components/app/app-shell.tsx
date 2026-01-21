@@ -123,11 +123,6 @@ export function AppShell({ children }: PropsWithChildren) {
     setMounted(true)
     // Inicializar auto-sincronización de cache
     initAutoSync()
-    // Intentar precargar cache y sincronizar pendientes al cargar si hay conexión
-    if (navigator.onLine) {
-      syncCacheData()
-      syncPendingData()
-    }
     
     // Obtener usuario actual
     fetch("/api/auth/me")

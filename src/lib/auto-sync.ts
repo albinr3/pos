@@ -36,7 +36,7 @@ async function shouldSyncCache(): Promise<boolean> {
   }
   
   // Sincronizar si han pasado más de 30 minutos desde la última sincronización
-  return now - lastSyncTime > CACHE_SYNC_INTERVAL
+  return false
 }
 
 // Marcar que se sincronizó el cache
