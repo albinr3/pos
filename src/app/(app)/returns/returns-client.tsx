@@ -285,8 +285,8 @@ export function ReturnsClient() {
                             )}
                           </div>
                         </TableCell>
-                        <TableCell>{item.qty}</TableCell>
-                        <TableCell>{item.returnedQty}</TableCell>
+                        <TableCell>{Number(item.qty)}</TableCell>
+                        <TableCell>{Number(item.returnedQty)}</TableCell>
                         <TableCell>
                           <span className={item.availableQty > 0 ? "font-semibold" : "text-muted-foreground"}>
                             {item.availableQty}
