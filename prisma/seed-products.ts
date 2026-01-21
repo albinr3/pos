@@ -189,19 +189,33 @@ const products = [
 async function main() {
   console.log("🌱 Iniciando inserción de productos...")
 
+  // Obtener el account por defecto
+  const account = await prisma.account.findFirst({
+    where: { id: "default_account" },
+  })
+
+  if (!account) {
+    console.error("❌ No se encontró el account por defecto. Ejecuta primero el seed principal.")
+    return
+  }
+
   // Verificar si ya existen productos
-  const existingProducts = await prisma.product.count()
+  const existingProducts = await prisma.product.count({
+    where: { accountId: account.id },
+  })
   if (existingProducts > 0) {
-    console.log(`⚠️  Ya existen ${existingProducts} productos en la base de datos.`)
-    console.log("¿Deseas continuar de todas formas? (S/N)")
-    // En un script automático, continuamos
+    console.log(`⚠️  Ya existen ${existingProducts} productos en la base de datos para este account.`)
+    console.log("Continuando de todas formas...")
   }
 
   // Insertar productos
   for (const product of products) {
     try {
       await prisma.product.create({
-        data: product,
+        data: {
+          ...product,
+          accountId: account.id,
+        },
       })
       console.log(`✅ Producto creado: ${product.name}`)
     } catch (error: any) {
@@ -210,7 +224,10 @@ async function main() {
         try {
           const { sku, ...productWithoutSku } = product
           await prisma.product.create({
-            data: productWithoutSku,
+            data: {
+              ...productWithoutSku,
+              accountId: account.id,
+            },
           })
           console.log(`✅ Producto creado (sin SKU duplicado): ${product.name}`)
         } catch (error2) {
@@ -222,7 +239,9 @@ async function main() {
     }
   }
 
-  const totalProducts = await prisma.product.count()
+  const totalProducts = await prisma.product.count({
+    where: { accountId: account.id },
+  })
   console.log(`\n✨ Proceso completado. Total de productos: ${totalProducts}`)
 }
 
