@@ -3,16 +3,21 @@ import { Webhook } from "svix"
 import { headers } from "next/headers"
 import { prisma } from "@/lib/db"
 
-const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
-
-if (!WEBHOOK_SECRET) {
-  throw new Error("CLERK_WEBHOOK_SECRET no está configurado")
-}
-
-// TypeScript assertion: después del check, sabemos que no es undefined
-const secret: string = WEBHOOK_SECRET
+// Marcar como dinámica para evitar ejecución durante el build
+export const dynamic = "force-dynamic"
+export const runtime = "nodejs"
 
 export async function POST(request: NextRequest) {
+  const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
+
+  if (!WEBHOOK_SECRET) {
+    console.error("CLERK_WEBHOOK_SECRET no está configurado")
+    return NextResponse.json(
+      { error: "Configuración del webhook faltante" },
+      { status: 500 }
+    )
+  }
+
   const headerPayload = await headers()
   const svix_id = headerPayload.get("svix-id")
   const svix_timestamp = headerPayload.get("svix-timestamp")
@@ -28,7 +33,7 @@ export async function POST(request: NextRequest) {
   const payload = await request.json()
   const body = JSON.stringify(payload)
 
-  const wh = new Webhook(secret)
+  const wh = new Webhook(WEBHOOK_SECRET)
 
   let evt: any
 

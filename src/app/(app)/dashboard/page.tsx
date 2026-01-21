@@ -9,6 +9,9 @@ import { cn } from "@/lib/utils"
 import { getDashboardStats, getSalesChartData } from "./actions"
 import { SalesChart } from "./sales-chart"
 
+// Marcar como dinámica para evitar prerender (requiere autenticación)
+export const dynamic = "force-dynamic"
+
 export default async function DashboardPage() {
   const stats = await getDashboardStats()
   const chartData = await getSalesChartData(7)

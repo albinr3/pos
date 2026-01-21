@@ -4,6 +4,9 @@ import { Toaster } from "@/components/ui/toaster"
 import { getCurrentUser, hasClerkSession, hasSubUserSession } from "@/lib/auth"
 import { redirect } from "next/navigation"
 
+// Marcar como dinámico para evitar prerender (requiere autenticación)
+export const dynamic = "force-dynamic"
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Verificar sesión de Clerk (cuenta principal)
   const isClerkAuth = await hasClerkSession()
