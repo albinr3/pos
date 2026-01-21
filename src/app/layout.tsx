@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { ServiceWorkerRegistrar } from "@/components/app/service-worker-registrar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -26,6 +27,8 @@ export const metadata: Metadata = {
     shortcut: "/favicon.png",
     apple: "/favicon.png",
   },
+  manifest: "/manifest.webmanifest",
+  themeColor: "#111827",
   openGraph: {
     type: "website",
     locale: "es_DO",
@@ -50,6 +53,7 @@ export default function RootLayout({
     <ClerkProvider>
       <html lang="es" suppressHydrationWarning>
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+          <ServiceWorkerRegistrar />
           {children}
         </body>
       </html>
