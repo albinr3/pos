@@ -173,7 +173,6 @@ export function PurchasesClient() {
             discountPercentBp: c.discountPercentBp,
           })),
           updateProductCost: updateCost,
-          username: "admin",
         })
 
         toast({ title: "Compra registrada" })

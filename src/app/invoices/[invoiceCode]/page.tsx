@@ -86,6 +86,10 @@ export default async function InvoicePrintPage({
     }
   }
 
+  function formatSaleType(type: string) {
+    return type === "CREDITO" ? "Credito" : "Contado"
+  }
+
   return (
     <div className="mx-auto max-w-[850px] bg-white p-10 text-black print-content">
       <style
@@ -143,6 +147,9 @@ export default async function InvoicePrintPage({
       <div className="mt-8 rounded-md border p-4">
         <div className="text-sm">
           <span className="font-semibold">Cliente:</span> {sale.customer?.name ?? "Cliente"}
+        </div>
+        <div className="mt-2 text-sm">
+          <span className="font-semibold">Tipo de venta:</span> {formatSaleType(sale.type)}
         </div>
         {sale.type === "CONTADO" && (
           <div className="mt-2 text-sm">

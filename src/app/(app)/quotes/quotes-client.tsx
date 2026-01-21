@@ -155,7 +155,6 @@ export function QuotesClient() {
           shippingCents: shippingCents > 0 ? shippingCents : undefined,
           validUntil: validUntil,
           notes: notes || undefined,
-          username: user.username,
         })
 
         toast({ title: "Cotización guardada", description: `Cotización ${quote.quoteCode}` })
@@ -611,7 +610,6 @@ export function QuotesClient() {
     </div>
   )
 }
-
 
 
 

@@ -156,7 +156,7 @@ export function PurchasesListClient() {
   async function handleCancel(id: string) {
     if (!confirm("¿Cancelar esta compra? Se revertirá el stock agregado.")) return
     try {
-      await cancelPurchase(id, "admin")
+      await cancelPurchase(id)
       toast({ title: "Listo", description: "Compra cancelada" })
       refresh()
     } catch (e) {
@@ -382,4 +382,3 @@ export function PurchasesListClient() {
     </div>
   )
 }
-

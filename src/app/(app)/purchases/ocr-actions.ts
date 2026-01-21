@@ -195,7 +195,6 @@ export async function createPurchaseFromOCR(input: {
     createNew: boolean
     sellPriceCents?: number // Precio de venta para productos nuevos
   }>
-  username: string
   updateProductCost?: boolean
 }) {
   const currentUser = await getCurrentUser()
@@ -204,10 +203,6 @@ export async function createPurchaseFromOCR(input: {
   if (!input.products.length) throw new Error("La compra no tiene productos")
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findFirst({ 
-      where: { accountId: currentUser.accountId, username: input.username } 
-    })
-    if (!user) throw new Error("Usuario inválido")
 
     // Obtener el proveedor si se proporcionó supplierId (filtrado por accountId)
     let supplier = null
@@ -285,7 +280,7 @@ export async function createPurchaseFromOCR(input: {
       data: {
         accountId: currentUser.accountId,
         supplierName: input.supplierName?.trim() || supplier?.name || null,
-        userId: user.id,
+        userId: currentUser.id,
         totalCents,
         items: {
           create: items.map((i) => ({

@@ -16,6 +16,22 @@ function decimalToNumber(decimal: unknown): number {
   return 0
 }
 
+function normalizeQuote(quote: { items: { qty: Decimal | number; product?: { stock?: Decimal | number } }[] }) {
+  return {
+    ...quote,
+    items: quote.items.map((item) => ({
+      ...item,
+      qty: decimalToNumber(item.qty),
+      product: item.product
+        ? {
+            ...item.product,
+            stock: item.product.stock === undefined ? item.product.stock : decimalToNumber(item.product.stock),
+          }
+        : item.product,
+    })),
+  }
+}
+
 export async function searchProducts(query: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -71,7 +87,7 @@ export async function listQuotes() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  return prisma.quote.findMany({
+  const quotes = await prisma.quote.findMany({
     where: { accountId: user.accountId },
     orderBy: { quotedAt: "desc" },
     include: {
@@ -89,13 +105,15 @@ export async function listQuotes() {
     },
     take: 500,
   })
+
+  return quotes.map(normalizeQuote)
 }
 
 export async function getQuoteByCode(quoteCode: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  return prisma.quote.findFirst({
+  const quote = await prisma.quote.findFirst({
     where: { accountId: user.accountId, quoteCode },
     include: {
       customer: true,
@@ -111,13 +129,15 @@ export async function getQuoteByCode(quoteCode: string) {
       },
     },
   })
+
+  return quote ? normalizeQuote(quote) : null
 }
 
 export async function getQuoteById(id: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  return prisma.quote.findFirst({
+  const quote = await prisma.quote.findFirst({
     where: { accountId: user.accountId, id },
     include: {
       customer: true,
@@ -133,6 +153,8 @@ export async function getQuoteById(id: string) {
       },
     },
   })
+
+  return quote ? normalizeQuote(quote) : null
 }
 
 type CartItemInput = {
@@ -152,7 +174,6 @@ export async function createQuote(input: {
   shippingCents?: number
   validUntil?: Date | null
   notes?: string
-  username: string
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
@@ -163,10 +184,6 @@ export async function createQuote(input: {
   const itbisRateBp = settings?.itbisRateBp ?? 1800
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findFirst({ 
-      where: { accountId: currentUser.accountId, username: input.username } 
-    })
-    if (!user) throw new Error("Usuario inválido")
 
     // Quote sequence por account
     const seq = await tx.quoteSequence.upsert({
@@ -201,7 +218,7 @@ export async function createQuote(input: {
         quoteNumber: number,
         quoteCode: code,
         customerId: input.customerId || null,
-        userId: user.id,
+        userId: currentUser.id,
         validUntil: input.validUntil || null,
         subtotalCents,
         itbisCents,

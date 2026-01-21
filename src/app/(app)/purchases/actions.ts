@@ -15,23 +15,46 @@ function calculateNetCost(unitCostCents: number, discountPercentBp: number): num
   return Math.round(netCost)
 }
 
+function toNumber(value: Decimal | number) {
+  return value instanceof Decimal ? value.toNumber() : Number(value)
+}
+
+function normalizePurchase(purchase: { items: { qty: Decimal | number; product?: { stock?: Decimal | number; minStock?: Decimal | number } }[] }) {
+  return {
+    ...purchase,
+    items: purchase.items.map((item) => ({
+      ...item,
+      qty: toNumber(item.qty),
+      product: item.product
+        ? {
+            ...item.product,
+            stock: item.product.stock === undefined ? item.product.stock : toNumber(item.product.stock),
+            minStock: item.product.minStock === undefined ? item.product.minStock : toNumber(item.product.minStock),
+          }
+        : item.product,
+    })),
+  }
+}
+
 export async function listPurchases() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  return prisma.purchase.findMany({
+  const purchases = await prisma.purchase.findMany({
     where: { accountId: user.accountId },
     orderBy: { purchasedAt: "desc" },
     include: { items: { include: { product: true } } },
     take: 50,
   })
+
+  return purchases.map(normalizePurchase)
 }
 
 export async function listAllPurchases() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  return prisma.purchase.findMany({
+  const purchases = await prisma.purchase.findMany({
     where: { accountId: user.accountId },
     orderBy: { purchasedAt: "desc" },
     include: {
@@ -40,6 +63,8 @@ export async function listAllPurchases() {
     },
     take: 500,
   })
+
+  return purchases.map(normalizePurchase)
 }
 
 export async function createPurchase(input: {
@@ -47,7 +72,6 @@ export async function createPurchase(input: {
   supplierName?: string | null
   notes?: string | null
   items: { productId: string; qty: number; unitCostCents: number; discountPercentBp?: number }[]
-  username: string
   updateProductCost?: boolean
 }) {
   const currentUser = await getCurrentUser()
@@ -56,10 +80,6 @@ export async function createPurchase(input: {
   if (!input.items.length) throw new Error("La compra no tiene productos")
 
   return prisma.$transaction(async (tx) => {
-    const user = await tx.user.findFirst({ 
-      where: { accountId: currentUser.accountId, username: input.username } 
-    })
-    if (!user) throw new Error("Usuario inválido")
 
     // Obtener el proveedor si se proporcionó supplierId
     let supplier = null
@@ -98,7 +118,7 @@ export async function createPurchase(input: {
         accountId: currentUser.accountId,
         supplierName: input.supplierName?.trim() || supplier?.name || null,
         notes: input.notes?.trim() || null,
-        userId: user.id,
+        userId: currentUser.id,
         totalCents,
         items: {
           create: itemsWithNetCost.map((i) => ({
@@ -184,20 +204,22 @@ export async function getPurchaseById(id: string) {
   
   if (!purchase) return null
   
-  // Convertir Decimal a número en items
+  // Convertir Decimal a numero en items
   return {
     ...purchase,
     items: purchase.items.map((item) => ({
       ...item,
+      qty: item.qty instanceof Decimal ? item.qty.toNumber() : Number(item.qty),
       product: {
         ...item.product,
         stock: item.product.stock instanceof Decimal ? item.product.stock.toNumber() : Number(item.product.stock),
+        minStock: item.product.minStock instanceof Decimal ? item.product.minStock.toNumber() : Number(item.product.minStock),
       },
     })),
   }
 }
 
-export async function cancelPurchase(id: string, username: string) {
+export async function cancelPurchase(id: string) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
 
@@ -209,11 +231,6 @@ export async function cancelPurchase(id: string, username: string) {
 
     if (!purchase) throw new Error("Compra no encontrada")
     if (purchase.cancelledAt) throw new Error("Esta compra ya está cancelada")
-
-    const user = await tx.user.findFirst({ 
-      where: { accountId: currentUser.accountId, username } 
-    })
-    if (!user) throw new Error("Usuario inválido")
 
     // Revertir el stock que se agregó
     for (const item of purchase.items) {
@@ -230,7 +247,7 @@ export async function cancelPurchase(id: string, username: string) {
       where: { id },
       data: {
         cancelledAt: new Date(),
-        cancelledBy: user.id,
+        cancelledBy: currentUser.id,
       },
     })
 

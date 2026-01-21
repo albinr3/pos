@@ -293,7 +293,6 @@ export function ScanInvoiceClient() {
               sellPriceCents: toCents(p.sellPrice),
             }
           }),
-          username: "admin",
           updateProductCost: updateCost,
         })
 

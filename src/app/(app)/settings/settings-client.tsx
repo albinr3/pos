@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
-import { X, Image as ImageIcon, RefreshCw, WifiOff, Database } from "lucide-react"
+import { X, Image as ImageIcon, RefreshCw, WifiOff, Database, Upload } from "lucide-react"
 import Image from "next/image"
 import { UploadButton } from "@uploadthing/react"
 import type { OurFileRouter } from "@/app/api/uploadthing/core"
@@ -48,6 +48,7 @@ export function SettingsClient({ isOwner }: Props) {
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
   const [isSyncing, setIsSyncing] = useState(false)
   const [isPreloading, setIsPreloading] = useState(false)
+  const logoActionLabel = logoUrl ? "Cambiar logo" : "Subir logo"
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -204,31 +205,39 @@ export function SettingsClient({ isOwner }: Props) {
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <UploadButton<OurFileRouter, "logoUploader">
-                  endpoint="logoUploader"
-                  onClientUploadComplete={(res) => {
-                    if (res?.[0]?.url) {
-                      handleLogoUpload(res[0].url)
-                    }
-                  }}
-                  onUploadError={(error: Error) => {
-                    toast({
-                      title: "Error",
-                      description: error.message,
-                      variant: "destructive",
-                    })
-                  }}
-                  content={{
-                    button({ ready, isUploading }: { ready: boolean; isUploading: boolean }) {
-                      if (isUploading) return "Subiendo..."
-                      if (ready) return logoUrl ? "Cambiar logo" : "Subir logo"
-                      return "Preparando..."
-                    },
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Formatos: JPG, PNG, GIF. Máximo 5MB
-                </p>
+                <div className="relative w-44">
+                  <div className="flex h-24 w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-muted/30 text-center">
+                    <Upload className="h-5 w-5 text-purple-primary" aria-hidden="true" />
+                    <span className="text-sm font-medium text-purple-primary">{logoActionLabel}</span>
+                    <span className="text-[11px] text-muted-foreground">JPG, PNG, GIF. Maximo 5MB</span>
+                  </div>
+                  <UploadButton<OurFileRouter, "logoUploader">
+                    endpoint="logoUploader"
+                    onClientUploadComplete={(res) => {
+                      if (res?.[0]?.url) {
+                        handleLogoUpload(res[0].url)
+                      }
+                    }}
+                    onUploadError={(error: Error) => {
+                      toast({
+                        title: "Error",
+                        description: error.message,
+                        variant: "destructive",
+                      })
+                    }}
+                    className="absolute inset-0 z-10"
+                    appearance={{
+                      container: "h-full w-full",
+                      button: "h-full w-full mt-0 bg-transparent text-transparent hover:bg-transparent after:hidden",
+                      allowedContent: "hidden",
+                    }}
+                    content={{
+                      button() {
+                        return <span className="sr-only">{logoActionLabel}</span>
+                      },
+                    }}
+                  />
+                </div>
               </div>
             </div>
           </div>

@@ -1,9 +1,8 @@
 "use client"
 
-import { useState } from "react"
 import { UploadButton } from "@uploadthing/react"
 import type { OurFileRouter } from "@/app/api/uploadthing/core"
-import { X } from "lucide-react"
+import { Upload, X } from "lucide-react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/hooks/use-toast"
@@ -41,28 +40,36 @@ export function ProductImageUpload({
   return (
     <div className="space-y-4">
       {images.length === 0 ? (
-        <div className="relative rounded-lg border-2 border-dashed border-purple-primary/50 bg-purple-50/50 dark:bg-purple-950/10 p-8 flex flex-col items-center justify-center">
+        <div className="relative rounded-lg border-2 border-dashed border-purple-primary/50 bg-purple-50/50 dark:bg-purple-950/10 p-8">
+          <div className="flex flex-col items-center justify-center gap-2 text-center">
+            <Upload className="h-6 w-6 text-purple-primary" aria-hidden="true" />
+            <p className="text-sm font-medium text-purple-primary">Cargar imagenes</p>
+            <p className="text-xs text-muted-foreground">
+              Puedes cargar hasta {maxImages} imagenes. Maximo 2MB cada una.
+            </p>
+          </div>
           <UploadButton<OurFileRouter, "productImageUploader">
             endpoint="productImageUploader"
             onClientUploadComplete={handleUploadComplete}
             onUploadError={(error: Error) => {
-              toast({ 
-                title: "Error", 
+              toast({
+                title: "Error",
                 description: error.message,
-                variant: "destructive" 
+                variant: "destructive",
               })
             }}
+            className="absolute inset-0 z-10"
+            appearance={{
+              container: "h-full w-full",
+              button: "h-full w-full mt-0 bg-transparent text-transparent hover:bg-transparent after:hidden",
+              allowedContent: "hidden",
+            }}
             content={{
-              button({ ready, isUploading }: { ready: boolean; isUploading: boolean }) {
-                if (isUploading) return "Subiendo..."
-                if (ready) return "Cargar imágenes"
-                return "Preparando..."
+              button() {
+                return <span className="sr-only">Cargar imagenes</span>
               },
             }}
           />
-          <p className="text-xs text-muted-foreground mt-4 text-center">
-            Puedes cargar hasta {maxImages} imágenes. Máximo 2MB cada una.
-          </p>
         </div>
       ) : (
         <>
@@ -92,22 +99,30 @@ export function ProductImageUpload({
             ))}
 
             {canUploadMore && (
-              <div className="relative aspect-square rounded-lg border-2 border-dashed border-purple-primary/50 bg-purple-50/50 dark:bg-purple-950/10 flex items-center justify-center">
+              <div className="relative aspect-square rounded-lg border-2 border-dashed border-purple-primary/50 bg-purple-50/50 dark:bg-purple-950/10">
+                <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center">
+                  <Upload className="h-5 w-5 text-purple-primary" aria-hidden="true" />
+                  <span className="text-xs font-medium text-purple-primary">Agregar</span>
+                </div>
                 <UploadButton<OurFileRouter, "productImageUploader">
                   endpoint="productImageUploader"
                   onClientUploadComplete={handleUploadComplete}
                   onUploadError={(error: Error) => {
-                    toast({ 
-                      title: "Error", 
+                    toast({
+                      title: "Error",
                       description: error.message,
-                      variant: "destructive" 
+                      variant: "destructive",
                     })
                   }}
+                  className="absolute inset-0 z-10"
+                  appearance={{
+                    container: "h-full w-full",
+                    button: "h-full w-full mt-0 bg-transparent text-transparent hover:bg-transparent after:hidden",
+                    allowedContent: "hidden",
+                  }}
                   content={{
-                    button({ ready, isUploading }: { ready: boolean; isUploading: boolean }) {
-                      if (isUploading) return "Subiendo..."
-                      if (ready) return "Agregar"
-                      return "Preparando..."
+                    button() {
+                      return <span className="sr-only">Agregar imagen</span>
                     },
                   }}
                 />
@@ -117,7 +132,7 @@ export function ProductImageUpload({
 
           {images.length < maxImages && (
             <p className="text-xs text-muted-foreground text-center">
-              Puedes cargar hasta {maxImages - images.length} imagen{maxImages - images.length > 1 ? "es" : ""} más
+              Puedes cargar hasta {maxImages - images.length} imagen{maxImages - images.length > 1 ? "es" : ""} mas
             </p>
           )}
         </>

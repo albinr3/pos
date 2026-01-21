@@ -83,6 +83,10 @@ export default async function SaleReceiptPage({
     }
   }
 
+  function formatSaleType(type: string) {
+    return type === "CREDITO" ? "Credito" : "Contado"
+  }
+
   return (
     <div className="mx-auto w-[80mm] bg-white p-3 text-[12px] leading-4 text-black print-content">
       <style
@@ -137,6 +141,9 @@ export default async function SaleReceiptPage({
         </div>
         <div className="mt-1">
           <span className="font-semibold">Cliente:</span> {sale.customer?.name ?? "Cliente"}
+        </div>
+        <div className="mt-1">
+          <span className="font-semibold">Tipo de venta:</span> {formatSaleType(sale.type)}
         </div>
       </div>
 

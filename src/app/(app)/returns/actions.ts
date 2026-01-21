@@ -3,17 +3,22 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcItbisIncluded } from "@/lib/money"
+import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 
 function returnCode(number: number): string {
   return `DEV-${String(number).padStart(5, "0")}`
 }
 
+function toNumber(value: Decimal | number) {
+  return value instanceof Decimal ? value.toNumber() : Number(value)
+}
+
 export async function listReturns() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  return prisma.return.findMany({
+  const returnsList = await prisma.return.findMany({
     where: { accountId: user.accountId },
     orderBy: { returnedAt: "desc" },
     include: {
@@ -43,13 +48,21 @@ export async function listReturns() {
     },
     take: 500,
   })
+
+  return returnsList.map((r) => ({
+    ...r,
+    items: r.items.map((item) => ({
+      ...item,
+      qty: toNumber(item.qty),
+    })),
+  }))
 }
 
 export async function getReturnById(id: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  return prisma.return.findFirst({
+  const returnRecord = await prisma.return.findFirst({
     where: { accountId: user.accountId, id },
     include: {
       sale: {
@@ -93,6 +106,31 @@ export async function getReturnById(id: string) {
       },
     },
   })
+
+  if (!returnRecord) return null
+
+  return {
+    ...returnRecord,
+    sale: returnRecord.sale ? {
+      ...returnRecord.sale,
+      items: returnRecord.sale.items.map((item) => ({
+        ...item,
+        qty: toNumber(item.qty),
+        product: {
+          ...item.product,
+          stock: item.product.stock === undefined ? item.product.stock : toNumber(item.product.stock),
+        },
+      })),
+    } : returnRecord.sale,
+    items: returnRecord.items.map((item) => ({
+      ...item,
+      qty: toNumber(item.qty),
+      saleItem: item.saleItem ? {
+        ...item.saleItem,
+        qty: toNumber(item.saleItem.qty),
+      } : item.saleItem,
+    })),
+  }
 }
 
 export async function getSaleForReturn(saleId: string) {
@@ -140,12 +178,13 @@ export async function getSaleForReturn(saleId: string) {
     }
   }
 
-  // Agregar información de cantidades disponibles para devolver
+  // Agregar informacion de cantidades disponibles para devolver
   const itemsWithAvailable = sale.items.map((item) => {
     const returnedQty = returnedQtys.get(item.id) ?? 0
-    const availableQty = Number(item.qty) - returnedQty
+    const availableQty = toNumber(item.qty) - returnedQty
     return {
       ...item,
+      qty: toNumber(item.qty),
       returnedQty,
       availableQty,
     }
