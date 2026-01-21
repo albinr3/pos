@@ -1,11 +1,13 @@
 /* eslint-disable @next/next/no-img-element */
 import { notFound } from "next/navigation"
 
-import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
 import { PrintToolbar } from "@/components/app/print-toolbar"
 import { QuoteShareButton } from "@/components/app/quote-share-button"
+
+// Evitar prerender y forzar evaluación dinámica (requiere autenticación y DB)
+export const dynamic = "force-dynamic"
 
 function fmtDate(d: Date) {
   return new Intl.DateTimeFormat("es-DO", {
@@ -22,6 +24,9 @@ export default async function QuotePage({
 }: {
   params: Promise<{ quoteCode: string }>
 }) {
+  // Lazy import de Prisma para evitar inicialización durante el build
+  const { prisma } = await import("@/lib/db")
+
   const { quoteCode } = await params
 
   // Obtener usuario actual para filtrar por accountId
