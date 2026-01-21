@@ -7,6 +7,9 @@ import { getInventoryReport } from "../actions"
 import { InventoryExportClient } from "./inventory-export-client"
 import { PrintButton } from "@/components/app/print-button"
 
+// Evitar prerender durante el build
+export const dynamic = "force-dynamic"
+
 export default async function InventoryReportPage() {
   const user = await getCurrentUser()
   const canViewCosts = user?.canViewProductCosts || user?.role === "ADMIN"

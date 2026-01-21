@@ -5,6 +5,9 @@ import { getDailyClose } from "./actions"
 
 import { DateRangeFilter } from "./filter-client"
 
+// Evitar prerender durante el build
+export const dynamic = "force-dynamic"
+
 export default async function DailyClosePage({
   searchParams,
 }: {

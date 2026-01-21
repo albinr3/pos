@@ -4,6 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { getCurrentUser } from "@/lib/auth"
 
+// Evitar prerender durante el build
+export const dynamic = "force-dynamic"
+
 export default async function ReportsPage() {
   const user = await getCurrentUser()
   

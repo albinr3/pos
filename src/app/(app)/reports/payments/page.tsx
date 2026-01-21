@@ -9,6 +9,9 @@ import { ReportDateRangeFilter } from "../filter-client"
 import { getPaymentsReport } from "../actions"
 import { PrintButton } from "@/components/app/print-button"
 
+// Evitar prerender durante el build
+export const dynamic = "force-dynamic"
+
 export default async function PaymentsReportPage({
   searchParams,
 }: {
