@@ -18,9 +18,9 @@ export function ProductImageUpload({
   onChange, 
   maxImages = 3 
 }: ProductImageUploadProps) {
-  const handleUploadComplete = (res: Array<{ url: string }>) => {
+  const handleUploadComplete = (res: Array<{ url: string; ufsUrl?: string }>) => {
     if (res && res.length > 0) {
-      const newUrls = res.map((file) => file.url)
+      const newUrls = res.map((file) => file.ufsUrl ?? file.url)
       const updatedImages = [...images, ...newUrls].slice(0, maxImages)
       onChange(updatedImages)
       toast({ 

@@ -80,7 +80,6 @@ export function OperatingExpensesClient() {
             expenseDate: date,
             category: category || null,
             notes: notes || null,
-            username: "admin",
           })
           toast({ title: "Guardado", description: "Gasto operativo creado" })
         }

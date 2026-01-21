@@ -36,19 +36,13 @@ export async function createOperatingExpense(input: {
   expenseDate?: Date
   category?: string | null
   notes?: string | null
-  username: string
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
 
   const description = input.description.trim()
-  if (!description) throw new Error("La descripción es requerida")
+  if (!description) throw new Error("La descripcion es requerida")
   if (input.amountCents <= 0) throw new Error("El monto debe ser mayor a 0")
-
-  const user = await prisma.user.findFirst({ 
-    where: { accountId: currentUser.accountId, username: input.username } 
-  })
-  if (!user) throw new Error("Usuario inválido")
 
   await prisma.operatingExpense.create({
     data: {
@@ -58,7 +52,7 @@ export async function createOperatingExpense(input: {
       expenseDate: input.expenseDate ?? new Date(),
       category: input.category?.trim() || null,
       notes: input.notes?.trim() || null,
-      userId: user.id,
+      userId: currentUser.id,
     },
   })
 

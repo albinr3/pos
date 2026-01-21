@@ -214,8 +214,8 @@ export function SettingsClient({ isOwner }: Props) {
                   <UploadButton<OurFileRouter, "logoUploader">
                     endpoint="logoUploader"
                     onClientUploadComplete={(res) => {
-                      if (res?.[0]?.url) {
-                        handleLogoUpload(res[0].url)
+                      if (res?.[0]?.ufsUrl || res?.[0]?.url) {
+                        handleLogoUpload(res[0].ufsUrl ?? res[0].url)
                       }
                     }}
                     onUploadError={(error: Error) => {
