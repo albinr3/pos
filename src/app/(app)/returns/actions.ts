@@ -136,14 +136,14 @@ export async function getSaleForReturn(saleId: string) {
   for (const ret of sale.returns) {
     for (const item of ret.items) {
       const current = returnedQtys.get(item.saleItemId) ?? 0
-      returnedQtys.set(item.saleItemId, current + item.qty)
+      returnedQtys.set(item.saleItemId, current + Number(item.qty))
     }
   }
 
   // Agregar información de cantidades disponibles para devolver
   const itemsWithAvailable = sale.items.map((item) => {
     const returnedQty = returnedQtys.get(item.id) ?? 0
-    const availableQty = item.qty - returnedQty
+    const availableQty = Number(item.qty) - returnedQty
     return {
       ...item,
       returnedQty,
@@ -203,7 +203,7 @@ export async function createReturn(input: {
     for (const ret of sale.returns) {
       for (const item of ret.items) {
         const current = returnedQtys.get(item.saleItemId) ?? 0
-        returnedQtys.set(item.saleItemId, current + item.qty)
+        returnedQtys.set(item.saleItemId, current + Number(item.qty))
       }
     }
 
