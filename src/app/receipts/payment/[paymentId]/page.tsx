@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation"
 
-import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
 import { PrintToolbar } from "@/components/app/print-toolbar"
+
+// Evitar prerender durante el build
+export const dynamic = "force-dynamic"
 
 function fmtDate(d: Date) {
   return new Intl.DateTimeFormat("es-DO", {
@@ -21,6 +23,9 @@ export default async function PaymentReceiptPage({
   params: Promise<{ paymentId: string }>
 }) {
   const { paymentId } = await params
+
+  // Lazy import de Prisma para evitar inicialización durante el build
+  const { prisma } = await import("@/lib/db")
 
   // Obtener usuario actual para filtrar por accountId
   const user = await getCurrentUser()

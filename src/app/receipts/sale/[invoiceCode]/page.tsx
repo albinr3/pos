@@ -2,10 +2,12 @@ import { notFound } from "next/navigation"
 import { Decimal } from "@prisma/client/runtime/library"
 import { PaymentMethod } from "@prisma/client"
 
-import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
 import { PrintToolbar } from "@/components/app/print-toolbar"
+
+// Evitar prerender durante el build
+export const dynamic = "force-dynamic"
 
 function decimalToNumber(decimal: unknown): number {
   if (typeof decimal === "number") return decimal
@@ -32,6 +34,9 @@ export default async function SaleReceiptPage({
   params: Promise<{ invoiceCode: string }>
 }) {
   const { invoiceCode } = await params
+
+  // Lazy import de Prisma para evitar inicialización durante el build
+  const { prisma } = await import("@/lib/db")
 
   // Obtener usuario actual para filtrar por accountId
   const user = await getCurrentUser()
