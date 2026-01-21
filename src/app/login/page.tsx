@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import { SignIn, SignUp, useUser } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,7 +12,7 @@ import { toast } from "@/hooks/use-toast"
 import { useRouter, useSearchParams } from "next/navigation"
 import Image from "next/image"
 
-export default function LoginPage() {
+function LoginContent() {
   const { isLoaded, isSignedIn, user } = useUser()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -542,5 +542,25 @@ export default function LoginPage() {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div 
+        className="flex min-h-screen items-center justify-center p-4 relative overflow-hidden"
+        style={{
+          background: 'linear-gradient(35deg, rgb(6, 0, 151) 0%, rgb(130, 4, 255) 73%, rgb(193, 15, 255) 100%)'
+        }}
+      >
+        <div className="relative z-10 flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-white" />
+          <p className="text-white/90 font-medium">Cargando...</p>
+        </div>
+      </div>
+    }>
+      <LoginContent />
+    </Suspense>
   )
 }
