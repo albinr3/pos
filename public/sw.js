@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v3"
+const CACHE_VERSION = "v4"
 const STATIC_CACHE = `pos-static-${CACHE_VERSION}`
 const RUNTIME_CACHE = `pos-runtime-${CACHE_VERSION}`
 const OFFLINE_URL = "/offline.html"

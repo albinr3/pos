@@ -70,6 +70,9 @@ const nav = [
   { href: "/backups", label: "Backups", icon: Database },
 ]
 
+// Solo permitir ventas y cobros cuando la app detecta modo offline.
+const OFFLINE_ALLOWED_ROUTES = new Set(["/sales", "/ar"])
+
 const USER_CACHE_KEY = "tejada-pos-user"
 const DISABLE_BACKUPS_NAV = true
 
@@ -227,7 +230,8 @@ export function AppShell({ children }: PropsWithChildren) {
             <nav className="flex-1 space-y-1 px-3 py-3">
               {filteredNav.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
-                const isDisabled = item.href === "/backups" && DISABLE_BACKUPS_NAV
+                const isOfflineDisabled = !isOnline && !OFFLINE_ALLOWED_ROUTES.has(item.href)
+                const isDisabled = (item.href === "/backups" && DISABLE_BACKUPS_NAV) || isOfflineDisabled
                 if (isDisabled) {
                   return (
                     <Button
@@ -297,7 +301,8 @@ export function AppShell({ children }: PropsWithChildren) {
                 <nav className="flex-1 space-y-1 px-3 py-3 overflow-y-auto">
                   {filteredNav.map((item) => {
                     const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
-                    const isDisabled = item.href === "/backups" && DISABLE_BACKUPS_NAV
+                    const isOfflineDisabled = !isOnline && !OFFLINE_ALLOWED_ROUTES.has(item.href)
+                    const isDisabled = (item.href === "/backups" && DISABLE_BACKUPS_NAV) || isOfflineDisabled
                     if (isDisabled) {
                       return (
                         <Button
