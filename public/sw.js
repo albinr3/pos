@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v2"
+const CACHE_VERSION = "v3"
 const STATIC_CACHE = `pos-static-${CACHE_VERSION}`
 const RUNTIME_CACHE = `pos-runtime-${CACHE_VERSION}`
 const OFFLINE_URL = "/offline.html"
@@ -28,11 +28,15 @@ async function cacheFirst(request) {
   const cached = await cache.match(request)
   if (cached) return cached
 
-  const response = await fetch(request)
-  if (response && response.ok) {
-    cache.put(request, response.clone())
+  try {
+    const response = await fetch(request)
+    if (response && response.ok) {
+      cache.put(request, response.clone())
+    }
+    return response
+  } catch {
+    return Response.error()
   }
-  return response
 }
 
 async function staleWhileRevalidate(request) {

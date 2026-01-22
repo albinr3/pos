@@ -103,8 +103,8 @@ export function ARClient() {
 
         // Cargar desde cache offline
         const cached = (await getARCache()).map((item: any) => ({
-          payments: item.payments ?? [],
           ...item,
+          payments: item.payments ?? [],
         }))
         // Filtrar por query si existe
         let filtered = cached
@@ -143,8 +143,8 @@ export function ARClient() {
 
         // Cargar mas desde cache offline
         const cached = (await getARCache()).map((item: any) => ({
-          payments: item.payments ?? [],
           ...item,
+          payments: item.payments ?? [],
         }))
         let filtered = cached
         if (query.trim()) {
@@ -348,7 +348,7 @@ export function ARClient() {
                           <HandCoins className="h-4 w-4 sm:mr-2" />
                           <span className="hidden sm:inline">Abonar</span>
                         </Button>
-                        {ar.payments.length > 0 && (
+                        {ar.payments?.length > 0 && (
                           <Button
                             size="sm"
                             className="bg-purple-primary hover:bg-purple-primary/90 text-white"
@@ -359,8 +359,8 @@ export function ARClient() {
                             title="Ver Recibos"
                           >
                             <Receipt className="h-4 w-4 sm:mr-2" />
-                            <span className="hidden sm:inline">Recibos ({ar.payments.length})</span>
-                            <span className="sm:hidden">{ar.payments.length}</span>
+                            <span className="hidden sm:inline">Recibos ({ar.payments?.length ?? 0})</span>
+                            <span className="sm:hidden">{ar.payments?.length ?? 0}</span>
                           </Button>
                         )}
                         <Button size="sm" asChild className="bg-blue-500 hover:bg-blue-600 text-white" title="Reimprimir">
@@ -473,11 +473,11 @@ export function ARClient() {
                 <Input value={note} onChange={(e) => setNote(e.target.value)} />
               </div>
 
-              {selected.payments.length > 0 && (
+              {selected.payments?.length > 0 && (
                 <div className="rounded-md border p-3 text-sm">
                   <div className="mb-2 font-semibold">Pagos anteriores</div>
                   <div className="grid gap-2">
-                    {selected.payments.map((p) => (
+                    {selected.payments?.map((p) => (
                       <div key={p.id} className="flex items-center justify-between rounded-md border p-2">
                         <div className="text-xs text-muted-foreground">
                           {new Date(p.paidAt).toLocaleString("es-DO")}
@@ -539,11 +539,11 @@ export function ARClient() {
                 </div>
               </div>
 
-              {selectedForReceipts.payments.length > 0 ? (
+              {selectedForReceipts.payments?.length > 0 ? (
                 <div className="rounded-md border">
-                  <div className="border-b p-3 font-semibold">Recibos de Pago ({selectedForReceipts.payments.length})</div>
+                  <div className="border-b p-3 font-semibold">Recibos de Pago ({selectedForReceipts.payments?.length ?? 0})</div>
                   <div className="divide-y">
-                    {selectedForReceipts.payments.map((p) => (
+                    {selectedForReceipts.payments?.map((p) => (
                       <div key={p.id} className="p-3">
                         <div className="flex items-center justify-between">
                           <div className="grid gap-1">
