@@ -171,6 +171,21 @@ export function AppShell({ children }: PropsWithChildren) {
   }, [])
 
   useEffect(() => {
+    if (process.env.NODE_ENV !== "production") return
+    if (!("serviceWorker" in navigator)) return
+    if (!navigator.onLine) return
+
+    const url = pathname || "/"
+    navigator.serviceWorker.ready
+      .then((registration) => {
+        registration.active?.postMessage({ type: "CACHE_URL", url })
+      })
+      .catch(() => {
+        // Ignore service worker warmup errors
+      })
+  }, [pathname])
+
+  useEffect(() => {
     // Fetch company settings
     fetch("/api/company-settings")
       .then((res) => res.json())

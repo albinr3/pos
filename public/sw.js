@@ -82,6 +82,37 @@ async function networkFirst(request, { fallbackOffline } = {}) {
   }
 }
 
+async function warmNavigationCache(rawUrl) {
+  if (!rawUrl) return
+
+  const targetUrl = new URL(rawUrl, self.location.origin)
+  if (targetUrl.origin !== self.location.origin) return
+  if (targetUrl.pathname.startsWith("/api/") || targetUrl.pathname.startsWith("/_next/")) return
+
+  const cache = await caches.open(RUNTIME_CACHE)
+  const request = new Request(targetUrl.toString(), {
+    method: "GET",
+    credentials: "include",
+  })
+  const cached = await cache.match(request)
+  if (cached) return
+
+  try {
+    const response = await fetch(request)
+    if (response && response.ok) {
+      await cache.put(request, response.clone())
+    }
+  } catch {
+    // Ignore warmup errors
+  }
+}
+
+self.addEventListener("message", (event) => {
+  const data = event.data
+  if (!data || data.type !== "CACHE_URL") return
+  event.waitUntil(warmNavigationCache(data.url))
+})
+
 self.addEventListener("fetch", (event) => {
   const { request } = event
   if (request.method !== "GET") return
