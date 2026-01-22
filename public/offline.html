@@ -45,6 +45,28 @@
         color: var(--muted);
         line-height: 1.5;
       }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 12px 0 16px;
+      }
+      .link-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 10px;
+        padding: 10px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #0f172a;
+        background: #e2e8f0;
+        text-decoration: none;
+      }
+      .link-button:focus-visible {
+        outline: 2px solid #1d4ed8;
+        outline-offset: 2px;
+      }
       button {
         border: 0;
         border-radius: 10px;
@@ -70,6 +92,11 @@
           trabajando con los datos locales y sincronizar cuando vuelva la
           conexion.
         </p>
+        <p>Si quieres vender o comprar, haz click aqui:</p>
+        <div class="actions">
+          <a class="link-button" href="/sales">Vender</a>
+          <a class="link-button" href="/purchases">Comprar</a>
+        </div>
         <button type="button" onclick="location.reload()">Reintentar</button>
       </div>
     </main>

@@ -68,6 +68,28 @@ const nav = [
   { href: "/backups", label: "Backups", icon: Database },
 ]
 
+const USER_CACHE_KEY = "tejada-pos-user"
+
+function cacheUser(user: CurrentUser) {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(USER_CACHE_KEY, JSON.stringify(user))
+  } catch {
+    // Ignore cache errors
+  }
+}
+
+function getCachedUser(): CurrentUser | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(USER_CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as CurrentUser
+  } catch {
+    return null
+  }
+}
+
 export function AppShell({ children }: PropsWithChildren) {
   const pathname = usePathname()
   const router = useRouter()
@@ -130,6 +152,7 @@ export function AppShell({ children }: PropsWithChildren) {
       .then((data) => {
         if (data.user) {
           setUser(data.user)
+          cacheUser(data.user)
           if (navigator.onLine) {
             syncCacheData()
             syncPendingData()
@@ -139,6 +162,10 @@ export function AppShell({ children }: PropsWithChildren) {
       })
       .catch(() => {
         // Error al obtener usuario - el layout del servidor ya maneja la redirección
+        const cached = getCachedUser()
+        if (cached) {
+          setUser(cached)
+        }
         console.error("Error fetching user")
       })
   }, [])

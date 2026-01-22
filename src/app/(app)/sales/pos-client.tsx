@@ -53,6 +53,28 @@ type CartItem = {
 
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
 
+const USER_CACHE_KEY = "tejada-pos-user"
+
+function cacheUser(user: CurrentUser) {
+  if (typeof window === "undefined") return
+  try {
+    localStorage.setItem(USER_CACHE_KEY, JSON.stringify(user))
+  } catch {
+    // Ignore cache errors
+  }
+}
+
+function getCachedUser(): CurrentUser | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(USER_CACHE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as CurrentUser
+  } catch {
+    return null
+  }
+}
+
 export function PosClient() {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -76,7 +98,7 @@ export function PosClient() {
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [shippingInput, setShippingInput] = useState("")
-  const [user, setUser] = useState<CurrentUser | null>(null)
+  const [user, setUser] = useState<CurrentUser | null>(() => getCachedUser())
   // Usar el permiso del usuario para vender sin stock
   const allowNegativeStock = useMemo(() => user?.canSellWithoutStock || user?.role === "ADMIN" || false, [user])
   const [isSaving, startSave] = useTransition()
@@ -104,9 +126,14 @@ export function PosClient() {
       .then((data) => {
         if (data.user) {
           setUser(data.user)
+          cacheUser(data.user)
         }
       })
       .catch(() => {
+        const cached = getCachedUser()
+        if (cached) {
+          setUser(cached)
+        }
         console.error("Error fetching user")
       })
   }, [])
