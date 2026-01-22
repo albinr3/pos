@@ -20,66 +20,102 @@ export function useOnlineStatus() {
   useEffect(() => {
     if (typeof window === "undefined") return
 
-    // Función para verificar el estado real
-    const checkStatus = () => {
+    let pingInFlight = false
+    // Ping al health-check para detectar conectividad real.
+    const HEALTH_CHECK_URL = "/api/health-check"
+    const PING_INTERVAL_MS = 3000
+    const PING_TIMEOUT_MS = 2000
+
+    const hasOfflineParam = () => {
       const params = new URLSearchParams(window.location.search)
-      const hasOfflineParam = params.get("offline") === "true"
-      
+      return params.get("offline") === "true"
+    }
+
+    const setOffline = () => {
+      setIsOnline((prev) => (prev ? false : prev))
+    }
+
+    const setOnline = () => {
+      setIsOnline((prev) => (prev ? prev : true))
+    }
+
+    // Funcion para verificar el estado real
+    const checkStatus = () => {
       // Si hay ?offline=true en la URL, SIEMPRE forzar offline (prioridad absoluta)
-      if (hasOfflineParam) {
-        setIsOnline((prev) => {
-          if (prev) {
-            console.log("[useOnlineStatus] Forzando offline por parámetro URL")
-            return false
-          }
-          return prev
-        })
-        return // No hacer nada más si está forzado
+      if (hasOfflineParam()) {
+        setOffline()
+        return // No hacer nada mas si esta forzado
       }
-      
-      // Si no hay parámetro, usar el estado real de navigator.onLine
-      const shouldBeOnline = navigator.onLine
-      setIsOnline((prev) => {
-        if (prev !== shouldBeOnline) {
-          console.log("[useOnlineStatus] Cambiando estado a:", shouldBeOnline, "según navigator.onLine")
-          return shouldBeOnline
+
+      // Si no hay parametro, usar navigator.onLine para detectar offline inmediato
+      if (!navigator.onLine) {
+        setOffline()
+      }
+    }
+
+    const verifyOnline = async () => {
+      if (pingInFlight) return
+      if (hasOfflineParam()) return
+      if (!navigator.onLine) {
+        setOffline()
+        return
+      }
+
+      pingInFlight = true
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), PING_TIMEOUT_MS)
+
+      try {
+        const response = await fetch(HEALTH_CHECK_URL, {
+          method: "HEAD",
+          cache: "no-store",
+          signal: controller.signal,
+        })
+        if (response && response.ok) {
+          setOnline()
+        } else {
+          setOffline()
         }
-        return prev
-      })
+      } catch {
+        setOffline()
+      } finally {
+        clearTimeout(timeout)
+        pingInFlight = false
+      }
     }
 
     const handleOnline = () => {
       // IGNORAR evento online si hay ?offline=true en la URL
-      const params = new URLSearchParams(window.location.search)
-      if (params.get("offline") === "true") {
-        console.log("[useOnlineStatus] Ignorando evento 'online' porque ?offline=true está activo")
+      if (hasOfflineParam()) {
+        console.log("[useOnlineStatus] Ignorando evento 'online' porque ?offline=true esta activo")
         return
       }
       console.log("[useOnlineStatus] Evento 'online' recibido")
-      setIsOnline(true)
+      verifyOnline()
     }
-    
+
     const handleOffline = () => {
-      // IGNORAR evento offline si hay ?offline=true en la URL (ya está offline)
-      const params = new URLSearchParams(window.location.search)
-      if (params.get("offline") === "true") {
-        console.log("[useOnlineStatus] Ignorando evento 'offline' porque ?offline=true ya está activo")
+      // IGNORAR evento offline si hay ?offline=true en la URL (ya esta offline)
+      if (hasOfflineParam()) {
+        console.log("[useOnlineStatus] Ignorando evento 'offline' porque ?offline=true ya esta activo")
         return
       }
       console.log("[useOnlineStatus] Evento 'offline' recibido")
-      setIsOnline(false)
+      setOffline()
     }
 
     // Verificar inmediatamente
     checkStatus()
+    verifyOnline()
 
     window.addEventListener("online", handleOnline)
     window.addEventListener("offline", handleOffline)
 
-    // Verificar periódicamente (cada 500ms) para detectar cambios en la URL
+    // Verificar periodicamente (cada 500ms) para detectar cambios en la URL
     const interval = setInterval(checkStatus, 500)
+    const pingInterval = setInterval(verifyOnline, PING_INTERVAL_MS)
 
-    // También escuchar cambios en la URL (cuando se navega sin recargar)
+    // Tambien escuchar cambios en la URL (cuando se navega sin recargar)
     const handlePopState = () => {
       console.log("[useOnlineStatus] PopState detectado, verificando estado")
       checkStatus()
@@ -97,6 +133,7 @@ export function useOnlineStatus() {
       window.removeEventListener("offline", handleOffline)
       window.removeEventListener("popstate", handlePopState)
       clearInterval(interval)
+      clearInterval(pingInterval)
       observer.disconnect()
     }
   }, [])
