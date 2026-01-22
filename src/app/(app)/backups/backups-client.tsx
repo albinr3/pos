@@ -13,7 +13,6 @@ import {
   createBackup,
   deleteBackup,
   restoreBackup,
-  getBackupPath,
 } from "./actions"
 
 type Backup = Awaited<ReturnType<typeof listBackups>>[number]
@@ -36,6 +35,7 @@ function formatDate(date: Date): string {
 
 export function BackupsClient() {
   const user = useMemo(() => getCurrentUserStub(), [])
+  const isReadOnly = process.env.NEXT_PUBLIC_BACKUPS_READONLY === "true"
   const [backups, setBackups] = useState<Backup[]>([])
   const [isLoading, startLoading] = useTransition()
   const [isCreating, startCreating] = useTransition()
@@ -109,7 +109,6 @@ export function BackupsClient() {
 
   async function handleDownload(filename: string) {
     try {
-      const filepath = await getBackupPath(filename)
       // Crear un link temporal para descargar
       const response = await fetch(`/api/backups/download?file=${encodeURIComponent(filename)}`)
       if (!response.ok) throw new Error("No se pudo descargar el backup")
@@ -170,11 +169,16 @@ export function BackupsClient() {
         <div>
           <h1 className="text-3xl font-bold">Backups de Base de Datos</h1>
           <p className="text-muted-foreground">Gestiona las copias de seguridad de tu base de datos</p>
+          {isReadOnly ? (
+            <p className="text-sm text-muted-foreground">Modo solo lectura en produccion.</p>
+          ) : null}
         </div>
-        <Button onClick={handleCreateBackup} disabled={isCreating}>
-          <Database className="mr-2 h-4 w-4" />
-          {isCreating ? "Creando..." : "Crear Backup"}
-        </Button>
+        {!isReadOnly ? (
+          <Button onClick={handleCreateBackup} disabled={isCreating}>
+            <Database className="mr-2 h-4 w-4" />
+            {isCreating ? "Creando..." : "Crear Backup"}
+          </Button>
+        ) : null}
       </div>
 
       <Card>
@@ -219,25 +223,29 @@ export function BackupsClient() {
                             <Download className="mr-2 h-4 w-4" />
                             Descargar
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleRestore(backup.filename)}
-                            disabled={isRestoring}
-                            className="text-orange-600 hover:text-orange-700"
-                          >
-                            <AlertTriangle className="mr-2 h-4 w-4" />
-                            Restaurar
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDelete(backup.filename)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Eliminar
-                          </Button>
+                          {!isReadOnly ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRestore(backup.filename)}
+                              disabled={isRestoring}
+                              className="text-orange-600 hover:text-orange-700"
+                            >
+                              <AlertTriangle className="mr-2 h-4 w-4" />
+                              Restaurar
+                            </Button>
+                          ) : null}
+                          {!isReadOnly ? (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDelete(backup.filename)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Eliminar
+                            </Button>
+                          ) : null}
                         </div>
                       </TableCell>
                     </TableRow>

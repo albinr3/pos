@@ -160,6 +160,10 @@ Ahora que tienes URL de producción:
 
 2. Implementar backups a S3/almacenamiento externo (requiere desarrollo adicional)
 
+**Modo solo lectura recomendado en Vercel:**
+- `BACKUPS_READONLY=true`
+- `NEXT_PUBLIC_BACKUPS_READONLY=true`
+
 ### Console.log en Producción
 
 Hay varios `console.log` en el código que se verán en los logs de Vercel. Para producción limpia, considera eliminarlos o usar un nivel de logging.

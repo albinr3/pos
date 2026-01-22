@@ -89,6 +89,7 @@ async function warmNavigationCache(rawUrl) {
   if (targetUrl.origin !== self.location.origin) return
   if (targetUrl.pathname.startsWith("/api/") || targetUrl.pathname.startsWith("/_next/")) return
 
+  // Pre-fetch and cache navigations triggered by Next client routing (no SW fetch event).
   const cache = await caches.open(RUNTIME_CACHE)
   const request = new Request(targetUrl.toString(), {
     method: "GET",
@@ -110,6 +111,7 @@ async function warmNavigationCache(rawUrl) {
 self.addEventListener("message", (event) => {
   const data = event.data
   if (!data || data.type !== "CACHE_URL") return
+  // Keep the cache warm for offline fallbacks without needing a hard reload.
   event.waitUntil(warmNavigationCache(data.url))
 })
 

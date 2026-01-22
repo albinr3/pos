@@ -28,6 +28,7 @@ import {
   User,
   LogOut,
   RefreshCw,
+  WifiOff,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -47,6 +48,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useOnlineStatus } from "@/hooks/use-online-status"
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
@@ -69,6 +71,7 @@ const nav = [
 ]
 
 const USER_CACHE_KEY = "tejada-pos-user"
+const DISABLE_BACKUPS_NAV = true
 
 function cacheUser(user: CurrentUser) {
   if (typeof window === "undefined") return
@@ -95,6 +98,7 @@ export function AppShell({ children }: PropsWithChildren) {
   const router = useRouter()
   const { signOut } = useClerk()
   const { theme, resolvedTheme } = useTheme()
+  const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
   const [companyAddress, setCompanyAddress] = useState("")
   const [companyPhone, setCompanyPhone] = useState("")
@@ -171,10 +175,17 @@ export function AppShell({ children }: PropsWithChildren) {
   }, [])
 
   useEffect(() => {
+    if (!isOnline) return
+    // Sincronizar pendientes cuando hay conexion, sin depender de F5.
+    syncPendingData()
+  }, [isOnline])
+
+  useEffect(() => {
     if (process.env.NODE_ENV !== "production") return
     if (!("serviceWorker" in navigator)) return
     if (!navigator.onLine) return
 
+    // Warm the SW runtime cache on client-side route changes (no document navigation).
     const url = pathname || "/"
     navigator.serviceWorker.ready
       .then((registration) => {
@@ -216,6 +227,20 @@ export function AppShell({ children }: PropsWithChildren) {
             <nav className="flex-1 space-y-1 px-3 py-3">
               {filteredNav.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
+                const isDisabled = item.href === "/backups" && DISABLE_BACKUPS_NAV
+                if (isDisabled) {
+                  return (
+                    <Button
+                      key={item.href}
+                      variant="ghost"
+                      disabled
+                      className="w-full justify-start gap-2 text-base opacity-60"
+                    >
+                      <item.icon className="h-5 w-5" />
+                      {item.label}
+                    </Button>
+                  )
+                }
                 return (
                   <Button
                     key={item.href}
@@ -242,7 +267,19 @@ export function AppShell({ children }: PropsWithChildren) {
         </aside>
 
         <div className="flex min-h-dvh flex-col">
-          <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur md:px-6">
+          <div className="sticky top-0 z-10">
+            {/* Aviso global de modo offline. */}
+            {mounted && !isOnline && (
+              <div
+                className="flex items-center justify-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-100"
+                role="status"
+                aria-live="polite"
+              >
+                <WifiOff className="h-4 w-4" />
+                <span>Sin conexion. Trabajas offline; se sincroniza al volver internet.</span>
+              </div>
+            )}
+            <header className="flex h-14 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur md:px-6">
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="md:hidden" aria-label="Menú">
@@ -260,6 +297,20 @@ export function AppShell({ children }: PropsWithChildren) {
                 <nav className="flex-1 space-y-1 px-3 py-3 overflow-y-auto">
                   {filteredNav.map((item) => {
                     const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
+                    const isDisabled = item.href === "/backups" && DISABLE_BACKUPS_NAV
+                    if (isDisabled) {
+                      return (
+                        <Button
+                          key={item.href}
+                          variant="ghost"
+                          disabled
+                          className="w-full justify-start gap-2 text-base opacity-60"
+                        >
+                          <item.icon className="h-5 w-5" />
+                          {item.label}
+                        </Button>
+                      )
+                    }
                     return (
                       <Button 
                         key={item.href} 
@@ -330,6 +381,7 @@ export function AppShell({ children }: PropsWithChildren) {
               )}
             </div>
           </header>
+          </div>
           <main className="flex-1 p-4 md:p-6">{children}</main>
         </div>
       </div>

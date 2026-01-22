@@ -9,6 +9,10 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
+  if (process.env.BACKUPS_READONLY === "true" || process.env.VERCEL === "1") {
+    return NextResponse.json({ error: "Backups en modo solo lectura en este entorno" }, { status: 400 })
+  }
+
   // Verificar que la solicitud viene de una fuente autorizada
   const authHeader = request.headers.get("authorization")
   const cronSecret = process.env.CRON_SECRET

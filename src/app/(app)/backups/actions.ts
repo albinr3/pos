@@ -7,6 +7,7 @@ import { promisify } from "util"
 import { getCurrentUser } from "@/lib/auth"
 
 const BACKUPS_DIR = path.join(process.cwd(), "backups")
+const READONLY_BACKUPS = process.env.BACKUPS_READONLY === "true" || process.env.VERCEL === "1"
 
 async function checkBackupPermission() {
   const user = await getCurrentUser()
@@ -61,6 +62,9 @@ export async function listBackups(): Promise<BackupFile[]> {
 
 export async function createBackup(): Promise<{ filename: string }> {
   await checkBackupPermission()
+  if (READONLY_BACKUPS) {
+    throw new Error("Backups en modo solo lectura en este entorno")
+  }
   const { exec } = await import("child_process")
   const { promisify } = await import("util")
   const execAsync = promisify(exec)
@@ -119,6 +123,9 @@ export async function createBackup(): Promise<{ filename: string }> {
 
 export async function deleteBackup(filename: string): Promise<void> {
   await checkBackupPermission()
+  if (READONLY_BACKUPS) {
+    throw new Error("Backups en modo solo lectura en este entorno")
+  }
   // Validar que el filename es seguro (acepta formato con T o con _)
   if (!/^backup_\d{4}-\d{2}-\d{2}[T_]\d{2}-\d{2}-\d{2}\.sql$/.test(filename)) {
     throw new Error("Nombre de archivo inválido")
@@ -154,6 +161,9 @@ export async function getBackupPath(filename: string): Promise<string> {
 
 export async function restoreBackup(filename: string): Promise<void> {
   await checkBackupPermission()
+  if (READONLY_BACKUPS) {
+    throw new Error("Backups en modo solo lectura en este entorno")
+  }
   // Validar que el filename es seguro (acepta formato con T o con _)
   if (!/^backup_\d{4}-\d{2}-\d{2}[T_]\d{2}-\d{2}-\d{2}\.sql$/.test(filename)) {
     throw new Error("Nombre de archivo inválido")
