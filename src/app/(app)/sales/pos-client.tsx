@@ -18,6 +18,7 @@ import { formatRD, calcItbisIncluded, toCents } from "@/lib/money"
 import { formatQty, formatQtyNumber, parseQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { toast } from "@/hooks/use-toast"
 import { useOnlineStatus } from "@/hooks/use-online-status"
+import { syncCacheData } from "@/lib/auto-sync"
 import {
   savePendingSale,
   searchProductsCache,
@@ -27,10 +28,6 @@ import {
   findProductByBarcodeCache,
 } from "@/lib/indexed-db"
 import { syncPendingData } from "@/lib/sync-manager"
-import {
-  syncProductsToIndexedDB,
-  syncCustomersToIndexedDB,
-} from "@/app/(app)/sync/actions"
 
 import type { CurrentUser } from "@/lib/auth"
 
@@ -143,15 +140,7 @@ export function PosClient() {
       // Pre-cargar datos a IndexedDB si hay conexión
       if (isOnline) {
         try {
-          const [productsData, customersData] = await Promise.all([
-            syncProductsToIndexedDB(),
-            syncCustomersToIndexedDB(),
-          ])
-          
-          // Guardar en IndexedDB
-          const { saveProductsCache, saveCustomersCache } = await import("@/lib/indexed-db")
-          await saveProductsCache(productsData)
-          await saveCustomersCache(customersData)
+          await syncCacheData()
         } catch (error) {
           console.error("Error pre-cargando datos:", error)
         }

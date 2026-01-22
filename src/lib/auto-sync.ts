@@ -11,19 +11,32 @@ import {
 } from "./indexed-db"
 
 const CACHE_SYNC_KEY = "tejada-pos-cache-sync"
-const CACHE_SYNC_INTERVAL = 1000 * 60 * 30 // 30 minutos
+
+function formatDateKey(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseLastSyncDay(raw: string | null) {
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) {
+    const ts = Number(raw)
+    if (!Number.isNaN(ts)) return formatDateKey(new Date(ts))
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  return null
+}
 
 // Verificar si necesita sincronizar el cache
 async function shouldSyncCache(): Promise<boolean> {
   if (typeof window === "undefined") return false
   
-  const lastSync = localStorage.getItem(CACHE_SYNC_KEY)
-  if (!lastSync) return true
-  
-  const lastSyncTime = parseInt(lastSync, 10)
-  const now = Date.now()
-  const isExpired = now - lastSyncTime > CACHE_SYNC_INTERVAL
-  if (isExpired) return true
+  const lastSyncRaw = localStorage.getItem(CACHE_SYNC_KEY)
+  const today = formatDateKey(new Date())
+  const lastSyncDay = parseLastSyncDay(lastSyncRaw)
+  if (!lastSyncDay || lastSyncDay !== today) return true
 
   const [products, customers, arItems] = await Promise.all([
     getProductsCache(),
@@ -31,18 +44,13 @@ async function shouldSyncCache(): Promise<boolean> {
     getARCache(),
   ])
 
-  if (products.length === 0 || customers.length === 0 || arItems.length === 0) {
-    return true
-  }
-  
-  // Sincronizar si han pasado más de 30 minutos desde la última sincronización
-  return false
+  return products.length === 0 || customers.length === 0 || arItems.length === 0
 }
 
 // Marcar que se sincronizó el cache
-function markCacheSynced() {
+export function markCacheSynced() {
   if (typeof window === "undefined") return
-  localStorage.setItem(CACHE_SYNC_KEY, Date.now().toString())
+  localStorage.setItem(CACHE_SYNC_KEY, formatDateKey(new Date()))
 }
 
 // Sincronizar datos del cache (productos, clientes, AR)

@@ -15,6 +15,7 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { getPendingCounts } from "@/lib/indexed-db"
+import { markCacheSynced } from "@/lib/auto-sync"
 import { syncPendingData } from "@/lib/sync-manager"
 import {
   syncProductsToIndexedDB,
@@ -30,6 +31,25 @@ import {
 import { getSettings, updateLabelSizes } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
+
+const CACHE_SYNC_KEY = "tejada-pos-cache-sync"
+
+function formatDateKey(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+function parseLastSyncDay(raw: string | null) {
+  if (!raw) return null
+  if (/^\d+$/.test(raw)) {
+    const ts = Number(raw)
+    if (!Number.isNaN(ts)) return formatDateKey(new Date(ts))
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
+  return null
+}
 
 type Props = {
   isOwner: boolean
@@ -48,6 +68,7 @@ export function SettingsClient({ isOwner }: Props) {
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
   const [isSyncing, setIsSyncing] = useState(false)
   const [isPreloading, setIsPreloading] = useState(false)
+  const [lastPreloadDay, setLastPreloadDay] = useState<string | null>(null)
   const logoActionLabel = logoUrl ? "Cambiar logo" : "Subir logo"
 
   useEffect(() => {
@@ -67,6 +88,10 @@ export function SettingsClient({ isOwner }: Props) {
     }
     updatePendingCounts()
     const interval = setInterval(updatePendingCounts, 5000)
+
+    if (typeof window !== "undefined") {
+      setLastPreloadDay(parseLastSyncDay(localStorage.getItem(CACHE_SYNC_KEY)))
+    }
     
     return () => clearInterval(interval)
   }, [])
@@ -120,6 +145,8 @@ export function SettingsClient({ isOwner }: Props) {
         saveCustomersCache(customersData),
         saveARCache(arData),
       ])
+      markCacheSynced()
+      setLastPreloadDay(formatDateKey(new Date()))
       
       toast({
         title: "Datos pre-cargados",
@@ -382,6 +409,10 @@ export function SettingsClient({ isOwner }: Props) {
               </Button>
             </div>
             
+            <div className="text-xs text-muted-foreground">
+              Ultima precarga: {lastPreloadDay ?? "sin registro"}
+            </div>
+
             <div className="text-xs text-muted-foreground">
               <p>• Los datos se sincronizan automáticamente cuando vuelve la conexión</p>
               <p>• Pre-carga los datos cuando tengas conexión para usarlos offline</p>
