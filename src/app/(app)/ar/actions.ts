@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { PaymentMethod } from "@prisma/client"
+import { logAuditEvent } from "@/lib/audit-log"
 
 export async function listOpenAR(options?: { query?: string; skip?: number; take?: number }) {
   const user = await getCurrentUser()
@@ -79,6 +80,11 @@ export async function cancelPayment(id: string) {
         arId: payment.arId,
         cancelledAt: null,
         id: { not: id }, // Excluir este pago
+        ar: {
+          sale: {
+            accountId: currentUser.accountId,
+          },
+        },
       },
     })
 
@@ -86,20 +92,35 @@ export async function cancelPayment(id: string) {
     const newBalance = payment.ar.totalCents - totalPaid
 
     // Actualizar cuenta por cobrar
-    await tx.accountReceivable.update({
-      where: { id: payment.arId },
+    const updatedAr = await tx.accountReceivable.updateMany({
+      where: { id: payment.arId, sale: { accountId: currentUser.accountId } },
       data: {
         balanceCents: newBalance,
         status: newBalance === 0 ? "PAGADA" : newBalance === payment.ar.totalCents ? "PENDIENTE" : "PARCIAL",
       },
     })
+    if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
 
     // Marcar pago como cancelado
-    await tx.payment.update({
-      where: { id },
+    const cancelled = await tx.payment.updateMany({
+      where: { id, ar: { sale: { accountId: currentUser.accountId } } },
       data: {
         cancelledAt: new Date(),
         cancelledBy: user.id,
+      },
+    })
+    if (cancelled.count === 0) throw new Error("Pago no encontrado")
+
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: user.id,
+      action: "PAYMENT_CANCELLED",
+      resourceType: "Payment",
+      resourceId: payment.id,
+      details: {
+        amountCents: payment.amountCents,
+        method: payment.method,
+        arId: payment.arId,
       },
     })
 
@@ -178,11 +199,25 @@ export async function addPayment(input: {
 
     const newBalance = ar.balanceCents - amount
 
-    await tx.accountReceivable.update({
-      where: { id: ar.id },
+    const updatedAr = await tx.accountReceivable.updateMany({
+      where: { id: ar.id, sale: { accountId: currentUser.accountId } },
       data: {
         balanceCents: newBalance,
         status: newBalance === 0 ? "PAGADA" : "PARCIAL",
+      },
+    })
+    if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
+
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      action: "PAYMENT_CREATED",
+      resourceType: "Payment",
+      resourceId: payment.id,
+      details: {
+        amountCents: amount,
+        method: input.method,
+        arId: ar.id,
       },
     })
 

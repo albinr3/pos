@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { calcItbisIncluded, invoiceCode } from "@/lib/money"
 import { SaleType, PaymentMethod } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
+import { logAuditEvent } from "@/lib/audit-log"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -261,15 +262,12 @@ export async function createSale(input: {
     }
 
     // Validar que el User existe
-    const dbUser = await tx.user.findUnique({
-      where: { id: user.id },
+    const dbUser = await tx.user.findFirst({
+      where: { id: user.id, accountId: user.accountId },
       select: { id: true, accountId: true },
     })
     if (!dbUser) {
       throw new Error("El usuario no existe. Por favor, inicia sesión de nuevo.")
-    }
-    if (dbUser.accountId !== user.accountId) {
-      throw new Error("El usuario no pertenece a este account.")
     }
 
     // Usar el permiso del usuario para vender sin stock
@@ -316,6 +314,17 @@ export async function createSale(input: {
         if (!user.canOverridePrice && user.role !== "ADMIN") {
           throw new Error("No tienes permiso para modificar precios. El precio fue cambiado sin autorización.")
         }
+        await logAuditEvent({
+          accountId: user.accountId,
+          userId: user.id,
+          action: "PRICE_OVERRIDE",
+          resourceType: "Product",
+          resourceId: p.id,
+          details: {
+            oldPriceCents: Number(p.priceCents),
+            newPriceCents: item.unitPriceCents,
+          },
+        })
       }
       
       if (!allowNegativeStock && Number(p.stock) < item.qty) {
@@ -350,16 +359,14 @@ export async function createSale(input: {
     // Validar y usar customerId, o usar el cliente genérico por defecto
     let finalCustomerId: string | null = null
     if (input.customerId) {
-      const customer = await tx.customer.findUnique({
-        where: { id: input.customerId },
+      const customer = await tx.customer.findFirst({
+        where: { id: input.customerId, accountId: user.accountId },
         select: { id: true, accountId: true, isActive: true },
       })
       if (!customer) {
         // Si el cliente no existe, usar el cliente genérico
         console.warn(`Cliente ${input.customerId} no existe, usando cliente genérico`)
         finalCustomerId = genericCustomer.id
-      } else if (customer.accountId !== user.accountId) {
-        throw new Error("El cliente no pertenece a este account.")
       } else if (!customer.isActive) {
         // Si el cliente está inactivo, usar el cliente genérico
         console.warn(`Cliente ${input.customerId} está inactivo, usando cliente genérico`)
@@ -402,12 +409,26 @@ export async function createSale(input: {
       select: { id: true, invoiceCode: true, type: true },
     })
 
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      action: "SALE_CREATED",
+      resourceType: "Sale",
+      resourceId: sale.id,
+      details: {
+        invoiceCode: sale.invoiceCode,
+        type: sale.type,
+        totalCents,
+      },
+    })
+
     // Update stock
     for (const item of input.items) {
-      await tx.product.update({
-        where: { id: item.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: item.productId, accountId: user.accountId },
         data: { stock: { decrement: item.qty } },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     // If credit: create AR
@@ -500,6 +521,11 @@ export async function cancelSale(id: string, username: string) {
         where: {
           arId: sale.ar.id,
           cancelledAt: null,
+          ar: {
+            sale: {
+              accountId: user.accountId,
+            },
+          },
         },
       })
       if (activePayments > 0) {
@@ -509,20 +535,34 @@ export async function cancelSale(id: string, username: string) {
 
     // Revertir el stock que se descontó
     for (const item of sale.items) {
-      await tx.product.update({
-        where: { id: item.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: item.productId, accountId: user.accountId },
         data: {
           stock: { increment: item.qty },
         },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     // Marcar como cancelada
-    await tx.sale.update({
-      where: { id },
+    const cancelled = await tx.sale.updateMany({
+      where: { id, accountId: user.accountId },
       data: {
         cancelledAt: new Date(),
         cancelledBy: user.id,
+      },
+    })
+    if (cancelled.count === 0) throw new Error("Venta no encontrada")
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      action: "SALE_CANCELLED",
+      resourceType: "Sale",
+      resourceId: sale.id,
+      details: {
+        invoiceCode: sale.invoiceCode,
+        totalCents: sale.totalCents,
       },
     })
 
@@ -585,6 +625,11 @@ export async function updateSale(input: {
         where: {
           arId: existingSale.ar.id,
           cancelledAt: null,
+          ar: {
+            sale: {
+              accountId: user.accountId,
+            },
+          },
         },
       })
       if (activePayments > 0) {
@@ -594,12 +639,13 @@ export async function updateSale(input: {
 
     // Revertir el stock de los items anteriores
     for (const oldItem of existingSale.items) {
-      await tx.product.update({
-        where: { id: oldItem.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: oldItem.productId, accountId: user.accountId },
         data: {
           stock: { increment: oldItem.qty },
         },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     // Validar productos nuevos
@@ -618,6 +664,17 @@ export async function updateSale(input: {
         if (!user.canOverridePrice && user.role !== "ADMIN") {
           throw new Error("No tienes permiso para modificar precios. El precio fue cambiado sin autorización.")
         }
+        await logAuditEvent({
+          accountId: user.accountId,
+          userId: user.id,
+          action: "PRICE_OVERRIDE",
+          resourceType: "Product",
+          resourceId: p.id,
+          details: {
+            oldPriceCents: Number(p.priceCents),
+            newPriceCents: item.unitPriceCents,
+          },
+        })
       }
       
       if (!allowNegativeStock && Number(p.stock) < item.qty) {
@@ -627,7 +684,7 @@ export async function updateSale(input: {
 
     // Eliminar items anteriores
     await tx.saleItem.deleteMany({
-      where: { saleId: input.id },
+      where: { saleId: input.id, sale: { accountId: user.accountId } },
     })
 
     // Calcular nuevos totales
@@ -635,8 +692,8 @@ export async function updateSale(input: {
     const { subtotalCents, itbisCents } = calcItbisIncluded(totalCents, itbisRateBp)
 
     // Actualizar la venta
-    await tx.sale.update({
-      where: { id: input.id },
+    const updatedSale = await tx.sale.updateMany({
+      where: { id: input.id, accountId: user.accountId },
       data: {
         type: input.type,
         paymentMethod: input.type === SaleType.CONTADO ? input.paymentMethod : null,
@@ -644,26 +701,42 @@ export async function updateSale(input: {
         subtotalCents,
         itbisCents,
         totalCents,
-        items: {
-          create: input.items.map((i) => ({
-            productId: i.productId,
-            qty: i.qty,
-            unitPriceCents: i.unitPriceCents,
-            wasPriceOverridden: i.wasPriceOverridden,
-            lineTotalCents: i.unitPriceCents * i.qty,
-          })),
-        },
       },
+    })
+    if (updatedSale.count === 0) throw new Error("Venta no encontrada")
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      action: "SALE_EDITED",
+      resourceType: "Sale",
+      resourceId: input.id,
+      details: {
+        type: input.type,
+        totalCents,
+      },
+    })
+
+    await tx.saleItem.createMany({
+      data: input.items.map((i) => ({
+        saleId: input.id,
+        productId: i.productId,
+        qty: i.qty,
+        unitPriceCents: i.unitPriceCents,
+        wasPriceOverridden: i.wasPriceOverridden,
+        lineTotalCents: i.unitPriceCents * i.qty,
+      })),
     })
 
     // Aplicar nuevo stock
     for (const item of input.items) {
-      await tx.product.update({
-        where: { id: item.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: item.productId, accountId: user.accountId },
         data: {
           stock: { decrement: item.qty },
         },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     // Actualizar o crear cuenta por cobrar si es crédito
@@ -672,8 +745,11 @@ export async function updateSale(input: {
       if (!customerId) throw new Error("Para crédito debes seleccionar un cliente.")
 
       if (existingSale.ar) {
-        await tx.accountReceivable.update({
-          where: { id: existingSale.ar.id },
+        const updatedAr = await tx.accountReceivable.updateMany({
+          where: {
+            id: existingSale.ar.id,
+            sale: { accountId: user.accountId },
+          },
           data: {
             customerId,
             totalCents,
@@ -681,6 +757,7 @@ export async function updateSale(input: {
             status: "PENDIENTE",
           },
         })
+        if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
       } else {
         await tx.accountReceivable.create({
           data: {
@@ -694,9 +771,10 @@ export async function updateSale(input: {
       }
     } else if (existingSale.ar) {
       // Si cambió de crédito a contado, eliminar cuenta por cobrar
-      await tx.accountReceivable.delete({
-        where: { id: existingSale.ar.id },
+      const deleted = await tx.accountReceivable.deleteMany({
+        where: { id: existingSale.ar.id, sale: { accountId: user.accountId } },
       })
+      if (deleted.count === 0) throw new Error("Cuenta por cobrar no encontrada")
     }
 
     revalidatePath("/sales")

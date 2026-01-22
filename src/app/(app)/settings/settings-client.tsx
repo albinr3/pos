@@ -31,6 +31,7 @@ import {
 import { getSettings, updateLabelSizes } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
+import { AuditLogPanel } from "./audit-log-panel"
 
 const CACHE_SYNC_KEY = "tejada-pos-cache-sync"
 
@@ -422,6 +423,7 @@ export function SettingsClient({ isOwner }: Props) {
         </CardContent>
       </Card>
 
+      {isOwner && <AuditLogPanel />}
       {isOwner && <UsersTab isOwner={isOwner} />}
     </div>
   )

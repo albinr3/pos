@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
+import { sanitizeString, sanitizePhone, sanitizeCedula, validateLength } from "@/lib/sanitize"
 
 /**
  * Asegura que el cliente general existe y devuelve su ID
@@ -80,13 +81,23 @@ export async function upsertCustomer(input: {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  const name = input.name.trim()
-  if (!name) throw new Error("El nombre es requerido")
+  // 🔐 SANITIZAR todos los inputs
+  const sanitized = {
+    name: sanitizeString(input.name),
+    phone: input.phone ? sanitizePhone(input.phone) : null,
+    address: input.address ? sanitizeString(input.address) : null,
+    cedula: input.cedula ? sanitizeCedula(input.cedula) : null,
+    province: input.province ? sanitizeString(input.province) : null,
+  }
 
-  const phone = input.phone?.trim() || null
-  const address = input.address?.trim() || null
-  const cedula = input.cedula?.trim() || null
-  const province = input.province?.trim() || null
+  // 🔐 VALIDAR longitudes
+  if (!validateLength(sanitized.name, 2, 100)) {
+    throw new Error("El nombre debe tener entre 2 y 100 caracteres")
+  }
+
+  if (sanitized.address && !validateLength(sanitized.address, 0, 200)) {
+    throw new Error("La dirección no puede exceder 200 caracteres")
+  }
 
   if (input.id) {
     const existing = await prisma.customer.findFirst({
@@ -95,19 +106,26 @@ export async function upsertCustomer(input: {
     if (!existing) throw new Error("Cliente no encontrado")
     if (existing.isGeneric) throw new Error("No se puede modificar el Cliente general")
 
-    await prisma.customer.update({
-      where: { id: input.id },
-      data: { name, phone, address, cedula, province },
+    const updated = await prisma.customer.updateMany({
+      where: { id: input.id, accountId: user.accountId },
+      data: {
+        name: sanitized.name,
+        phone: sanitized.phone,
+        address: sanitized.address,
+        cedula: sanitized.cedula,
+        province: sanitized.province,
+      },
     })
+    if (updated.count === 0) throw new Error("Cliente no encontrado")
   } else {
     await prisma.customer.create({
       data: {
         accountId: user.accountId,
-        name,
-        phone,
-        address,
-        cedula,
-        province,
+        name: sanitized.name,
+        phone: sanitized.phone,
+        address: sanitized.address,
+        cedula: sanitized.cedula,
+        province: sanitized.province,
         isGeneric: false,
         isActive: true,
       },
@@ -129,7 +147,11 @@ export async function deactivateCustomer(id: string) {
   if (!existing) throw new Error("Cliente no encontrado")
     if (existing.isGeneric) throw new Error("No se puede desactivar el Cliente general")
 
-  await prisma.customer.update({ where: { id }, data: { isActive: false } })
+  const updated = await prisma.customer.updateMany({
+    where: { id, accountId: user.accountId },
+    data: { isActive: false },
+  })
+  if (updated.count === 0) throw new Error("Cliente no encontrado")
 
   revalidatePath("/customers")
   revalidatePath("/sales")

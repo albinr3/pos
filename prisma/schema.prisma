@@ -35,6 +35,27 @@ enum PaymentMethod {
   DIVIDIR_PAGO // Solo para UI, no se guarda en BD
 }
 
+enum AuditAction {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  LOGOUT
+  SALE_CREATED
+  SALE_CANCELLED
+  SALE_EDITED
+  PAYMENT_CREATED
+  PAYMENT_CANCELLED
+  PRICE_OVERRIDE
+  PRODUCT_CREATED
+  PRODUCT_EDITED
+  PRODUCT_DELETED
+  STOCK_ADJUSTED
+  PERMISSION_CHANGED
+  SETTINGS_CHANGED
+  USER_CREATED
+  USER_DELETED
+  UNAUTHORIZED_ACCESS
+}
+
 enum UnitType {
   UNIDAD // Piezas (default) - solo enteros
   KG     // Kilogramos
@@ -72,6 +93,7 @@ model Account {
   operatingExpenses OperatingExpense[]
   returns          Return[]
   quotes           Quote[]
+  auditLogs        AuditLog[]
   invoiceSequences InvoiceSequence[]
   returnSequence   ReturnSequence?
   quoteSequence    QuoteSequence?
@@ -132,6 +154,7 @@ model User {
   cancelledReturns   Return[]           @relation("CancelledReturns")
   quotes             Quote[]
   whatsappOtps       WhatsappOtp[]
+  auditLogs          AuditLog[]
 
   // Username único dentro del mismo account
   @@unique([accountId, username])
@@ -475,6 +498,33 @@ model Payment {
 
   @@index([paidAt])
   @@index([cancelledAt])
+}
+
+// ==========================================
+// AUDIT LOG
+// ==========================================
+model AuditLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail    String?
+  userUsername String?
+
+  action       AuditAction
+  resourceType String?
+  resourceId   String?
+  details      Json?
+  ipAddress    String?
+  userAgent    String?
+
+  @@index([accountId, createdAt])
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
 }
 
 // ==========================================

@@ -1,29 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { normalizePhoneNumber, generateOtpCode, sendWhatsAppMessage } from "@/lib/whatsapp"
+import { checkRateLimit, getClientIdentifier, RateLimitError } from "@/lib/rate-limit"
 
 // Marcar como dinámica para evitar ejecución durante el build
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
-
-// Rate limiting simple en memoria (en producción usar Redis)
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-
-function checkRateLimit(identifier: string, maxRequests: number, windowMs: number): boolean {
-  const now = Date.now()
-  const record = rateLimitMap.get(identifier)
-
-  if (!record || now > record.resetAt) {
-    rateLimitMap.set(identifier, { count: 1, resetAt: now + windowMs })
-    return true
-  }
-
-  if (record.count >= maxRequests) {
-    return false
-  }
-
-  record.count++
-  return true
-}
 
 export async function POST(request: NextRequest) {
   // Lazy import de Prisma para evitar inicialización durante el build
@@ -34,6 +15,32 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     console.log("Request body received:", { phoneNumber: body.phoneNumber, purpose: body.purpose })
     const { phoneNumber, purpose } = body
+
+    // 🔐 RATE LIMITING - Por IP y por número
+    const clientIp = getClientIdentifier(request)
+    
+    try {
+      // Límite por IP: 5 solicitudes por hora
+      checkRateLimit(`otp:ip:${clientIp}`, {
+        windowMs: 60 * 60 * 1000,
+        maxRequests: 5,
+        blockDurationMs: 60 * 60 * 1000
+      })
+
+      // Límite por número: 3 solicitudes por hora
+      checkRateLimit(`otp:phone:${phoneNumber}`, {
+        windowMs: 60 * 60 * 1000,
+        maxRequests: 3,
+        blockDurationMs: 60 * 60 * 1000
+      })
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: `Demasiados intentos. Espera ${error.retryAfter} segundos.` },
+          { status: 429 }
+        )
+      }
+    }
 
     if (!phoneNumber || typeof phoneNumber !== "string") {
       return NextResponse.json(
@@ -56,27 +63,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Número de teléfono inválido. Use formato: 8091234567 o +18091234567" },
         { status: 400 }
-      )
-    }
-
-    // Rate limiting por IP y por número
-    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown"
-    const ipKey = `ip:${ip}`
-    const phoneKey = `phone:${normalizedPhone}`
-
-    // Máximo 5 solicitudes por hora por IP
-    if (!checkRateLimit(ipKey, 5, 60 * 60 * 1000)) {
-      return NextResponse.json(
-        { error: "Demasiadas solicitudes. Intente más tarde." },
-        { status: 429 }
-      )
-    }
-
-    // Máximo 5 solicitudes por hora por número
-    if (!checkRateLimit(phoneKey, 5, 60 * 60 * 1000)) {
-      return NextResponse.json(
-        { error: "Demasiadas solicitudes para este número. Intente más tarde." },
-        { status: 429 }
       )
     }
 
@@ -124,7 +110,7 @@ export async function POST(request: NextRequest) {
         code,
         expiresAt,
         purpose,
-        ipAddress: ip,
+        ipAddress: clientIp,
         userAgent: request.headers.get("user-agent") || undefined,
       },
     })

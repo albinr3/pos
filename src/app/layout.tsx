@@ -28,7 +28,6 @@ export const metadata: Metadata = {
     apple: "/favicon.png",
   },
   manifest: "/manifest.webmanifest",
-  themeColor: "#111827",
   openGraph: {
     type: "website",
     locale: "es_DO",
@@ -42,6 +41,10 @@ export const metadata: Metadata = {
     title: "MOVOPos - Sistema de Punto de Venta e Inventario",
     description: "Sistema completo de punto de venta, inventario y gestión empresarial para tu negocio.",
   },
+};
+
+export const viewport = {
+  themeColor: "#111827",
 };
 
 export default function RootLayout({

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
+import { sanitizeString, sanitizePhone } from "@/lib/sanitize"
 
 export async function listSuppliers(query?: string) {
   const user = await getCurrentUser()
@@ -51,8 +52,13 @@ export async function upsertSupplier(input: {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  const name = input.name.trim()
+  const name = sanitizeString(input.name)
   if (!name) throw new Error("El nombre es requerido")
+  const contactName = input.contactName ? sanitizeString(input.contactName) : null
+  const phone = input.phone ? sanitizePhone(input.phone) : null
+  const email = input.email ? sanitizeString(input.email) : null
+  const address = input.address ? sanitizeString(input.address) : null
+  const notes = input.notes ? sanitizeString(input.notes) : null
 
   if (input.id) {
     const existing = await prisma.supplier.findFirst({
@@ -60,28 +66,29 @@ export async function upsertSupplier(input: {
     })
     if (!existing) throw new Error("Proveedor no encontrado")
 
-    await prisma.supplier.update({
-      where: { id: input.id },
+    const updated = await prisma.supplier.updateMany({
+      where: { id: input.id, accountId: user.accountId },
       data: {
         name,
-        contactName: input.contactName?.trim() || null,
-        phone: input.phone?.trim() || null,
-        email: input.email?.trim() || null,
-        address: input.address?.trim() || null,
-        notes: input.notes?.trim() || null,
+        contactName,
+        phone,
+        email,
+        address,
+        notes,
         discountPercentBp: input.discountPercentBp ?? 0,
       },
     })
+    if (updated.count === 0) throw new Error("Proveedor no encontrado")
   } else {
     await prisma.supplier.create({
       data: {
         accountId: user.accountId,
         name,
-        contactName: input.contactName?.trim() || null,
-        phone: input.phone?.trim() || null,
-        email: input.email?.trim() || null,
-        address: input.address?.trim() || null,
-        notes: input.notes?.trim() || null,
+        contactName,
+        phone,
+        email,
+        address,
+        notes,
         discountPercentBp: input.discountPercentBp ?? 0,
       },
     })
@@ -99,9 +106,10 @@ export async function deactivateSupplier(supplierId: string) {
   })
   if (!existing) throw new Error("Proveedor no encontrado")
 
-  await prisma.supplier.update({
-    where: { id: supplierId },
+  const updated = await prisma.supplier.updateMany({
+    where: { id: supplierId, accountId: user.accountId },
     data: { isActive: false },
   })
+  if (updated.count === 0) throw new Error("Proveedor no encontrado")
   revalidatePath("/suppliers")
 }

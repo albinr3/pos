@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db"
 import { UnitType } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
+import { sanitizeString, sanitizeCode } from "@/lib/sanitize"
+import { logAuditEvent } from "@/lib/audit-log"
 
 export async function listProducts(query?: string) {
   const user = await getCurrentUser()
@@ -69,15 +71,17 @@ export async function upsertProduct(input: {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  const name = input.name.trim()
+  const name = sanitizeString(input.name)
   if (!name) throw new Error("El nombre del producto es requerido")
   if (!input.priceCents || input.priceCents <= 0) throw new Error("El precio de venta es requerido")
   if (!input.costCents || input.costCents < 0) throw new Error("El costo es requerido")
   if (!input.saleUnit) throw new Error("La unidad de venta es requerida")
   if (!input.purchaseUnit) throw new Error("La unidad de compra es requerida")
 
-  const sku = input.sku?.trim() || null
-  const reference = input.reference?.trim() || null
+  const sanitizedSku = input.sku ? sanitizeCode(input.sku) : ""
+  const sanitizedReference = input.reference ? sanitizeCode(input.reference) : ""
+  const sku = sanitizedSku || null
+  const reference = sanitizedReference || null
   const imageUrls = input.imageUrls || []
 
   if (input.id) {
@@ -100,8 +104,8 @@ export async function upsertProduct(input: {
       }
     }
 
-    await prisma.product.update({
-      where: { id: input.id },
+    const updated = await prisma.product.updateMany({
+      where: { id: input.id, accountId: user.accountId },
       data: {
         name,
         sku,
@@ -118,8 +122,22 @@ export async function upsertProduct(input: {
         saleUnit: input.saleUnit,
       },
     })
+    if (updated.count === 0) throw new Error("Producto no encontrado")
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      action: "PRODUCT_EDITED",
+      resourceType: "Product",
+      resourceId: input.id,
+      details: {
+        name,
+        sku,
+        reference,
+      },
+    })
   } else {
-    await prisma.product.create({
+    const created = await prisma.product.create({
       data: {
         accountId: user.accountId,
         name,
@@ -137,6 +155,19 @@ export async function upsertProduct(input: {
         saleUnit: input.saleUnit,
       },
     })
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      action: "PRODUCT_CREATED",
+      resourceType: "Product",
+      resourceId: created.id,
+      details: {
+        name,
+        sku,
+        reference,
+      },
+    })
   }
 
   revalidatePath("/products")
@@ -152,9 +183,18 @@ export async function deactivateProduct(productId: string) {
   })
   if (!existing) throw new Error("Producto no encontrado")
 
-  await prisma.product.update({
-    where: { id: productId },
+  const updated = await prisma.product.updateMany({
+    where: { id: productId, accountId: user.accountId },
     data: { isActive: false },
+  })
+  if (updated.count === 0) throw new Error("Producto no encontrado")
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    action: "PRODUCT_DELETED",
+    resourceType: "Product",
+    resourceId: productId,
   })
   revalidatePath("/products")
 }

@@ -292,7 +292,7 @@ export async function updateQuote(input: {
 
     // Eliminar items anteriores
     await tx.quoteItem.deleteMany({
-      where: { quoteId: input.id },
+      where: { quoteId: input.id, quote: { accountId: currentUser.accountId } },
     })
 
     // Calcular nuevos totales
@@ -302,8 +302,8 @@ export async function updateQuote(input: {
     const totalCents = itemsTotalCents + shippingCents
 
     // Actualizar la cotización
-    await tx.quote.update({
-      where: { id: input.id },
+    const updatedQuote = await tx.quote.updateMany({
+      where: { id: input.id, accountId: currentUser.accountId },
       data: {
         customerId: input.customerId || null,
         validUntil: input.validUntil || null,
@@ -312,16 +312,19 @@ export async function updateQuote(input: {
         shippingCents,
         totalCents,
         notes: input.notes || null,
-        items: {
-          create: input.items.map((i) => ({
-            productId: i.productId,
-            qty: i.qty,
-            unitPriceCents: i.unitPriceCents,
-            wasPriceOverridden: i.wasPriceOverridden,
-            lineTotalCents: i.unitPriceCents * i.qty,
-          })),
-        },
       },
+    })
+    if (updatedQuote.count === 0) throw new Error("Cotización no encontrada")
+
+    await tx.quoteItem.createMany({
+      data: input.items.map((i) => ({
+        quoteId: input.id,
+        productId: i.productId,
+        qty: i.qty,
+        unitPriceCents: i.unitPriceCents,
+        wasPriceOverridden: i.wasPriceOverridden,
+        lineTotalCents: i.unitPriceCents * i.qty,
+      })),
     })
 
     revalidatePath("/quotes")
@@ -338,9 +341,10 @@ export async function deleteQuote(id: string) {
   })
   if (!quote) throw new Error("Cotización no encontrada")
 
-  await prisma.quote.delete({
-    where: { id },
+  const deleted = await prisma.quote.deleteMany({
+    where: { id, accountId: user.accountId },
   })
+  if (deleted.count === 0) throw new Error("Cotización no encontrada")
   revalidatePath("/quotes")
 }
 

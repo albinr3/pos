@@ -13,6 +13,7 @@ import { cookies } from "next/headers"
 import jwt from "jsonwebtoken"
 import bcrypt from "bcryptjs"
 import type { UserRole } from "@prisma/client"
+import { logAuditEvent } from "@/lib/audit-log"
 
 // Función helper para obtener prisma de forma segura
 async function getPrisma() {
@@ -66,7 +67,26 @@ export type SubUser = {
 // CONSTANTS
 // ==========================================
 
-const JWT_SECRET = process.env.JWT_SECRET || "change-me-in-production"
+const JWT_SECRET = process.env.JWT_SECRET
+
+if (!JWT_SECRET) {
+  console.error("\n" + "=".repeat(80))
+  console.error("🚨 FATAL ERROR: JWT_SECRET no está configurado")
+  console.error("=".repeat(80))
+  console.error("Las sesiones no pueden ser aseguradas sin JWT_SECRET.")
+  console.error("Para generar uno seguro, ejecuta en tu terminal:")
+  console.error("\n  openssl rand -base64 32")
+  console.error("\nLuego agrega a tu archivo .env:")
+  console.error("  JWT_SECRET=tu_secreto_generado_aqui")
+  console.error("=".repeat(80) + "\n")
+  throw new Error("JWT_SECRET is required")
+}
+
+// Validar longitud en producción
+if (process.env.NODE_ENV === "production" && JWT_SECRET.length < 32) {
+  throw new Error("JWT_SECRET debe tener al menos 32 caracteres en producción")
+}
+const JWT_SECRET_VALUE = JWT_SECRET as string
 const SESSION_COOKIE_NAME = "movopos-session"
 
 interface SessionPayload {
@@ -317,17 +337,48 @@ export async function authenticateSubUser(
     })
 
     if (!user) {
+      await logAuditEvent({
+        accountId,
+        action: "LOGIN_FAILED",
+        resourceType: "User",
+        details: { username },
+      })
       return { success: false, error: "Usuario no encontrado" }
     }
 
     if (!user.isActive) {
+      await logAuditEvent({
+        accountId,
+        userId: user.id,
+        action: "LOGIN_FAILED",
+        resourceType: "User",
+        resourceId: user.id,
+        details: { username, reason: "inactive" },
+      })
       return { success: false, error: "Usuario desactivado" }
     }
 
     const isValidPassword = await bcrypt.compare(password, user.passwordHash)
     if (!isValidPassword) {
+      await logAuditEvent({
+        accountId,
+        userId: user.id,
+        action: "LOGIN_FAILED",
+        resourceType: "User",
+        resourceId: user.id,
+        details: { username, reason: "invalid_password" },
+      })
       return { success: false, error: "Contraseña incorrecta" }
     }
+
+    await logAuditEvent({
+      accountId,
+      userId: user.id,
+      action: "LOGIN_SUCCESS",
+      resourceType: "User",
+      resourceId: user.id,
+      details: { username },
+    })
 
     return {
       success: true,
@@ -437,7 +488,7 @@ export async function createSubUser(
  * Crea una sesión JWT para un subusuario
  */
 export async function createSubUserSession(accountId: string, userId: string): Promise<string> {
-  const token = jwt.sign({ accountId, userId }, JWT_SECRET, {
+  const token = jwt.sign({ accountId, userId }, JWT_SECRET_VALUE, {
     expiresIn: "7d",
   })
   return token
@@ -477,7 +528,7 @@ export async function getSubUserSession(): Promise<{ accountId: string; userId: 
   }
 
   try {
-    const payload = jwt.verify(sessionToken, JWT_SECRET) as SessionPayload
+    const payload = jwt.verify(sessionToken, JWT_SECRET_VALUE) as SessionPayload
     return {
       accountId: payload.accountId,
       userId: payload.userId,

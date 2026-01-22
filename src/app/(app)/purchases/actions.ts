@@ -137,14 +137,15 @@ export async function createPurchase(input: {
     })
 
     for (const item of itemsWithNetCost) {
-      await tx.product.update({
-        where: { id: item.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: item.productId, accountId: currentUser.accountId },
         data: {
           stock: { increment: item.qty },
           // Actualizar con el costo neto (después de descuento e ITBIS)
           ...(input.updateProductCost ? { costCents: item.netCostCents } : {}),
         },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     revalidatePath("/purchases")
@@ -236,22 +237,24 @@ export async function cancelPurchase(id: string) {
 
     // Revertir el stock que se agregó
     for (const item of purchase.items) {
-      await tx.product.update({
-        where: { id: item.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: item.productId, accountId: currentUser.accountId },
         data: {
           stock: { decrement: item.qty },
         },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     // Marcar como cancelada
-    await tx.purchase.update({
-      where: { id },
+    const cancelled = await tx.purchase.updateMany({
+      where: { id, accountId: currentUser.accountId },
       data: {
         cancelledAt: new Date(),
         cancelledBy: currentUser.id,
       },
     })
+    if (cancelled.count === 0) throw new Error("Compra no encontrada")
 
     revalidatePath("/purchases")
     revalidatePath("/purchases/list")
@@ -302,17 +305,21 @@ export async function updatePurchase(input: {
 
     // Revertir el stock de los items anteriores
     for (const oldItem of existingPurchase.items) {
-      await tx.product.update({
-        where: { id: oldItem.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: oldItem.productId, accountId: currentUser.accountId },
         data: {
           stock: { decrement: oldItem.qty },
         },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     // Eliminar items anteriores
     await tx.purchaseItem.deleteMany({
-      where: { purchaseId: input.id },
+      where: {
+        purchaseId: input.id,
+        purchase: { accountId: currentUser.accountId },
+      },
     })
 
     // Calcular items con descuento e ITBIS
@@ -331,35 +338,39 @@ export async function updatePurchase(input: {
     const totalCents = itemsWithNetCost.reduce((s, i) => s + i.lineTotalCents, 0)
 
     // Actualizar la compra
-    await tx.purchase.update({
-      where: { id: input.id },
+    const updatedPurchase = await tx.purchase.updateMany({
+      where: { id: input.id, accountId: currentUser.accountId },
       data: {
         supplierName: input.supplierName?.trim() || supplier?.name || null,
         notes: input.notes?.trim() || null,
         totalCents,
-        items: {
-          create: itemsWithNetCost.map((i) => ({
-            productId: i.productId,
-            qty: i.qty,
-            unitCostCents: i.unitCostCents,
-            discountPercentBp: i.discountPercentBp,
-            netCostCents: i.netCostCents,
-            lineTotalCents: i.lineTotalCents,
-          })),
-        },
       },
+    })
+    if (updatedPurchase.count === 0) throw new Error("Compra no encontrada")
+
+    await tx.purchaseItem.createMany({
+      data: itemsWithNetCost.map((i) => ({
+        purchaseId: input.id,
+        productId: i.productId,
+        qty: i.qty,
+        unitCostCents: i.unitCostCents,
+        discountPercentBp: i.discountPercentBp,
+        netCostCents: i.netCostCents,
+        lineTotalCents: i.lineTotalCents,
+      })),
     })
 
     // Aplicar nuevo stock y costo
     for (const item of itemsWithNetCost) {
-      await tx.product.update({
-        where: { id: item.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: item.productId, accountId: currentUser.accountId },
         data: {
           stock: { increment: item.qty },
           // Actualizar con el costo neto (después de descuento e ITBIS)
           ...(input.updateProductCost ? { costCents: item.netCostCents } : {}),
         },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     revalidatePath("/purchases")

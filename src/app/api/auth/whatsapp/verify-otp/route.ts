@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { normalizePhoneNumber } from "@/lib/whatsapp"
 import { createSession, setSessionCookie } from "@/lib/auth"
+import { logAuditEvent } from "@/lib/audit-log"
 
 // Marcar como dinámica para evitar ejecución durante el build
 export const dynamic = "force-dynamic"
@@ -64,6 +65,19 @@ export async function POST(request: NextRequest) {
         })
       }
 
+      const existingUser = await prisma.user.findFirst({
+        where: { whatsappNumber: normalizedPhone },
+        select: { id: true, accountId: true },
+      })
+      await logAuditEvent({
+        accountId: existingUser?.accountId || "unknown",
+        userId: existingUser?.id,
+        action: "LOGIN_FAILED",
+        resourceType: "User",
+        resourceId: existingUser?.id,
+        details: { reason: "invalid_or_expired_code", whatsappNumber: normalizedPhone },
+      })
+
       return NextResponse.json(
         { error: "Código inválido o expirado" },
         { status: 400 }
@@ -75,6 +89,18 @@ export async function POST(request: NextRequest) {
       await prisma.whatsappOtp.update({
         where: { id: otp.id },
         data: { consumedAt: new Date() },
+      })
+      const existingUser = await prisma.user.findFirst({
+        where: { whatsappNumber: normalizedPhone },
+        select: { id: true, accountId: true },
+      })
+      await logAuditEvent({
+        accountId: existingUser?.accountId || "unknown",
+        userId: existingUser?.id,
+        action: "LOGIN_FAILED",
+        resourceType: "User",
+        resourceId: existingUser?.id,
+        details: { reason: "too_many_attempts", whatsappNumber: normalizedPhone },
       })
       return NextResponse.json(
         { error: "Demasiados intentos fallidos. Solicite un nuevo código." },
@@ -149,6 +175,15 @@ export async function POST(request: NextRequest) {
     // Crear sesión
     const sessionToken = await createSession(user.id)
     await setSessionCookie(sessionToken)
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      action: "LOGIN_SUCCESS",
+      resourceType: "User",
+      resourceId: user.id,
+      details: { method: "whatsapp" },
+    })
 
     // Limpiar OTPs expirados para este número
     await prisma.whatsappOtp.deleteMany({

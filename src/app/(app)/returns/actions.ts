@@ -304,16 +304,20 @@ export async function createReturn(input: {
 
     // Incrementar stock
     for (const item of input.items) {
-      await tx.product.update({
-        where: { id: item.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: item.productId, accountId: currentUser.accountId },
         data: { stock: { increment: item.qty } },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     // Si la venta era a crédito, reducir el balance de la cuenta por cobrar
     if (sale.type === "CREDITO") {
-      const ar = await tx.accountReceivable.findUnique({
-        where: { saleId: sale.id },
+      const ar = await tx.accountReceivable.findFirst({
+        where: {
+          saleId: sale.id,
+          sale: { accountId: currentUser.accountId },
+        },
         include: { payments: { where: { cancelledAt: null } } },
       })
 
@@ -323,13 +327,14 @@ export async function createReturn(input: {
         const newStatus =
           newBalance === 0 ? "PAGADA" : newBalance < ar.totalCents ? "PARCIAL" : "PENDIENTE"
 
-        await tx.accountReceivable.update({
-          where: { id: ar.id },
+        const updatedAr = await tx.accountReceivable.updateMany({
+          where: { id: ar.id, sale: { accountId: currentUser.accountId } },
           data: {
             balanceCents: newBalance,
             status: newStatus,
           },
         })
+        if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
       }
     }
 
@@ -376,16 +381,20 @@ export async function cancelReturn(id: string) {
 
     // Revertir el stock que se incrementó
     for (const item of returnRecord.items) {
-      await tx.product.update({
-        where: { id: item.productId },
+      const updated = await tx.product.updateMany({
+        where: { id: item.productId, accountId: currentUser.accountId },
         data: { stock: { decrement: item.qty } },
       })
+      if (updated.count === 0) throw new Error("Producto no encontrado")
     }
 
     // Si la venta era a crédito, restaurar el balance de la cuenta por cobrar
     if (returnRecord.sale.type === "CREDITO" && returnRecord.sale.ar) {
-      const ar = await tx.accountReceivable.findUnique({
-        where: { saleId: returnRecord.sale.id },
+      const ar = await tx.accountReceivable.findFirst({
+        where: {
+          saleId: returnRecord.sale.id,
+          sale: { accountId: currentUser.accountId },
+        },
         include: { payments: { where: { cancelledAt: null } } },
       })
 
@@ -395,24 +404,26 @@ export async function cancelReturn(id: string) {
         const newStatus =
           newBalance === 0 ? "PAGADA" : newBalance < ar.totalCents ? "PARCIAL" : "PENDIENTE"
 
-        await tx.accountReceivable.update({
-          where: { id: ar.id },
+        const updatedAr = await tx.accountReceivable.updateMany({
+          where: { id: ar.id, sale: { accountId: currentUser.accountId } },
           data: {
             balanceCents: newBalance,
             status: newStatus,
           },
         })
+        if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
       }
     }
 
     // Marcar como cancelada
-    await tx.return.update({
-      where: { id },
+    const cancelled = await tx.return.updateMany({
+      where: { id, accountId: currentUser.accountId },
       data: {
         cancelledAt: new Date(),
         cancelledBy: dbUser.id,
       },
     })
+    if (cancelled.count === 0) throw new Error("Devolución no encontrada")
 
     revalidatePath("/returns")
     revalidatePath("/returns/list")

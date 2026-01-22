@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
+import { sanitizeString } from "@/lib/sanitize"
+import { logAuditEvent } from "@/lib/audit-log"
 
 export async function getSettings() {
   const user = await getCurrentUser()
@@ -40,6 +42,14 @@ export async function updateAllowNegativeStock(allow: boolean) {
     },
   })
 
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    action: "SETTINGS_CHANGED",
+    resourceType: "CompanySettings",
+    details: { allowNegativeStock: allow },
+  })
+
   revalidatePath("/settings")
   revalidatePath("/sales")
 }
@@ -48,9 +58,12 @@ export async function updateLabelSizes(barcodeLabelSize: string, shippingLabelSi
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
+  const sanitizedBarcodeLabelSize = sanitizeString(barcodeLabelSize)
+  const sanitizedShippingLabelSize = sanitizeString(shippingLabelSize)
+
   await prisma.companySettings.upsert({
     where: { accountId: user.accountId },
-    update: { barcodeLabelSize, shippingLabelSize },
+    update: { barcodeLabelSize: sanitizedBarcodeLabelSize, shippingLabelSize: sanitizedShippingLabelSize },
     create: {
       accountId: user.accountId,
       name: "Mi Negocio",
@@ -58,8 +71,19 @@ export async function updateLabelSizes(barcodeLabelSize: string, shippingLabelSi
       address: "",
       allowNegativeStock: false,
       itbisRateBp: 1800,
-      barcodeLabelSize,
-      shippingLabelSize,
+      barcodeLabelSize: sanitizedBarcodeLabelSize,
+      shippingLabelSize: sanitizedShippingLabelSize,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    action: "SETTINGS_CHANGED",
+    resourceType: "CompanySettings",
+    details: {
+      barcodeLabelSize: sanitizedBarcodeLabelSize,
+      shippingLabelSize: sanitizedShippingLabelSize,
     },
   })
 

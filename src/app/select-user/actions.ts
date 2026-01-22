@@ -5,11 +5,37 @@ import { currentUser } from "@clerk/nextjs/server"
 import {
   getOrCreateAccount,
   listSubUsers,
-  authenticateSubUser,
+  authenticateSubUser as authenticateSubUserBase,
   createSubUserSession,
   setSubUserSessionCookie,
   isClerkAuthenticated,
 } from "@/lib/auth"
+import { checkRateLimit, getClientIdentifier, RateLimitError } from "@/lib/rate-limit"
+
+async function authenticateSubUser(
+  accountId: string,
+  username: string,
+  password: string
+) {
+  // 🔐 RATE LIMITING - Máximo 5 intentos cada 15 minutos
+  try {
+    const identifier = `login:${accountId}:${username}`
+    checkRateLimit(identifier, {
+      windowMs: 15 * 60 * 1000, // 15 minutos
+      maxRequests: 5,
+      blockDurationMs: 15 * 60 * 1000 // Bloquear 15 minutos después de exceder
+    })
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      return { 
+        success: false, 
+        error: `Demasiados intentos fallidos. Intenta de nuevo en ${error.retryAfter} segundos.` 
+      }
+    }
+  }
+
+  return authenticateSubUserBase(accountId, username, password)
+}
 
 export async function getAccountAndUsers() {
   // Verificar autenticación de Clerk

@@ -52,6 +52,18 @@ Permisos configurables por usuario:
 
 ---
 
+## ✅ Implementaciones y correcciones recientes (enero 2026)
+
+### Implementaciones
+- **Verificación de conectividad real**: Se agrega ping periódico (`HEAD`) a `/api/health-check` con timeout para detectar si hay internet real, no solo `navigator.onLine`.
+- **Navegación en modo offline**: Al estar sin conexión, solo se habilitan rutas de **Ventas** (`/sales`) y **CxC** (`/ar`); el resto queda deshabilitado en el menú.
+
+### Correcciones
+- **Página offline**: Se corrige el CTA para permitir **cobrar** (CxC) en lugar de **comprar**, con enlace directo a `/ar`.
+- **Service Worker**: Se incrementa la versión de cache para asegurar que se sirvan los recursos actualizados.
+
+---
+
 ## Módulos
 
 ### Ventas (POS)
