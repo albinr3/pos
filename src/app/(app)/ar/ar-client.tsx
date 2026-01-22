@@ -102,7 +102,10 @@ export function ARClient() {
         }
 
         // Cargar desde cache offline
-        const cached = await getARCache()
+        const cached = (await getARCache()).map((item: any) => ({
+          payments: item.payments ?? [],
+          ...item,
+        }))
         // Filtrar por query si existe
         let filtered = cached
         if (query.trim()) {
@@ -139,7 +142,10 @@ export function ARClient() {
         }
 
         // Cargar mas desde cache offline
-        const cached = await getARCache()
+        const cached = (await getARCache()).map((item: any) => ({
+          payments: item.payments ?? [],
+          ...item,
+        }))
         let filtered = cached
         if (query.trim()) {
           const q = query.toLowerCase()
