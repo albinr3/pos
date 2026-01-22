@@ -87,6 +87,11 @@ export async function logAuditEvent(data: AuditLogData) {
 
     // TODO: En producción, enviar a servicio de logging
   } catch (error) {
+    const code = (error as { code?: string })?.code
+    if (code === "P2021") {
+      // Tabla no existe aún (migración pendiente); no romper el flujo
+      return
+    }
     // No fallar la operación principal si el logging falla
     console.error("Error logging audit event:", error)
   }

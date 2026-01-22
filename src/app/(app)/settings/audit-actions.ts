@@ -61,25 +61,33 @@ export async function listAuditLogs(filters?: AuditLogFilters): Promise<AuditLog
 
   const take = Math.min(filters?.take ?? 100, 500)
 
-  const logs = await prisma.auditLog.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    take,
-    select: {
-      id: true,
-      createdAt: true,
-      action: true,
-      userId: true,
-      userEmail: true,
-      userUsername: true,
-      resourceType: true,
-      resourceId: true,
-      details: true,
-    },
-  })
+  try {
+    const logs = await prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take,
+      select: {
+        id: true,
+        createdAt: true,
+        action: true,
+        userId: true,
+        userEmail: true,
+        userUsername: true,
+        resourceType: true,
+        resourceId: true,
+        details: true,
+      },
+    })
 
-  return logs.map((log) => ({
-    ...log,
-    details: log.details as Record<string, any> | null,
-  }))
+    return logs.map((log) => ({
+      ...log,
+      details: log.details as Record<string, any> | null,
+    }))
+  } catch (error) {
+    const code = (error as { code?: string })?.code
+    if (code === "P2021") {
+      return []
+    }
+    throw error
+  }
 }
