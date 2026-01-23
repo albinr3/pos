@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
+import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 
 // Calcular costo neto: (costo - descuento) * 1.18 (ITBIS)
 function calculateNetCost(unitCostCents: number, discountPercentBp: number): number {
@@ -153,7 +154,7 @@ export async function createPurchase(input: {
     revalidatePath("/dashboard")
 
     return purchase
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 export async function searchProductsForPurchase(query: string) {
@@ -261,7 +262,7 @@ export async function cancelPurchase(id: string) {
     revalidatePath("/products")
     revalidatePath("/dashboard")
     revalidatePath("/reports/profit")
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 export async function updatePurchase(input: {
@@ -377,5 +378,5 @@ export async function updatePurchase(input: {
     revalidatePath("/products")
     revalidatePath("/dashboard")
     revalidatePath("/reports/profit")
-  })
+  }, TRANSACTION_OPTIONS)
 }

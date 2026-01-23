@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { PaymentMethod } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
+import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 
 export async function listOpenAR(options?: { query?: string; skip?: number; take?: number }) {
   const user = await getCurrentUser()
@@ -129,7 +130,7 @@ export async function cancelPayment(id: string) {
     revalidatePath("/daily-close")
     revalidatePath("/reports/payments")
     revalidatePath("/reports/profit")
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 export async function listAllPayments() {
@@ -226,5 +227,5 @@ export async function addPayment(input: {
     revalidatePath("/daily-close")
 
     return { paymentId: payment.id, appliedCents: amount, newBalanceCents: newBalance }
-  })
+  }, TRANSACTION_OPTIONS)
 }

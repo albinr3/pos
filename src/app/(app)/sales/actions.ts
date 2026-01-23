@@ -6,6 +6,7 @@ import { calcItbisIncluded, invoiceCode } from "@/lib/money"
 import { SaleType, PaymentMethod } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
+import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -454,7 +455,7 @@ export async function createSale(input: {
     revalidatePath("/dashboard")
 
     return sale
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 export async function getSaleById(id: string) {
@@ -572,7 +573,7 @@ export async function cancelSale(id: string, username: string) {
     revalidatePath("/dashboard")
     revalidatePath("/reports/sales")
     revalidatePath("/reports/profit")
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 export async function updateSale(input: {
@@ -782,5 +783,5 @@ export async function updateSale(input: {
     revalidatePath("/dashboard")
     revalidatePath("/reports/sales")
     revalidatePath("/reports/profit")
-  })
+  }, TRANSACTION_OPTIONS)
 }

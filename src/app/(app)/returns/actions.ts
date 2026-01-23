@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { calcItbisIncluded } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
+import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 
 function returnCode(number: number): string {
   return `DEV-${String(number).padStart(5, "0")}`
@@ -346,7 +347,7 @@ export async function createReturn(input: {
     revalidatePath("/products")
 
     return returnRecord
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 export async function cancelReturn(id: string) {
@@ -431,7 +432,7 @@ export async function cancelReturn(id: string) {
     revalidatePath("/ar")
     revalidatePath("/dashboard")
     revalidatePath("/products")
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 export async function searchSalesForReturn(query: string) {

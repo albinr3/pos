@@ -4,6 +4,7 @@ import { openai } from "@/lib/openai"
 import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { getCurrentUser } from "@/lib/auth"
+import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 
 // Tipos para los datos extraídos del OCR
 export type ExtractedProduct = {
@@ -313,7 +314,7 @@ export async function createPurchaseFromOCR(input: {
     revalidatePath("/dashboard")
 
     return purchase
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 // Función para buscar producto por SKU o referencia (para matching manual)

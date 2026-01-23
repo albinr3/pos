@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { calcItbisIncluded } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
+import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -249,7 +250,7 @@ export async function createQuote(input: {
     revalidatePath("/quotes")
 
     return quote
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 export async function updateQuote(input: {
@@ -328,7 +329,7 @@ export async function updateQuote(input: {
     })
 
     revalidatePath("/quotes")
-  })
+  }, TRANSACTION_OPTIONS)
 }
 
 export async function deleteQuote(id: string) {
