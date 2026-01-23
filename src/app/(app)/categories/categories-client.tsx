@@ -59,6 +59,11 @@ export function CategoriesClient() {
   const title = useMemo(() => (editing ? "Editar categoría" : "Nueva categoría"), [editing])
 
   async function onSave() {
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
+      return
+    }
     startSaving(async () => {
       try {
         await upsertCategory({
@@ -127,7 +132,7 @@ export function CategoriesClient() {
                 <Button variant="outline" onClick={() => { setOpen(false); resetForm(null) }}>
                   Cancelar
                 </Button>
-                <Button onClick={onSave} disabled={isSaving || !name.trim()}>
+                <Button onClick={onSave} disabled={isSaving}>
                   {isSaving ? "Guardando…" : "Guardar"}
                 </Button>
               </DialogFooter>

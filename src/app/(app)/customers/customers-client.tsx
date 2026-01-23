@@ -61,6 +61,11 @@ export function CustomersClient() {
   }
 
   async function onSave() {
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
+      return
+    }
     startSaving(async () => {
       try {
         await upsertCustomer({

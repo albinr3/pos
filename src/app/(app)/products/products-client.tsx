@@ -140,6 +140,17 @@ export function ProductsClient() {
   const title = useMemo(() => (editing ? "Editar producto" : "Nuevo producto"), [editing])
 
   async function onSave() {
+    const trimmedName = name.trim()
+    const priceCents = toCents(price)
+    const costCents = toCents(cost)
+    if (!trimmedName || priceCents <= 0 || costCents <= 0) {
+      toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
+      return
+    }
+    if (productType === "measured" && (!purchaseUnit || !saleUnit)) {
+      toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
+      return
+    }
     startSaving(async () => {
       try {
         // Determinar unidades según el tipo de producto
@@ -158,8 +169,8 @@ export function ProductsClient() {
           reference: reference || null,
           supplierId: supplierId || null,
           categoryId: categoryId || null,
-          priceCents: toCents(price),
-          costCents: toCents(cost),
+          priceCents,
+          costCents,
           itbisRateBp,
           stock: stockValue,
           minStock: minStockValue,

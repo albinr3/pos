@@ -69,6 +69,11 @@ export function SuppliersClient() {
   const title = useMemo(() => (editing ? "Editar proveedor" : "Nuevo proveedor"), [editing])
 
   async function onSave() {
+    const trimmedName = name.trim()
+    if (!trimmedName) {
+      toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
+      return
+    }
     startSaving(async () => {
       try {
         const discountBp = discountPercent ? Math.round(parseFloat(discountPercent) * 100) : 0
@@ -259,7 +264,6 @@ export function SuppliersClient() {
     </div>
   )
 }
-
 
 
 
