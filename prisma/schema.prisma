@@ -80,6 +80,51 @@ enum AuditAction {
   BACKUP_DELETED
   BACKUP_RESTORED
   BACKUP_DOWNLOADED
+  // Billing actions
+  BILLING_SUBSCRIPTION_CREATED
+  BILLING_SUBSCRIPTION_UPDATED
+  BILLING_PAYMENT_CREATED
+  BILLING_PAYMENT_APPROVED
+  BILLING_PAYMENT_REJECTED
+  BILLING_PROOF_UPLOADED
+  BILLING_STATUS_CHANGED
+  BILLING_CURRENCY_CHANGED
+}
+
+// ==========================================
+// BILLING ENUMS
+// ==========================================
+
+enum BillingStatus {
+  TRIALING  // En período de prueba
+  ACTIVE    // Suscripción activa con pago válido
+  GRACE     // Período de gracia (3 días después de vencimiento)
+  BLOCKED   // Bloqueado por falta de pago
+  CANCELED  // Cancelado por el usuario
+}
+
+enum BillingCurrency {
+  DOP // Pesos dominicanos
+  USD // Dólares estadounidenses
+}
+
+enum BillingProvider {
+  MANUAL // Transferencia bancaria
+  LEMON  // Lemon Squeezy (tarjeta)
+}
+
+enum BillingPaymentStatus {
+  PENDING  // Esperando verificación (transferencia)
+  PAID     // Pagado y verificado
+  FAILED   // Falló el pago (tarjeta)
+  REJECTED // Rechazado (comprobante inválido)
+}
+
+enum ManualVerificationStatus {
+  NONE     // No aplica (pago con tarjeta)
+  PENDING  // Esperando verificación
+  APPROVED // Comprobante aprobado
+  REJECTED // Comprobante rechazado
 }
 
 enum UnitType {
@@ -123,6 +168,11 @@ model Account {
   invoiceSequences InvoiceSequence[]
   returnSequence   ReturnSequence?
   quoteSequence    QuoteSequence?
+
+  // Billing
+  billingSubscription BillingSubscription?
+  billingProfile      BillingProfile?
+  billingNotifications BillingNotification[]
 
   @@index([clerkUserId])
 }
@@ -386,8 +436,8 @@ model Product {
 
   // productId único dentro del account
   @@unique([accountId, productId])
-  // SKU único dentro del account (si existe)
-  @@unique([accountId, sku])
+  // SKU unico por cuenta cuando existe (se aplica con indice unico parcial en migracion SQL)
+  @@index([accountId, sku])
   @@index([accountId])
   @@index([accountId, name])
   @@index([accountId, reference])
@@ -749,6 +799,274 @@ model QuoteItem {
   wasPriceOverridden Boolean @default(false)
 
   lineTotalCents Int
+}
+
+// ==========================================
+// BANK ACCOUNTS (for DOP transfers)
+// ==========================================
+// Cuentas bancarias disponibles para transferencias
+model BankAccount {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bankName      String  // Nombre del banco (ej: "Banco Popular Dominicano")
+  accountType   String  // Tipo de cuenta (ej: "Cuenta de Ahorros", "Cuenta Corriente")
+  accountNumber String  // Número de cuenta
+  accountName   String  // Nombre del titular
+  currency      String  @default("DOP") // Moneda de la cuenta
+
+  // Información adicional opcional
+  bankLogo      String? // URL del logo del banco
+  instructions  String? // Instrucciones adicionales
+
+  isActive      Boolean @default(true)
+  displayOrder  Int     @default(0) // Para ordenar en la UI
+
+  payments BillingPayment[]
+
+  @@index([isActive, displayOrder])
+}
+
+// ==========================================
+// BILLING SUBSCRIPTION
+// ==========================================
+// Estado de la suscripción de billing (1:1 con Account)
+model BillingSubscription {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  status   BillingStatus   @default(TRIALING)
+  currency BillingCurrency @default(DOP)
+  provider BillingProvider @default(MANUAL)
+
+  // Trial
+  trialStartedAt DateTime?
+  trialEndsAt    DateTime?
+
+  // Período actual de facturación
+  currentPeriodStartsAt DateTime?
+  currentPeriodEndsAt   DateTime?
+
+  // Período de gracia (3 días después del vencimiento)
+  graceEndsAt DateTime?
+
+  // Cambios pendientes para el próximo ciclo
+  pendingCurrency BillingCurrency?
+  pendingProvider BillingProvider?
+
+  // Verificación manual (transferencias DOP)
+  manualVerificationStatus ManualVerificationStatus @default(NONE)
+  manualAccessGrantedAt    DateTime? // Cuando se subió el primer comprobante
+
+  // Lemon Squeezy IDs
+  lemonCustomerId     String?
+  lemonSubscriptionId String?
+
+  // Precios en centavos
+  priceUsdCents Int @default(2000)  // $20.00 USD
+  priceDopCents Int @default(130000) // RD$1,300 DOP (incluye impuestos)
+
+  payments BillingPayment[]
+
+  @@index([accountId])
+  @@index([status])
+  @@index([trialEndsAt])
+  @@index([currentPeriodEndsAt])
+  @@index([graceEndsAt])
+}
+
+// ==========================================
+// BILLING PROFILE
+// ==========================================
+// Datos fiscales para recibos (1:1 con Account)
+model BillingProfile {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  legalName String  // Nombre legal o razón social
+  taxId     String  // Cédula o RNC
+  address   String  // Dirección fiscal
+  email     String  // Email para recibos
+  phone     String? // Teléfono (opcional)
+
+  @@index([accountId])
+}
+
+// ==========================================
+// BILLING PAYMENT
+// ==========================================
+// Registro de pagos de billing
+model BillingPayment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptionId String
+  subscription   BillingSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  amountCents Int
+  currency    BillingCurrency
+  provider    BillingProvider
+
+  status BillingPaymentStatus @default(PENDING)
+  paidAt DateTime?
+  rejectionReason String?
+
+  // Para transferencias manuales
+  reference     String? // Referencia de la transferencia
+  bankAccountId String? // Cuenta bancaria elegida por el usuario
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id])
+
+  // Para Lemon Squeezy
+  externalId String? // ID de invoice/subscription en Lemon
+
+  // Período que cubre este pago
+  periodStartsAt DateTime?
+  periodEndsAt   DateTime?
+
+  proofs   BillingPaymentProof[]
+  receipts BillingReceipt[]
+
+  @@index([subscriptionId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([externalId])
+  @@index([bankAccountId])
+}
+
+// ==========================================
+// BILLING PAYMENT PROOF
+// ==========================================
+// Comprobantes de transferencia (0..n por pago)
+model BillingPaymentProof {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  paymentId String
+  payment   BillingPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  url         String   // URL del archivo en UploadThing
+  uploadedAt  DateTime @default(now())
+  amountCents Int?     // Monto del comprobante (opcional)
+  note        String?  // Nota adicional
+
+  @@index([paymentId])
+}
+
+// ==========================================
+// BILLING RECEIPT
+// ==========================================
+// Recibos internos generados (sin NCF)
+model BillingReceipt {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  paymentId String
+  payment   BillingPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  receiptNumber String   @unique // Número de recibo interno (e.g., REC-00001)
+  issuedAt      DateTime @default(now())
+  emailSentAt   DateTime? // Cuando se envió por email
+
+  // Snapshot de datos del perfil al momento de emisión
+  legalName String
+  taxId     String
+  address   String
+
+  @@index([paymentId])
+  @@index([receiptNumber])
+}
+
+// ==========================================
+// BILLING NOTIFICATION
+// ==========================================
+// Historial de notificaciones de billing enviadas
+model BillingNotification {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  type    String  // trial_7, trial_3, due_3, due_1, grace_2, blocked, etc.
+  channel String  // email, in_app
+  sentAt  DateTime @default(now())
+
+  // Metadata adicional
+  metadata Json?
+
+  @@index([accountId])
+  @@index([accountId, type])
+  @@index([sentAt])
+}
+
+// ==========================================
+// SUPER ADMIN
+// ==========================================
+
+enum SuperAdminRole {
+  OWNER    // Acceso total
+  ADMIN    // Puede gestionar cuentas y pagos
+  FINANCE  // Solo puede ver y aprobar pagos
+  SUPPORT  // Solo puede ver información, no modificar
+}
+
+model SuperAdmin {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  email        String         @unique
+  name         String
+  passwordHash String
+  role         SuperAdminRole @default(SUPPORT)
+
+  lastLoginAt DateTime?
+  isActive    Boolean   @default(true)
+
+  // Permisos granulares
+  canManageAccounts  Boolean @default(false)
+  canApprovePayments Boolean @default(false)
+  canModifyPricing   Boolean @default(false)
+  canSendEmails      Boolean @default(false)
+  canDeleteAccounts  Boolean @default(false)
+  canViewFinancials  Boolean @default(true)
+
+  auditLogs SuperAdminAuditLog[]
+
+  @@index([email])
+  @@index([isActive])
+}
+
+// ==========================================
+// SUPER ADMIN AUDIT LOG
+// ==========================================
+model SuperAdminAuditLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  superAdminId String
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+
+  action          String  // approved_payment, blocked_account, etc.
+  targetAccountId String?
+  targetPaymentId String?
+
+  metadata  Json?
+  ipAddress String?
+
+  @@index([superAdminId])
+  @@index([createdAt])
+  @@index([action])
 }
 
 // ==========================================

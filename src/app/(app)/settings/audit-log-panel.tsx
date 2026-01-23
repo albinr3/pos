@@ -74,6 +74,14 @@ const AUDIT_ACTIONS = [
   "BACKUP_DELETED",
   "BACKUP_RESTORED",
   "BACKUP_DOWNLOADED",
+  "BILLING_SUBSCRIPTION_CREATED",
+  "BILLING_SUBSCRIPTION_UPDATED",
+  "BILLING_PAYMENT_CREATED",
+  "BILLING_PAYMENT_APPROVED",
+  "BILLING_PAYMENT_REJECTED",
+  "BILLING_PROOF_UPLOADED",
+  "BILLING_STATUS_CHANGED",
+  "BILLING_CURRENCY_CHANGED",
 ] as const
 
 const ACTION_LABELS: Record<(typeof AUDIT_ACTIONS)[number], string> = {
@@ -121,6 +129,14 @@ const ACTION_LABELS: Record<(typeof AUDIT_ACTIONS)[number], string> = {
   BACKUP_DELETED: "Backup eliminado",
   BACKUP_RESTORED: "Backup restaurado",
   BACKUP_DOWNLOADED: "Backup descargado",
+  BILLING_SUBSCRIPTION_CREATED: "Suscripción creada",
+  BILLING_SUBSCRIPTION_UPDATED: "Suscripción actualizada",
+  BILLING_PAYMENT_CREATED: "Pago de billing creado",
+  BILLING_PAYMENT_APPROVED: "Pago de billing aprobado",
+  BILLING_PAYMENT_REJECTED: "Pago de billing rechazado",
+  BILLING_PROOF_UPLOADED: "Comprobante subido",
+  BILLING_STATUS_CHANGED: "Estado de billing cambiado",
+  BILLING_CURRENCY_CHANGED: "Moneda de billing cambiada",
 }
 
 type AuditActionOption = (typeof AUDIT_ACTIONS)[number] | "ALL"

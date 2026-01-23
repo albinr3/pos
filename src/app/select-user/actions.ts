@@ -10,6 +10,7 @@ import {
   setSubUserSessionCookie,
   isClerkAuthenticated,
 } from "@/lib/auth"
+import { createBillingSubscription } from "@/lib/billing"
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 import { logAuditEvent } from "@/lib/audit-log"
 
@@ -206,6 +207,19 @@ export async function createFirstUser(formData: FormData) {
       canViewProfitReport: true,
     },
   })
+
+  // Crear suscripción de billing si es la primera cuenta owner
+  try {
+    const existingSubscription = await prisma.billingSubscription.findUnique({
+      where: { accountId },
+    })
+    if (!existingSubscription) {
+      await createBillingSubscription({ accountId })
+    }
+  } catch (error) {
+    console.error("Error creating billing subscription:", error)
+    // No bloquear el onboarding si billing falla
+  }
 
   await logAuditEvent({
     accountId,

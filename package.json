@@ -13,7 +13,7 @@
     "lint": "eslint",
     "migrate:prod": "powershell -ExecutionPolicy Bypass -File scripts/migrate-prod.ps1",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
+    "prisma:migrate": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "prisma db seed",
     "backup:create": "tsx scripts/backup-db.ts"

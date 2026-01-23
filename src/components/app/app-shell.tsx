@@ -52,7 +52,7 @@ import { useOnlineStatus } from "@/hooks/use-online-status"
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
-  { href: "/sales", label: "Ventas", icon: ShoppingCart },
+  { href: "/sales", label: "Vender", icon: ShoppingCart },
   { href: "/quotes", label: "Cotizaciones", icon: FileText },
   { href: "/returns", label: "Devoluciones", icon: RotateCcw },
   { href: "/customers", label: "Clientes", icon: Users },
@@ -66,6 +66,7 @@ const nav = [
   { href: "/reports", label: "Reportes", icon: BarChart3 },
   { href: "/shipping-labels", label: "Etiquetas de envío", icon: Truck },
   { href: "/operating-expenses", label: "Gastos operativos", icon: DollarSign },
+  { href: "/billing", label: "Facturación", icon: CreditCard },
   { href: "/settings", label: "Ajustes", icon: Settings },
   { href: "/backups", label: "Backups", icon: Database },
 ]
@@ -106,6 +107,7 @@ export function AppShell({ children }: PropsWithChildren) {
   const [companyAddress, setCompanyAddress] = useState("")
   const [companyPhone, setCompanyPhone] = useState("")
   const [user, setUser] = useState<CurrentUser | null>(null)
+  const pendingProofKey = "billing-proof-pending"
 
   const handleChangeUser = async () => {
     // Limpiar sesión de subusuario y redirigir a selección
@@ -133,6 +135,24 @@ export function AppShell({ children }: PropsWithChildren) {
         return <Badge className="bg-orange-100 text-orange-800 border-orange-300 text-xs">Almacén</Badge>
       default:
         return <Badge variant="outline" className="text-xs">{role}</Badge>
+    }
+  }
+
+  const handleNavClick = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    if (typeof window === "undefined") return
+    try {
+      const hasPendingProof = localStorage.getItem(pendingProofKey) === "1"
+      const isLeavingBilling = pathname === "/billing" && href !== "/billing"
+      if (hasPendingProof && isLeavingBilling) {
+        const confirmLeave = window.confirm(
+          "Tienes un comprobante subido sin enviar. ¿Seguro que deseas salir?"
+        )
+        if (!confirmLeave) {
+          event.preventDefault()
+        }
+      }
+    } catch {
+      // Ignore storage errors
     }
   }
   
@@ -255,7 +275,7 @@ export function AppShell({ children }: PropsWithChildren) {
                       isActive && "bg-purple-primary/10 text-purple-primary font-semibold hover:bg-purple-primary/20 hover:text-purple-primary"
                     )}
                   >
-                    <Link href={item.href}>
+                    <Link href={item.href} onClick={(event) => handleNavClick(event, item.href)}>
                       <item.icon className="h-5 w-5" />
                       {item.label}
                     </Link>
@@ -327,7 +347,7 @@ export function AppShell({ children }: PropsWithChildren) {
                         )}
                       >
                         <SheetClose asChild>
-                          <Link href={item.href}>
+                          <Link href={item.href} onClick={(event) => handleNavClick(event, item.href)}>
                             <item.icon className="h-5 w-5" />
                             {item.label}
                           </Link>

@@ -281,6 +281,27 @@ Ruta: `/backups`
 - Restaurar backups (⚠️ reemplaza todos los datos)
 - Eliminar backups
 
+### Facturación (Billing)
+Ruta: `/billing`
+- **Trial de 15 días** al crear cuenta
+- **Dos métodos de pago**:
+  - **Transferencia bancaria (DOP)**: RD$1,300/mes
+  - **Tarjeta de crédito (USD)**: $20/mes vía Lemon Squeezy
+- **Múltiples cuentas bancarias**: El usuario selecciona a qué banco transferir
+- **Subida de comprobantes**: Al subir el primer comprobante se activa el acceso inmediatamente
+- **Estados de suscripción**:
+  - `TRIALING`: Período de prueba (15 días)
+  - `ACTIVE`: Suscripción activa
+  - `GRACE`: Período de gracia (3 días después del vencimiento)
+  - `BLOCKED`: Bloqueado por falta de pago
+- **Notificaciones automáticas** por email:
+  - Trial: 7, 3, 2, 1 días antes
+  - Vencimiento: 3, 2, 1 días antes
+  - Gracia: 2, 1 días antes
+- **Banner de aviso** en la app según estado
+- **Perfil de facturación**: Datos para generar recibos (nombre, RNC/cédula, dirección)
+- **Historial de pagos** con comprobantes
+
 ---
 
 ## Listas y Consultas
@@ -401,6 +422,23 @@ OPENAI_API_KEY="sk-..."
 # WhatsApp Cloud API (opcional - para OTP por WhatsApp)
 WHATSAPP_PHONE_NUMBER_ID="tu_phone_number_id"
 WHATSAPP_ACCESS_TOKEN="tu_access_token"
+
+# === BILLING (Sistema de Facturación) ===
+
+# Lemon Squeezy (opcional - para pagos con tarjeta USD)
+LEMON_STORE_ID="tu-store-id"
+LEMON_VARIANT_ID_USD="123456"
+LEMON_WEBHOOK_SECRET="tu-webhook-secret"
+
+# Resend (opcional - para emails de billing)
+RESEND_API_KEY="re_xxxxxxxxxx"
+EMAIL_FROM="facturacion@tu-dominio.com"
+
+# URL de la app (para links en emails)
+NEXT_PUBLIC_APP_URL="https://tu-dominio.com"
+
+# Seguridad del cron job
+CRON_SECRET="genera-un-secreto-aleatorio-aqui"
 ```
 
 ### Generar JWT_SECRET
@@ -505,6 +543,13 @@ Configura estas variables en Settings → Environment Variables:
 | `JWT_SECRET` | ✅ | Secret para sesiones de subusuarios |
 | `CLERK_WEBHOOK_SECRET` | ✅ | Signing secret del webhook de Clerk |
 | `OPENAI_API_KEY` | ❌ | Para OCR de facturas (opcional) |
+| `LEMON_STORE_ID` | ❌ | ID de tienda en Lemon Squeezy |
+| `LEMON_VARIANT_ID_USD` | ❌ | ID del producto USD en Lemon Squeezy |
+| `LEMON_WEBHOOK_SECRET` | ❌ | Secret del webhook de Lemon Squeezy |
+| `RESEND_API_KEY` | ❌ | API Key de Resend para emails |
+| `EMAIL_FROM` | ❌ | Email remitente para notificaciones |
+| `NEXT_PUBLIC_APP_URL` | ❌ | URL de la app (para links en emails) |
+| `CRON_SECRET` | ❌ | Secret para proteger el cron job |
 
 ### Configurar Clerk Webhook en producción
 1. En Clerk Dashboard → Webhooks
@@ -512,6 +557,66 @@ Configura estas variables en Settings → Environment Variables:
    - URL: `https://tu-app.vercel.app/api/auth/clerk-webhook`
    - Eventos: `user.created`, `user.updated`
 3. Copiar Signing Secret a variable `CLERK_WEBHOOK_SECRET`
+
+### Configurar Lemon Squeezy (pagos USD)
+1. Crea cuenta en [lemonsqueezy.com](https://lemonsqueezy.com)
+2. Crea una tienda (Store) → copia el `LEMON_STORE_ID`
+3. Crea un producto con precio $20/mes → copia el `LEMON_VARIANT_ID_USD`
+4. Ve a Settings → Webhooks → crea uno:
+   - URL: `https://tu-app.vercel.app/api/webhooks/lemon`
+   - Eventos: Todos los de subscription
+   - Copia el Signing Secret a `LEMON_WEBHOOK_SECRET`
+
+### Configurar Resend (emails de billing)
+1. Crea cuenta en [resend.com](https://resend.com)
+2. Ve a API Keys → crea una → copia a `RESEND_API_KEY`
+3. Configura tu dominio en Resend para enviar desde `@tu-dominio.com`
+4. Configura `EMAIL_FROM` con el email verificado
+
+### Cron Job de Billing
+El proyecto incluye un cron job que se ejecuta diariamente para:
+- Verificar trials vencidos y bloquear cuentas
+- Mover suscripciones vencidas a período de gracia (3 días)
+- Bloquear cuentas con gracia vencida
+- Enviar notificaciones por email
+
+El archivo `vercel.json` ya está configurado:
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/billing",
+      "schedule": "0 12 * * *"
+    }
+  ]
+}
+```
+
+**Horario:** 12:00 PM UTC (8:00 AM hora República Dominicana)
+
+⚠️ **Nota:** Los cron jobs en Vercel requieren plan **Pro** o superior.
+
+### Configurar Cuentas Bancarias (transferencias DOP)
+Las cuentas bancarias se almacenan en la base de datos. Para agregarlas:
+
+1. **Opción A - Usando el script seed:**
+   ```bash
+   # Edita prisma/seed-bank-accounts.ts con tus datos
+   npx tsx prisma/seed-bank-accounts.ts
+   ```
+
+2. **Opción B - Usando Prisma Studio:**
+   ```bash
+   npx prisma studio
+   ```
+   Navega a la tabla `BankAccount` y agrega las cuentas
+
+3. **Opción C - SQL directo:**
+   ```sql
+   INSERT INTO "BankAccount" (id, "createdAt", "updatedAt", "bankName", "accountType", "accountNumber", "accountName", currency, "isActive", "displayOrder")
+   VALUES 
+     (gen_random_uuid(), NOW(), NOW(), 'Banco Popular', 'Cuenta de Ahorros', '123-456789-0', 'TU EMPRESA SRL', 'DOP', true, 1);
+   ```
 
 ### Limitaciones en Vercel (Serverless)
 
@@ -635,7 +740,14 @@ npx prisma generate
 - Codificar caracteres especiales en la contraseña
 
 ### Error: "shadow database"
-- Usar `npx prisma db push` en lugar de `npm run prisma:migrate`
+- Si el error menciona `Product_accountId_sku_key`, es por el SKU nullable:
+  Prisma no soporta indices unicos parciales y reintenta crear uno normal.
+- Solucion definitiva: el schema usa `@@index([accountId, sku])` y la unicidad
+  con `sku IS NOT NULL` se crea via migracion SQL
+  (`20260123180000_product_sku_partial_unique`).
+- Para aplicar migraciones usa `npm run prisma:migrate` (usa `migrate deploy`).
+- Para crear una nueva migracion: `npx prisma migrate dev --create-only`
+  y luego ejecuta `npm run prisma:migrate`.
 
 ### Error: Clerk no redirige después de login
 - Verificar que el webhook esté configurado
@@ -654,6 +766,47 @@ npx prisma generate
 - Login: `/login`
 - Selección de usuario: `/select-user`
 
+---
+
+## Super Admin (implementado)
+
+### Acceso
+- Login dedicado: `/super-admin/login`
+- Panel protegido con sesión propia (no usa Clerk de clientes)
+
+### Dashboard
+- KPIs: cuentas totales/activas/trial/gracia/bloqueadas, MRR DOP/USD, pagos pendientes, conversión de trial.
+- Cuentas recientes y pagos pendientes con acciones rápidas.
+
+### Cuentas
+- Listado con filtros (estado, moneda, método) y búsqueda.
+- Detalle de cuenta con suscripción, negocio, perfil de facturación, usuarios y pagos.
+- Acciones: cambiar estado, extender trial, eliminar cuenta.
+
+### Pagos
+- Lista de pagos con filtros y búsqueda.
+- Vista de comprobantes, aprobar/rechazar pagos.
+
+### Cuentas bancarias
+- CRUD de cuentas bancarias (activar/desactivar).
+
+### Seguridad y auditoría
+- Roles y permisos granulares (OWNER/ADMIN/FINANCE/SUPPORT).
+- Audit log de acciones del super admin.
+
+### Rutas implementadas
+- `/super-admin` (dashboard)
+- `/super-admin/accounts`
+- `/super-admin/accounts/[id]`
+- `/super-admin/payments`
+- `/super-admin/banks`
+- `/super-admin/reports` (placeholder)
+- `/super-admin/settings` (placeholder)
+
+### Migraciones y seed
+- Modelos: `SuperAdmin`, `SuperAdminAuditLog`, enum `SuperAdminRole`.
+- Seed crea un super admin por defecto (override con `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_NAME`).
+
 ### Módulos principales
 - Dashboard: `/dashboard`
 - Ventas: `/sales`
@@ -666,6 +819,7 @@ npx prisma generate
 - Reportes: `/reports`
 - Ajustes: `/settings`
 - Backups: `/backups`
+- Facturación: `/billing`
 
 ### Módulos adicionales
 - Cotizaciones: `/quotes`

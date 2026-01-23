@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole } from "@prisma/client"
+import { PrismaClient, SuperAdminRole, UserRole } from "@prisma/client"
 import bcrypt from "bcryptjs"
 
 const prisma = new PrismaClient()
@@ -124,8 +124,42 @@ async function main() {
     },
   })
 
+  const superAdminEmail = (process.env.SUPER_ADMIN_EMAIL || "superadmin@movopos.com").toLowerCase()
+  const superAdminName = process.env.SUPER_ADMIN_NAME || "Super Admin"
+  const superAdminPassword = process.env.SUPER_ADMIN_PASSWORD || "superadmin"
+  const superAdminPasswordHash = await hashPassword(superAdminPassword)
+
+  await prisma.superAdmin.upsert({
+    where: { email: superAdminEmail },
+    update: {
+      name: superAdminName,
+      passwordHash: superAdminPasswordHash,
+      role: SuperAdminRole.OWNER,
+      isActive: true,
+      canManageAccounts: true,
+      canApprovePayments: true,
+      canModifyPricing: true,
+      canSendEmails: true,
+      canDeleteAccounts: true,
+      canViewFinancials: true,
+    },
+    create: {
+      email: superAdminEmail,
+      name: superAdminName,
+      passwordHash: superAdminPasswordHash,
+      role: SuperAdminRole.OWNER,
+      canManageAccounts: true,
+      canApprovePayments: true,
+      canModifyPricing: true,
+      canSendEmails: true,
+      canDeleteAccounts: true,
+      canViewFinancials: true,
+    },
+  })
+
   console.log("Seed completed successfully!")
   console.log("Default admin user: admin / admin")
+  console.log(`Super admin user: ${superAdminEmail} / ${superAdminPassword}`)
 }
 
 main()

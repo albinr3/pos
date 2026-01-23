@@ -14,6 +14,7 @@ import jwt from "jsonwebtoken"
 import bcrypt from "bcryptjs"
 import type { UserRole } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
+import { createBillingSubscription, getBillingState, type BillingState } from "@/lib/billing"
 
 // Función helper para obtener prisma de forma segura
 async function getPrisma() {
@@ -419,6 +420,7 @@ export async function createSubUser(
     username: string
     password: string
     role: UserRole
+    isOwner?: boolean
     permissions?: Partial<{
       canOverridePrice: boolean
       canCancelSales: boolean
@@ -451,6 +453,7 @@ export async function createSubUser(
     }
 
     const passwordHash = await bcrypt.hash(data.password, 10)
+    const isOwner = data.isOwner ?? false
 
     const user = await prisma.user.create({
       data: {
@@ -459,10 +462,26 @@ export async function createSubUser(
         username: data.username,
         passwordHash,
         role: data.role,
-        isOwner: false,
+        isOwner,
         ...data.permissions,
       },
     })
+
+    // Si es el primer usuario owner, crear la suscripción de billing
+    if (isOwner) {
+      const existingSubscription = await prisma.billingSubscription.findUnique({
+        where: { accountId },
+      })
+
+      if (!existingSubscription) {
+        try {
+          await createBillingSubscription({ accountId })
+        } catch (billingError) {
+          console.error("Error creating billing subscription:", billingError)
+          // No fallar la creación del usuario por esto
+        }
+      }
+    }
 
     return {
       success: true,
@@ -652,3 +671,21 @@ export async function setSessionCookie(token: string) {
 export async function clearSessionCookie() {
   return clearSubUserSession()
 }
+
+// ==========================================
+// BILLING HELPERS
+// ==========================================
+
+/**
+ * Obtiene el estado de billing del usuario actual
+ */
+export async function getCurrentUserBillingState(): Promise<BillingState | null> {
+  const user = await getCurrentUser()
+  if (!user) return null
+  return getBillingState(user.accountId)
+}
+
+/**
+ * Re-exportar BillingState para uso en componentes
+ */
+export type { BillingState }
