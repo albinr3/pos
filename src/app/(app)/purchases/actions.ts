@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
+import { logAuditEvent } from "@/lib/audit-log"
 
 // Calcular costo neto: (costo - descuento) * 1.18 (ITBIS)
 function calculateNetCost(unitCostCents: number, discountPercentBp: number): number {
@@ -116,10 +117,11 @@ export async function createPurchase(input: {
 
     const totalCents = itemsWithNetCost.reduce((s, i) => s + i.lineTotalCents, 0)
 
+    const supplierName = input.supplierName?.trim() || supplier?.name || null
     const purchase = await tx.purchase.create({
       data: {
         accountId: currentUser.accountId,
-        supplierName: input.supplierName?.trim() || supplier?.name || null,
+        supplierName,
         notes: input.notes?.trim() || null,
         userId: currentUser.id,
         totalCents,
@@ -136,6 +138,22 @@ export async function createPurchase(input: {
       },
       select: { id: true },
     })
+
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
+      action: "PURCHASE_CREATED",
+      resourceType: "Purchase",
+      resourceId: purchase.id,
+      details: {
+        supplierName,
+        totalCents,
+        itemsCount: itemsWithNetCost.length,
+        updateProductCost: input.updateProductCost === true,
+      },
+    }, tx)
 
     for (const item of itemsWithNetCost) {
       const updated = await tx.product.updateMany({
@@ -257,6 +275,21 @@ export async function cancelPurchase(id: string) {
     })
     if (cancelled.count === 0) throw new Error("Compra no encontrada")
 
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
+      action: "PURCHASE_CANCELLED",
+      resourceType: "Purchase",
+      resourceId: purchase.id,
+      details: {
+        supplierName: purchase.supplierName,
+        totalCents: purchase.totalCents,
+        itemsCount: purchase.items.length,
+      },
+    }, tx)
+
     revalidatePath("/purchases")
     revalidatePath("/purchases/list")
     revalidatePath("/products")
@@ -339,10 +372,11 @@ export async function updatePurchase(input: {
     const totalCents = itemsWithNetCost.reduce((s, i) => s + i.lineTotalCents, 0)
 
     // Actualizar la compra
+    const supplierName = input.supplierName?.trim() || supplier?.name || null
     const updatedPurchase = await tx.purchase.updateMany({
       where: { id: input.id, accountId: currentUser.accountId },
       data: {
-        supplierName: input.supplierName?.trim() || supplier?.name || null,
+        supplierName,
         notes: input.notes?.trim() || null,
         totalCents,
       },
@@ -373,6 +407,22 @@ export async function updatePurchase(input: {
       })
       if (updated.count === 0) throw new Error("Producto no encontrado")
     }
+
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
+      action: "PURCHASE_EDITED",
+      resourceType: "Purchase",
+      resourceId: input.id,
+      details: {
+        supplierName,
+        totalCents,
+        itemsCount: itemsWithNetCost.length,
+        updateProductCost: input.updateProductCost === true,
+      },
+    }, tx)
 
     revalidatePath("/purchases")
     revalidatePath("/products")

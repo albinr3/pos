@@ -48,7 +48,80 @@ const AUDIT_ACTIONS = [
   "USER_CREATED",
   "USER_DELETED",
   "UNAUTHORIZED_ACCESS",
+  "USER_UPDATED",
+  "USER_DEACTIVATED",
+  "CATEGORY_CREATED",
+  "CATEGORY_EDITED",
+  "CATEGORY_DELETED",
+  "CUSTOMER_CREATED",
+  "CUSTOMER_EDITED",
+  "CUSTOMER_DELETED",
+  "SUPPLIER_CREATED",
+  "SUPPLIER_EDITED",
+  "SUPPLIER_DELETED",
+  "PURCHASE_CREATED",
+  "PURCHASE_EDITED",
+  "PURCHASE_CANCELLED",
+  "RETURN_CREATED",
+  "RETURN_CANCELLED",
+  "QUOTE_CREATED",
+  "QUOTE_EDITED",
+  "QUOTE_DELETED",
+  "OPERATING_EXPENSE_CREATED",
+  "OPERATING_EXPENSE_EDITED",
+  "OPERATING_EXPENSE_DELETED",
+  "BACKUP_CREATED",
+  "BACKUP_DELETED",
+  "BACKUP_RESTORED",
+  "BACKUP_DOWNLOADED",
 ] as const
+
+const ACTION_LABELS: Record<(typeof AUDIT_ACTIONS)[number], string> = {
+  LOGIN_SUCCESS: "Inicio de sesión exitoso",
+  LOGIN_FAILED: "Inicio de sesión fallido",
+  LOGOUT: "Cierre de sesión",
+  SALE_CREATED: "Venta creada",
+  SALE_CANCELLED: "Venta cancelada",
+  SALE_EDITED: "Venta modificada",
+  PAYMENT_CREATED: "Pago creado",
+  PAYMENT_CANCELLED: "Pago cancelado",
+  PRICE_OVERRIDE: "Cambio de precio",
+  PRODUCT_CREATED: "Producto creado",
+  PRODUCT_EDITED: "Producto modificado",
+  PRODUCT_DELETED: "Producto eliminado",
+  STOCK_ADJUSTED: "Ajuste de inventario",
+  PERMISSION_CHANGED: "Permisos cambiados",
+  SETTINGS_CHANGED: "Ajustes cambiados",
+  USER_CREATED: "Usuario creado",
+  USER_DELETED: "Usuario eliminado",
+  UNAUTHORIZED_ACCESS: "Acceso no autorizado",
+  USER_UPDATED: "Usuario actualizado",
+  USER_DEACTIVATED: "Usuario desactivado",
+  CATEGORY_CREATED: "Categoría creada",
+  CATEGORY_EDITED: "Categoría modificada",
+  CATEGORY_DELETED: "Categoría eliminada",
+  CUSTOMER_CREATED: "Cliente creado",
+  CUSTOMER_EDITED: "Cliente modificado",
+  CUSTOMER_DELETED: "Cliente eliminado",
+  SUPPLIER_CREATED: "Proveedor creado",
+  SUPPLIER_EDITED: "Proveedor modificado",
+  SUPPLIER_DELETED: "Proveedor eliminado",
+  PURCHASE_CREATED: "Compra creada",
+  PURCHASE_EDITED: "Compra modificada",
+  PURCHASE_CANCELLED: "Compra cancelada",
+  RETURN_CREATED: "Devolución creada",
+  RETURN_CANCELLED: "Devolución cancelada",
+  QUOTE_CREATED: "Cotización creada",
+  QUOTE_EDITED: "Cotización modificada",
+  QUOTE_DELETED: "Cotización eliminada",
+  OPERATING_EXPENSE_CREATED: "Gasto operativo creado",
+  OPERATING_EXPENSE_EDITED: "Gasto operativo modificado",
+  OPERATING_EXPENSE_DELETED: "Gasto operativo eliminado",
+  BACKUP_CREATED: "Backup creado",
+  BACKUP_DELETED: "Backup eliminado",
+  BACKUP_RESTORED: "Backup restaurado",
+  BACKUP_DOWNLOADED: "Backup descargado",
+}
 
 type AuditActionOption = (typeof AUDIT_ACTIONS)[number] | "ALL"
 
@@ -62,6 +135,11 @@ function formatDate(date: Date) {
     dateStyle: "medium",
     timeStyle: "short",
   })
+}
+
+function getActionLabel(action: AuditActionOption) {
+  if (action === "ALL") return "Todas"
+  return ACTION_LABELS[action]
 }
 
 function buildDetails(details: Record<string, any> | null) {
@@ -134,7 +212,7 @@ export function AuditLogPanel() {
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <Filter className="h-5 w-5" />
-            Audit Log
+            Registro de auditoría
           </CardTitle>
           <Button variant="outline" size="sm" onClick={loadAuditLogs} disabled={isLoading}>
             <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -159,7 +237,7 @@ export function AuditLogPanel() {
                 <SelectItem value="ALL">Todas</SelectItem>
                 {AUDIT_ACTIONS.map((item) => (
                   <SelectItem key={item} value={item}>
-                    {item.replace(/_/g, " ")}
+                    {getActionLabel(item)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -223,7 +301,7 @@ export function AuditLogPanel() {
                 <TableRow key={log.id}>
                   <TableCell className="whitespace-nowrap">{formatDate(log.createdAt)}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{log.action.replace(/_/g, " ")}</Badge>
+                    <Badge variant="outline">{getActionLabel(log.action)}</Badge>
                   </TableCell>
                   <TableCell>
                     <div className="text-sm">

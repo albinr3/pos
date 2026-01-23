@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
+import { logAuditEvent } from "@/lib/audit-log"
 
 export async function listUsersWithPermissions() {
   const user = await getCurrentUser()
@@ -62,6 +63,30 @@ export async function updateUserPermissions(input: {
     data: permissions,
   })
 
+  const permissionChanges: Record<string, boolean> = {}
+  for (const [key, value] of Object.entries(permissions)) {
+    if (value === undefined) continue
+    const currentValue = targetUser[key as keyof typeof targetUser] as boolean | undefined
+    if (currentValue !== value) {
+      permissionChanges[key] = value
+    }
+  }
+
+  if (Object.keys(permissionChanges).length > 0) {
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
+      action: "PERMISSION_CHANGED",
+      resourceType: "User",
+      resourceId: userId,
+      details: {
+        permissions: permissionChanges,
+      },
+    })
+  }
+
   revalidatePath("/settings")
 }
 
@@ -89,6 +114,20 @@ export async function setAllPermissions(userId: string, value: boolean) {
       canManageBackups: value,
       canViewProductCosts: value,
       canViewProfitReport: value,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: currentUser.accountId,
+    userId: currentUser.id,
+    userEmail: currentUser.email ?? null,
+    userUsername: currentUser.username ?? null,
+    action: "PERMISSION_CHANGED",
+    resourceType: "User",
+    resourceId: userId,
+    details: {
+      setAll: true,
+      value,
     },
   })
 

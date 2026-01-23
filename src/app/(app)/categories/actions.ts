@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString } from "@/lib/sanitize"
+import { logAuditEvent } from "@/lib/audit-log"
 
 export async function listCategories(query?: string) {
   const user = await getCurrentUser()
@@ -64,6 +65,17 @@ export async function upsertCategory(input: {
       },
     })
     if (updated.count === 0) throw new Error("Categoría no encontrada")
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
+      action: "CATEGORY_EDITED",
+      resourceType: "Category",
+      resourceId: input.id,
+      details: { name, description },
+    })
   } else {
     // Verificar que no exista otra categoría con el mismo nombre en el account
     const existing = await prisma.category.findFirst({
@@ -75,12 +87,23 @@ export async function upsertCategory(input: {
     })
     if (existing) throw new Error("Ya existe una categoría con ese nombre")
     
-    await prisma.category.create({
+    const created = await prisma.category.create({
       data: {
         accountId: user.accountId,
         name,
         description,
       },
+    })
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
+      action: "CATEGORY_CREATED",
+      resourceType: "Category",
+      resourceId: created.id,
+      details: { name, description },
     })
   }
 
@@ -102,6 +125,17 @@ export async function deactivateCategory(categoryId: string) {
     data: { isActive: false },
   })
   if (updated.count === 0) throw new Error("Categoría no encontrada")
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    userUsername: user.username ?? null,
+    action: "CATEGORY_DELETED",
+    resourceType: "Category",
+    resourceId: categoryId,
+    details: { name: existing.name },
+  })
   revalidatePath("/categories")
   revalidatePath("/products")
 }

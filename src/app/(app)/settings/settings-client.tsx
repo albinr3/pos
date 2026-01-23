@@ -32,6 +32,7 @@ import { getSettings, updateLabelSizes } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 
 const CACHE_SYNC_KEY = "tejada-pos-cache-sync"
 
@@ -423,8 +424,19 @@ export function SettingsClient({ isOwner }: Props) {
         </CardContent>
       </Card>
 
-      {isOwner && <AuditLogPanel />}
       {isOwner && <UsersTab isOwner={isOwner} />}
+      {isOwner && (
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="audit-log">
+            <AccordionTrigger className="text-left text-base font-semibold">
+              Registro de auditoría
+            </AccordionTrigger>
+            <AccordionContent className="pt-4">
+              <AuditLogPanel />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
     </div>
   )
 }

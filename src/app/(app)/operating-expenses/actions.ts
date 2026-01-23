@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { startOfDay, endOfDay, parseDateParam } from "@/lib/dates"
 import { getCurrentUser } from "@/lib/auth"
+import { logAuditEvent } from "@/lib/audit-log"
 
 export async function listOperatingExpenses(input?: { from?: string; to?: string }) {
   const user = await getCurrentUser()
@@ -44,7 +45,7 @@ export async function createOperatingExpense(input: {
   if (!description) throw new Error("La descripcion es requerida")
   if (input.amountCents <= 0) throw new Error("El monto debe ser mayor a 0")
 
-  await prisma.operatingExpense.create({
+  const created = await prisma.operatingExpense.create({
     data: {
       accountId: currentUser.accountId,
       description,
@@ -53,6 +54,22 @@ export async function createOperatingExpense(input: {
       category: input.category?.trim() || null,
       notes: input.notes?.trim() || null,
       userId: currentUser.id,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: currentUser.accountId,
+    userId: currentUser.id,
+    userEmail: currentUser.email ?? null,
+    userUsername: currentUser.username ?? null,
+    action: "OPERATING_EXPENSE_CREATED",
+    resourceType: "OperatingExpense",
+    resourceId: created.id,
+    details: {
+      description,
+      amountCents: input.amountCents,
+      expenseDate: created.expenseDate.toISOString(),
+      category: input.category?.trim() || null,
     },
   })
 
@@ -91,6 +108,22 @@ export async function updateOperatingExpense(input: {
     },
   })
 
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    userUsername: user.username ?? null,
+    action: "OPERATING_EXPENSE_EDITED",
+    resourceType: "OperatingExpense",
+    resourceId: input.id,
+    details: {
+      description,
+      amountCents: input.amountCents,
+      expenseDate: input.expenseDate.toISOString(),
+      category: input.category?.trim() || null,
+    },
+  })
+
   revalidatePath("/operating-expenses")
   revalidatePath("/reports/profit")
 }
@@ -105,6 +138,22 @@ export async function deleteOperatingExpense(id: string) {
   if (!existing) throw new Error("Gasto operativo no encontrado")
 
   await prisma.operatingExpense.delete({ where: { id } })
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    userUsername: user.username ?? null,
+    action: "OPERATING_EXPENSE_DELETED",
+    resourceType: "OperatingExpense",
+    resourceId: existing.id,
+    details: {
+      description: existing.description,
+      amountCents: existing.amountCents,
+      expenseDate: existing.expenseDate.toISOString(),
+      category: existing.category,
+    },
+  })
 
   revalidatePath("/operating-expenses")
   revalidatePath("/reports/profit")

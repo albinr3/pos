@@ -6,6 +6,7 @@ import { calcItbisIncluded } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
+import { logAuditEvent } from "@/lib/audit-log"
 
 function returnCode(number: number): string {
   return `DEV-${String(number).padStart(5, "0")}`
@@ -303,6 +304,22 @@ export async function createReturn(input: {
       select: { id: true, returnCode: true },
     })
 
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
+      action: "RETURN_CREATED",
+      resourceType: "Return",
+      resourceId: returnRecord.id,
+      details: {
+        returnCode: returnRecord.returnCode,
+        saleId: input.saleId,
+        totalCents,
+        itemsCount: input.items.length,
+      },
+    }, tx)
+
     // Incrementar stock
     for (const item of input.items) {
       const updated = await tx.product.updateMany({
@@ -425,6 +442,22 @@ export async function cancelReturn(id: string) {
       },
     })
     if (cancelled.count === 0) throw new Error("Devolución no encontrada")
+
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
+      action: "RETURN_CANCELLED",
+      resourceType: "Return",
+      resourceId: returnRecord.id,
+      details: {
+        returnCode: returnRecord.returnCode,
+        saleId: returnRecord.saleId,
+        totalCents: returnRecord.totalCents,
+        itemsCount: returnRecord.items.length,
+      },
+    }, tx)
 
     revalidatePath("/returns")
     revalidatePath("/returns/list")

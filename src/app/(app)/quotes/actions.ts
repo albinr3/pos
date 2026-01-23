@@ -6,6 +6,7 @@ import { calcItbisIncluded } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
+import { logAuditEvent } from "@/lib/audit-log"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -247,6 +248,22 @@ export async function createQuote(input: {
       select: { id: true, quoteCode: true },
     })
 
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
+      action: "QUOTE_CREATED",
+      resourceType: "Quote",
+      resourceId: quote.id,
+      details: {
+        quoteCode: quote.quoteCode,
+        totalCents,
+        itemsCount: input.items.length,
+        customerId: input.customerId,
+      },
+    }, tx)
+
     revalidatePath("/quotes")
 
     return quote
@@ -328,6 +345,21 @@ export async function updateQuote(input: {
       })),
     })
 
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
+      action: "QUOTE_EDITED",
+      resourceType: "Quote",
+      resourceId: input.id,
+      details: {
+        totalCents,
+        itemsCount: input.items.length,
+        customerId: input.customerId,
+      },
+    }, tx)
+
     revalidatePath("/quotes")
   }, TRANSACTION_OPTIONS)
 }
@@ -346,6 +378,20 @@ export async function deleteQuote(id: string) {
     where: { id, accountId: user.accountId },
   })
   if (deleted.count === 0) throw new Error("Cotización no encontrada")
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    userUsername: user.username ?? null,
+    action: "QUOTE_DELETED",
+    resourceType: "Quote",
+    resourceId: quote.id,
+    details: {
+      quoteCode: quote.quoteCode,
+      totalCents: quote.totalCents,
+    },
+  })
   revalidatePath("/quotes")
 }
 

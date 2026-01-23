@@ -5,6 +5,7 @@ import * as path from "path"
 import { exec } from "child_process"
 import { promisify } from "util"
 import { getCurrentUser } from "@/lib/auth"
+import { logAuditEvent } from "@/lib/audit-log"
 
 const BACKUPS_DIR = path.join(process.cwd(), "backups")
 const READONLY_BACKUPS = process.env.BACKUPS_READONLY === "true" || process.env.VERCEL === "1"
@@ -19,6 +20,8 @@ async function checkBackupPermission() {
   if (!user.canManageBackups && user.role !== "ADMIN") {
     throw new Error("No tienes permiso para gestionar backups")
   }
+
+  return user
 }
 
 interface BackupFile {
@@ -61,7 +64,7 @@ export async function listBackups(): Promise<BackupFile[]> {
 }
 
 export async function createBackup(): Promise<{ filename: string }> {
-  await checkBackupPermission()
+  const user = await checkBackupPermission()
   if (READONLY_BACKUPS) {
     throw new Error("Backups en modo solo lectura en este entorno")
   }
@@ -111,6 +114,16 @@ export async function createBackup(): Promise<{ filename: string }> {
     await execAsync(command, {
       env: { ...process.env, PGPASSWORD: password },
     })
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
+      action: "BACKUP_CREATED",
+      resourceType: "Backup",
+      resourceId: filename,
+      details: { filename },
+    })
     return { filename }
   } catch (error: any) {
     // Limpiar archivo si falló
@@ -122,7 +135,7 @@ export async function createBackup(): Promise<{ filename: string }> {
 }
 
 export async function deleteBackup(filename: string): Promise<void> {
-  await checkBackupPermission()
+  const user = await checkBackupPermission()
   if (READONLY_BACKUPS) {
     throw new Error("Backups en modo solo lectura en este entorno")
   }
@@ -141,6 +154,17 @@ export async function deleteBackup(filename: string): Promise<void> {
     }
     throw error
   }
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    userUsername: user.username ?? null,
+    action: "BACKUP_DELETED",
+    resourceType: "Backup",
+    resourceId: filename,
+    details: { filename },
+  })
 }
 
 export async function getBackupPath(filename: string): Promise<string> {
@@ -160,7 +184,7 @@ export async function getBackupPath(filename: string): Promise<string> {
 }
 
 export async function restoreBackup(filename: string): Promise<void> {
-  await checkBackupPermission()
+  const user = await checkBackupPermission()
   if (READONLY_BACKUPS) {
     throw new Error("Backups en modo solo lectura en este entorno")
   }
@@ -207,4 +231,15 @@ export async function restoreBackup(filename: string): Promise<void> {
   } catch (error: any) {
     throw new Error(`Error restaurando backup: ${error.message}`)
   }
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    userUsername: user.username ?? null,
+    action: "BACKUP_RESTORED",
+    resourceType: "Backup",
+    resourceId: filename,
+    details: { filename },
+  })
 }

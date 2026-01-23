@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizePhone, sanitizeCedula, validateLength } from "@/lib/sanitize"
+import { logAuditEvent } from "@/lib/audit-log"
 
 /**
  * Asegura que el cliente general existe y devuelve su ID
@@ -117,8 +118,25 @@ export async function upsertCustomer(input: {
       },
     })
     if (updated.count === 0) throw new Error("Cliente no encontrado")
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
+      action: "CUSTOMER_EDITED",
+      resourceType: "Customer",
+      resourceId: input.id,
+      details: {
+        name: sanitized.name,
+        phone: sanitized.phone,
+        address: sanitized.address,
+        cedula: sanitized.cedula,
+        province: sanitized.province,
+      },
+    })
   } else {
-    await prisma.customer.create({
+    const created = await prisma.customer.create({
       data: {
         accountId: user.accountId,
         name: sanitized.name,
@@ -128,6 +146,23 @@ export async function upsertCustomer(input: {
         province: sanitized.province,
         isGeneric: false,
         isActive: true,
+      },
+    })
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
+      action: "CUSTOMER_CREATED",
+      resourceType: "Customer",
+      resourceId: created.id,
+      details: {
+        name: sanitized.name,
+        phone: sanitized.phone,
+        address: sanitized.address,
+        cedula: sanitized.cedula,
+        province: sanitized.province,
       },
     })
   }
@@ -152,6 +187,17 @@ export async function deactivateCustomer(id: string) {
     data: { isActive: false },
   })
   if (updated.count === 0) throw new Error("Cliente no encontrado")
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    userUsername: user.username ?? null,
+    action: "CUSTOMER_DELETED",
+    resourceType: "Customer",
+    resourceId: id,
+    details: { name: existing.name },
+  })
 
   revalidatePath("/customers")
   revalidatePath("/sales")

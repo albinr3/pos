@@ -11,6 +11,7 @@ import {
   isClerkAuthenticated,
 } from "@/lib/auth"
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
+import { logAuditEvent } from "@/lib/audit-log"
 
 async function authenticateSubUser(
   accountId: string,
@@ -183,7 +184,7 @@ export async function createFirstUser(formData: FormData) {
   })
 
   // Crear usuario como owner
-  await prisma.user.create({
+  const createdUser = await prisma.user.create({
     data: {
       accountId,
       name: displayName,
@@ -203,6 +204,37 @@ export async function createFirstUser(formData: FormData) {
       canManageBackups: true,
       canViewProductCosts: true,
       canViewProfitReport: true,
+    },
+  })
+
+  await logAuditEvent({
+    accountId,
+    userId: createdUser.id,
+    userEmail: createdUser.email,
+    userUsername: createdUser.username,
+    action: "USER_CREATED",
+    resourceType: "User",
+    resourceId: createdUser.id,
+    details: {
+      username: createdUser.username,
+      name: createdUser.name,
+      role: createdUser.role,
+      email: createdUser.email,
+      isOwner: true,
+      source: "first_user",
+    },
+  })
+
+  await logAuditEvent({
+    accountId,
+    userId: createdUser.id,
+    userEmail: createdUser.email,
+    userUsername: createdUser.username,
+    action: "SETTINGS_CHANGED",
+    resourceType: "CompanySettings",
+    details: {
+      name: trimmedBusinessName,
+      logoUrl,
     },
   })
 

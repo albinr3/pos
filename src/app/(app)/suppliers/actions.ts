@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizePhone } from "@/lib/sanitize"
+import { logAuditEvent } from "@/lib/audit-log"
 
 export async function listSuppliers(query?: string) {
   const user = await getCurrentUser()
@@ -79,8 +80,26 @@ export async function upsertSupplier(input: {
       },
     })
     if (updated.count === 0) throw new Error("Proveedor no encontrado")
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
+      action: "SUPPLIER_EDITED",
+      resourceType: "Supplier",
+      resourceId: input.id,
+      details: {
+        name,
+        contactName,
+        phone,
+        email,
+        address,
+        discountPercentBp: input.discountPercentBp ?? 0,
+      },
+    })
   } else {
-    await prisma.supplier.create({
+    const created = await prisma.supplier.create({
       data: {
         accountId: user.accountId,
         name,
@@ -89,6 +108,24 @@ export async function upsertSupplier(input: {
         email,
         address,
         notes,
+        discountPercentBp: input.discountPercentBp ?? 0,
+      },
+    })
+
+    await logAuditEvent({
+      accountId: user.accountId,
+      userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
+      action: "SUPPLIER_CREATED",
+      resourceType: "Supplier",
+      resourceId: created.id,
+      details: {
+        name,
+        contactName,
+        phone,
+        email,
+        address,
         discountPercentBp: input.discountPercentBp ?? 0,
       },
     })
@@ -111,5 +148,16 @@ export async function deactivateSupplier(supplierId: string) {
     data: { isActive: false },
   })
   if (updated.count === 0) throw new Error("Proveedor no encontrado")
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    userEmail: user.email ?? null,
+    userUsername: user.username ?? null,
+    action: "SUPPLIER_DELETED",
+    resourceType: "Supplier",
+    resourceId: supplierId,
+    details: { name: existing.name },
+  })
   revalidatePath("/suppliers")
 }

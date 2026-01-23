@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import type { UserRole } from "@prisma/client"
+import { logAuditEvent } from "@/lib/audit-log"
 
 export type UserWithPermissions = {
   id: string
@@ -114,7 +115,7 @@ export async function createUser(data: {
 
   const passwordHash = await bcrypt.hash(data.password, 10)
 
-  await prisma.user.create({
+  const created = await prisma.user.create({
     data: {
       accountId: currentUser.accountId,
       name: data.name,
@@ -124,6 +125,23 @@ export async function createUser(data: {
       role: data.role,
       isOwner: false,
       ...data.permissions,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: currentUser.accountId,
+    userId: currentUser.id,
+    userEmail: currentUser.email ?? null,
+    userUsername: currentUser.username ?? null,
+    action: "USER_CREATED",
+    resourceType: "User",
+    resourceId: created.id,
+    details: {
+      username: created.username,
+      name: created.name,
+      role: created.role,
+      email: created.email,
+      permissions: data.permissions,
     },
   })
 
@@ -196,28 +214,85 @@ export async function updateUser(
 
   // Preparar datos de actualización
   const updateData: Record<string, unknown> = {}
+  const changes: Record<string, unknown> = {}
 
-  if (data.name !== undefined) updateData.name = data.name
-  if (data.username !== undefined) updateData.username = data.username
-  if (data.email !== undefined) updateData.email = data.email || null
-  if (data.role !== undefined) updateData.role = data.role
-  if (data.isActive !== undefined) updateData.isActive = data.isActive
+  if (data.name !== undefined) {
+    updateData.name = data.name
+    if (data.name !== user.name) changes.name = data.name
+  }
+  if (data.username !== undefined) {
+    updateData.username = data.username
+    if (data.username !== user.username) changes.username = data.username
+  }
+  if (data.email !== undefined) {
+    updateData.email = data.email || null
+    if ((data.email || null) !== user.email) changes.email = data.email || null
+  }
+  if (data.role !== undefined) {
+    updateData.role = data.role
+    if (data.role !== user.role) changes.role = data.role
+  }
+  if (data.isActive !== undefined) {
+    updateData.isActive = data.isActive
+    if (data.isActive !== user.isActive) changes.isActive = data.isActive
+  }
 
   if (data.password) {
     if (data.password.length < 4) {
       throw new Error("La contraseña debe tener al menos 4 caracteres")
     }
     updateData.passwordHash = await bcrypt.hash(data.password, 10)
+    changes.passwordChanged = true
   }
 
   if (data.permissions) {
     Object.assign(updateData, data.permissions)
+    const permissionChanges: Record<string, boolean> = {}
+    for (const [key, value] of Object.entries(data.permissions)) {
+      if (value === undefined) continue
+      const currentValue = user[key as keyof typeof user] as boolean | undefined
+      if (currentValue !== value) {
+        permissionChanges[key] = value
+      }
+    }
+    if (Object.keys(permissionChanges).length > 0) {
+      changes.permissions = permissionChanges
+    }
   }
 
   await prisma.user.update({
     where: { id: userId },
     data: updateData,
   })
+
+  const action = data.isActive === false && user.isActive ? "USER_DEACTIVATED" : "USER_UPDATED"
+  await logAuditEvent({
+    accountId: currentUser.accountId,
+    userId: currentUser.id,
+    userEmail: currentUser.email ?? null,
+    userUsername: currentUser.username ?? null,
+    action,
+    resourceType: "User",
+    resourceId: userId,
+    details: {
+      changes,
+    },
+  })
+
+  if (changes.permissions) {
+    await logAuditEvent({
+      accountId: currentUser.accountId,
+      userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
+      action: "PERMISSION_CHANGED",
+      resourceType: "User",
+      resourceId: userId,
+      details: {
+        permissions: changes.permissions,
+      },
+    })
+  }
 
   revalidatePath("/settings")
 }
@@ -254,6 +329,22 @@ export async function deleteUser(userId: string) {
 
   await prisma.user.delete({
     where: { id: userId },
+  })
+
+  await logAuditEvent({
+    accountId: currentUser.accountId,
+    userId: currentUser.id,
+    userEmail: currentUser.email ?? null,
+    userUsername: currentUser.username ?? null,
+    action: "USER_DELETED",
+    resourceType: "User",
+    resourceId: userId,
+    details: {
+      username: user.username,
+      name: user.name,
+      role: user.role,
+      email: user.email,
+    },
   })
 
   revalidatePath("/settings")
@@ -293,6 +384,20 @@ export async function setAllUserPermissions(userId: string, value: boolean) {
       canManageBackups: value,
       canViewProductCosts: value,
       canViewProfitReport: value,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: currentUser.accountId,
+    userId: currentUser.id,
+    userEmail: currentUser.email ?? null,
+    userUsername: currentUser.username ?? null,
+    action: "PERMISSION_CHANGED",
+    resourceType: "User",
+    resourceId: userId,
+    details: {
+      setAll: true,
+      value,
     },
   })
 

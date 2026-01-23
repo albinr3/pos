@@ -118,6 +118,7 @@ export async function POST(request: NextRequest) {
     let user = await prisma.user.findFirst({
       where: { whatsappNumber: normalizedPhone },
     })
+    let createdUserId: string | null = null
 
     if (!user) {
       // Crear nuevo usuario si no existe
@@ -164,6 +165,7 @@ export async function POST(request: NextRequest) {
           passwordHash: "$2b$10$placeholder", // Usuarios de WhatsApp no usan passwordHash local
         },
       })
+      createdUserId = user.id
     } else {
       // Actualizar fecha de verificación
       await prisma.user.update({
@@ -175,6 +177,24 @@ export async function POST(request: NextRequest) {
     // Crear sesión
     const sessionToken = await createSession(user.id)
     await setSessionCookie(sessionToken)
+
+    if (createdUserId) {
+      await logAuditEvent({
+        accountId: user.accountId,
+        userId: user.id,
+        userEmail: user.email ?? null,
+        userUsername: user.username ?? null,
+        action: "USER_CREATED",
+        resourceType: "User",
+        resourceId: createdUserId,
+        details: {
+          username: user.username,
+          name: user.name,
+          role: user.role,
+          source: "whatsapp_signup",
+        },
+      })
+    }
 
     await logAuditEvent({
       accountId: user.accountId,

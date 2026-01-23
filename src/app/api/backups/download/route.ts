@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import * as fs from "fs/promises"
 import * as path from "path"
+import { getCurrentUser } from "@/lib/auth"
+import { logAuditEvent } from "@/lib/audit-log"
 
 const BACKUPS_DIR = path.join(process.cwd(), "backups")
 
@@ -21,6 +23,19 @@ export async function GET(request: NextRequest) {
 
   try {
     const file = await fs.readFile(filepath)
+    const user = await getCurrentUser()
+    if (user) {
+      await logAuditEvent({
+        accountId: user.accountId,
+        userId: user.id,
+        userEmail: user.email ?? null,
+        userUsername: user.username ?? null,
+        action: "BACKUP_DOWNLOADED",
+        resourceType: "Backup",
+        resourceId: filename,
+        details: { filename },
+      })
+    }
     return new NextResponse(file, {
       headers: {
         "Content-Type": "application/sql",
