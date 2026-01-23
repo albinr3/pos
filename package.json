@@ -15,7 +15,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
-    "db:seed": "prisma db seed",
+    "db:seed": "prisma db seed"
   },
   "dependencies": {
     "@clerk/localizations": "^3.35.1",
