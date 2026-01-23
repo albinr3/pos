@@ -161,34 +161,49 @@ export async function listCustomers() {
   })
 }
 
-export async function listSales() {
+export async function listSales(options?: { query?: string; cursor?: string | null; take?: number }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
+  const q = options?.query?.trim()
+  const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
+
   const sales = await prisma.sale.findMany({
-    where: { accountId: user.accountId },
-    orderBy: { soldAt: "desc" },
-    include: {
-      customer: true,
-      items: {
-        include: {
-          product: {
-            select: { name: true },
-          },
-        },
-      },
-      cancelledUser: { select: { name: true, username: true } },
+    where: {
+      accountId: user.accountId,
+      ...(q
+        ? {
+            OR: [
+              { invoiceCode: { contains: q, mode: "insensitive" } },
+              { customer: { name: { contains: q, mode: "insensitive" } } },
+              { items: { some: { product: { name: { contains: q, mode: "insensitive" } } } } },
+            ],
+          }
+        : {}),
     },
-    take: 500,
+    orderBy: [{ soldAt: "desc" }, { id: "desc" }],
+    cursor: options?.cursor ? { id: options.cursor } : undefined,
+    skip: options?.cursor ? 1 : 0,
+    take: take + 1,
+    select: {
+      id: true,
+      invoiceCode: true,
+      soldAt: true,
+      type: true,
+      totalCents: true,
+      cancelledAt: true,
+      customer: { select: { name: true } },
+    },
   })
-  
-  return sales.map((sale) => ({
-    ...sale,
-    items: sale.items.map((item) => ({
-      ...item,
-      qty: decimalToNumber(item.qty),
-    })),
-  }))
+
+  const hasMore = sales.length > take
+  const pageItems = hasMore ? sales.slice(0, take) : sales
+  const nextCursor = hasMore ? pageItems[pageItems.length - 1]?.id ?? null : null
+
+  return {
+    items: pageItems,
+    nextCursor,
+  }
 }
 
 export async function getSaleByInvoiceCode(invoiceCodeParam: string) {
@@ -228,6 +243,23 @@ type CartItemInput = {
   wasPriceOverridden: boolean
 }
 
+const MAX_SALE_ITEMS = 100
+
+function validateCartItems(items: CartItemInput[]) {
+  if (!items.length) throw new Error("La venta no tiene productos.")
+  if (items.length > MAX_SALE_ITEMS) throw new Error(`La venta no puede tener más de ${MAX_SALE_ITEMS} productos.`)
+
+  for (const item of items) {
+    if (!item.productId) throw new Error("Producto inválido en el carrito.")
+    if (!Number.isFinite(item.qty) || item.qty <= 0) {
+      throw new Error("La cantidad debe ser mayor a 0.")
+    }
+    if (!Number.isFinite(item.unitPriceCents) || item.unitPriceCents <= 0 || !Number.isInteger(item.unitPriceCents)) {
+      throw new Error("El precio unitario debe ser un entero positivo en centavos.")
+    }
+  }
+}
+
 export async function createSale(input: {
   customerId: string | null
   type: SaleType
@@ -240,7 +272,7 @@ export async function createSale(input: {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  if (!input.items.length) throw new Error("La venta no tiene productos.")
+  validateCartItems(input.items)
 
   // Validar permiso para cambiar tipo de venta (si no es el tipo por defecto)
   // Nota: Por defecto, todos pueden crear ventas al contado
@@ -593,7 +625,7 @@ export async function updateSale(input: {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  if (!input.items.length) throw new Error("La venta no tiene productos.")
+  validateCartItems(input.items)
 
   const settings = await prisma.companySettings.findFirst({
     where: { accountId: user.accountId },

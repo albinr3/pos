@@ -917,6 +917,8 @@ export function PosClient() {
                               <img
                                 src={p.imageUrls[0]}
                                 alt={p.name}
+                                loading="lazy"
+                                decoding="async"
                                 className="object-contain max-w-full max-h-full"
                               />
                             ) : (
@@ -978,6 +980,8 @@ export function PosClient() {
                                 <img
                                   src={p.imageUrls[0]}
                                   alt={p.name}
+                                  loading="lazy"
+                                  decoding="async"
                                   className="object-contain max-w-full max-h-full"
                                 />
                               ) : (
@@ -1213,7 +1217,15 @@ export function PosClient() {
                             {(() => {
                               const product = allProducts.find((p) => p.id === c.productId) || results.find((p) => p.id === c.productId)
                               if (product?.imageUrls && product.imageUrls.length > 0) {
-                                return <img src={product.imageUrls[0]} alt={c.name} className="w-full h-full object-contain" />
+                                return (
+                                  <img
+                                    src={product.imageUrls[0]}
+                                    alt={c.name}
+                                    loading="lazy"
+                                    decoding="async"
+                                    className="w-full h-full object-contain"
+                                  />
+                                )
                               }
                               return (
                                 <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">

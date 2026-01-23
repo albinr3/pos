@@ -233,6 +233,11 @@ async function main() {
         } catch (error2) {
           console.error(`❌ Error al crear producto ${product.name}:`, error2)
         }
+      } else if (error.code === "P2002") {
+        const target = Array.isArray(error.meta?.target) ? error.meta?.target.join(", ") : error.meta?.target
+        console.error(
+          `❌ Error P2002 (duplicado) al crear producto ${product.name}. Campos: ${target || "desconocido"}`
+        )
       } else {
         console.error(`❌ Error al crear producto ${product.name}:`, error)
       }

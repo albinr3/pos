@@ -20,7 +20,7 @@ import type { CurrentUser } from "@/lib/auth"
 
 import { cancelSale, getSaleById, listSales, updateSale, searchProducts, listCustomers } from "../actions"
 
-type Sale = Awaited<ReturnType<typeof listSales>>[number]
+type Sale = Awaited<ReturnType<typeof listSales>>["items"][number]
 type SaleDetail = Awaited<ReturnType<typeof getSaleById>>
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
@@ -36,6 +36,8 @@ type CartItem = {
   wasPriceOverridden: boolean
 }
 
+const PAGE_SIZE = 50
+
 function toInt(v: string) {
   const n = Number(v || 0)
   return Number.isFinite(n) ? Math.trunc(n) : 0
@@ -45,6 +47,7 @@ export function SalesListClient() {
   const [sales, setSales] = useState<Sale[]>([])
   const [isLoading, startLoading] = useTransition()
   const [query, setQuery] = useState("")
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
 
   const [openEdit, setOpenEdit] = useState(false)
   const [editingSale, setEditingSale] = useState<SaleDetail | null>(null)
@@ -74,21 +77,43 @@ export function SalesListClient() {
       })
   }, [])
 
-  function refresh() {
+  function refresh(q?: string) {
     startLoading(async () => {
       try {
-        const r = await listSales()
-        setSales(r)
+        const r = await listSales({ query: q, take: PAGE_SIZE })
+        setSales(r.items)
+        setNextCursor(r.nextCursor)
       } catch {
         setSales([])
+        setNextCursor(null)
       }
     })
   }
 
   useEffect(() => {
-    refresh()
+    refresh("")
     listCustomers().then(setCustomers).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    const q = query.trim()
+    const t = setTimeout(() => refresh(q), 200)
+    return () => clearTimeout(t)
+  }, [query])
+
+  function loadMore() {
+    if (!nextCursor) return
+    const q = query.trim()
+    startLoading(async () => {
+      try {
+        const r = await listSales({ query: q, cursor: nextCursor, take: PAGE_SIZE })
+        setSales((prev) => [...prev, ...r.items])
+        setNextCursor(r.nextCursor)
+      } catch {
+        setNextCursor(null)
+      }
+    })
+  }
 
   useEffect(() => {
     const q = searchQuery.trim()
@@ -190,7 +215,7 @@ export function SalesListClient() {
         toast({ title: "Guardado", description: "Venta actualizada" })
         setOpenEdit(false)
         setEditingSale(null)
-        refresh()
+        refresh(query)
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo actualizar" })
       }
@@ -202,21 +227,11 @@ export function SalesListClient() {
     try {
       await cancelSale(id, "admin")
       toast({ title: "Listo", description: "Venta cancelada" })
-      refresh()
+      refresh(query)
     } catch (e) {
       toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo cancelar" })
     }
   }
-
-  const filteredSales = sales.filter((s) => {
-    if (!query.trim()) return true
-    const q = query.toLowerCase()
-    return (
-      s.invoiceCode.toLowerCase().includes(q) ||
-      s.customer?.name.toLowerCase().includes(q) ||
-      s.items.some((item) => item.product.name.toLowerCase().includes(q))
-    )
-  })
 
   const totalCents = cart.reduce((s, i) => s + i.unitPriceCents * i.qty, 0)
   const { subtotalCents, itbisCents } = useMemo(() => calcItbisIncluded(totalCents, 1800), [totalCents])
@@ -248,7 +263,7 @@ export function SalesListClient() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredSales.map((s) => (
+                {sales.map((s) => (
                   <TableRow key={s.id} className={s.cancelledAt ? "bg-red-50" : ""}>
                     <TableCell className="font-medium">
                       {s.invoiceCode}
@@ -314,7 +329,7 @@ export function SalesListClient() {
                   </TableRow>
                 ))}
 
-                {!isLoading && filteredSales.length === 0 && (
+                {!isLoading && sales.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={6} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
@@ -336,6 +351,13 @@ export function SalesListClient() {
               </TableBody>
             </Table>
           </div>
+          {nextCursor && (
+            <div className="flex justify-center">
+              <Button type="button" variant="secondary" onClick={loadMore} disabled={isLoading}>
+                {isLoading ? "Cargando…" : "Cargar más"}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

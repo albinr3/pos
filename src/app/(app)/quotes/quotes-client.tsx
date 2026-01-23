@@ -297,6 +297,8 @@ export function QuotesClient() {
                               <img
                                 src={p.imageUrls[0]}
                                 alt={p.name}
+                                loading="lazy"
+                                decoding="async"
                                 className="object-contain max-w-full max-h-full"
                               />
                             ) : (
@@ -357,6 +359,8 @@ export function QuotesClient() {
                                 <img
                                   src={p.imageUrls[0]}
                                   alt={p.name}
+                                  loading="lazy"
+                                  decoding="async"
                                   className="object-contain max-w-full max-h-full"
                                 />
                               ) : (

@@ -372,8 +372,8 @@ model Product {
 
   purchaseUnit UnitType @default(UNIDAD)
   saleUnit     UnitType @default(UNIDAD)
-  stock        Decimal  @default(0)
-  minStock     Decimal  @default(0)
+  stock        Decimal  @default(0) @db.Decimal(10, 3)
+  minStock     Decimal  @default(0) @db.Decimal(10, 3)
 
   isActive Boolean @default(true)
 
@@ -393,6 +393,7 @@ model Product {
   @@index([accountId, reference])
   @@index([supplierId])
   @@index([categoryId])
+  @@index([accountId, stock])
 }
 
 // ==========================================
@@ -444,6 +445,7 @@ model Sale {
   @@index([accountId, soldAt])
   @@index([customerId])
   @@index([cancelledAt])
+  @@index([invoiceCode])
 }
 
 model SaleItem {
@@ -456,7 +458,7 @@ model SaleItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty Decimal
+  qty Decimal @db.Decimal(10, 3)
 
   unitPriceCents     Int
   wasPriceOverridden Boolean @default(false)
@@ -545,6 +547,8 @@ model AuditLog {
   resourceType String?
   resourceId   String?
   details      Json?
+  oldValue     Json?
+  newValue     Json?
   ipAddress    String?
   userAgent    String?
 
@@ -594,7 +598,7 @@ model PurchaseItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty            Decimal
+  qty            Decimal @db.Decimal(10, 3)
   unitCostCents  Int
   discountPercentBp Int @default(0)
   netCostCents   Int @default(0)
@@ -682,7 +686,7 @@ model ReturnItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty Decimal
+  qty Decimal @db.Decimal(10, 3)
 
   unitPriceCents Int
   lineTotalCents Int
@@ -739,7 +743,7 @@ model QuoteItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty Decimal
+  qty Decimal @db.Decimal(10, 3)
 
   unitPriceCents     Int
   wasPriceOverridden Boolean @default(false)

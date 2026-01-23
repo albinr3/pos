@@ -71,6 +71,38 @@ export async function listCustomers(query?: string) {
   })
 }
 
+export async function listCustomersPage(options?: { query?: string; cursor?: string | null; take?: number }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  // Asegurar que el cliente general existe
+  await ensureGenericCustomer(user.accountId)
+
+  const q = options?.query?.trim()
+  const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
+
+  const customers = await prisma.customer.findMany({
+    where: {
+      accountId: user.accountId,
+      isActive: true,
+      ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
+    },
+    orderBy: [{ isGeneric: "desc" }, { name: "asc" }, { id: "asc" }],
+    cursor: options?.cursor ? { id: options.cursor } : undefined,
+    skip: options?.cursor ? 1 : 0,
+    take: take + 1,
+  })
+
+  const hasMore = customers.length > take
+  const pageItems = hasMore ? customers.slice(0, take) : customers
+  const nextCursor = hasMore ? pageItems[pageItems.length - 1]?.id ?? null : null
+
+  return {
+    items: pageItems,
+    nextCursor,
+  }
+}
+
 export async function upsertCustomer(input: {
   id?: string
   name: string

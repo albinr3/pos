@@ -45,6 +45,24 @@
         color: var(--muted);
         line-height: 1.5;
       }
+      .sync-status {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 12px 0 16px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px dashed #cbd5f5;
+        background: #eef2ff;
+        color: #1e293b;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .sync-status span {
+        font-weight: 700;
+        color: #1d4ed8;
+      }
       .actions {
         display: flex;
         flex-wrap: wrap;
@@ -93,6 +111,9 @@
           conexion.
         </p>
         <p>Si quieres vender o cobrar, haz click aqui:</p>
+        <div class="sync-status" id="sync-status">
+          Pendientes de sincronizar: <span id="pending-count">0</span>
+        </div>
         <div class="actions">
           <a class="link-button" href="/sales">Vender</a>
           <a class="link-button" href="/ar">Cobrar</a>

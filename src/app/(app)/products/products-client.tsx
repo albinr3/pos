@@ -24,7 +24,9 @@ import { getAllSuppliers } from "../suppliers/actions"
 import { getAllCategories } from "../categories/actions"
 import { getSettings } from "../settings/actions"
 
-type Product = Awaited<ReturnType<typeof listProducts>>[number]
+type Product = Awaited<ReturnType<typeof listProducts>>["items"][number]
+
+const PAGE_SIZE = 50
 
 function toInt(v: string) {
   const n = Number(v || 0)
@@ -40,6 +42,7 @@ export function ProductsClient() {
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Product[]>([])
   const [isLoading, startLoading] = useTransition()
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Product | null>(null)
@@ -85,10 +88,12 @@ export function ProductsClient() {
   function refresh(q?: string) {
     startLoading(async () => {
       try {
-        const r = await listProducts(q)
-        setItems(r)
+        const r = await listProducts({ query: q, take: PAGE_SIZE })
+        setItems(r.items)
+        setNextCursor(r.nextCursor)
       } catch {
         setItems([])
+        setNextCursor(null)
       }
     })
   }
@@ -105,6 +110,20 @@ export function ProductsClient() {
     const t = setTimeout(() => refresh(q), 200)
     return () => clearTimeout(t)
   }, [query])
+
+  function loadMore() {
+    if (!nextCursor) return
+    const q = query.trim()
+    startLoading(async () => {
+      try {
+        const r = await listProducts({ query: q, cursor: nextCursor, take: PAGE_SIZE })
+        setItems((prev) => [...prev, ...r.items])
+        setNextCursor(r.nextCursor)
+      } catch {
+        setNextCursor(null)
+      }
+    })
+  }
 
   function resetForm(p?: Product | null) {
     const x = p ?? null
@@ -547,6 +566,13 @@ export function ProductsClient() {
               </TableBody>
             </Table>
           </div>
+          {nextCursor && (
+            <div className="flex justify-center">
+              <Button type="button" variant="secondary" onClick={loadMore} disabled={isLoading}>
+                {isLoading ? "Cargando…" : "Cargar más"}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

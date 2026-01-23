@@ -8,11 +8,13 @@ import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizeCode } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
 
-export async function listProducts(query?: string) {
+export async function listProducts(options?: { query?: string; cursor?: string | null; take?: number }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  const q = query?.trim()
+  const q = options?.query?.trim()
+  const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
+
   const products = await prisma.product.findMany({
     where: {
       accountId: user.accountId,
@@ -28,28 +30,37 @@ export async function listProducts(query?: string) {
         : {}),
     },
     include: { supplier: true, category: true },
-    orderBy: { productId: "asc" },
-    take: 200,
+    orderBy: [{ productId: "asc" }, { id: "asc" }],
+    cursor: options?.cursor ? { id: options.cursor } : undefined,
+    skip: options?.cursor ? 1 : 0,
+    take: take + 1,
   })
   
+  const hasMore = products.length > take
+  const pageItems = hasMore ? products.slice(0, take) : products
+  const nextCursor = hasMore ? pageItems[pageItems.length - 1]?.id ?? null : null
+
   // Convertir Decimal a número y Date a string para serialización
-  return products.map((p) => ({
-    ...p,
-    stock: p.stock instanceof Decimal ? p.stock.toNumber() : Number(p.stock),
-    minStock: p.minStock instanceof Decimal ? p.minStock.toNumber() : Number(p.minStock),
-    createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
-    updatedAt: p.updatedAt instanceof Date ? p.updatedAt.toISOString() : p.updatedAt,
-    supplier: p.supplier ? {
-      ...p.supplier,
-      createdAt: p.supplier.createdAt instanceof Date ? p.supplier.createdAt.toISOString() : p.supplier.createdAt,
-      updatedAt: p.supplier.updatedAt instanceof Date ? p.supplier.updatedAt.toISOString() : p.supplier.updatedAt,
-    } : null,
-    category: p.category ? {
-      ...p.category,
-      createdAt: p.category.createdAt instanceof Date ? p.category.createdAt.toISOString() : p.category.createdAt,
-      updatedAt: p.category.updatedAt instanceof Date ? p.category.updatedAt.toISOString() : p.category.updatedAt,
-    } : null,
-  }))
+  return {
+    items: pageItems.map((p) => ({
+      ...p,
+      stock: p.stock instanceof Decimal ? p.stock.toNumber() : Number(p.stock),
+      minStock: p.minStock instanceof Decimal ? p.minStock.toNumber() : Number(p.minStock),
+      createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
+      updatedAt: p.updatedAt instanceof Date ? p.updatedAt.toISOString() : p.updatedAt,
+      supplier: p.supplier ? {
+        ...p.supplier,
+        createdAt: p.supplier.createdAt instanceof Date ? p.supplier.createdAt.toISOString() : p.supplier.createdAt,
+        updatedAt: p.supplier.updatedAt instanceof Date ? p.supplier.updatedAt.toISOString() : p.supplier.updatedAt,
+      } : null,
+      category: p.category ? {
+        ...p.category,
+        createdAt: p.category.createdAt instanceof Date ? p.category.createdAt.toISOString() : p.category.createdAt,
+        updatedAt: p.category.updatedAt instanceof Date ? p.category.updatedAt.toISOString() : p.category.updatedAt,
+      } : null,
+    })),
+    nextCursor,
+  }
 }
 
 export async function upsertProduct(input: {

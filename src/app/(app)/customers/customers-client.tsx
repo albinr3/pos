@@ -12,14 +12,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/hooks/use-toast"
 import { DOMINICAN_PROVINCES } from "@/lib/provinces"
 
-import { deactivateCustomer, listCustomers, upsertCustomer } from "./actions"
+import { deactivateCustomer, listCustomersPage, upsertCustomer } from "./actions"
 
-type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
+type Customer = Awaited<ReturnType<typeof listCustomersPage>>["items"][number]
+
+const PAGE_SIZE = 50
 
 export function CustomersClient() {
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Customer[]>([])
   const [isLoading, startLoading] = useTransition()
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Customer | null>(null)
@@ -33,10 +36,12 @@ export function CustomersClient() {
   function refresh(q?: string) {
     startLoading(async () => {
       try {
-        const r = await listCustomers(q)
-        setItems(r)
+        const r = await listCustomersPage({ query: q, take: PAGE_SIZE })
+        setItems(r.items)
+        setNextCursor(r.nextCursor)
       } catch {
         setItems([])
+        setNextCursor(null)
       }
     })
   }
@@ -50,6 +55,20 @@ export function CustomersClient() {
     const t = setTimeout(() => refresh(q), 200)
     return () => clearTimeout(t)
   }, [query])
+
+  function loadMore() {
+    if (!nextCursor) return
+    const q = query.trim()
+    startLoading(async () => {
+      try {
+        const r = await listCustomersPage({ query: q, cursor: nextCursor, take: PAGE_SIZE })
+        setItems((prev) => [...prev, ...r.items])
+        setNextCursor(r.nextCursor)
+      } catch {
+        setNextCursor(null)
+      }
+    })
+  }
 
   function resetForm(c?: Customer | null) {
     setEditing(c ?? null)
@@ -260,6 +279,13 @@ export function CustomersClient() {
               </TableBody>
             </Table>
           </div>
+          {nextCursor && (
+            <div className="flex justify-center">
+              <Button type="button" variant="secondary" onClick={loadMore} disabled={isLoading}>
+                {isLoading ? "Cargando…" : "Cargar más"}
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
