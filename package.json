@@ -18,6 +18,7 @@
     "backup:create": "tsx scripts/backup-db.ts"
   },
   "dependencies": {
+    "@clerk/localizations": "^3.35.1",
     "@clerk/nextjs": "^6.36.8",
     "@prisma/client": "^5.22.0",
     "@radix-ui/react-accordion": "^1.2.2",
