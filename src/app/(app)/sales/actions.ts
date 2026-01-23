@@ -318,6 +318,8 @@ export async function createSale(input: {
         await logAuditEvent({
           accountId: user.accountId,
           userId: user.id,
+          userEmail: user.email ?? null,
+          userUsername: user.username ?? null,
           action: "PRICE_OVERRIDE",
           resourceType: "Product",
           resourceId: p.id,
@@ -325,7 +327,7 @@ export async function createSale(input: {
             oldPriceCents: Number(p.priceCents),
             newPriceCents: item.unitPriceCents,
           },
-        })
+        }, tx)
       }
       
       if (!allowNegativeStock && Number(p.stock) < item.qty) {
@@ -413,6 +415,8 @@ export async function createSale(input: {
     await logAuditEvent({
       accountId: user.accountId,
       userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
       action: "SALE_CREATED",
       resourceType: "Sale",
       resourceId: sale.id,
@@ -421,7 +425,7 @@ export async function createSale(input: {
         type: sale.type,
         totalCents,
       },
-    })
+    }, tx)
 
     // Update stock
     for (const item of input.items) {
@@ -558,6 +562,8 @@ export async function cancelSale(id: string, username: string) {
     await logAuditEvent({
       accountId: user.accountId,
       userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
       action: "SALE_CANCELLED",
       resourceType: "Sale",
       resourceId: sale.id,
@@ -565,7 +571,7 @@ export async function cancelSale(id: string, username: string) {
         invoiceCode: sale.invoiceCode,
         totalCents: sale.totalCents,
       },
-    })
+    }, tx)
 
     revalidatePath("/sales")
     revalidatePath("/sales/list")
@@ -668,6 +674,8 @@ export async function updateSale(input: {
         await logAuditEvent({
           accountId: user.accountId,
           userId: user.id,
+          userEmail: user.email ?? null,
+          userUsername: user.username ?? null,
           action: "PRICE_OVERRIDE",
           resourceType: "Product",
           resourceId: p.id,
@@ -675,7 +683,7 @@ export async function updateSale(input: {
             oldPriceCents: Number(p.priceCents),
             newPriceCents: item.unitPriceCents,
           },
-        })
+        }, tx)
       }
       
       if (!allowNegativeStock && Number(p.stock) < item.qty) {
@@ -709,6 +717,8 @@ export async function updateSale(input: {
     await logAuditEvent({
       accountId: user.accountId,
       userId: user.id,
+      userEmail: user.email ?? null,
+      userUsername: user.username ?? null,
       action: "SALE_EDITED",
       resourceType: "Sale",
       resourceId: input.id,
@@ -716,7 +726,7 @@ export async function updateSale(input: {
         type: input.type,
         totalCents,
       },
-    })
+    }, tx)
 
     await tx.saleItem.createMany({
       data: input.items.map((i) => ({

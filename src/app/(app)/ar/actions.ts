@@ -115,6 +115,8 @@ export async function cancelPayment(id: string) {
     await logAuditEvent({
       accountId: currentUser.accountId,
       userId: user.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
       action: "PAYMENT_CANCELLED",
       resourceType: "Payment",
       resourceId: payment.id,
@@ -123,7 +125,7 @@ export async function cancelPayment(id: string) {
         method: payment.method,
         arId: payment.arId,
       },
-    })
+    }, tx)
 
     revalidatePath("/ar")
     revalidatePath("/dashboard")
@@ -212,6 +214,8 @@ export async function addPayment(input: {
     await logAuditEvent({
       accountId: currentUser.accountId,
       userId: currentUser.id,
+      userEmail: currentUser.email ?? null,
+      userUsername: currentUser.username ?? null,
       action: "PAYMENT_CREATED",
       resourceType: "Payment",
       resourceId: payment.id,
@@ -220,7 +224,7 @@ export async function addPayment(input: {
         method: input.method,
         arId: ar.id,
       },
-    })
+    }, tx)
 
     revalidatePath("/ar")
     revalidatePath("/dashboard")

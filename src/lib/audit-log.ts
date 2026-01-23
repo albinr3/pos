@@ -1,3 +1,5 @@
+import type { Prisma, PrismaClient } from "@prisma/client"
+
 export type AuditAction =
   | "LOGIN_SUCCESS"
   | "LOGIN_FAILED"
@@ -31,11 +33,13 @@ interface AuditLogData {
   userAgent?: string
 }
 
+type AuditClient = Pick<PrismaClient, "user" | "auditLog"> | Prisma.TransactionClient
+
 /**
  * Registra evento de auditoría
  * Por ahora en consola, luego migrar a tabla en DB
  */
-export async function logAuditEvent(data: AuditLogData) {
+export async function logAuditEvent(data: AuditLogData, client?: AuditClient) {
   try {
     const logEntry = {
       timestamp: new Date().toISOString(),
@@ -51,12 +55,12 @@ export async function logAuditEvent(data: AuditLogData) {
       return
     }
 
-    const { prisma } = await import("@/lib/db")
+    const prismaClient = client ?? (await import("@/lib/db")).prisma
     let userEmail = data.userEmail ?? null
     let userUsername = data.userUsername ?? null
 
     if (data.userId && (!userEmail || !userUsername)) {
-      const user = await prisma.user.findFirst({
+      const user = await prismaClient.user.findFirst({
         where: {
           id: data.userId,
           accountId: data.accountId,
@@ -70,7 +74,7 @@ export async function logAuditEvent(data: AuditLogData) {
       if (!userUsername) userUsername = user?.username ?? null
     }
 
-    await prisma.auditLog.create({
+    await prismaClient.auditLog.create({
       data: {
         accountId: data.accountId,
         userId: data.userId ?? null,
