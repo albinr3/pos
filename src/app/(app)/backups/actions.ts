@@ -2,8 +2,6 @@
 
 import * as fs from "fs/promises"
 import * as path from "path"
-import { exec } from "child_process"
-import { promisify } from "util"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 
@@ -102,13 +100,13 @@ export async function createBackup(): Promise<{ filename: string }> {
     throw new Error("Formato de DATABASE_URL inválido")
   }
 
-  const [, user, password, host, port, database] = urlMatch
+  const [, dbUser, password, host, port, database] = urlMatch
 
   // Crear backup usando pg_dump
   // --clean: incluye comandos DROP para limpiar antes de restaurar
   // --if-exists: usa IF EXISTS en los DROP para evitar errores
   // Usar variables de entorno directamente (funciona en todas las plataformas)
-  const command = `pg_dump -h ${host} -p ${port} -U ${user} -d ${database} --clean --if-exists -F p -f "${filepath}"`
+  const command = `pg_dump -h ${host} -p ${port} -U ${dbUser} -d ${database} --clean --if-exists -F p -f "${filepath}"`
 
   try {
     await execAsync(command, {
@@ -214,7 +212,7 @@ export async function restoreBackup(filename: string): Promise<void> {
     throw new Error("Formato de DATABASE_URL inválido")
   }
 
-  const [, user, password, host, port, database] = urlMatch
+  const [, dbUser, password, host, port, database] = urlMatch
 
   // Restaurar usando psql
   // Usar variables de entorno directamente (funciona en todas las plataformas)
@@ -222,7 +220,7 @@ export async function restoreBackup(filename: string): Promise<void> {
   const { promisify } = await import("util")
   const execAsync = promisify(exec)
   
-  const command = `psql -h ${host} -p ${port} -U ${user} -d ${database} -f "${filepath}"`
+  const command = `psql -h ${host} -p ${port} -U ${dbUser} -d ${database} -f "${filepath}"`
 
   try {
     await execAsync(command, {
