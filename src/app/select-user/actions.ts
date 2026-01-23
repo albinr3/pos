@@ -10,7 +10,7 @@ import {
   setSubUserSessionCookie,
   isClerkAuthenticated,
 } from "@/lib/auth"
-import { checkRateLimit, getClientIdentifier, RateLimitError } from "@/lib/rate-limit"
+import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 
 async function authenticateSubUser(
   accountId: string,
@@ -95,8 +95,12 @@ export async function loginSubUser(formData: FormData) {
 export async function createFirstUser(formData: FormData) {
   const accountId = formData.get("accountId") as string
   const password = formData.get("password") as string
+  const businessName = formData.get("businessName") as string
+  const username = formData.get("username") as string
+  const logoUrlRaw = (formData.get("logoUrl") as string) || ""
+  const logoUrl = logoUrlRaw.trim() || null
 
-  if (!accountId || !password) {
+  if (!accountId || !password || !businessName || !username) {
     return { error: "Todos los campos son requeridos" }
   }
 
@@ -126,14 +130,21 @@ export async function createFirstUser(formData: FormData) {
   const { prisma } = await import("@/lib/db")
   const bcrypt = await import("bcryptjs")
 
-  // Obtener datos del usuario de Clerk
-  const email = clerkUser.emailAddresses?.[0]?.emailAddress
-  const name = `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || "Usuario"
-  const ownerUsername = email ? email.split("@")[0] : "admin"
+  const trimmedBusinessName = businessName.trim()
+  if (!trimmedBusinessName) {
+    return { error: "El nombre del negocio es requerido" }
+  }
+
+  const trimmedUsername = username.trim().toLowerCase().replace(/\s/g, "")
+  if (!trimmedUsername) {
+    return { error: "El usuario es requerido" }
+  }
+
+  const displayName = username.trim() || "Administrador"
+  const email = clerkUser.emailAddresses?.[0]?.emailAddress || null
 
   // Crear el primer usuario directamente como owner
   const passwordHash = await bcrypt.hash(password, 10)
-  const trimmedUsername = ownerUsername.trim().toLowerCase()
 
   // Verificar que el username no exista (por si acaso)
   const existing = await prisma.user.findUnique({
@@ -149,11 +160,33 @@ export async function createFirstUser(formData: FormData) {
     return { error: "El nombre de usuario ya existe" }
   }
 
+  await prisma.account.update({
+    where: { id: accountId },
+    data: { name: trimmedBusinessName },
+  })
+
+  await prisma.companySettings.upsert({
+    where: { accountId },
+    update: {
+      name: trimmedBusinessName,
+      ...(logoUrl !== null && { logoUrl }),
+    },
+    create: {
+      accountId,
+      name: trimmedBusinessName,
+      phone: "",
+      address: "",
+      logoUrl,
+      allowNegativeStock: false,
+      itbisRateBp: 1800,
+    },
+  })
+
   // Crear usuario como owner
-  const newUser = await prisma.user.create({
+  await prisma.user.create({
     data: {
       accountId,
-      name: name,
+      name: displayName,
       username: trimmedUsername,
       passwordHash,
       email: email,

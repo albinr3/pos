@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
-import { User, Lock, Loader2, Building2, ChevronRight, UserPlus } from "lucide-react"
+import { UploadButton } from "@uploadthing/react"
+import type { OurFileRouter } from "@/app/api/uploadthing/core"
+import { User, Lock, Loader2, Building2, ChevronRight, UserPlus, Image as ImageIcon, Upload, X } from "lucide-react"
 import { UserButton } from "@clerk/nextjs"
 
 import { Button } from "@/components/ui/button"
@@ -31,7 +32,6 @@ type Props = {
 }
 
 export function SelectUserClient({ account, users }: Props) {
-  const router = useRouter()
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
   const [selectedUser, setSelectedUser] = useState<SubUser | null>(
@@ -40,15 +40,32 @@ export function SelectUserClient({ account, users }: Props) {
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
   
-  // Estado para crear primer usuario
-  const [showCreateForm, setShowCreateForm] = useState(users.length === 0)
+  // Estado para onboarding (primer usuario)
+  const isOnboarding = users.length === 0
+  const [onboardingStep, setOnboardingStep] = useState(isOnboarding ? 1 : 0)
+  const [businessName, setBusinessName] = useState(account.name || "")
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [newUsername, setNewUsername] = useState("ADMIN")
   const [newUserPassword, setNewUserPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
 
   const handleSelectUser = (user: SubUser) => {
     setSelectedUser(user)
     setPassword("")
     setError("")
+  }
+
+  const handleNextStep = () => {
+    if (!businessName.trim()) {
+      setError("El nombre del negocio es requerido")
+      return
+    }
+    setError("")
+    setOnboardingStep(2)
+  }
+
+  const handleBackStep = () => {
+    setError("")
+    setOnboardingStep(1)
   }
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -78,6 +95,16 @@ export function SelectUserClient({ account, users }: Props) {
   const handleCreateFirstUser = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    if (!businessName.trim()) {
+      setError("El nombre del negocio es requerido")
+      return
+    }
+
+    if (!newUsername.trim()) {
+      setError("El usuario es requerido")
+      return
+    }
+    
     if (!newUserPassword) {
       setError("La contraseña es requerida")
       return
@@ -89,16 +116,16 @@ export function SelectUserClient({ account, users }: Props) {
       return
     }
 
-    if (newUserPassword !== confirmPassword) {
-      setError("Las contraseñas no coinciden")
-      return
-    }
-
     setError("")
 
     const formData = new FormData()
     formData.set("accountId", account.id)
     formData.set("password", newUserPassword)
+    formData.set("businessName", businessName.trim())
+    formData.set("username", newUsername.trim())
+    if (logoUrl) {
+      formData.set("logoUrl", logoUrl)
+    }
 
     startTransition(async () => {
       const result = await createFirstUser(formData)
@@ -135,106 +162,195 @@ export function SelectUserClient({ account, users }: Props) {
         <CardHeader className="text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
             <Building2 className="h-6 w-6 text-purple-600" />
-            <span className="text-lg font-semibold text-purple-600">{account.name}</span>
+            <span className="text-lg font-semibold text-purple-600">
+              {isOnboarding ? "Configuración inicial" : account.name}
+            </span>
           </div>
           <CardTitle className="text-2xl">
-            {showCreateForm && users.length === 0
-              ? "Crea tu contraseña"
+            {isOnboarding
+              ? onboardingStep === 1
+                ? "Cuéntanos sobre tu negocio"
+                : "Crea tu primer usuario"
               : selectedUser
               ? "Ingresa tu contraseña"
               : "Selecciona tu usuario"}
           </CardTitle>
           <CardDescription>
-            {showCreateForm && users.length === 0
-              ? "Crea una contraseña de 4 dígitos para comenzar"
+            {isOnboarding
+              ? onboardingStep === 1
+                ? "Ingresa el nombre de tu negocio y agrega un logo opcional."
+                : "El usuario predeterminado es ADMIN. Puedes cambiarlo y crear una contraseña de 4 dígitos."
               : selectedUser
               ? `Ingresa la contraseña para ${selectedUser.name}`
               : "Elige el usuario con el que deseas trabajar"}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {showCreateForm && users.length === 0 ? (
-            // Formulario para crear primer usuario (solo contraseña de 4 dígitos)
-            <form onSubmit={handleCreateFirstUser} className="space-y-4">
-              <div className="text-center mb-4">
-                <UserPlus className="h-12 w-12 mx-auto text-purple-600 mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  Crea una contraseña de 4 dígitos para comenzar a usar el sistema
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="new-password">Contraseña (4 dígitos)</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="new-password"
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={4}
-                    value={newUserPassword}
-                    onChange={(e) => {
-                      // Solo permitir números
-                      const value = e.target.value.replace(/\D/g, "")
-                      if (value.length <= 4) {
-                        setNewUserPassword(value)
-                      }
-                    }}
-                    placeholder="0000"
-                    className="pl-10 text-center text-2xl tracking-widest"
-                    disabled={isPending}
-                    autoFocus
-                  />
+          {isOnboarding ? (
+            onboardingStep === 1 ? (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-dashed p-4">
+                  <div className="text-sm font-medium mb-2">Paso 1 de 2</div>
+                  <div className="space-y-2">
+                    <Label htmlFor="business-name">Nombre del negocio</Label>
+                    <Input
+                      id="business-name"
+                      value={businessName}
+                      onChange={(e) => setBusinessName(e.target.value)}
+                      placeholder="Ej: La Esquina Market"
+                      disabled={isPending}
+                      autoFocus
+                    />
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground text-center">
-                  Ingresa exactamente 4 dígitos numéricos
-                </p>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirmar contraseña</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    id="confirm-password"
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={4}
-                    value={confirmPassword}
-                    onChange={(e) => {
-                      // Solo permitir números
-                      const value = e.target.value.replace(/\D/g, "")
-                      if (value.length <= 4) {
-                        setConfirmPassword(value)
-                      }
-                    }}
-                    placeholder="0000"
-                    className="pl-10 text-center text-2xl tracking-widest"
-                    disabled={isPending}
-                  />
+                <div className="space-y-2">
+                  <Label>Logo (opcional)</Label>
+                  <div className="flex items-center gap-4">
+                    {logoUrl ? (
+                      <div className="relative">
+                        <div className="h-20 w-20 overflow-hidden rounded-md border bg-white">
+                          <img src={logoUrl} alt="Logo del negocio" className="h-full w-full object-contain" />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute -right-2 -top-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          onClick={() => setLogoUrl(null)}
+                          disabled={isPending}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex h-20 w-20 items-center justify-center rounded-md border border-dashed">
+                        <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="relative w-44">
+                      <div className="flex h-24 w-full flex-col items-center justify-center gap-1 rounded-md border border-dashed bg-muted/30 text-center">
+                        <Upload className="h-5 w-5 text-purple-600" aria-hidden="true" />
+                        <span className="text-sm font-medium text-purple-600">
+                          {logoUrl ? "Cambiar logo" : "Subir logo"}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">JPG, PNG. Máximo 4MB</span>
+                      </div>
+                      <UploadButton<OurFileRouter, "logoUploader">
+                        endpoint="logoUploader"
+                        onClientUploadComplete={(res) => {
+                          if (res?.[0]?.ufsUrl || res?.[0]?.url) {
+                            setLogoUrl(res[0].ufsUrl ?? res[0].url)
+                          }
+                        }}
+                        onUploadError={(uploadError: Error) => {
+                          setError(uploadError.message)
+                        }}
+                        className="absolute inset-0 z-10"
+                        appearance={{
+                          container: "h-full w-full",
+                          button: "h-full w-full mt-0 bg-transparent text-transparent hover:bg-transparent after:hidden",
+                          allowedContent: "hidden",
+                        }}
+                        content={{
+                          button() {
+                            return <span className="sr-only">Subir logo</span>
+                          },
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              {error && (
-                <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
-                  {error}
-                </div>
-              )}
-
-              <Button type="submit" className="w-full" disabled={isPending || newUserPassword.length !== 4 || confirmPassword.length !== 4}>
-                {isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creando usuario...
-                  </>
-                ) : (
-                  <>
-                    <UserPlus className="mr-2 h-4 w-4" />
-                    Crear contraseña e iniciar sesión
-                  </>
+                {error && (
+                  <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                    {error}
+                  </div>
                 )}
-              </Button>
-            </form>
+
+                <Button type="button" className="w-full" onClick={handleNextStep} disabled={isPending}>
+                  Siguiente
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleCreateFirstUser} className="space-y-4">
+                <div className="rounded-lg border border-dashed p-4">
+                  <div className="text-sm font-medium mb-2">Paso 2 de 2</div>
+                  <div className="text-sm text-muted-foreground">
+                    Negocio: <span className="font-medium text-foreground">{businessName}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="new-username">Usuario</Label>
+                  <Input
+                    id="new-username"
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value.replace(/\s/g, ""))}
+                    placeholder="ADMIN"
+                    disabled={isPending}
+                  />
+                  <p className="text-xs text-muted-foreground">Puedes cambiar el usuario si lo deseas.</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">Contraseña (4 dígitos)</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="new-password"
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      value={newUserPassword}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, "")
+                        if (value.length <= 4) {
+                          setNewUserPassword(value)
+                        }
+                      }}
+                      placeholder="0000"
+                      className="pl-10 text-center text-2xl tracking-widest"
+                      disabled={isPending}
+                      autoFocus
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Ingresa exactamente 4 dígitos numéricos
+                  </p>
+                </div>
+
+                {error && (
+                  <div className="text-sm text-destructive bg-destructive/10 p-3 rounded-md">
+                    {error}
+                  </div>
+                )}
+
+                <Button type="submit" className="w-full" disabled={isPending || newUserPassword.length !== 4}>
+                  {isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creando usuario...
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="mr-2 h-4 w-4" />
+                      Crear usuario e ingresar
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  onClick={handleBackStep}
+                  disabled={isPending}
+                >
+                  Volver
+                </Button>
+              </form>
+            )
           ) : !selectedUser ? (
             // Lista de usuarios
             <div className="space-y-2">

@@ -53,24 +53,25 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const baseLocalization = esES as any
   const clerkLocalization = {
-    ...esES,
+    ...baseLocalization,
     signIn: {
-      ...esES.signIn,
+      ...(baseLocalization.signIn ?? {}),
       start: {
-        ...esES.signIn.start,
+        ...((baseLocalization.signIn && baseLocalization.signIn.start) ?? {}),
         title: "Iniciar sesión en MOVO",
         subtitle: "¡Bienvenido de nuevo! Inicia sesión para continuar",
         actionLink: "Regístrate gratis",
       },
     },
     zxcvbn: {
-      ...esES.zxcvbn,
+      ...(baseLocalization.zxcvbn ?? {}),
       couldBeStronger: "Tu contraseña funciona, pero podría ser más fuerte. Intenta agregar más caracteres.",
       goodPassword: "Tu contraseña cumple con todos los requisitos necesarios.",
       notEnough: "Tu contraseña no es lo suficientemente fuerte.",
       suggestions: {
-        ...esES.zxcvbn?.suggestions,
+        ...(baseLocalization.zxcvbn?.suggestions ?? {}),
         allUppercase: "Usa mayúsculas en algunas letras, pero no en todas.",
         anotherWord: "Agrega otra palabra que sea menos común.",
         associatedYears: "Evita años asociados contigo.",
@@ -87,7 +88,7 @@ export default function RootLayout({
         useWords: "Usa varias palabras que no estén relacionadas.",
       },
       warnings: {
-        ...esES.zxcvbn?.warnings,
+        ...(baseLocalization.zxcvbn?.warnings ?? {}),
         common: "Esta contraseña es muy común.",
         commonNames: "Los nombres y apellidos comunes son fáciles de adivinar.",
         dates: "Las fechas son fáciles de adivinar.",
@@ -106,7 +107,7 @@ export default function RootLayout({
         wordByItself: "Una sola palabra es fácil de adivinar.",
       },
     },
-  }
+  };
 
   return (
     <ClerkProvider localization={clerkLocalization}>
