@@ -338,7 +338,7 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
                   </div>
                   <div className="flex items-center gap-2">
                     {getRoleBadge(user.role, user.isOwner)}
-                    {isOwner && !user.isOwner && (
+                    {isOwner && (
                       <>
                         <Button
                           variant="outline"
@@ -350,17 +350,19 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedUser(user)
-                            setShowDeleteDialog(true)
-                          }}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {!user.isOwner && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedUser(user)
+                              setShowDeleteDialog(true)
+                            }}
+                            className="text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </>
                     )}
                   </div>

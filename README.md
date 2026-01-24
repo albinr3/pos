@@ -302,6 +302,25 @@ Ruta: `/billing`
 - **Perfil de facturación**: Datos para generar recibos (nombre, RNC/cédula, dirección)
 - **Historial de pagos** con comprobantes
 
+### Flujo de estados de cuenta
+
+```mermaid
+flowchart LR
+  A[Cuenta creada → `TRIALING` (15 días)] --> B{¿Pago o comprobante subido antes del final del trial?}
+  B -- Sí --> C[`ACTIVE` (acceso completo, se generan cobros mensuales)]
+  B -- No --> D[`GRACE` (3 días de tolerancia)]
+  D --> E{¿Pago recibido o trial extendido durante la gracia?}
+  E -- Sí --> C
+  E -- No --> F[`BLOCKED` (acceso restringido, solo facturación y soporte)]
+  F --> G{¿Pago recibido o se reactivó manualmente?}
+  G -- Sí --> C
+  G -- No --> H[Queda bloqueada hasta que la persona encargada la reabra o se elimine]
+  C --> I[Pagos periódicos → si fallan, vuelve a reevaluar gracia/bloqueo]
+  I --> D
+```
+
+El cron job de billing (ver más abajo) ejecuta esta lógica cada noche: detecta trials vencidos, mueve cuentas a `GRACE`, bloquea las que expiraron sin pago y dispara los correos programados (7/3/2/1 días de trial, vencimiento y gracia). Desde el panel de cuentas del super admin se pueden cambiar estados, extender trials o desbloquear cuentas sin necesidad de cancelar la suscripción.
+
 ---
 
 ## Listas y Consultas
@@ -586,13 +605,13 @@ El archivo `vercel.json` ya está configurado:
   "crons": [
     {
       "path": "/api/cron/billing",
-      "schedule": "0 12 * * *"
+      "schedule": "0 4 * * *"
     }
   ]
 }
 ```
 
-**Horario:** 12:00 PM UTC (8:00 AM hora República Dominicana)
+**Horario:** 04:00 AM UTC (12:00 AM hora República Dominicana)
 
 ⚠️ **Nota:** Los cron jobs en Vercel requieren plan **Pro** o superior.
 
