@@ -420,16 +420,14 @@ export async function rejectManualPayment(
   })
 
   const now = new Date()
-  const isTrialActive =
-    payment.subscription.status === "TRIALING" &&
-    payment.subscription.trialEndsAt &&
-    payment.subscription.trialEndsAt > now
+  const graceEndsAt = addDays(now, GRACE_DAYS)
 
   await prisma.billingSubscription.update({
     where: { id: payment.subscriptionId },
     data: {
-      status: isTrialActive ? "TRIALING" : "BLOCKED",
+      status: "GRACE",
       manualVerificationStatus: "REJECTED",
+      graceEndsAt,
     },
   })
 
