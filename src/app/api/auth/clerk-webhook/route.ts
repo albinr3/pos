@@ -53,62 +53,23 @@ export async function POST(request: NextRequest) {
   }
 
   const eventType = evt.type
-  const { id, email_addresses, first_name, last_name, image_url } = evt.data
+  const { id, first_name, last_name } = evt.data
 
-  if (eventType === "user.created" || eventType === "user.updated") {
+  if (eventType === "user.created") {
     try {
-      const email = email_addresses?.[0]?.email_address
-      const name = `${first_name || ""} ${last_name || ""}`.trim() || email?.split("@")[0] || "Usuario"
+      const name = `${first_name || ""} ${last_name || ""}`.trim() || "Mi Negocio"
 
-      // Buscar o crear Account basado en clerkUserId
       let account = await prisma.account.findUnique({
         where: { clerkUserId: id },
-        include: { users: { where: { isOwner: true }, take: 1 } },
       })
 
       if (!account) {
-        // Crear nuevo Account y usuario owner
-        const baseUsername = email ? email.split("@")[0] : `user_${id.slice(0, 8)}`
-        let username = baseUsername
-
-        // Crear Account primero
-        const newAccount = await prisma.account.create({
+        await prisma.account.create({
           data: {
-            name: name || "Mi Negocio",
+            name,
             clerkUserId: id,
           },
         })
-
-        // Crear usuario owner asociado al account
-        await prisma.user.create({
-          data: {
-            accountId: newAccount.id,
-            name,
-            username,
-            email: email || null,
-            passwordHash: "$2b$10$placeholder", // Usuarios de Clerk no usan passwordHash local
-            role: "ADMIN",
-            isOwner: true,
-          },
-        })
-
-        // Recargar account con users
-        account = await prisma.account.findUnique({
-          where: { clerkUserId: id },
-          include: { users: { where: { isOwner: true }, take: 1 } },
-        })
-      } else {
-        // Actualizar usuario owner si existe
-        const ownerUser = account.users[0]
-        if (ownerUser) {
-          await prisma.user.update({
-            where: { id: ownerUser.id },
-            data: {
-              email: email || ownerUser.email,
-              name,
-            },
-          })
-        }
       }
     } catch (error) {
       console.error("Error procesando webhook de Clerk:", error)
