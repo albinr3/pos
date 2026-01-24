@@ -53,16 +53,44 @@ interface BillingClientProps {
 export function BillingClient({ initialData }: BillingClientProps) {
   const router = useRouter()
   const { toast } = useToast()
-  const [data, setData] = useState<BillingData>(initialData)
+  const [data, setData] = useState<BillingData>({
+    ...initialData,
+    bankAccounts: initialData.bankAccounts ?? [],
+    payments: initialData.payments ?? [],
+  })
   const [loading, setLoading] = useState(false)
   const [activePaymentId, setActivePaymentId] = useState<string | null>(null)
   const [uploadedProofUrl, setUploadedProofUrl] = useState<string | null>(null)
   const [uploadedProofName, setUploadedProofName] = useState<string | null>(null)
   const [uploadedProofType, setUploadedProofType] = useState<string | null>(null)
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>(
-    data.bankAccounts[0]?.id || ""
+    data.bankAccounts?.[0]?.id || ""
   )
   const pendingProofKey = "billing-proof-pending"
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return
+    console.log("[BillingClient] initial data", {
+      hasState: !!initialData?.state,
+      payments: initialData?.payments?.length ?? 0,
+      bankAccounts: initialData?.bankAccounts?.length ?? 0,
+      status: initialData?.state?.status,
+    })
+  }, [initialData])
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return
+    console.log("[BillingClient] mounted")
+    return () => {
+      console.log("[BillingClient] unmounted")
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedBankAccountId && data.bankAccounts?.length) {
+      setSelectedBankAccountId(data.bankAccounts[0].id)
+    }
+  }, [data.bankAccounts, selectedBankAccountId])
 
   // Profile form state
   const [profileForm, setProfileForm] = useState({
@@ -73,15 +101,31 @@ export function BillingClient({ initialData }: BillingClientProps) {
     phone: data.profile?.phone || "",
   })
 
+  const safeBankAccounts = data.bankAccounts ?? []
+
   // Get the selected bank account details
-  const selectedBankAccount = data.bankAccounts.find(
+  const selectedBankAccount = safeBankAccounts.find(
     (acc) => acc.id === selectedBankAccountId
   )
 
   const refreshData = async () => {
     const newData = await getBillingData()
     if (newData) {
-      setData(newData)
+      setData({
+        ...newData,
+        bankAccounts: newData.bankAccounts ?? [],
+        payments: newData.payments ?? [],
+      })
+      if (process.env.NODE_ENV === "development") {
+        console.log("[BillingClient] refreshed data", {
+          hasState: !!newData?.state,
+          payments: newData?.payments?.length ?? 0,
+          bankAccounts: newData?.bankAccounts?.length ?? 0,
+          status: newData?.state?.status,
+        })
+      }
+    } else if (process.env.NODE_ENV === "development") {
+      console.log("[BillingClient] refreshData returned null")
     }
   }
 
@@ -173,7 +217,25 @@ export function BillingClient({ initialData }: BillingClientProps) {
     }
   }
 
-  const { state, subscription, bankAccounts, payments } = data
+  if (!data?.state) {
+    return (
+      <div className="container mx-auto py-6 px-4 max-w-4xl">
+        <h1 className="text-2xl font-bold mb-4">Facturación</h1>
+        <Card className="p-6">
+          <p className="text-sm text-muted-foreground mb-4">
+            No se pudo cargar la información de facturación.
+          </p>
+          <Button onClick={refreshData} disabled={loading}>
+            Reintentar
+          </Button>
+        </Card>
+      </div>
+    )
+  }
+
+  const { state, subscription } = data
+  const bankAccounts = safeBankAccounts
+  const payments = data.payments ?? []
 
   const latestPayment = payments[0]
 
@@ -209,7 +271,9 @@ export function BillingClient({ initialData }: BillingClientProps) {
   }
 
   // Find pending payment that needs proof
-  const pendingPayment = payments.find(p => p.status === "PENDING" && p.proofs.length === 0)
+  const pendingPayment = payments.find(
+    (p) => p.status === "PENDING" && (p.proofs?.length ?? 0) === 0
+  )
   const paymentNeedingProof = activePaymentId 
     ? payments.find(p => p.id === activePaymentId) 
     : pendingPayment
@@ -738,11 +802,14 @@ export function BillingClient({ initialData }: BillingClientProps) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {payment.proofs.length > 0 && (
+                  {(payment.proofs?.length ?? 0) > 0 && (
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => window.open(payment.proofs[0].url, "_blank")}
+                      onClick={() => {
+                        const url = payment.proofs?.[0]?.url
+                        if (url) window.open(url, "_blank")
+                      }}
                     >
                       <FileText className="h-4 w-4" />
                     </Button>

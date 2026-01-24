@@ -28,6 +28,19 @@ export const billingAllowedRoutes = [
 ]
 
 export default clerkMiddleware(async (auth, req) => {
+  if (process.env.NODE_ENV === "development" && req.nextUrl.pathname.startsWith("/billing")) {
+    console.log("[Middleware] /billing", {
+      method: req.method,
+      rsc: req.headers.get("rsc"),
+      prefetch: req.headers.get("next-router-prefetch"),
+      accept: req.headers.get("accept"),
+      referer: req.headers.get("referer"),
+      userAgent: req.headers.get("user-agent"),
+      dest: req.headers.get("sec-fetch-dest"),
+      mode: req.headers.get("sec-fetch-mode"),
+      site: req.headers.get("sec-fetch-site"),
+    })
+  }
   // Permitir rutas públicas sin verificación de Clerk
   if (isPublicRoute(req)) {
     const headers = new Headers(req.headers)

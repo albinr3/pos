@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { PropsWithChildren, useMemo } from "react"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
-import type { CurrentUser } from "@/lib/auth"
+import type { BillingState, CurrentUser } from "@/lib/auth"
 import { UserButton, useClerk } from "@clerk/nextjs"
 import {
   BarChart3,
@@ -97,7 +97,11 @@ function getCachedUser(): CurrentUser | null {
   }
 }
 
-export function AppShell({ children }: PropsWithChildren) {
+type AppShellProps = PropsWithChildren<{
+  billingState?: BillingState | null
+}>
+
+export function AppShell({ children, billingState }: AppShellProps) {
   const pathname = usePathname()
   const router = useRouter()
   const { signOut } = useClerk()
@@ -108,6 +112,7 @@ export function AppShell({ children }: PropsWithChildren) {
   const [companyPhone, setCompanyPhone] = useState("")
   const [user, setUser] = useState<CurrentUser | null>(null)
   const pendingProofKey = "billing-proof-pending"
+  const isBillingRestricted = !!billingState && !billingState.canAccessApp
 
   const handleChangeUser = async () => {
     // Limpiar sesión de subusuario y redirigir a selección
@@ -169,6 +174,25 @@ export function AppShell({ children }: PropsWithChildren) {
   }, [user])
   
   useEffect(() => {
+    if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
+      const originalFetch = window.fetch.bind(window)
+      window.fetch = async (...args: Parameters<typeof fetch>) => {
+        try {
+          const first = args[0]
+          const url = typeof first === "string"
+            ? first
+            : first instanceof Request
+              ? first.url
+              : ""
+          if (url.includes("/billing")) {
+            console.log("[Debug] fetch /billing", { url, stack: new Error().stack })
+          }
+        } catch {
+          // Ignore debug errors
+        }
+        return originalFetch(...args)
+      }
+    }
     setMounted(true)
     // Inicializar auto-sincronización de cache
     initAutoSync()
@@ -251,7 +275,11 @@ export function AppShell({ children }: PropsWithChildren) {
               {filteredNav.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
                 const isOfflineDisabled = !isOnline && !OFFLINE_ALLOWED_ROUTES.has(item.href)
-                const isDisabled = (item.href === "/backups" && DISABLE_BACKUPS_NAV) || isOfflineDisabled
+                const isBillingDisabled = isBillingRestricted && item.href !== "/billing"
+                const isDisabled =
+                  (item.href === "/backups" && DISABLE_BACKUPS_NAV) ||
+                  isOfflineDisabled ||
+                  isBillingDisabled
                 if (isDisabled) {
                   return (
                     <Button
@@ -322,7 +350,11 @@ export function AppShell({ children }: PropsWithChildren) {
                   {filteredNav.map((item) => {
                     const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
                     const isOfflineDisabled = !isOnline && !OFFLINE_ALLOWED_ROUTES.has(item.href)
-                    const isDisabled = (item.href === "/backups" && DISABLE_BACKUPS_NAV) || isOfflineDisabled
+                    const isBillingDisabled = isBillingRestricted && item.href !== "/billing"
+                    const isDisabled =
+                      (item.href === "/backups" && DISABLE_BACKUPS_NAV) ||
+                      isOfflineDisabled ||
+                      isBillingDisabled
                     if (isDisabled) {
                       return (
                         <Button

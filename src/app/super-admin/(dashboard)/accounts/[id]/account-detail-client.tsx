@@ -66,7 +66,7 @@ import {
 } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import type { AccountDetail } from "../actions"
-import { deleteAccount } from "../actions"
+import { deleteAccount, simulateTrialExpiry, runBillingEngine } from "../actions"
 import { updateSubscriptionStatus, extendTrial } from "../../actions"
 
 function formatMoney(cents: number, currency: "DOP" | "USD"): string {
@@ -166,6 +166,46 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
     }
   }
 
+  const handleSimulateTrialExpiry = async () => {
+    setIsLoading(true)
+    try {
+      const result = await simulateTrialExpiry(account.id)
+      if (result.success) {
+        toast({
+          title: "Trial expirado (simulado)",
+          description: "La cuenta fue marcada como trial vencido y procesada.",
+        })
+        router.refresh()
+      } else {
+        toast({ title: "Error", description: result.error, variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al simular expiración", variant: "destructive" })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleRunBillingEngine = async () => {
+    setIsLoading(true)
+    try {
+      const result = await runBillingEngine()
+      if (result.success) {
+        toast({
+          title: "Billing engine ejecutado",
+          description: "Se procesaron las suscripciones.",
+        })
+        router.refresh()
+      } else {
+        toast({ title: "Error", description: result.error, variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al ejecutar el billing engine", variant: "destructive" })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -225,6 +265,14 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
               <DropdownMenuItem onClick={() => handleExtendTrial(15)}>
                 <Play className="mr-2 h-4 w-4" />
                 Extender trial (+15 días)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleSimulateTrialExpiry}>
+                <Clock className="mr-2 h-4 w-4" />
+                Simular fin de trial (TEST)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleRunBillingEngine}>
+                <Play className="mr-2 h-4 w-4" />
+                Ejecutar billing engine (TEST)
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem

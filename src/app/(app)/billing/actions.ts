@@ -48,6 +48,14 @@ export async function getBillingData(): Promise<{
     getBankAccounts(),
   ])
 
+  if (process.env.NODE_ENV === "development") {
+    console.log("[Billing:getBillingData] accountId:", user.accountId)
+    console.log("[Billing:getBillingData] subscription:", subscription?.id || null)
+    console.log("[Billing:getBillingData] state:", state?.status)
+    console.log("[Billing:getBillingData] payments:", payments?.length ?? 0)
+    console.log("[Billing:getBillingData] bankAccounts:", bankAccounts?.length ?? 0)
+  }
+
   return {
     subscription,
     profile,

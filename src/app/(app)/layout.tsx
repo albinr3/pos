@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/app/app-shell"
 import { BillingBanner } from "@/components/app/billing-banner"
+import { BillingRedirect } from "@/components/app/billing-redirect"
 import { ThemeProvider } from "@/components/app/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { getCurrentUser, getCurrentUserBillingState, hasClerkSession, hasSubUserSession } from "@/lib/auth"
@@ -41,21 +42,34 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     const headersList = await headers()
     const pathname =
       headersList.get("x-pathname") || headersList.get("x-invoke-path") || ""
-    
+    const accept = headersList.get("accept") || ""
+    const fetchDest = headersList.get("sec-fetch-dest") || ""
+
     // Si no está en una ruta permitida, redirigir a billing
     const isAllowedPath = BILLING_ALLOWED_PATHS.some(
       (path) => pathname === path || pathname.startsWith(path + "/")
     )
-    
+
+    // Solo redirigir en navegaciones de documento (evita loops en fetch/RSC)
+    const isDocumentRequest =
+      fetchDest === "document" || accept.includes("text/html")
+
     if (pathname && !isAllowedPath) {
-      redirect("/billing")
+      if (isDocumentRequest) {
+        redirect("/billing")
+      }
+      return (
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+          <BillingRedirect />
+        </ThemeProvider>
+      )
     }
   }
 
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
       {billingState && <BillingBanner billingState={billingState} />}
-      <AppShell>{children}</AppShell>
+      <AppShell billingState={billingState}>{children}</AppShell>
       <Toaster />
     </ThemeProvider>
   )

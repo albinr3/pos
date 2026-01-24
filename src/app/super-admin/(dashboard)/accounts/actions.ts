@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db"
 import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-auth"
+import { processBillingEngine } from "@/lib/billing"
 import { revalidatePath } from "next/cache"
 import type { BillingStatus, BillingCurrency, BillingProvider } from "@prisma/client"
 
@@ -286,5 +287,83 @@ export async function deleteAccount(accountId: string): Promise<{ success: boole
   } catch (error) {
     console.error("Error deleting account:", error)
     return { success: false, error: "Error al eliminar la cuenta" }
+  }
+}
+
+// ==========================================
+// TEMP TEST HELPERS
+// ==========================================
+
+export async function simulateTrialExpiry(
+  accountId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const admin = await getCurrentSuperAdmin()
+    if (!admin || !admin.canManageAccounts) {
+      return { success: false, error: "No tienes permisos para modificar suscripciones" }
+    }
+
+    const subscription = await prisma.billingSubscription.findUnique({
+      where: { accountId },
+    })
+
+    if (!subscription) {
+      return { success: false, error: "Suscripción no encontrada" }
+    }
+
+    const now = new Date()
+    const trialStartedAt = new Date(now)
+    trialStartedAt.setDate(trialStartedAt.getDate() - 16)
+    const trialEndsAt = new Date(now)
+    trialEndsAt.setDate(trialEndsAt.getDate() - 1)
+
+    await prisma.billingSubscription.update({
+      where: { accountId },
+      data: {
+        status: "TRIALING",
+        trialStartedAt,
+        trialEndsAt,
+        currentPeriodStartsAt: null,
+        currentPeriodEndsAt: null,
+        graceEndsAt: null,
+      },
+    })
+
+    await logSuperAdminAction(admin.id, "simulated_trial_expiry", {
+      targetAccountId: accountId,
+      metadata: { trialStartedAt, trialEndsAt },
+    })
+
+    revalidatePath("/super-admin")
+    revalidatePath("/super-admin/accounts")
+    revalidatePath(`/super-admin/accounts/${accountId}`)
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error simulating trial expiry:", error)
+    return { success: false, error: "Error al simular la expiración del trial" }
+  }
+}
+
+export async function runBillingEngine(): Promise<{ success: boolean; error?: string }> {
+  try {
+    const admin = await getCurrentSuperAdmin()
+    if (!admin || !admin.canManageAccounts) {
+      return { success: false, error: "No tienes permisos para ejecutar el engine" }
+    }
+
+    const result = await processBillingEngine()
+
+    await logSuperAdminAction(admin.id, "ran_billing_engine", {
+      metadata: result,
+    })
+
+    revalidatePath("/super-admin")
+    revalidatePath("/super-admin/accounts")
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error running billing engine:", error)
+    return { success: false, error: "Error al ejecutar el billing engine" }
   }
 }
