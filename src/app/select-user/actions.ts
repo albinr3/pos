@@ -13,6 +13,8 @@ import {
 import { createBillingSubscription } from "@/lib/billing"
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 import { logAuditEvent } from "@/lib/audit-log"
+import { sendResendEmail } from "@/lib/resend"
+import { randomInt } from "crypto"
 
 async function authenticateSubUser(
   accountId: string,
@@ -264,5 +266,214 @@ export async function createFirstUser(formData: FormData) {
   await setSubUserSessionCookie(token)
 
   // Redirigir al dashboard
+  redirect("/dashboard")
+}
+
+export async function sendSubUserTemporaryCode(formData: FormData) {
+  const accountId = formData.get("accountId") as string
+  const username = formData.get("username") as string
+
+  if (!accountId || !username) {
+    return { error: "Todos los campos son requeridos" }
+  }
+
+  try {
+    checkRateLimit(`temp-code-request:${accountId}:${username}`, {
+      windowMs: 5 * 60 * 1000,
+      maxRequests: 3,
+      blockDurationMs: 5 * 60 * 1000,
+    })
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      return {
+        error: `Demasiadas solicitudes. Intenta de nuevo en ${error.retryAfter} segundos.`,
+      }
+    }
+  }
+
+  const isAuthenticated = await isClerkAuthenticated()
+  if (!isAuthenticated) {
+    return { error: "Sesión de cuenta principal expirada. Por favor, inicia sesión de nuevo." }
+  }
+
+  const { prisma } = await import("@/lib/db")
+  const user = await prisma.user.findUnique({
+    where: {
+      accountId_username: {
+        accountId,
+        username,
+      },
+    },
+  })
+
+  if (!user) {
+    return { error: "Usuario no encontrado" }
+  }
+
+  if (!user.isActive) {
+    return { error: "Usuario desactivado" }
+  }
+
+  if (!user.email) {
+    return { error: "El usuario no tiene un email registrado" }
+  }
+
+  const code = randomInt(0, 1_000_000).toString().padStart(6, "0")
+  const bcrypt = await import("bcryptjs")
+  const codeHash = await bcrypt.hash(code, 10)
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+
+  await prisma.subUserLoginToken.create({
+    data: {
+      accountId,
+      userId: user.id,
+      codeHash,
+      expiresAt,
+    },
+  })
+
+  const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"}/select-user`
+  const subject = "Código temporal para ingresar a MOVOPos"
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.4; color: #111;">
+      <p>Hola ${user.name || user.username},</p>
+      <p>Tu código temporal para ingresar a MOVOPos es:</p>
+      <p style="font-size: 24px; font-weight: 600; margin: 16px 0;">${code}</p>
+      <p>Es válido por 10 minutos y puedes usarlo en <a href="${link}">la pantalla de selección de usuario</a>.</p>
+      <p>Una vez dentro podrás actualizar tu contraseña de 4 dígitos.</p>
+      <p style="color: #888; font-size: 12px; margin-top: 20px;">Si no solicitaste esto, ignora este correo.</p>
+    </div>
+  `
+
+  const emailSent = await sendResendEmail({
+    to: user.email,
+    subject,
+    html,
+  })
+
+  if (!emailSent) {
+    return { error: "No se pudo enviar el correo. Intenta más tarde." }
+  }
+
+  await logAuditEvent({
+    accountId,
+    userId: user.id,
+    action: "PASSWORD_RESET_REQUESTED",
+    resourceType: "User",
+    resourceId: user.id,
+    details: {
+      username,
+      email: user.email,
+    },
+  })
+
+  return { success: true, email: user.email }
+}
+
+export async function loginSubUserWithCode(formData: FormData) {
+  const accountId = formData.get("accountId") as string
+  const username = formData.get("username") as string
+  const codeRaw = formData.get("code") as string
+  const code = codeRaw?.trim()
+
+  if (!accountId || !username || !code) {
+    return { error: "Todos los campos son requeridos" }
+  }
+
+  if (!/^[0-9]{6}$/.test(code)) {
+    return { error: "El código debe tener 6 dígitos" }
+  }
+
+  try {
+    checkRateLimit(`temp-code-verify:${accountId}:${username}`, {
+      windowMs: 60 * 1000,
+      maxRequests: 4,
+      blockDurationMs: 5 * 60 * 1000,
+    })
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      return {
+        error: `Demasiados intentos. Intenta de nuevo en ${error.retryAfter} segundos.`,
+      }
+    }
+  }
+
+  const isAuthenticated = await isClerkAuthenticated()
+  if (!isAuthenticated) {
+    return { error: "Sesión de cuenta principal expirada. Por favor, inicia sesión de nuevo." }
+  }
+
+  const { prisma } = await import("@/lib/db")
+  const user = await prisma.user.findUnique({
+    where: {
+      accountId_username: {
+        accountId,
+        username,
+      },
+    },
+  })
+
+  if (!user) {
+    return { error: "Usuario no encontrado" }
+  }
+
+  if (!user.isActive) {
+    return { error: "Usuario desactivado" }
+  }
+
+  const now = new Date()
+  const token = await prisma.subUserLoginToken.findFirst({
+    where: {
+      accountId,
+      userId: user.id,
+      usedAt: null,
+      expiresAt: { gt: now },
+    },
+    orderBy: { createdAt: "desc" },
+  })
+
+  if (!token) {
+    return { error: "Código inválido o expirado" }
+  }
+
+  const bcrypt = await import("bcryptjs")
+  const isValidCode = await bcrypt.compare(code, token.codeHash)
+
+  if (!isValidCode) {
+    return { error: "Código inválido" }
+  }
+
+  await prisma.subUserLoginToken.update({
+    where: { id: token.id },
+    data: { usedAt: new Date() },
+  })
+
+  await logAuditEvent({
+    accountId,
+    userId: user.id,
+    action: "PASSWORD_RESET_COMPLETED",
+    resourceType: "User",
+    resourceId: user.id,
+    details: {
+      username,
+      method: "temporary_code",
+    },
+  })
+
+  await logAuditEvent({
+    accountId,
+    userId: user.id,
+    action: "LOGIN_SUCCESS",
+    resourceType: "User",
+    resourceId: user.id,
+    details: {
+      username,
+      method: "temporary_code",
+    },
+  })
+
+  const sessionToken = await createSubUserSession(accountId, user.id)
+  await setSubUserSessionCookie(sessionToken)
+
   redirect("/dashboard")
 }

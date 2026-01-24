@@ -13,7 +13,12 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
 
-import { loginSubUser, createFirstUser } from "./actions"
+import {
+  loginSubUser,
+  createFirstUser,
+  sendSubUserTemporaryCode,
+  loginSubUserWithCode,
+} from "./actions"
 
 type SubUser = {
   id: string
@@ -21,6 +26,7 @@ type SubUser = {
   username: string
   role: string
   isOwner: boolean
+  email?: string | null
 }
 
 type Props = {
@@ -31,6 +37,18 @@ type Props = {
   users: SubUser[]
 }
 
+function maskEmail(email: string) {
+  const [local, domain] = email.split("@")
+  if (!local || !domain) return email
+
+  if (local.length <= 2) {
+    return `${local[0]}***@${domain}`
+  }
+
+  const middle = local.slice(1, -1).replace(/./g, "*")
+  return `${local[0]}${middle}${local.slice(-1)}@${domain}`
+}
+
 export function SelectUserClient({ account, users }: Props) {
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
@@ -39,6 +57,21 @@ export function SelectUserClient({ account, users }: Props) {
   )
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  const [temporaryCode, setTemporaryCode] = useState("")
+  const [tempCodeError, setTempCodeError] = useState("")
+  const [tempCodeMessage, setTempCodeMessage] = useState<string | null>(null)
+  const [isTempCodeSent, setIsTempCodeSent] = useState(false)
+  const [isSendingTempCode, setIsSendingTempCode] = useState(false)
+  const [isVerifyingTempCode, setIsVerifyingTempCode] = useState(false)
+
+  const resetTempCodeState = () => {
+    setTemporaryCode("")
+    setTempCodeError("")
+    setTempCodeMessage(null)
+    setIsTempCodeSent(false)
+    setIsSendingTempCode(false)
+    setIsVerifyingTempCode(false)
+  }
   
   // Estado para onboarding (primer usuario)
   const isOnboarding = users.length === 0
@@ -52,6 +85,7 @@ export function SelectUserClient({ account, users }: Props) {
     setSelectedUser(user)
     setPassword("")
     setError("")
+    resetTempCodeState()
   }
 
   const handleNextStep = () => {
@@ -88,6 +122,66 @@ export function SelectUserClient({ account, users }: Props) {
           description: result.error,
           variant: "destructive",
         })
+      }
+    })
+  }
+
+  const handleSendTemporaryCode = () => {
+    if (!selectedUser) return
+
+    setTempCodeError("")
+    setTempCodeMessage(null)
+    setIsSendingTempCode(true)
+
+    const formData = new FormData()
+    formData.set("accountId", account.id)
+    formData.set("username", selectedUser.username)
+
+    startTransition(async () => {
+      const result = await sendSubUserTemporaryCode(formData)
+      if (result?.error) {
+        setTempCodeError(result.error)
+        setIsTempCodeSent(false)
+      } else {
+        setIsTempCodeSent(true)
+        setTempCodeMessage(
+          result?.email
+            ? `Se envió un código temporal a ${maskEmail(result.email)}`
+            : "Se envió un código temporal"
+        )
+        setTemporaryCode("")
+      }
+      setIsSendingTempCode(false)
+    })
+  }
+
+  const handleVerifyTemporaryCode = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!selectedUser) return
+
+    if (!temporaryCode.trim()) {
+      setTempCodeError("Ingresa el código temporal")
+      return
+    }
+
+    if (!/^[0-9]{6}$/.test(temporaryCode.trim())) {
+      setTempCodeError("Ingresa un código válido de 6 dígitos")
+      return
+    }
+
+    setTempCodeError("")
+    setIsVerifyingTempCode(true)
+
+    const formData = new FormData()
+    formData.set("accountId", account.id)
+    formData.set("username", selectedUser.username)
+    formData.set("code", temporaryCode.trim())
+
+    startTransition(async () => {
+      const result = await loginSubUserWithCode(formData)
+      if (result?.error) {
+        setTempCodeError(result.error)
+        setIsVerifyingTempCode(false)
       }
     })
   }
@@ -424,12 +518,78 @@ export function SelectUserClient({ account, users }: Props) {
                 )}
               </Button>
 
+              <div className="space-y-3 pt-3 border-t">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full justify-center"
+                  onClick={handleSendTemporaryCode}
+                  disabled={isSendingTempCode || isPending || !selectedUser.email}
+                >
+                  {isSendingTempCode ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Enviando código...
+                    </>
+                  ) : (
+                    "Enviar código temporal por email"
+                  )}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  {selectedUser.email
+                    ? `Se enviará a ${maskEmail(selectedUser.email)}`
+                    : "Este usuario no tiene email registrado"}
+                </p>
+                {tempCodeMessage && (
+                  <p className="text-xs text-slate-600 dark:text-slate-300">{tempCodeMessage}</p>
+                )}
+                {tempCodeError && (
+                  <p className="text-xs text-destructive">{tempCodeError}</p>
+                )}
+                {isTempCodeSent && selectedUser.email && (
+                  <form onSubmit={handleVerifyTemporaryCode} className="space-y-2">
+                    <Label htmlFor="temporary-code">Código temporal</Label>
+                    <Input
+                      id="temporary-code"
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={temporaryCode}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\\D/g, "")
+                        setTemporaryCode(digits.slice(0, 6))
+                      }}
+                      placeholder="000000"
+                      className="tracking-[0.3em] text-center"
+                      disabled={isVerifyingTempCode}
+                    />
+                    <Button
+                      type="submit"
+                      className="w-full"
+                      disabled={isVerifyingTempCode || temporaryCode.trim().length !== 6}
+                    >
+                      {isVerifyingTempCode ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Verificando...
+                        </>
+                      ) : (
+                        "Usar código temporal"
+                      )}
+                    </Button>
+                  </form>
+                )}
+              </div>
+
               {users.length > 1 && (
                 <Button
                   type="button"
                   variant="ghost"
                   className="w-full"
-                  onClick={() => setSelectedUser(null)}
+                  onClick={() => {
+                    resetTempCodeState()
+                    setSelectedUser(null)
+                  }}
                   disabled={isPending}
                 >
                   Cambiar usuario

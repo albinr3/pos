@@ -53,6 +53,8 @@ enum AuditAction {
   SETTINGS_CHANGED
   USER_CREATED
   USER_DELETED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET_COMPLETED
   UNAUTHORIZED_ACCESS
   USER_UPDATED
   USER_DEACTIVATED
@@ -96,11 +98,11 @@ enum AuditAction {
 // ==========================================
 
 enum BillingStatus {
-  TRIALING  // En período de prueba
-  ACTIVE    // Suscripción activa con pago válido
-  GRACE     // Período de gracia (3 días después de vencimiento)
-  BLOCKED   // Bloqueado por falta de pago
-  CANCELED  // Cancelado por el usuario
+  TRIALING // En período de prueba
+  ACTIVE // Suscripción activa con pago válido
+  GRACE // Período de gracia (3 días después de vencimiento)
+  BLOCKED // Bloqueado por falta de pago
+  CANCELED // Cancelado por el usuario
 }
 
 enum BillingCurrency {
@@ -110,34 +112,34 @@ enum BillingCurrency {
 
 enum BillingProvider {
   MANUAL // Transferencia bancaria
-  LEMON  // Lemon Squeezy (tarjeta)
+  LEMON // Lemon Squeezy (tarjeta)
 }
 
 enum BillingPaymentStatus {
-  PENDING  // Esperando verificación (transferencia)
-  PAID     // Pagado y verificado
-  FAILED   // Falló el pago (tarjeta)
+  PENDING // Esperando verificación (transferencia)
+  PAID // Pagado y verificado
+  FAILED // Falló el pago (tarjeta)
   REJECTED // Rechazado (comprobante inválido)
 }
 
 enum ManualVerificationStatus {
-  NONE     // No aplica (pago con tarjeta)
-  PENDING  // Esperando verificación
+  NONE // No aplica (pago con tarjeta)
+  PENDING // Esperando verificación
   APPROVED // Comprobante aprobado
   REJECTED // Comprobante rechazado
 }
 
 enum UnitType {
   UNIDAD // Piezas (default) - solo enteros
-  KG     // Kilogramos
-  LIBRA  // Libras
-  GRAMO  // Gramos
-  LITRO  // Litros
-  ML     // Mililitros
-  GALON  // Galones
-  METRO  // Metros
-  CM     // Centímetros
-  PIE    // Pies
+  KG // Kilogramos
+  LIBRA // Libras
+  GRAMO // Gramos
+  LITRO // Litros
+  ML // Mililitros
+  GALON // Galones
+  METRO // Metros
+  CM // Centímetros
+  PIE // Pies
 }
 
 // ==========================================
@@ -149,29 +151,30 @@ model Account {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  name        String  // Nombre del negocio
-  clerkUserId String  @unique // ID del usuario Clerk que es dueño
+  name        String // Nombre del negocio
+  clerkUserId String @unique // ID del usuario Clerk que es dueño
 
   // Relaciones - todos los datos del tenant
-  users            User[]
-  companySettings  CompanySettings?
-  customers        Customer[]
-  suppliers        Supplier[]
-  categories       Category[]
-  products         Product[]
-  sales            Sale[]
-  purchases        Purchase[]
-  operatingExpenses OperatingExpense[]
-  returns          Return[]
-  quotes           Quote[]
-  auditLogs        AuditLog[]
-  invoiceSequences InvoiceSequence[]
-  returnSequence   ReturnSequence?
-  quoteSequence    QuoteSequence?
+  users              User[]
+  companySettings    CompanySettings?
+  customers          Customer[]
+  suppliers          Supplier[]
+  categories         Category[]
+  products           Product[]
+  sales              Sale[]
+  purchases          Purchase[]
+  operatingExpenses  OperatingExpense[]
+  returns            Return[]
+  quotes             Quote[]
+  auditLogs          AuditLog[]
+  invoiceSequences   InvoiceSequence[]
+  returnSequence     ReturnSequence?
+  quoteSequence      QuoteSequence?
+  subUserLoginTokens SubUserLoginToken[]
 
   // Billing
-  billingSubscription BillingSubscription?
-  billingProfile      BillingProfile?
+  billingSubscription  BillingSubscription?
+  billingProfile       BillingProfile?
   billingNotifications BillingNotification[]
 
   @@index([clerkUserId])
@@ -191,32 +194,33 @@ model User {
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   name         String
-  username     String   // Único dentro del account
-  passwordHash String   // Requerido para autenticación de subcuenta
-  email        String?  // Email opcional
+  username     String // Único dentro del account
+  passwordHash String // Requerido para autenticación de subcuenta
+  email        String? // Email opcional
   role         UserRole @default(CAJERO)
 
   // Si es el dueño/creador del account (admin principal)
   isOwner Boolean @default(false)
 
   // Autenticación por WhatsApp (legacy, puede ser removido)
-  whatsappNumber    String?   // Número de WhatsApp en formato E.164
+  whatsappNumber     String? // Número de WhatsApp en formato E.164
   whatsappVerifiedAt DateTime? // Fecha de verificación del número
 
   // Granular permissions
-  canOverridePrice  Boolean @default(false)
-  canCancelSales    Boolean @default(false)
-  canCancelReturns  Boolean @default(false)
-  canCancelPayments Boolean @default(false)
-  canEditSales      Boolean @default(false)
-  canEditProducts   Boolean @default(false)
-  canChangeSaleType Boolean @default(false)
+  canOverridePrice    Boolean @default(false)
+  canCancelSales      Boolean @default(false)
+  canCancelReturns    Boolean @default(false)
+  canCancelPayments   Boolean @default(false)
+  canEditSales        Boolean @default(false)
+  canEditProducts     Boolean @default(false)
+  canChangeSaleType   Boolean @default(false)
   canSellWithoutStock Boolean @default(false)
-  canManageBackups  Boolean @default(false)
+  canManageBackups    Boolean @default(false)
   canViewProductCosts Boolean @default(false)
   canViewProfitReport Boolean @default(false)
 
-  isActive Boolean @default(true)
+  isActive           Boolean             @default(true)
+  subUserLoginTokens SubUserLoginToken[]
 
   // Relaciones
   sales              Sale[]
@@ -239,6 +243,23 @@ model User {
   @@index([email])
 }
 
+model SubUserLoginToken {
+  id        String    @id @default(cuid())
+  accountId String
+  userId    String
+  codeHash  String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 // ==========================================
 // COMPANY SETTINGS
 // ==========================================
@@ -258,7 +279,7 @@ model CompanySettings {
   logoUrl String?
 
   allowNegativeStock Boolean @default(false)
-  itbisRateBp Int @default(1800)
+  itbisRateBp        Int     @default(1800)
 
   barcodeLabelSize  String @default("4x2")
   shippingLabelSize String @default("4x6")
@@ -586,10 +607,10 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   accountId String
-  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   userId       String?
-  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user         User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
   userEmail    String?
   userUsername String?
 
@@ -648,11 +669,11 @@ model PurchaseItem {
   productId String
   product   Product @relation(fields: [productId], references: [id])
 
-  qty            Decimal @db.Decimal(10, 3)
-  unitCostCents  Int
-  discountPercentBp Int @default(0)
-  netCostCents   Int @default(0)
-  lineTotalCents Int
+  qty               Decimal @db.Decimal(10, 3)
+  unitCostCents     Int
+  discountPercentBp Int     @default(0)
+  netCostCents      Int     @default(0)
+  lineTotalCents    Int
 }
 
 // ==========================================
@@ -756,7 +777,7 @@ model Quote {
   quoteNumber Int
   quoteCode   String // e.g. COT-00001
 
-  quotedAt DateTime @default(now())
+  quotedAt   DateTime  @default(now())
   validUntil DateTime?
 
   customerId String?
@@ -810,18 +831,18 @@ model BankAccount {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  bankName      String  // Nombre del banco (ej: "Banco Popular Dominicano")
-  accountType   String  // Tipo de cuenta (ej: "Cuenta de Ahorros", "Cuenta Corriente")
-  accountNumber String  // Número de cuenta
-  accountName   String  // Nombre del titular
-  currency      String  @default("DOP") // Moneda de la cuenta
+  bankName      String // Nombre del banco (ej: "Banco Popular Dominicano")
+  accountType   String // Tipo de cuenta (ej: "Cuenta de Ahorros", "Cuenta Corriente")
+  accountNumber String // Número de cuenta
+  accountName   String // Nombre del titular
+  currency      String @default("DOP") // Moneda de la cuenta
 
   // Información adicional opcional
-  bankLogo      String? // URL del logo del banco
-  instructions  String? // Instrucciones adicionales
+  bankLogo     String? // URL del logo del banco
+  instructions String? // Instrucciones adicionales
 
-  isActive      Boolean @default(true)
-  displayOrder  Int     @default(0) // Para ordenar en la UI
+  isActive     Boolean @default(true)
+  displayOrder Int     @default(0) // Para ordenar en la UI
 
   payments BillingPayment[]
 
@@ -868,7 +889,7 @@ model BillingSubscription {
   lemonSubscriptionId String?
 
   // Precios en centavos
-  priceUsdCents Int @default(2000)  // $20.00 USD
+  priceUsdCents Int @default(2000) // $20.00 USD
   priceDopCents Int @default(130000) // RD$1,300 DOP (incluye impuestos)
 
   payments BillingPayment[]
@@ -892,10 +913,10 @@ model BillingProfile {
   accountId String  @unique
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  legalName String  // Nombre legal o razón social
-  taxId     String  // Cédula o RNC
-  address   String  // Dirección fiscal
-  email     String  // Email para recibos
+  legalName String // Nombre legal o razón social
+  taxId     String // Cédula o RNC
+  address   String // Dirección fiscal
+  email     String // Email para recibos
   phone     String? // Teléfono (opcional)
 
   @@index([accountId])
@@ -917,8 +938,8 @@ model BillingPayment {
   currency    BillingCurrency
   provider    BillingProvider
 
-  status BillingPaymentStatus @default(PENDING)
-  paidAt DateTime?
+  status          BillingPaymentStatus @default(PENDING)
+  paidAt          DateTime?
   rejectionReason String?
 
   // Para transferencias manuales
@@ -954,10 +975,10 @@ model BillingPaymentProof {
   paymentId String
   payment   BillingPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
-  url         String   // URL del archivo en UploadThing
+  url         String // URL del archivo en UploadThing
   uploadedAt  DateTime @default(now())
-  amountCents Int?     // Monto del comprobante (opcional)
-  note        String?  // Nota adicional
+  amountCents Int? // Monto del comprobante (opcional)
+  note        String? // Nota adicional
 
   @@index([paymentId])
 }
@@ -973,8 +994,8 @@ model BillingReceipt {
   paymentId String
   payment   BillingPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
-  receiptNumber String   @unique // Número de recibo interno (e.g., REC-00001)
-  issuedAt      DateTime @default(now())
+  receiptNumber String    @unique // Número de recibo interno (e.g., REC-00001)
+  issuedAt      DateTime  @default(now())
   emailSentAt   DateTime? // Cuando se envió por email
 
   // Snapshot de datos del perfil al momento de emisión
@@ -997,8 +1018,8 @@ model BillingNotification {
   accountId String
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  type    String  // trial_7, trial_3, due_3, due_1, grace_2, blocked, etc.
-  channel String  // email, in_app
+  type    String // trial_7, trial_3, due_3, due_1, grace_2, blocked, etc.
+  channel String // email, in_app
   sentAt  DateTime @default(now())
 
   // Metadata adicional
@@ -1014,10 +1035,10 @@ model BillingNotification {
 // ==========================================
 
 enum SuperAdminRole {
-  OWNER    // Acceso total
-  ADMIN    // Puede gestionar cuentas y pagos
-  FINANCE  // Solo puede ver y aprobar pagos
-  SUPPORT  // Solo puede ver información, no modificar
+  OWNER // Acceso total
+  ADMIN // Puede gestionar cuentas y pagos
+  FINANCE // Solo puede ver y aprobar pagos
+  SUPPORT // Solo puede ver información, no modificar
 }
 
 model SuperAdmin {
@@ -1057,7 +1078,7 @@ model SuperAdminAuditLog {
   superAdminId String
   superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
 
-  action          String  // approved_payment, blocked_account, etc.
+  action          String // approved_payment, blocked_account, etc.
   targetAccountId String?
   targetPaymentId String?
 
@@ -1081,12 +1102,12 @@ model WhatsappOtp {
   expiresAt   DateTime
   consumedAt  DateTime?
   purpose     String
-  attempts    Int    @default(0)
+  attempts    Int       @default(0)
   ipAddress   String?
   userAgent   String?
 
   userId String?
-  user   User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([phoneNumber, createdAt])
   @@index([phoneNumber, expiresAt])

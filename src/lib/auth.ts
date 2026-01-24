@@ -62,6 +62,7 @@ export type SubUser = {
   username: string
   role: UserRole
   isOwner: boolean
+  email?: string | null
 }
 
 // ==========================================
@@ -308,6 +309,7 @@ export async function listSubUsers(accountId: string): Promise<SubUser[]> {
       username: true,
       role: true,
       isOwner: true,
+      email: true,
     },
     orderBy: [
       { isOwner: "desc" },

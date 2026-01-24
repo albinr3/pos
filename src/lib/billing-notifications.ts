@@ -10,6 +10,7 @@
 import { differenceInDays } from "date-fns"
 import { prisma } from "@/lib/db"
 import { NOTIFICATION_DAYS } from "@/lib/billing"
+import { sendResendEmail } from "@/lib/resend"
 
 // ==========================================
 // TYPES
@@ -35,47 +36,6 @@ type NotificationChannel = "email" | "in_app"
 // ==========================================
 // EMAIL SENDING (Resend integration)
 // ==========================================
-
-async function sendEmail(
-  to: string,
-  subject: string,
-  html: string
-): Promise<boolean> {
-  const resendApiKey = process.env.RESEND_API_KEY
-  const emailFrom = process.env.EMAIL_FROM || "facturacion@movopos.com"
-
-  if (!resendApiKey) {
-    console.log("RESEND_API_KEY not configured, skipping email")
-    return false
-  }
-
-  try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: emailFrom,
-        to,
-        subject,
-        html,
-      }),
-    })
-
-    if (!response.ok) {
-      const error = await response.text()
-      console.error("Failed to send email:", error)
-      return false
-    }
-
-    return true
-  } catch (error) {
-    console.error("Error sending email:", error)
-    return false
-  }
-}
 
 // ==========================================
 // EMAIL TEMPLATES
@@ -384,7 +344,7 @@ export async function sendBillingNotifications(): Promise<{
             
             if (!(await hasNotificationBeenSent(account.id, type, "email"))) {
               const { subject, html } = getTrialEmailContent(day, accountName)
-              const success = await sendEmail(email, subject, html)
+              const success = await sendResendEmail({ to: email, subject, html })
               
               if (success) {
                 await recordNotification(account.id, type, "email", { daysRemaining: day })
@@ -408,7 +368,7 @@ export async function sendBillingNotifications(): Promise<{
             
             if (!(await hasNotificationBeenSent(account.id, type, "email"))) {
               const { subject, html } = getDueEmailContent(day, accountName)
-              const success = await sendEmail(email, subject, html)
+              const success = await sendResendEmail({ to: email, subject, html })
               
               if (success) {
                 await recordNotification(account.id, type, "email", { daysRemaining: day })
@@ -432,7 +392,7 @@ export async function sendBillingNotifications(): Promise<{
             
             if (!(await hasNotificationBeenSent(account.id, type, "email"))) {
               const { subject, html } = getGraceEmailContent(day, accountName)
-              const success = await sendEmail(email, subject, html)
+              const success = await sendResendEmail({ to: email, subject, html })
               
               if (success) {
                 await recordNotification(account.id, type, "email", { daysRemaining: day })
@@ -450,7 +410,7 @@ export async function sendBillingNotifications(): Promise<{
       if (subscription.status === "BLOCKED") {
         if (!(await hasNotificationBeenSent(account.id, "blocked", "email"))) {
           const { subject, html } = getBlockedEmailContent(accountName)
-          const success = await sendEmail(email, subject, html)
+          const success = await sendResendEmail({ to: email, subject, html })
           
           if (success) {
             await recordNotification(account.id, "blocked", "email")
