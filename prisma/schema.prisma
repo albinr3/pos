@@ -527,7 +527,7 @@ model SaleItem {
   sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   productId String
-  product   Product @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   qty Decimal @db.Decimal(10, 3)
 
@@ -667,7 +667,7 @@ model PurchaseItem {
   purchase   Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
 
   productId String
-  product   Product @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   qty               Decimal @db.Decimal(10, 3)
   unitCostCents     Int
@@ -755,7 +755,7 @@ model ReturnItem {
   saleItem   SaleItem @relation(fields: [saleItemId], references: [id])
 
   productId String
-  product   Product @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   qty Decimal @db.Decimal(10, 3)
 
@@ -812,7 +812,7 @@ model QuoteItem {
   quote   Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   productId String
-  product   Product @relation(fields: [productId], references: [id])
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   qty Decimal @db.Decimal(10, 3)
 
