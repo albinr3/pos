@@ -155,8 +155,7 @@ export function SelectUserClient({ account, users }: Props) {
     })
   }
 
-  const handleVerifyTemporaryCode = (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleVerifyTemporaryCode = () => {
     if (!selectedUser) return
 
     if (!temporaryCode.trim()) {
@@ -547,7 +546,7 @@ export function SelectUserClient({ account, users }: Props) {
                   <p className="text-xs text-destructive">{tempCodeError}</p>
                 )}
                 {isTempCodeSent && selectedUser.email && (
-                  <form onSubmit={handleVerifyTemporaryCode} className="space-y-2">
+                  <div className="space-y-2">
                     <Label htmlFor="temporary-code">Código temporal</Label>
                     <Input
                       id="temporary-code"
@@ -564,9 +563,10 @@ export function SelectUserClient({ account, users }: Props) {
                       disabled={isVerifyingTempCode}
                     />
                     <Button
-                      type="submit"
+                      type="button"
                       className="w-full"
                       disabled={isVerifyingTempCode || temporaryCode.trim().length !== 6}
+                      onClick={handleVerifyTemporaryCode}
                     >
                       {isVerifyingTempCode ? (
                         <>
@@ -577,7 +577,7 @@ export function SelectUserClient({ account, users }: Props) {
                         "Usar código temporal"
                       )}
                     </Button>
-                  </form>
+                  </div>
                 )}
               </div>
 
