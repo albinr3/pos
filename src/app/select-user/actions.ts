@@ -355,6 +355,8 @@ export async function sendSubUserTemporaryCode(formData: FormData) {
     return { error: "No se pudo enviar el correo. Intenta más tarde." }
   }
 
+  console.log("Temporary code sent", { accountId, username, email: user.email, code })
+
   await logAuditEvent({
     accountId,
     userId: user.id,
@@ -432,12 +434,16 @@ export async function loginSubUserWithCode(formData: FormData) {
     orderBy: { createdAt: "desc" },
   })
 
+  console.log("Retrieved token", { tokenId: token?.id, expiresAt: token?.expiresAt })
+
   if (!token) {
     return { error: "Código inválido o expirado" }
   }
 
   const bcrypt = await import("bcryptjs")
   const isValidCode = await bcrypt.compare(code, token.codeHash)
+
+  console.log("Code validation", { code, isValidCode })
 
   if (!isValidCode) {
     return { error: "Código inválido" }
@@ -474,6 +480,8 @@ export async function loginSubUserWithCode(formData: FormData) {
 
   const sessionToken = await createSubUserSession(accountId, user.id)
   await setSubUserSessionCookie(sessionToken)
+
+  console.log("Temporary login success, session cookie set", { accountId, userId: user.id })
 
   redirect("/dashboard")
 }
