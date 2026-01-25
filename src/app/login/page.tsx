@@ -360,7 +360,7 @@ function LoginContent() {
         </div>
 
         {/* Contenedor principal con layout responsive */}
-        <div className="relative z-10 w-full max-w-6xl mx-auto">
+        <div className="relative z-10 w-full max-w-6xl px-4 sm:px-6 mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
             {/* Ilustración - Visible solo en pantallas grandes */}
             <div className="hidden lg:flex justify-center items-center">
@@ -377,7 +377,7 @@ function LoginContent() {
             </div>
 
             {/* Card de login con diseño moderno */}
-            <div className="w-full max-w-md mx-auto">
+            <div className="w-full max-w-md mx-auto min-w-0">
               <Card className="backdrop-blur-xl bg-white/95 dark:bg-gray-900/95 border-white/20 shadow-2xl">
                 <CardHeader className="text-center space-y-4 pb-6">
                   <div className="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center mb-2"
@@ -387,10 +387,10 @@ function LoginContent() {
                   >
                     <Mail className="h-8 w-8 text-white" />
                   </div>
-                  <CardTitle className="text-3xl font-bold tracking-tight bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent">
+                  <CardTitle className="text-3xl sm:text-4xl font-bold tracking-tight bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent break-words">
                     Bienvenido a MOVOPos
                   </CardTitle>
-                  <CardDescription className="text-base">
+                  <CardDescription className="text-sm sm:text-base break-words">
                     Sistema de ventas e inventario para tu negocio
                   </CardDescription>
                 </CardHeader>
@@ -407,7 +407,7 @@ function LoginContent() {
                       </div>
                       <div className="flex-1 text-left">
                         <div className="font-semibold text-base">Continuar con Email o Google</div>
-                        <div className="text-xs text-muted-foreground mt-0.5">
+                        <div className="text-xs text-muted-foreground mt-0.5 break-words leading-relaxed">
                           Usa tu correo electrónico, Google u otro proveedor
                         </div>
                       </div>
