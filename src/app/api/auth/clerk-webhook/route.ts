@@ -9,6 +9,8 @@ export const runtime = "nodejs"
 export async function POST(request: NextRequest) {
   // Lazy import de Prisma para evitar inicialización durante el build
   const { prisma } = await import("@/lib/db")
+  const { sendResendEmail } = await import("@/lib/resend")
+  const { renderWelcomeOwnerEmail } = await import("@/lib/resend/templates")
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
 
   if (!WEBHOOK_SECRET) {
@@ -53,23 +55,46 @@ export async function POST(request: NextRequest) {
   }
 
   const eventType = evt.type
-  const { id, first_name, last_name } = evt.data
+  const { id, first_name, last_name, email_addresses } = evt.data
 
   if (eventType === "user.created") {
     try {
       const name = `${first_name || ""} ${last_name || ""}`.trim() || "Mi Negocio"
+
+      // Extraer el email primario del usuario
+      const primaryEmail = email_addresses?.find(
+        (e: { id: string; email_address: string }) => e.email_address
+      )?.email_address as string | undefined
 
       let account = await prisma.account.findUnique({
         where: { clerkUserId: id },
       })
 
       if (!account) {
-        await prisma.account.create({
+        account = await prisma.account.create({
           data: {
             name,
             clerkUserId: id,
           },
         })
+
+        // Enviar correo de bienvenida al nuevo owner
+        if (primaryEmail) {
+          try {
+            const { subject, html } = await renderWelcomeOwnerEmail({ name })
+            const emailSent = await sendResendEmail({
+              to: primaryEmail,
+              subject,
+              html,
+            })
+
+            if (!emailSent) {
+              console.warn("No se pudo enviar el correo de bienvenida a", primaryEmail)
+            }
+          } catch (emailError) {
+            console.error("Error enviando correo de bienvenida:", emailError)
+          }
+        }
       }
     } catch (error) {
       console.error("Error procesando webhook de Clerk:", error)

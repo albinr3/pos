@@ -94,3 +94,26 @@ export async function renderSubUserTemporaryCodeEmail(
   const subject = `Código temporal para ${brandName}`
   return { subject, html }
 }
+
+type WelcomeOwnerTemplateData = {
+  name: string
+}
+
+export async function renderWelcomeOwnerEmail(data: WelcomeOwnerTemplateData) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const loginUrl = `${appUrl}/login`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+
+  const html = await renderTemplate("welcome-owner.html", {
+    brandName,
+    userName: data.name,
+    loginUrl,
+    appUrl,
+    supportEmail,
+  })
+
+  const subject = `¡Bienvenido a ${brandName}!`
+  return { subject, html }
+}
