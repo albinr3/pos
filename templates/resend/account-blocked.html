@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cuenta bloqueada</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 32px;
+    }
+    .card {
+      max-width: 600px;
+      margin: 0 auto;
+      background: #111827;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.65);
+      overflow: hidden;
+    }
+    .header {
+      padding: 32px;
+      background: linear-gradient(135deg, #991b1b, #7f1d1d);
+      color: white;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0.01em;
+    }
+    .header p {
+      opacity: 0.9;
+      margin: 8px 0 0;
+      font-size: 16px;
+    }
+    .content {
+      padding: 32px;
+      line-height: 1.6;
+      color: #cbd5e1;
+    }
+    .content h2 {
+      margin-top: 0;
+      color: #e2e8f0;
+    }
+    .content p {
+      margin: 16px 0;
+    }
+    .blocked-box {
+      background: rgba(153, 27, 27, 0.2);
+      border: 2px solid rgba(153, 27, 27, 0.5);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 20px 0;
+      text-align: center;
+    }
+    .blocked-box .icon {
+      font-size: 48px;
+      margin-bottom: 8px;
+    }
+    .blocked-box p {
+      margin: 8px 0;
+      color: #fca5a5;
+      font-weight: 600;
+      font-size: 16px;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 24px;
+      padding: 14px 28px;
+      border-radius: 12px;
+      text-decoration: none;
+      color: white;
+      font-weight: 600;
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+    }
+    .footer {
+      padding: 20px 32px 28px;
+      background: #0f172a;
+      text-align: center;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .footer a {
+      color: #a5b4fc;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>🔒 Cuenta bloqueada</h1>
+      <p>Acceso restringido por falta de pago</p>
+    </div>
+    <div class="content">
+      <h2>Hola {{accountName}},</h2>
+      <div class="blocked-box">
+        <div class="icon">🔒</div>
+        <p>Tu cuenta de {{brandName}} ha sido bloqueada</p>
+      </div>
+      <p>
+        Tu cuenta ha sido bloqueada por falta de pago. Para recuperar el acceso 
+        a tu sistema de punto de venta, por favor realiza el pago correspondiente.
+      </p>
+      <p>
+        Una vez que tu pago sea procesado, tu cuenta será reactivada automáticamente 
+        y podrás continuar usando todas las funcionalidades.
+      </p>
+      <a class="button" href="{{billingUrl}}">Reactivar mi cuenta</a>
+      <p style="margin-top: 24px; font-size: 14px; color: #94a3b8;">
+        Si crees que esto es un error, por favor contáctanos en 
+        <a style="color: #a5b4fc; text-decoration: none;" href="mailto:{{supportEmail}}">{{supportEmail}}</a>.
+      </p>
+    </div>
+  </div>
+  <div class="footer">
+    © {{year}} {{brandName}} · <a href="{{appUrl}}">Ir al portal</a>
+  </div>
+</body>
+</html>

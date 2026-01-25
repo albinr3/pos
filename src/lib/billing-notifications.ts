@@ -11,6 +11,12 @@ import { differenceInDays } from "date-fns"
 import { prisma } from "@/lib/db"
 import { NOTIFICATION_DAYS } from "@/lib/billing"
 import { sendResendEmail } from "@/lib/resend"
+import {
+  renderTrialExpiringEmail,
+  renderSubscriptionDueEmail,
+  renderGracePeriodEmail,
+  renderAccountBlockedEmail,
+} from "@/lib/resend/templates"
 
 // ==========================================
 // TYPES
@@ -38,226 +44,8 @@ type NotificationChannel = "email" | "in_app"
 // ==========================================
 
 // ==========================================
-// EMAIL TEMPLATES
+// EMAIL TEMPLATES - Now using external templates from /templates/resend/
 // ==========================================
-
-function getTrialEmailContent(daysRemaining: number, accountName: string) {
-  const subject =
-    daysRemaining === 0
-      ? "Tu período de prueba termina hoy"
-      : `Te quedan ${daysRemaining} días de prueba`
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #3b82f6; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-        .content { background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px; }
-        .button { display: inline-block; background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 16px; }
-        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>MOVOPos</h1>
-        </div>
-        <div class="content">
-          <h2>Hola ${accountName},</h2>
-          <p>
-            ${
-              daysRemaining === 0
-                ? "Tu período de prueba de MOVOPos termina hoy."
-                : `Te quedan <strong>${daysRemaining} días</strong> de período de prueba en MOVOPos.`
-            }
-          </p>
-          <p>
-            Para continuar usando todas las funcionalidades sin interrupciones, 
-            te recomendamos elegir un plan de pago.
-          </p>
-          <p>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"}/billing" class="button">
-              Ver planes de pago
-            </a>
-          </p>
-          <p style="margin-top: 20px;">
-            Si tienes alguna pregunta, no dudes en contactarnos.
-          </p>
-        </div>
-        <div class="footer">
-          <p>© ${new Date().getFullYear()} MOVOPos. Todos los derechos reservados.</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
-
-  return { subject, html }
-}
-
-function getDueEmailContent(daysRemaining: number, accountName: string) {
-  const subject =
-    daysRemaining === 0
-      ? "Tu suscripción vence hoy"
-      : `Tu suscripción vence en ${daysRemaining} días`
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #f59e0b; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-        .content { background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px; }
-        .button { display: inline-block; background: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 16px; }
-        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>MOVOPos</h1>
-        </div>
-        <div class="content">
-          <h2>Hola ${accountName},</h2>
-          <p>
-            ${
-              daysRemaining === 0
-                ? "Tu suscripción de MOVOPos vence hoy."
-                : `Tu suscripción de MOVOPos vence en <strong>${daysRemaining} días</strong>.`
-            }
-          </p>
-          <p>
-            Para evitar interrupciones en el servicio, por favor realiza tu pago 
-            antes del vencimiento.
-          </p>
-          <p>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"}/billing" class="button">
-              Ir a facturación
-            </a>
-          </p>
-        </div>
-        <div class="footer">
-          <p>© ${new Date().getFullYear()} MOVOPos. Todos los derechos reservados.</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
-
-  return { subject, html }
-}
-
-function getGraceEmailContent(daysRemaining: number, accountName: string) {
-  const subject =
-    daysRemaining === 0
-      ? "⚠️ Tu cuenta será bloqueada hoy"
-      : `⚠️ Tu cuenta será bloqueada en ${daysRemaining} días`
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #ef4444; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-        .content { background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px; }
-        .button { display: inline-block; background: #ef4444; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 16px; }
-        .warning { background: #fef2f2; border: 1px solid #ef4444; padding: 12px; border-radius: 6px; margin: 16px 0; }
-        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>⚠️ Acción requerida</h1>
-        </div>
-        <div class="content">
-          <h2>Hola ${accountName},</h2>
-          <div class="warning">
-            <strong>
-              ${
-                daysRemaining === 0
-                  ? "Tu cuenta será bloqueada hoy si no realizas el pago."
-                  : `Tu cuenta será bloqueada en ${daysRemaining} días si no realizas el pago.`
-              }
-            </strong>
-          </div>
-          <p>
-            Tu período de gracia está por terminar. Una vez bloqueada, no podrás 
-            acceder a tu sistema de punto de venta hasta que regularices tu pago.
-          </p>
-          <p>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"}/billing" class="button">
-              Pagar ahora
-            </a>
-          </p>
-        </div>
-        <div class="footer">
-          <p>© ${new Date().getFullYear()} MOVOPos. Todos los derechos reservados.</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
-
-  return { subject, html }
-}
-
-function getBlockedEmailContent(accountName: string) {
-  const subject = "🔒 Tu cuenta ha sido bloqueada"
-
-  const html = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #991b1b; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-        .content { background: #f9fafb; padding: 20px; border-radius: 0 0 8px 8px; }
-        .button { display: inline-block; background: #16a34a; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 16px; }
-        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <div class="header">
-          <h1>🔒 Cuenta bloqueada</h1>
-        </div>
-        <div class="content">
-          <h2>Hola ${accountName},</h2>
-          <p>
-            Tu cuenta de MOVOPos ha sido bloqueada por falta de pago.
-          </p>
-          <p>
-            Para recuperar el acceso a tu sistema de punto de venta, por favor 
-            realiza el pago correspondiente.
-          </p>
-          <p>
-            <a href="${process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"}/billing" class="button">
-              Reactivar mi cuenta
-            </a>
-          </p>
-          <p style="margin-top: 20px;">
-            Si crees que esto es un error, por favor contáctanos.
-          </p>
-        </div>
-        <div class="footer">
-          <p>© ${new Date().getFullYear()} MOVOPos. Todos los derechos reservados.</p>
-        </div>
-      </div>
-    </body>
-    </html>
-  `
-
-  return { subject, html }
-}
 
 // ==========================================
 // NOTIFICATION LOGIC
@@ -343,7 +131,10 @@ export async function sendBillingNotifications(): Promise<{
             const type = `trial_${day}` as NotificationType
             
             if (!(await hasNotificationBeenSent(account.id, type, "email"))) {
-              const { subject, html } = getTrialEmailContent(day, accountName)
+              const { subject, html } = await renderTrialExpiringEmail({
+                accountName,
+                daysRemaining: day,
+              })
               const success = await sendResendEmail({ to: email, subject, html })
               
               if (success) {
@@ -367,7 +158,10 @@ export async function sendBillingNotifications(): Promise<{
             const type = `due_${day}` as NotificationType
             
             if (!(await hasNotificationBeenSent(account.id, type, "email"))) {
-              const { subject, html } = getDueEmailContent(day, accountName)
+              const { subject, html } = await renderSubscriptionDueEmail({
+                accountName,
+                daysRemaining: day,
+              })
               const success = await sendResendEmail({ to: email, subject, html })
               
               if (success) {
@@ -391,7 +185,10 @@ export async function sendBillingNotifications(): Promise<{
             const type = `grace_${day}` as NotificationType
             
             if (!(await hasNotificationBeenSent(account.id, type, "email"))) {
-              const { subject, html } = getGraceEmailContent(day, accountName)
+              const { subject, html } = await renderGracePeriodEmail({
+                accountName,
+                daysRemaining: day,
+              })
               const success = await sendResendEmail({ to: email, subject, html })
               
               if (success) {
@@ -409,7 +206,9 @@ export async function sendBillingNotifications(): Promise<{
       // Check blocked notification (send once when blocked)
       if (subscription.status === "BLOCKED") {
         if (!(await hasNotificationBeenSent(account.id, "blocked", "email"))) {
-          const { subject, html } = getBlockedEmailContent(accountName)
+          const { subject, html } = await renderAccountBlockedEmail({
+            accountName,
+          })
           const success = await sendResendEmail({ to: email, subject, html })
           
           if (success) {

@@ -117,3 +117,143 @@ export async function renderWelcomeOwnerEmail(data: WelcomeOwnerTemplateData) {
   const subject = `¡Bienvenido a ${brandName}!`
   return { subject, html }
 }
+
+// ==========================================
+// BILLING EMAIL TEMPLATES
+// ==========================================
+
+type TrialExpiringTemplateData = {
+  accountName: string
+  daysRemaining: number
+}
+
+export async function renderTrialExpiringEmail(
+  data: TrialExpiringTemplateData
+) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const billingUrl = `${appUrl}/billing`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+
+  const message =
+    data.daysRemaining === 0
+      ? `Tu período de prueba de ${brandName} termina hoy.`
+      : `Te quedan <span class="highlight">${data.daysRemaining} días</span> de período de prueba en ${brandName}.`
+
+  const html = await renderTemplate("trial-expiring.html", {
+    brandName,
+    accountName: data.accountName,
+    message,
+    billingUrl,
+    appUrl,
+    supportEmail,
+    year: new Date().getFullYear().toString(),
+  })
+
+  const subject =
+    data.daysRemaining === 0
+      ? "Tu período de prueba termina hoy"
+      : `Te quedan ${data.daysRemaining} días de prueba`
+
+  return { subject, html }
+}
+
+type SubscriptionDueTemplateData = {
+  accountName: string
+  daysRemaining: number
+}
+
+export async function renderSubscriptionDueEmail(
+  data: SubscriptionDueTemplateData
+) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const billingUrl = `${appUrl}/billing`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+
+  const message =
+    data.daysRemaining === 0
+      ? `Tu suscripción de ${brandName} vence hoy.`
+      : `Tu suscripción de ${brandName} vence en ${data.daysRemaining} días.`
+
+  const html = await renderTemplate("subscription-due.html", {
+    brandName,
+    accountName: data.accountName,
+    message,
+    billingUrl,
+    appUrl,
+    supportEmail,
+    year: new Date().getFullYear().toString(),
+  })
+
+  const subject =
+    data.daysRemaining === 0
+      ? "Tu suscripción vence hoy"
+      : `Tu suscripción vence en ${data.daysRemaining} días`
+
+  return { subject, html }
+}
+
+type GracePeriodTemplateData = {
+  accountName: string
+  daysRemaining: number
+}
+
+export async function renderGracePeriodEmail(data: GracePeriodTemplateData) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const billingUrl = `${appUrl}/billing`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+
+  const message =
+    data.daysRemaining === 0
+      ? "Tu cuenta será bloqueada hoy si no realizas el pago."
+      : `Tu cuenta será bloqueada en ${data.daysRemaining} días si no realizas el pago.`
+
+  const html = await renderTemplate("grace-period.html", {
+    brandName,
+    accountName: data.accountName,
+    message,
+    billingUrl,
+    appUrl,
+    supportEmail,
+    year: new Date().getFullYear().toString(),
+  })
+
+  const subject =
+    data.daysRemaining === 0
+      ? "⚠️ Tu cuenta será bloqueada hoy"
+      : `⚠️ Tu cuenta será bloqueada en ${data.daysRemaining} días`
+
+  return { subject, html }
+}
+
+type AccountBlockedTemplateData = {
+  accountName: string
+}
+
+export async function renderAccountBlockedEmail(
+  data: AccountBlockedTemplateData
+) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const billingUrl = `${appUrl}/billing`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+
+  const html = await renderTemplate("account-blocked.html", {
+    brandName,
+    accountName: data.accountName,
+    billingUrl,
+    appUrl,
+    supportEmail,
+    year: new Date().getFullYear().toString(),
+  })
+
+  const subject = "🔒 Tu cuenta ha sido bloqueada"
+
+  return { subject, html }
+}
