@@ -1,13 +1,22 @@
 import { redirect } from "next/navigation"
-import { getAccountAndUsers } from "./actions"
+import { getAccountAndUsers, clearInvalidSubUserSession } from "./actions"
 import { SelectUserClient } from "./select-user-client"
-import { hasCompleteSession } from "@/lib/auth"
+import { hasCompleteSession, hasSubUserSession } from "@/lib/auth"
 
 export default async function SelectUserPage() {
   // Si ya tiene sesión completa, ir al dashboard
   const hasSession = await hasCompleteSession()
   if (hasSession) {
     redirect("/dashboard")
+  }
+
+  // Si hay sesión de subusuario pero no es válida (cuenta cambió),
+  // limpiarla para evitar inconsistencias
+  const hasSubUser = await hasSubUserSession()
+  if (hasSubUser) {
+    // La sesión existe pero no es válida (hasCompleteSession retornó false)
+    // Esto significa que el usuario cambió de cuenta en Clerk
+    await clearInvalidSubUserSession()
   }
 
   // Obtener account y usuarios

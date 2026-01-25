@@ -8,6 +8,7 @@ import {
   authenticateSubUser as authenticateSubUserBase,
   createSubUserSession,
   setSubUserSessionCookie,
+  clearSubUserSession,
   isClerkAuthenticated,
 } from "@/lib/auth"
 import { createBillingSubscription } from "@/lib/billing"
@@ -65,6 +66,14 @@ export async function getAccountAndUsers() {
     },
     users,
   }
+}
+
+/**
+ * Limpia la sesión de subusuario (Server Action)
+ * Se usa cuando hay inconsistencias entre la sesión de Clerk y la de subusuario
+ */
+export async function clearInvalidSubUserSession() {
+  await clearSubUserSession()
 }
 
 export async function loginSubUser(formData: FormData) {

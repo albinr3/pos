@@ -587,7 +587,8 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   if (!account || account.id !== subUserSession.accountId) {
     // La sesión de subusuario no corresponde al Account del Clerk actual
-    await clearSubUserSession()
+    // No podemos limpiar cookies aquí porque esta función puede ser llamada
+    // desde Server Components. La limpieza se hace en el middleware o logout.
     return null
   }
 
@@ -597,7 +598,8 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   })
 
   if (!user || !user.isActive || user.accountId !== account.id) {
-    await clearSubUserSession()
+    // No podemos limpiar cookies aquí porque esta función puede ser llamada
+    // desde Server Components. La limpieza se hace en el middleware o logout.
     return null
   }
 
