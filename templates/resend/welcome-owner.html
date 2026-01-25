@@ -76,14 +76,18 @@
       padding: 16px;
       box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
     }
+    .features .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
     .features .icon {
-      font-size: 24px;
-      margin-bottom: 8px;
+      font-size: 20px;
     }
     .features .title {
       font-weight: 600;
       color: #111827;
-      margin-bottom: 4px;
     }
     .features .desc {
       font-size: 13px;
@@ -144,23 +148,31 @@
       </p>
       <div class="features">
         <div>
-          <div class="icon">📦</div>
-          <div class="title">Productos</div>
+          <div class="header">
+            <span class="icon">📦</span>
+            <span class="title">Productos</span>
+          </div>
           <div class="desc">Gestiona tu inventario fácilmente</div>
         </div>
         <div>
-          <div class="icon">💰</div>
-          <div class="title">Ventas</div>
+          <div class="header">
+            <span class="icon">💰</span>
+            <span class="title">Ventas</span>
+          </div>
           <div class="desc">Punto de venta rápido e intuitivo</div>
         </div>
         <div>
-          <div class="icon">📊</div>
-          <div class="title">Reportes</div>
+          <div class="header">
+            <span class="icon">📊</span>
+            <span class="title">Reportes</span>
+          </div>
           <div class="desc">Analiza el rendimiento de tu negocio</div>
         </div>
         <div>
-          <div class="icon">👥</div>
-          <div class="title">Usuarios</div>
+          <div class="header">
+            <span class="icon">👥</span>
+            <span class="title">Usuarios</span>
+          </div>
           <div class="desc">Agrega empleados con permisos</div>
         </div>
       </div>
