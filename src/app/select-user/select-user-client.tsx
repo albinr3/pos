@@ -532,8 +532,8 @@ export function SelectUserClient({ account, users }: Props) {
                   <>
                     <Button
                       type="button"
-                      variant="ghost"
-                      className="w-full justify-center"
+                      variant="outline"
+                      className="w-full justify-center border-purple-600 text-purple-600 hover:bg-purple-50 dark:border-purple-400 dark:text-purple-400 dark:hover:bg-purple-950/30"
                       onClick={handleSendTemporaryCode}
                       disabled={isSendingTempCode || isPending || !selectedUser.email}
                     >
