@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { normalizePhoneNumber } from "@/lib/whatsapp"
 import { createSession, setSessionCookie } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
+import { checkRateLimit, getClientIdentifier, RateLimitError } from "@/lib/rate-limit"
 
 // Marcar como dinámica para evitar ejecución durante el build
 export const dynamic = "force-dynamic"
@@ -11,6 +12,26 @@ export async function POST(request: NextRequest) {
   // Lazy import de Prisma para evitar inicialización durante el build
   const { prisma } = await import("@/lib/db")
   try {
+    // 🔐 RATE LIMITING - proteger brute-force/dos en verificacion de OTP
+    const clientIp = getClientIdentifier(request)
+    try {
+      checkRateLimit(`otp-verify:ip:${clientIp}`, {
+        windowMs: 60 * 1000, // 1 min
+        maxRequests: 20,
+        // Sin bloqueo largo: solo limitar por ventana para no romper redes compartidas.
+      })
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: `Demasiados intentos. Intenta de nuevo en ${error.retryAfter} segundos.` },
+          {
+            status: 429,
+            headers: { "Retry-After": String(error.retryAfter) },
+          }
+        )
+      }
+    }
+
     const body = await request.json()
     const { phoneNumber, code } = body
 
@@ -35,6 +56,25 @@ export async function POST(request: NextRequest) {
         { error: "Número de teléfono inválido" },
         { status: 400 }
       )
+    }
+
+    // Rate limit adicional por numero para evitar adivinacion de codigos a un objetivo especifico
+    try {
+      checkRateLimit(`otp-verify:phone:${normalizedPhone}`, {
+        windowMs: 10 * 60 * 1000, // 10 min
+        maxRequests: 10,
+        blockDurationMs: 10 * 60 * 1000,
+      })
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: `Demasiados intentos. Intenta de nuevo en ${error.retryAfter} segundos.` },
+          {
+            status: 429,
+            headers: { "Retry-After": String(error.retryAfter) },
+          }
+        )
+      }
     }
 
     // Buscar OTP válido

@@ -285,8 +285,9 @@ Ruta: `/backups`
 Ruta: `/billing`
 - **Trial de 15 días** al crear cuenta
 - **Dos métodos de pago**:
-  - **Transferencia bancaria (DOP)**: RD$1,300/mes
-  - **Tarjeta de crédito (USD)**: $20/mes vía Lemon Squeezy
+  - **Transferencia bancaria (DOP)**: Precio según plan asignado
+  - **Tarjeta de crédito (USD)**: Precio según plan asignado vía Lemon Squeezy
+- **Planes de precios personalizados**: El Super Admin puede crear diferentes planes y asignarlos a cuentas específicas (ver Super Admin → Planes)
 - **Múltiples cuentas bancarias**: El usuario selecciona a qué banco transferir
 - **Subida de comprobantes**: Al subir el primer comprobante se activa el acceso inmediatamente
 - **Estados de suscripción**:
@@ -580,11 +581,18 @@ Configura estas variables en Settings → Environment Variables:
 ### Configurar Lemon Squeezy (pagos USD)
 1. Crea cuenta en [lemonsqueezy.com](https://lemonsqueezy.com)
 2. Crea una tienda (Store) → copia el `LEMON_STORE_ID`
-3. Crea un producto con precio $20/mes → copia el `LEMON_VARIANT_ID_USD`
-4. Ve a Settings → Webhooks → crea uno:
+3. Crea productos/variantes para cada plan de precios:
+   - Producto "Plan Estándar" → $20/mes → copia el `variant_id`
+   - Producto "Plan Promocional" → $10/mes → copia el `variant_id`
+   - (puedes crear tantos como necesites)
+4. En `.env` usa el variant ID del plan por defecto: `LEMON_VARIANT_ID_USD`
+5. En Super Admin → Planes, asigna los variant IDs correspondientes a cada plan
+6. Ve a Settings → Webhooks → crea uno:
    - URL: `https://tu-app.vercel.app/api/webhooks/lemon`
    - Eventos: Todos los de subscription
    - Copia el Signing Secret a `LEMON_WEBHOOK_SECRET`
+
+**Nota sobre variantes:** Cada plan de precios puede tener su propio `lemonVariantId`. Cuando un usuario paga con tarjeta, el sistema usa automáticamente el variant ID del plan asignado a su cuenta. Si no tiene plan asignado, usa el `LEMON_VARIANT_ID_USD` del `.env`.
 
 ### Configurar Resend (emails de billing)
 1. Crea cuenta en [resend.com](https://resend.com)
@@ -750,6 +758,47 @@ npx prisma generate
   - Tamaño máximo: 2MB por imagen
   - Las imágenes se almacenan en CDN de Uploadthing
 
+### Sistema de Logging de Errores
+El sistema incluye un logger de errores integrado que guarda errores en la base de datos para monitoreo en producción:
+
+**Uso básico:**
+```typescript
+import { logError, ErrorCodes } from "@/lib/error-logger"
+
+try {
+  await someOperation()
+} catch (error) {
+  await logError(error as Error, {
+    code: ErrorCodes.SALE_CREATE_ERROR,
+    accountId: user.accountId,
+    endpoint: "/sales/actions",
+    metadata: { additionalInfo: "..." },
+  })
+  throw error
+}
+```
+
+**Códigos de error disponibles (`ErrorCodes`):**
+- `AUTH_FAILED`, `AUTH_EXPIRED`, `AUTH_UNAUTHORIZED`
+- `BILLING_PAYMENT_FAILED`, `BILLING_SUBSCRIPTION_ERROR`, `BILLING_WEBHOOK_ERROR`
+- `DB_CONNECTION_ERROR`, `DB_QUERY_ERROR`, `DB_TRANSACTION_ERROR`
+- `SALE_CREATE_ERROR`, `SALE_CANCEL_ERROR`, `SALE_SYNC_ERROR`
+- `INVENTORY_UPDATE_ERROR`, `INVENTORY_NEGATIVE_STOCK`
+- `EXTERNAL_OCR_ERROR`, `EXTERNAL_EMAIL_ERROR`, `EXTERNAL_WHATSAPP_ERROR`
+- `VALIDATION_ERROR`, `NOT_FOUND`, `RATE_LIMITED`, `UNKNOWN_ERROR`
+
+**Severidades:**
+- `LOW`: Errores menores
+- `MEDIUM`: Errores que afectan parcialmente (default)
+- `HIGH`: Errores críticos que bloquean funcionalidad
+- `CRITICAL`: Errores que afectan todo el sistema
+
+**Características:**
+- Sanitización automática de datos sensibles (passwords, tokens, API keys)
+- Determinación automática de severidad basada en el tipo de error
+- Contexto completo: stack trace, endpoint, IP, user agent
+- Ver errores en `/super-admin/errors`
+
 ---
 
 ## Problemas Comunes
@@ -809,6 +858,37 @@ npx prisma generate
 ### Cuentas bancarias
 - CRUD de cuentas bancarias (activar/desactivar).
 
+### Planes de Precios
+Ruta: `/super-admin/plans`
+- Crear/editar planes de precios personalizados
+- Cada plan tiene:
+  - Nombre y descripción
+  - Precio en USD (para pagos con tarjeta)
+  - Precio en DOP (para transferencias)
+  - **Lemon Squeezy Variant ID** (para usar diferentes productos en Lemon)
+  - Estado (activo/inactivo)
+  - Marcador de plan por defecto
+- Asignar planes a cuentas individuales desde el detalle de cuenta
+- Las nuevas cuentas reciben automáticamente el plan por defecto
+- Los precios se copian al momento de asignar el plan
+
+### Monitor de Errores
+Ruta: `/super-admin/errors`
+- Visualizar errores del sistema en producción
+- Filtros por severidad (CRITICAL, HIGH, MEDIUM, LOW)
+- Filtros por estado (resueltos/sin resolver)
+- Búsqueda por mensaje, código o endpoint
+- Filtros por fecha
+- Estadísticas en tiempo real:
+  - Total de errores
+  - Sin resolver
+  - Por severidad
+  - Últimas 24h / 7 días
+- Resolver errores individual o masivamente con notas
+- Eliminar errores antiguos resueltos (+30 días)
+- Contexto completo: stack trace, endpoint, IP, metadata
+- Sanitización automática de datos sensibles (passwords, tokens, etc.)
+
 ### Seguridad y auditoría
 - Roles y permisos granulares (OWNER/ADMIN/FINANCE/SUPPORT).
 - Audit log de acciones del super admin.
@@ -818,13 +898,16 @@ npx prisma generate
 - `/super-admin/accounts`
 - `/super-admin/accounts/[id]`
 - `/super-admin/payments`
+- `/super-admin/plans`
 - `/super-admin/banks`
+- `/super-admin/errors`
 - `/super-admin/reports` (placeholder)
 - `/super-admin/settings` (placeholder)
 
 ### Migraciones y seed
-- Modelos: `SuperAdmin`, `SuperAdminAuditLog`, enum `SuperAdminRole`.
+- Modelos: `SuperAdmin`, `SuperAdminAuditLog`, `BillingPlan`, `ErrorLog`, enum `SuperAdminRole`, enum `ErrorSeverity`.
 - Seed crea un super admin por defecto (override con `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD`, `SUPER_ADMIN_NAME`).
+- La migración de `BillingPlan` crea automáticamente un plan "Estándar" por defecto ($20 USD / RD$1,300 DOP).
 
 ### Módulos principales
 - Dashboard: `/dashboard`

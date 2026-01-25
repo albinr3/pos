@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bienvenido a {{brandName}}</title>
+  <style>
+    :root {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background-color: #0f172a;
+      color: #0f172a;
+    }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, rgba(99, 102, 241, 0.25), transparent 45%),
+        #0f172a;
+      color: #0f172a;
+      display: flex;
+      justify-content: center;
+      padding: 36px 16px 40px;
+    }
+    .page {
+      max-width: 600px;
+      width: 100%;
+      background: #0f172a;
+      border-radius: 24px;
+      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.55);
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .hero {
+      padding: 36px 32px 28px;
+      background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
+      color: white;
+    }
+    .hero .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.15);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+    }
+    .hero h1 {
+      margin: 16px 0 12px;
+      font-size: 32px;
+      line-height: 1.2;
+    }
+    .hero p {
+      margin: 0;
+      font-size: 16px;
+      opacity: 0.9;
+    }
+    .card {
+      background: #f8fafc;
+      padding: 32px;
+      color: #0f172a;
+      line-height: 1.6;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 24px;
+    }
+    .credentials {
+      margin: 24px 0;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .credentials div {
+      background: white;
+      border-radius: 14px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      padding: 16px;
+      box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    }
+    dt {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #475569;
+      margin-bottom: 4px;
+    }
+    dd {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #111827;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 22px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      border-radius: 10px;
+      text-decoration: none;
+      color: white;
+      font-weight: 600;
+      font-size: 16px;
+      margin-top: 16px;
+    }
+    .button:hover {
+      opacity: 0.95;
+    }
+    .note {
+      margin-top: 24px;
+      font-size: 14px;
+      color: #475569;
+    }
+    .note a {
+      color: #0f172a;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .footer {
+      padding: 20px 32px 28px;
+      background: #0f172a;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 13px;
+      text-align: center;
+    }
+    .footer a {
+      color: rgba(255, 255, 255, 0.9);
+      text-decoration: none;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <span class="pill">{{brandName}}</span>
+      <h1>Tu espacio de ventas está listo</h1>
+      <p>Ya puedes gestionar productos, ventas y reportes desde cualquier dispositivo.</p>
+    </div>
+    <div class="card">
+      <h2>Hola {{userName}},</h2>
+      <p>
+        Tu acceso ha sido activado. Por ahora puedes usar las credenciales temporales
+        que aparecen abajo, y te sugerimos cambiar tu contraseña apenas ingreses.
+      </p>
+      <div class="credentials">
+        <div>
+          <dt>Usuario</dt>
+          <dd>{{userHandle}}</dd>
+        </div>
+        <div>
+          <dt>Contraseña temporal</dt>
+          <dd>{{temporaryPassword}}</dd>
+        </div>
+      </div>
+      <p>
+        Cuando estés listo, haz clic en el botón para empezar. Si ya conoces tu equipo,
+        puedes compartir este correo con quien inicie sesión a continuación.
+      </p>
+      <a class="button" href="{{loginUrl}}">Entrar a {{brandName}}</a>
+      <p class="note">
+        ¿Dudas? Escríbenos a <a href="mailto:{{supportEmail}}">{{supportEmail}}</a> o visita
+        <a href="{{appUrl}}">el portal de administración</a> para ajustar permisos.
+      </p>
+    </div>
+    <div class="footer">
+      © {{brandName}} · <a href="{{appUrl}}">Ir al portal</a>
+    </div>
+  </div>
+</body>
+</html>

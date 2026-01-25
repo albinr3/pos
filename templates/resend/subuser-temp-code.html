@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Código temporal</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 32px;
+    }
+    .card {
+      max-width: 520px;
+      margin: 0 auto;
+      background: #111827;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.65);
+      overflow: hidden;
+    }
+    .header {
+      padding: 32px;
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: white;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: 0.01em;
+    }
+    .content {
+      padding: 32px;
+      line-height: 1.6;
+      color: #cbd5f5;
+    }
+    .code {
+      display: inline-flex;
+      padding: 18px 28px;
+      background: rgba(99, 102, 241, 0.15);
+      border-radius: 16px;
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      font-size: 28px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 24px;
+      padding: 14px 22px;
+      border-radius: 12px;
+      text-decoration: none;
+      color: white;
+      font-weight: 600;
+      background: linear-gradient(135deg, #34d399, #10b981);
+    }
+    .note {
+      margin-top: 24px;
+      font-size: 14px;
+      color: #9ca3af;
+    }
+    .footer {
+      padding: 20px 32px 28px;
+      background: #0f172a;
+      text-align: center;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .footer a {
+      color: #a5b4fc;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>Tu código temporal</h1>
+      <p style="opacity: 0.8; margin: 8px 0 0;">{{brandName}}</p>
+    </div>
+    <div class="content">
+      <p>Hola {{userName}},</p>
+      <p>
+        Tu código temporal para ingresar a {{brandName}} vence en 10 minutos.
+        Úsalo en la pantalla de selección de usuario para completar el acceso.
+      </p>
+      <div class="code">{{code}}</div>
+      <p>
+        Si no solicitaste este código, puedes ignorar este correo o contactarnos en
+        <a style="color: #a5b4fc; text-decoration: none;" href="mailto:{{supportEmail}}">{{supportEmail}}</a>.
+      </p>
+      <a class="button" href="{{loginUrl}}">Ingresar a {{brandName}}</a>
+      <p class="note">
+        Usuario vinculado: {{username}} · Puedes actualizar tu contraseña desde tu zona segura después de iniciar sesión.
+      </p>
+    </div>
+  </div>
+  <div class="footer">
+    {{brandName}} · <a href="{{appUrl}}">Ir al portal</a>
+  </div>
+</body>
+</html>

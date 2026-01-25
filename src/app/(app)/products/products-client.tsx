@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition, type FocusEvent } from "react"
 import { Edit, Plus, Printer, Search, Trash2 } from "lucide-react"
 import { UnitType } from "@prisma/client"
 
@@ -70,6 +70,10 @@ export function ProductsClient() {
   // Unidades de compra y venta
   const [purchaseUnit, setPurchaseUnit] = useState<UnitType>("KG")
   const [saleUnit, setSaleUnit] = useState<UnitType>("KG")
+
+  const selectAllOnFocus = (event: FocusEvent<HTMLInputElement>) => {
+    event.target.select()
+  }
 
   useEffect(() => {
     // Obtener usuario actual con permisos
@@ -330,12 +334,13 @@ export function ProductsClient() {
                           <Label>
                             Precio de venta por ({getUnitInfo("UNIDAD").abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
                           </Label>
-                          <Input 
-                            value={price} 
-                            onChange={(e) => setPrice(e.target.value)} 
-                            inputMode="decimal" 
-                            required 
+                          <Input
+                            value={price}
+                            onChange={(e) => setPrice(e.target.value)}
+                            inputMode="decimal"
+                            required
                             disabled={editing ? (!user || (!user.canOverridePrice && user.role !== "ADMIN")) : false}
+                            onFocus={selectAllOnFocus}
                           />
                         </div>
                         {(user?.canViewProductCosts || user?.role === "ADMIN") && (
@@ -343,18 +348,36 @@ export function ProductsClient() {
                             <Label>
                               Costo por ({getUnitInfo("UNIDAD").abbr}) (RD$) <span className="text-red-500">*</span>
                             </Label>
-                            <Input value={cost} onChange={(e) => setCost(e.target.value)} inputMode="decimal" required />
+                            <Input
+                              value={cost}
+                              onChange={(e) => setCost(e.target.value)}
+                              inputMode="decimal"
+                              required
+                              onFocus={selectAllOnFocus}
+                            />
                           </div>
                         )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="grid gap-2">
                           <Label>Existencia ({getUnitInfo("UNIDAD").abbr})</Label>
-                          <Input value={stock} onChange={(e) => setStock(e.target.value)} inputMode="numeric" placeholder="Ej: 100" />
+                          <Input
+                            value={stock}
+                            onChange={(e) => setStock(e.target.value)}
+                            inputMode="numeric"
+                            placeholder="Ej: 100"
+                            onFocus={selectAllOnFocus}
+                          />
                         </div>
                         <div className="grid gap-2">
                           <Label>Existencia mínima ({getUnitInfo("UNIDAD").abbr})</Label>
-                          <Input value={minStock} onChange={(e) => setMinStock(e.target.value)} inputMode="numeric" placeholder="Ej: 10" />
+                          <Input
+                            value={minStock}
+                            onChange={(e) => setMinStock(e.target.value)}
+                            inputMode="numeric"
+                            placeholder="Ej: 10"
+                            onFocus={selectAllOnFocus}
+                          />
                         </div>
                       </div>
                     </TabsContent>
@@ -404,12 +427,13 @@ export function ProductsClient() {
                           <Label>
                             Precio de venta por ({getUnitInfo(saleUnit).abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
                           </Label>
-                          <Input 
-                            value={price} 
-                            onChange={(e) => setPrice(e.target.value)} 
-                            inputMode="decimal" 
-                            required 
+                          <Input
+                            value={price}
+                            onChange={(e) => setPrice(e.target.value)}
+                            inputMode="decimal"
+                            required
                             disabled={editing ? (!user || (!user.canOverridePrice && user.role !== "ADMIN")) : false}
+                            onFocus={selectAllOnFocus}
                           />
                         </div>
                         {(user?.canViewProductCosts || user?.role === "ADMIN") && (
@@ -417,7 +441,13 @@ export function ProductsClient() {
                             <Label>
                               Costo por ({getUnitInfo(purchaseUnit).abbr}) (RD$) <span className="text-red-500">*</span>
                             </Label>
-                            <Input value={cost} onChange={(e) => setCost(e.target.value)} inputMode="decimal" required />
+                            <Input
+                              value={cost}
+                              onChange={(e) => setCost(e.target.value)}
+                              inputMode="decimal"
+                              required
+                              onFocus={selectAllOnFocus}
+                            />
                           </div>
                         )}
                       </div>

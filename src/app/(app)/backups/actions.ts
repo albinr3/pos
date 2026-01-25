@@ -4,6 +4,7 @@ import * as fs from "fs/promises"
 import * as path from "path"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
+import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 
 const BACKUPS_DIR = path.join(process.cwd(), "backups")
 const READONLY_BACKUPS = process.env.BACKUPS_READONLY === "true" || process.env.VERCEL === "1"
@@ -29,6 +30,18 @@ interface BackupFile {
 }
 
 export async function listBackups(): Promise<BackupFile[]> {
+  const user = await checkBackupPermission()
+  try {
+    checkRateLimit(`backups:list:${user.accountId}:${user.id}`, {
+      windowMs: 30 * 1000, // 30s
+      maxRequests: 30,
+    })
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      throw new Error(`Demasiadas solicitudes. Intenta de nuevo en ${error.retryAfter} segundos.`)
+    }
+  }
+
   try {
     await fs.access(BACKUPS_DIR)
   } catch {
@@ -66,6 +79,20 @@ export async function createBackup(): Promise<{ filename: string }> {
   if (READONLY_BACKUPS) {
     throw new Error("Backups en modo solo lectura en este entorno")
   }
+
+  try {
+    // Crear backups es costoso: limitar fuerte
+    checkRateLimit(`backups:create:${user.accountId}:${user.id}`, {
+      windowMs: 10 * 60 * 1000, // 10 min
+      maxRequests: 3,
+      blockDurationMs: 30 * 60 * 1000,
+    })
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      throw new Error(`Demasiados intentos. Intenta de nuevo en ${error.retryAfter} segundos.`)
+    }
+  }
+
   const { exec } = await import("child_process")
   const { promisify } = await import("util")
   const execAsync = promisify(exec)
@@ -137,6 +164,19 @@ export async function deleteBackup(filename: string): Promise<void> {
   if (READONLY_BACKUPS) {
     throw new Error("Backups en modo solo lectura en este entorno")
   }
+
+  try {
+    checkRateLimit(`backups:delete:${user.accountId}:${user.id}`, {
+      windowMs: 60 * 1000, // 1 min
+      maxRequests: 10,
+      blockDurationMs: 10 * 60 * 1000,
+    })
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      throw new Error(`Demasiados intentos. Intenta de nuevo en ${error.retryAfter} segundos.`)
+    }
+  }
+
   // Validar que el filename es seguro (acepta formato con T o con _)
   if (!/^backup_\d{4}-\d{2}-\d{2}[T_]\d{2}-\d{2}-\d{2}\.sql$/.test(filename)) {
     throw new Error("Nombre de archivo inválido")
@@ -166,6 +206,8 @@ export async function deleteBackup(filename: string): Promise<void> {
 }
 
 export async function getBackupPath(filename: string): Promise<string> {
+  await checkBackupPermission()
+
   // Validar que el filename es seguro (acepta formato con T o con _)
   if (!/^backup_\d{4}-\d{2}-\d{2}[T_]\d{2}-\d{2}-\d{2}\.sql$/.test(filename)) {
     throw new Error("Nombre de archivo inválido")
@@ -186,6 +228,20 @@ export async function restoreBackup(filename: string): Promise<void> {
   if (READONLY_BACKUPS) {
     throw new Error("Backups en modo solo lectura en este entorno")
   }
+
+  try {
+    // Restaurar es muy riesgoso/costoso: limitar fuerte
+    checkRateLimit(`backups:restore:${user.accountId}:${user.id}`, {
+      windowMs: 60 * 60 * 1000, // 1h
+      maxRequests: 2,
+      blockDurationMs: 2 * 60 * 60 * 1000, // 2h
+    })
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      throw new Error(`Demasiados intentos. Intenta de nuevo en ${error.retryAfter} segundos.`)
+    }
+  }
+
   // Validar que el filename es seguro (acepta formato con T o con _)
   if (!/^backup_\d{4}-\d{2}-\d{2}[T_]\d{2}-\d{2}-\d{2}\.sql$/.test(filename)) {
     throw new Error("Nombre de archivo inválido")

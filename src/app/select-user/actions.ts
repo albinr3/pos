@@ -14,6 +14,7 @@ import { createBillingSubscription } from "@/lib/billing"
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 import { logAuditEvent } from "@/lib/audit-log"
 import { sendResendEmail } from "@/lib/resend"
+import { renderSubUserTemporaryCodeEmail } from "@/lib/resend/templates"
 import { randomInt } from "crypto"
 
 async function authenticateSubUser(
@@ -332,18 +333,12 @@ export async function sendSubUserTemporaryCode(formData: FormData) {
     },
   })
 
-  const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"}/select-user`
-  const subject = "Código temporal para ingresar a MOVOPos"
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.4; color: #111;">
-      <p>Hola ${user.name || user.username},</p>
-      <p>Tu código temporal para ingresar a MOVOPos es:</p>
-      <p style="font-size: 24px; font-weight: 600; margin: 16px 0;">${code}</p>
-      <p>Es válido por 10 minutos y puedes usarlo en <a href="${link}">la pantalla de selección de usuario</a>.</p>
-      <p>Una vez dentro podrás actualizar tu contraseña de 4 dígitos.</p>
-      <p style="color: #888; font-size: 12px; margin-top: 20px;">Si no solicitaste esto, ignora este correo.</p>
-    </div>
-  `
+  const displayName = user.name || user.username
+  const { subject, html } = await renderSubUserTemporaryCodeEmail({
+    name: displayName,
+    username: user.username,
+    code,
+  })
 
   const emailSent = await sendResendEmail({
     to: user.email,

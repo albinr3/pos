@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { format, formatDistanceToNow } from "date-fns"
@@ -68,6 +68,7 @@ import { useToast } from "@/hooks/use-toast"
 import type { AccountDetail } from "../actions"
 import { deleteAccount, simulateTrialExpiry, runBillingEngine } from "../actions"
 import { updateSubscriptionStatus, extendTrial } from "../../actions"
+import { assignPlanToAccount, getActiveBillingPlans } from "../../plans/actions"
 
 function formatMoney(cents: number, currency: "DOP" | "USD"): string {
   const amount = cents / 100
@@ -105,6 +106,13 @@ function PaymentStatusBadge({ status }: { status: string }) {
   return <Badge className={className}>{label}</Badge>
 }
 
+type BillingPlanOption = {
+  id: string
+  name: string
+  priceUsdCents: number
+  priceDopCents: number
+}
+
 export function AccountDetailClient({ account }: { account: AccountDetail }) {
   const router = useRouter()
   const { toast } = useToast()
@@ -112,6 +120,51 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showStatusDialog, setShowStatusDialog] = useState(false)
   const [newStatus, setNewStatus] = useState(account.status)
+  
+  // Plan selection
+  const [availablePlans, setAvailablePlans] = useState<BillingPlanOption[]>([])
+  const [selectedPlanId, setSelectedPlanId] = useState<string>(account.billingPlanId || "")
+  const [isLoadingPlans, setIsLoadingPlans] = useState(true)
+  const [isChangingPlan, setIsChangingPlan] = useState(false)
+  
+  // Load available plans on mount
+  useEffect(() => {
+    async function loadPlans() {
+      try {
+        const plans = await getActiveBillingPlans()
+        setAvailablePlans(plans)
+      } catch (error) {
+        console.error("Error loading plans:", error)
+      } finally {
+        setIsLoadingPlans(false)
+      }
+    }
+    loadPlans()
+  }, [])
+  
+  const handlePlanChange = async (planId: string) => {
+    if (planId === account.billingPlanId) return
+    
+    setIsChangingPlan(true)
+    try {
+      const result = await assignPlanToAccount(account.id, planId)
+      if (result.success) {
+        const plan = availablePlans.find(p => p.id === planId)
+        toast({
+          title: "Plan actualizado",
+          description: `Se asignó el plan "${plan?.name}" a esta cuenta`,
+        })
+        setSelectedPlanId(planId)
+        router.refresh()
+      } else {
+        toast({ title: "Error", description: result.error, variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al cambiar el plan", variant: "destructive" })
+    } finally {
+      setIsChangingPlan(false)
+    }
+  }
 
   const handleStatusChange = async () => {
     setIsLoading(true)
@@ -299,6 +352,42 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Plan Selection */}
+              <div className="p-4 border rounded-lg bg-muted/30">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium">Plan de Precios</p>
+                  {account.billingPlanName && (
+                    <Badge variant="secondary">{account.billingPlanName}</Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <Select
+                    value={selectedPlanId}
+                    onValueChange={handlePlanChange}
+                    disabled={isLoadingPlans || isChangingPlan}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder={isLoadingPlans ? "Cargando planes..." : "Seleccionar plan"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availablePlans.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id}>
+                          {plan.name} - {formatMoney(plan.priceUsdCents, "USD")} / {formatMoney(plan.priceDopCents, "DOP")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {isChangingPlan && <Loader2 className="h-4 w-4 animate-spin" />}
+                </div>
+                {!account.billingPlanId && (
+                  <p className="text-xs text-yellow-600 mt-2">
+                    Esta cuenta no tiene un plan asignado. Se usan los precios por defecto.
+                  </p>
+                )}
+              </div>
+              
+              <Separator />
+              
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <p className="text-sm text-muted-foreground">Estado</p>

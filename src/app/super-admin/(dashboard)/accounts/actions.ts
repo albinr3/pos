@@ -78,6 +78,10 @@ export type AccountDetail = AccountListItem & {
   manualVerificationStatus: string | null
   lemonCustomerId: string | null
   lemonSubscriptionId: string | null
+  
+  // Billing Plan
+  billingPlanId: string | null
+  billingPlanName: string | null
 }
 
 // ==========================================
@@ -159,6 +163,7 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
             },
             orderBy: { createdAt: "desc" },
           },
+          billingPlan: true,
         },
       },
       billingProfile: true,
@@ -247,6 +252,10 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
       paidAt: p.paidAt,
       proofsCount: p.proofs.length,
     })),
+    
+    // Billing Plan
+    billingPlanId: sub?.billingPlanId || null,
+    billingPlanName: sub?.billingPlan?.name || null,
   }
 }
 

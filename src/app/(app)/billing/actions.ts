@@ -1,6 +1,7 @@
 "use server"
 
 import { getCurrentUser } from "@/lib/auth"
+import type { CurrentUser } from "@/lib/auth"
 import {
   getBillingSubscription,
   getBillingProfile,
@@ -18,6 +19,8 @@ import {
   type BankAccountInfo,
 } from "@/lib/billing"
 import { logAuditEvent } from "@/lib/audit-log"
+import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
+import { logError, ErrorCodes } from "@/lib/error-logger"
 import type {
   BillingSubscription,
   BillingProfile,
@@ -76,8 +79,10 @@ export async function saveBillingProfile(data: {
   email: string
   phone?: string
 }): Promise<{ success: boolean; error?: string }> {
+  let user: CurrentUser | null = null
+
   try {
-    const user = await getCurrentUser()
+    user = await getCurrentUser()
     if (!user) {
       return { success: false, error: "No autenticado" }
     }
@@ -115,6 +120,13 @@ export async function saveBillingProfile(data: {
     return { success: true }
   } catch (error) {
     console.error("Error saving billing profile:", error)
+    await logError(error as Error, {
+      code: ErrorCodes.BILLING_SUBSCRIPTION_ERROR,
+      endpoint: "/billing/actions/saveBillingProfile",
+      accountId: user?.accountId,
+      userId: user?.id,
+      metadata: { action: "save_billing_profile" },
+    })
     return { success: false, error: "Error al guardar el perfil" }
   }
 }
@@ -128,8 +140,10 @@ export async function createDopPayment(bankAccountId: string): Promise<{
   paymentId?: string
   error?: string
 }> {
+  let user: CurrentUser | null = null
+
   try {
-    const user = await getCurrentUser()
+    user = await getCurrentUser()
     if (!user) {
       return { success: false, error: "No autenticado" }
     }
@@ -172,6 +186,14 @@ export async function createDopPayment(bankAccountId: string): Promise<{
     return { success: true, paymentId: payment.id }
   } catch (error) {
     console.error("Error creating DOP payment:", error)
+    await logError(error as Error, {
+      code: ErrorCodes.BILLING_PAYMENT_FAILED,
+      severity: "HIGH",
+      endpoint: "/billing/actions/createDopPayment",
+      accountId: user?.accountId,
+      userId: user?.id,
+      metadata: { action: "create_dop_payment", bankAccountId },
+    })
     return { success: false, error: "Error al crear el pago" }
   }
 }
@@ -182,14 +204,37 @@ export async function submitPaymentProof(
   amountCents?: number,
   note?: string
 ): Promise<{ success: boolean; error?: string }> {
+  let user: CurrentUser | null = null
+
   try {
-    const user = await getCurrentUser()
+    user = await getCurrentUser()
     if (!user) {
       return { success: false, error: "No autenticado" }
     }
 
     if (!proofUrl?.trim()) {
       return { success: false, error: "La URL del comprobante es requerida" }
+    }
+
+    // 🔐 RATE LIMITING - evitar spam de comprobantes (intencional o accidental)
+    try {
+      checkRateLimit(`payment-proof:user:${user.accountId}:${user.id}`, {
+        windowMs: 10 * 60 * 1000, // 10 min
+        maxRequests: 10,
+        blockDurationMs: 10 * 60 * 1000,
+      })
+      checkRateLimit(`payment-proof:payment:${user.accountId}:${paymentId}`, {
+        windowMs: 10 * 60 * 1000, // 10 min
+        maxRequests: 5,
+        blockDurationMs: 10 * 60 * 1000,
+      })
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        return {
+          success: false,
+          error: `Demasiados intentos. Intenta de nuevo en ${error.retryAfter} segundos.`,
+        }
+      }
     }
 
     const { isFirstProof } = await uploadPaymentProof(
@@ -220,6 +265,14 @@ export async function submitPaymentProof(
     return { success: true }
   } catch (error) {
     console.error("Error submitting payment proof:", error)
+    await logError(error as Error, {
+      code: ErrorCodes.BILLING_PAYMENT_FAILED,
+      severity: "HIGH",
+      endpoint: "/billing/actions/submitPaymentProof",
+      accountId: user?.accountId,
+      userId: user?.id,
+      metadata: { action: "submit_payment_proof", paymentId },
+    })
     return { success: false, error: "Error al subir el comprobante" }
   }
 }
@@ -233,18 +286,28 @@ export async function getUsdCheckoutUrl(): Promise<{
   url?: string
   error?: string
 }> {
+  let user: CurrentUser | null = null
+
   try {
-    const user = await getCurrentUser()
+    user = await getCurrentUser()
     if (!user) {
       return { success: false, error: "No autenticado" }
     }
 
     const profile = await getBillingProfile(user.accountId)
-    const url = getLemonCheckoutUrl(user.accountId, profile?.email)
+    const url = await getLemonCheckoutUrl(user.accountId, profile?.email)
 
     return { success: true, url }
   } catch (error) {
     console.error("Error getting checkout URL:", error)
+    await logError(error as Error, {
+      code: ErrorCodes.BILLING_PAYMENT_FAILED,
+      severity: "HIGH",
+      endpoint: "/billing/actions/getUsdCheckoutUrl",
+      accountId: user?.accountId,
+      userId: user?.id,
+      metadata: { action: "get_usd_checkout_url" },
+    })
     return { success: false, error: "Error al obtener URL de pago. Verifica que Lemon Squeezy esté configurado." }
   }
 }
@@ -257,8 +320,10 @@ export async function changeCurrency(
   newCurrency: BillingCurrency,
   newProvider: BillingProvider
 ): Promise<{ success: boolean; error?: string }> {
+  let user: CurrentUser | null = null
+
   try {
-    const user = await getCurrentUser()
+    user = await getCurrentUser()
     if (!user) {
       return { success: false, error: "No autenticado" }
     }
@@ -276,6 +341,13 @@ export async function changeCurrency(
     return { success: true }
   } catch (error) {
     console.error("Error changing currency:", error)
+    await logError(error as Error, {
+      code: ErrorCodes.BILLING_SUBSCRIPTION_ERROR,
+      endpoint: "/billing/actions/changeCurrency",
+      accountId: user?.accountId,
+      userId: user?.id,
+      metadata: { action: "change_currency", newCurrency, newProvider },
+    })
     return { success: false, error: "Error al cambiar la moneda" }
   }
 }

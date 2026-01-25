@@ -6,6 +6,8 @@ import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import type { UserRole } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
+import { sendResendEmail } from "@/lib/resend"
+import { renderWelcomeNewUserEmail } from "@/lib/resend/templates"
 
 export type UserWithPermissions = {
   id: string
@@ -127,6 +129,27 @@ export async function createUser(data: {
       ...data.permissions,
     },
   })
+
+  if (created.email) {
+    try {
+      const { subject, html } = await renderWelcomeNewUserEmail({
+        name: created.name,
+        username: created.username,
+        temporaryPassword: data.password,
+      })
+      const emailSent = await sendResendEmail({
+        to: created.email,
+        subject,
+        html,
+      })
+
+      if (!emailSent) {
+        console.warn("No se pudo enviar el correo de bienvenida a", created.email)
+      }
+    } catch (error) {
+      console.error("Error preparando correo de bienvenida:", error)
+    }
+  }
 
   await logAuditEvent({
     accountId: currentUser.accountId,

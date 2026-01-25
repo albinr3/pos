@@ -405,7 +405,7 @@ function LoginContent() {
                       <div className="p-2.5 rounded-lg bg-orange-100 dark:bg-orange-900/20 group-hover:bg-orange-200 dark:group-hover:bg-orange-900/30 transition-colors">
                         <Mail className="h-6 w-6 text-orange-600 dark:text-orange-400" />
                       </div>
-                      <div className="flex-1 text-left">
+                      <div className="flex-1 text-left whitespace-normal leading-relaxed">
                         <div className="font-semibold text-base">Continuar con Email o Google</div>
                         <div className="text-xs text-muted-foreground mt-0.5 break-words leading-relaxed">
                           Usa tu correo electrónico, Google u otro proveedor

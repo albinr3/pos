@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import crypto from "crypto"
 import { processLemonPayment } from "@/lib/billing"
 import { prisma } from "@/lib/db"
+import { checkRateLimit, getClientIdentifier, RateLimitError } from "@/lib/rate-limit"
+import { logError, ErrorCodes, getRequestInfo } from "@/lib/error-logger"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -87,6 +89,22 @@ function verifyWebhookSignature(
 
 export async function POST(request: NextRequest) {
   try {
+    // 🔐 RATE LIMITING - proteger el endpoint de picos/abuso (incluye requests con firma invalida)
+    const clientIp = getClientIdentifier(request)
+    try {
+      checkRateLimit(`webhook:lemon:ip:${clientIp}`, {
+        windowMs: 60 * 1000, // 1 min
+        maxRequests: 300,
+      })
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        return NextResponse.json(
+          { error: "Rate limit exceeded" },
+          { status: 429, headers: { "Retry-After": String(error.retryAfter) } }
+        )
+      }
+    }
+
     const webhookSecret = process.env.LEMON_WEBHOOK_SECRET
 
     if (!webhookSecret) {
@@ -155,6 +173,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ received: true })
   } catch (error) {
     console.error("Error processing Lemon Squeezy webhook:", error)
+    await logError(error as Error, {
+      code: ErrorCodes.BILLING_WEBHOOK_ERROR,
+      severity: "CRITICAL",
+      ...getRequestInfo(request),
+      metadata: { webhook: "lemon_squeezy" },
+    })
     return NextResponse.json(
       { error: "Webhook processing failed" },
       { status: 500 }

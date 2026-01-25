@@ -7,6 +7,7 @@ import { SaleType, PaymentMethod } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
+import { logError, ErrorCodes } from "@/lib/error-logger"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {

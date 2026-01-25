@@ -823,6 +823,35 @@ model QuoteItem {
 }
 
 // ==========================================
+// BILLING PLAN (Planes de precios personalizados)
+// ==========================================
+model BillingPlan {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name        String  // "Plan Estándar", "Plan Promocional", "Plan VIP"
+  description String?
+
+  // Precios en centavos
+  priceUsdCents Int // Precio en USD (ej: 2000 = $20.00)
+  priceDopCents Int // Precio en DOP (ej: 130000 = RD$1,300.00)
+
+  // Lemon Squeezy variant para este plan (para pagos USD)
+  lemonVariantId String?
+
+  // Control
+  isDefault Boolean @default(false) // Solo uno puede ser default
+  isActive  Boolean @default(true)
+
+  // Relaciones
+  subscriptions BillingSubscription[]
+
+  @@index([isActive])
+  @@index([isDefault])
+}
+
+// ==========================================
 // BANK ACCOUNTS (for DOP transfers)
 // ==========================================
 // Cuentas bancarias disponibles para transferencias
@@ -865,6 +894,10 @@ model BillingSubscription {
   currency BillingCurrency @default(DOP)
   provider BillingProvider @default(MANUAL)
 
+  // Plan de precios asignado
+  billingPlanId String?
+  billingPlan   BillingPlan? @relation(fields: [billingPlanId], references: [id])
+
   // Trial
   trialStartedAt DateTime?
   trialEndsAt    DateTime?
@@ -888,7 +921,7 @@ model BillingSubscription {
   lemonCustomerId     String?
   lemonSubscriptionId String?
 
-  // Precios en centavos
+  // Precios en centavos (copiados del plan al asignar)
   priceUsdCents Int @default(2000) // $20.00 USD
   priceDopCents Int @default(130000) // RD$1,300 DOP (incluye impuestos)
 
@@ -899,6 +932,7 @@ model BillingSubscription {
   @@index([trialEndsAt])
   @@index([currentPeriodEndsAt])
   @@index([graceEndsAt])
+  @@index([billingPlanId])
 }
 
 // ==========================================
@@ -1088,6 +1122,55 @@ model SuperAdminAuditLog {
   @@index([superAdminId])
   @@index([createdAt])
   @@index([action])
+}
+
+// ==========================================
+// ERROR LOG (Sistema de monitoreo de errores)
+// ==========================================
+enum ErrorSeverity {
+  LOW      // Errores menores, no afectan funcionalidad
+  MEDIUM   // Errores que afectan parcialmente
+  HIGH     // Errores críticos que bloquean funcionalidad
+  CRITICAL // Errores que afectan todo el sistema
+}
+
+model ErrorLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Información del error
+  message     String
+  stack       String?  @db.Text
+  code        String?  // Código de error personalizado (ej: "PAYMENT_FAILED", "DB_CONNECTION")
+  severity    ErrorSeverity @default(MEDIUM)
+  
+  // Contexto
+  accountId   String?  // Cuenta afectada (si aplica)
+  userId      String?  // Usuario que causó el error (si aplica)
+  endpoint    String?  // Ruta/endpoint donde ocurrió
+  method      String?  // GET, POST, etc.
+  
+  // Request info
+  requestBody Json?    // Body del request (sanitizado)
+  queryParams Json?    // Query parameters
+  ipAddress   String?
+  userAgent   String?
+  
+  // Metadatos adicionales
+  metadata    Json?    // Cualquier dato adicional relevante
+  
+  // Resolución
+  resolved    Boolean  @default(false)
+  resolvedAt  DateTime?
+  resolvedBy  String?  // ID del super admin que lo resolvió
+  resolution  String?  // Notas de resolución
+
+  @@index([createdAt])
+  @@index([severity])
+  @@index([resolved])
+  @@index([accountId])
+  @@index([code])
+  @@index([endpoint])
 }
 
 // ==========================================

@@ -188,6 +188,7 @@ export function calculateBillingState(
 /**
  * Crea una nueva suscripción en estado trial para un Account
  * Se llama cuando se crea el primer usuario owner
+ * Asigna automáticamente el plan por defecto si existe
  */
 export async function createBillingSubscription(
   input: CreateSubscriptionInput
@@ -195,6 +196,11 @@ export async function createBillingSubscription(
   const prisma = await getPrisma()
   const now = new Date()
   const trialEndsAt = addDays(now, TRIAL_DAYS)
+
+  // Buscar el plan por defecto
+  const defaultPlan = await prisma.billingPlan.findFirst({
+    where: { isDefault: true, isActive: true },
+  })
 
   const subscription = await prisma.billingSubscription.create({
     data: {
@@ -204,8 +210,9 @@ export async function createBillingSubscription(
       provider: "MANUAL",
       trialStartedAt: now,
       trialEndsAt,
-      priceUsdCents: DEFAULT_PRICE_USD_CENTS,
-      priceDopCents: DEFAULT_PRICE_DOP_CENTS,
+      billingPlanId: defaultPlan?.id || null,
+      priceUsdCents: defaultPlan?.priceUsdCents || DEFAULT_PRICE_USD_CENTS,
+      priceDopCents: defaultPlan?.priceDopCents || DEFAULT_PRICE_DOP_CENTS,
     },
   })
 
@@ -746,13 +753,28 @@ export async function getPaymentHistory(
 
 /**
  * Genera la URL de checkout de Lemon Squeezy
+ * Usa el variant ID del plan asignado a la cuenta, o el default si no tiene
  */
-export function getLemonCheckoutUrl(accountId: string, email?: string): string {
+export async function getLemonCheckoutUrl(accountId: string, email?: string): Promise<string> {
+  const prisma = await getPrisma()
   const storeId = process.env.LEMON_STORE_ID
-  const variantId = process.env.LEMON_VARIANT_ID_USD
+  const defaultVariantId = process.env.LEMON_VARIANT_ID_USD
 
-  if (!storeId || !variantId) {
-    throw new Error("Lemon Squeezy not configured")
+  if (!storeId) {
+    throw new Error("Lemon Squeezy not configured: missing LEMON_STORE_ID")
+  }
+
+  // Obtener la suscripción con su plan para usar el variant ID correcto
+  const subscription = await prisma.billingSubscription.findUnique({
+    where: { accountId },
+    include: { billingPlan: true },
+  })
+
+  // Usar el variant ID del plan si existe, sino el default
+  const variantId = subscription?.billingPlan?.lemonVariantId || defaultVariantId
+
+  if (!variantId) {
+    throw new Error("Lemon Squeezy not configured: missing variant ID")
   }
 
   const baseUrl = `https://${storeId}.lemonsqueezy.com/checkout/buy/${variantId}`

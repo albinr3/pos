@@ -18,6 +18,8 @@ import {
   FileText,
   Landmark,
   Shield,
+  Bug,
+  Tag,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -46,7 +48,9 @@ const nav: NavItem[] = [
   { href: "/super-admin", label: "Dashboard", icon: BarChart3 },
   { href: "/super-admin/accounts", label: "Cuentas", icon: Building2, permission: "canManageAccounts" },
   { href: "/super-admin/payments", label: "Pagos", icon: CreditCard, permission: "canApprovePayments" },
+  { href: "/super-admin/plans", label: "Planes", icon: Tag, permission: "canModifyPricing" },
   { href: "/super-admin/banks", label: "Cuentas Bancarias", icon: Landmark, permission: "canManageAccounts" },
+  { href: "/super-admin/errors", label: "Errores", icon: Bug, permission: "canManageAccounts" },
   { href: "/super-admin/reports", label: "Reportes", icon: FileText, permission: "canViewFinancials" },
   { href: "/super-admin/settings", label: "Configuración", icon: Settings, permission: "canModifyPricing" },
 ]
