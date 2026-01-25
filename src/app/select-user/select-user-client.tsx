@@ -63,6 +63,7 @@ export function SelectUserClient({ account, users }: Props) {
   const [isTempCodeSent, setIsTempCodeSent] = useState(false)
   const [isSendingTempCode, setIsSendingTempCode] = useState(false)
   const [isVerifyingTempCode, setIsVerifyingTempCode] = useState(false)
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
 
   const resetTempCodeState = () => {
     setTemporaryCode("")
@@ -71,6 +72,7 @@ export function SelectUserClient({ account, users }: Props) {
     setIsTempCodeSent(false)
     setIsSendingTempCode(false)
     setIsVerifyingTempCode(false)
+    setShowForgotPassword(false)
   }
   
   // Estado para onboarding (primer usuario)
@@ -518,66 +520,85 @@ export function SelectUserClient({ account, users }: Props) {
               </Button>
 
               <div className="space-y-3 pt-3 border-t">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="w-full justify-center"
-                  onClick={handleSendTemporaryCode}
-                  disabled={isSendingTempCode || isPending || !selectedUser.email}
-                >
-                  {isSendingTempCode ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Enviando código...
-                    </>
-                  ) : (
-                    "Enviar código temporal por email"
-                  )}
-                </Button>
-                <p className="text-xs text-muted-foreground">
-                  {selectedUser.email
-                    ? `Se enviará a ${maskEmail(selectedUser.email)}`
-                    : "Este usuario no tiene email registrado"}
-                </p>
-                {tempCodeMessage && (
-                  <p className="text-xs text-slate-600 dark:text-slate-300">{tempCodeMessage}</p>
-                )}
-                {tempCodeError && (
-                  <p className="text-xs text-destructive">{tempCodeError}</p>
-                )}
-                {isTempCodeSent && selectedUser.email && (
-                  <div className="space-y-2">
-                    <Label htmlFor="temporary-code">Código temporal</Label>
-                    <Input
-                      id="temporary-code"
-                      type="text"
-                      inputMode="numeric"
-                      maxLength={6}
-                      value={temporaryCode}
-                      onChange={(e) => {
-                        const digits = e.target.value.replace(/\\D/g, "")
-                        setTemporaryCode(digits.slice(0, 6))
-                      }}
-                      placeholder="000000"
-                      className="tracking-[0.3em] text-center"
-                      disabled={isVerifyingTempCode}
-                    />
+                {!showForgotPassword ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(true)}
+                    className="w-full text-center text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 underline-offset-4 hover:underline"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                ) : (
+                  <>
                     <Button
                       type="button"
-                      className="w-full"
-                      disabled={isVerifyingTempCode || temporaryCode.trim().length !== 6}
-                      onClick={handleVerifyTemporaryCode}
+                      variant="ghost"
+                      className="w-full justify-center"
+                      onClick={handleSendTemporaryCode}
+                      disabled={isSendingTempCode || isPending || !selectedUser.email}
                     >
-                      {isVerifyingTempCode ? (
+                      {isSendingTempCode ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Verificando...
+                          Enviando código...
                         </>
                       ) : (
-                        "Usar código temporal"
+                        "Enviar código temporal por email"
                       )}
                     </Button>
-                  </div>
+                    <p className="text-xs text-muted-foreground text-center">
+                      {selectedUser.email
+                        ? `Se enviará a ${maskEmail(selectedUser.email)}`
+                        : "Este usuario no tiene email registrado"}
+                    </p>
+                    {tempCodeMessage && (
+                      <p className="text-xs text-slate-600 dark:text-slate-300 text-center">{tempCodeMessage}</p>
+                    )}
+                    {tempCodeError && (
+                      <p className="text-xs text-destructive text-center">{tempCodeError}</p>
+                    )}
+                    {isTempCodeSent && selectedUser.email && (
+                      <div className="space-y-2">
+                        <Label htmlFor="temporary-code">Código temporal</Label>
+                        <Input
+                          id="temporary-code"
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          value={temporaryCode}
+                          onChange={(e) => {
+                            const digits = e.target.value.replace(/\\D/g, "")
+                            setTemporaryCode(digits.slice(0, 6))
+                          }}
+                          placeholder="000000"
+                          className="tracking-[0.3em] text-center"
+                          disabled={isVerifyingTempCode}
+                        />
+                        <Button
+                          type="button"
+                          className="w-full"
+                          disabled={isVerifyingTempCode || temporaryCode.trim().length !== 6}
+                          onClick={handleVerifyTemporaryCode}
+                        >
+                          {isVerifyingTempCode ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Verificando...
+                            </>
+                          ) : (
+                            "Usar código temporal"
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowForgotPassword(false)}
+                      className="w-full text-center text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Cancelar
+                    </button>
+                  </>
                 )}
               </div>
 

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation"
 
 import { ReportDateRangeFilter } from "../filter-client"
 import { getProfitReport } from "../actions"
-import { PrintButton } from "@/components/app/print-button"
+import { DownloadPdfButton } from "@/components/app/download-pdf-button"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -41,7 +41,7 @@ export default async function ProfitReportPage({
           <p className="text-sm text-muted-foreground">Ganancia calculada por período.</p>
         </div>
         <div className="flex items-center gap-2">
-          <PrintButton />
+          <DownloadPdfButton />
           <ReportDateRangeFilter basePath="/reports/profit" defaultLastDays={30} />
         </div>
       </div>

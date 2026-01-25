@@ -1,8 +1,9 @@
 "use client"
 
+import { useState } from "react"
 import { UploadButton } from "@uploadthing/react"
 import type { OurFileRouter } from "@/app/api/uploadthing/core"
-import { Upload, X } from "lucide-react"
+import { Upload, X, Loader2 } from "lucide-react"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { toast } from "@/hooks/use-toast"
@@ -18,7 +19,10 @@ export function ProductImageUpload({
   onChange, 
   maxImages = 3 
 }: ProductImageUploadProps) {
+  const [isUploading, setIsUploading] = useState(false)
+
   const handleUploadComplete = (res: Array<{ url: string; ufsUrl?: string }>) => {
+    setIsUploading(false)
     if (res && res.length > 0) {
       const newUrls = res.map((file) => file.ufsUrl ?? file.url)
       const updatedImages = [...images, ...newUrls].slice(0, maxImages)
@@ -28,6 +32,10 @@ export function ProductImageUpload({
         description: "La imagen se ha subido correctamente" 
       })
     }
+  }
+
+  const handleUploadBegin = () => {
+    setIsUploading(true)
   }
 
   const handleRemoveImage = (index: number) => {
@@ -41,35 +49,46 @@ export function ProductImageUpload({
     <div className="space-y-4">
       {images.length === 0 ? (
         <div className="relative rounded-lg border-2 border-dashed border-purple-primary/50 bg-purple-50/50 dark:bg-purple-950/10 p-8">
-          <div className="flex flex-col items-center justify-center gap-2 text-center">
-            <Upload className="h-6 w-6 text-purple-primary" aria-hidden="true" />
-            <p className="text-sm font-medium text-purple-primary">Cargar imagenes</p>
-            <p className="text-xs text-muted-foreground">
-              Puedes cargar hasta {maxImages} imagenes. Maximo 2MB cada una.
-            </p>
-          </div>
-          <UploadButton<OurFileRouter, "productImageUploader">
-            endpoint="productImageUploader"
-            onClientUploadComplete={handleUploadComplete}
-            onUploadError={(error: Error) => {
-              toast({
-                title: "Error",
-                description: error.message,
-                variant: "destructive",
-              })
-            }}
-            className="absolute inset-0 z-10"
-            appearance={{
-              container: "h-full w-full",
-              button: "h-full w-full mt-0 bg-transparent text-transparent hover:bg-transparent after:hidden",
-              allowedContent: "hidden",
-            }}
-            content={{
-              button() {
-                return <span className="sr-only">Cargar imagenes</span>
-              },
-            }}
-          />
+          {isUploading ? (
+            <div className="flex flex-col items-center justify-center gap-2 text-center">
+              <Loader2 className="h-8 w-8 text-purple-primary animate-spin" aria-hidden="true" />
+              <p className="text-sm font-medium text-purple-primary">Subiendo imagen...</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col items-center justify-center gap-2 text-center">
+                <Upload className="h-6 w-6 text-purple-primary" aria-hidden="true" />
+                <p className="text-sm font-medium text-purple-primary">Cargar imagenes</p>
+                <p className="text-xs text-muted-foreground">
+                  Puedes cargar hasta {maxImages} imagenes. Maximo 2MB cada una.
+                </p>
+              </div>
+              <UploadButton<OurFileRouter, "productImageUploader">
+                endpoint="productImageUploader"
+                onUploadBegin={handleUploadBegin}
+                onClientUploadComplete={handleUploadComplete}
+                onUploadError={(error: Error) => {
+                  setIsUploading(false)
+                  toast({
+                    title: "Error",
+                    description: error.message,
+                    variant: "destructive",
+                  })
+                }}
+                className="absolute inset-0 z-10"
+                appearance={{
+                  container: "h-full w-full",
+                  button: "h-full w-full mt-0 bg-transparent text-transparent hover:bg-transparent after:hidden",
+                  allowedContent: "hidden",
+                }}
+                content={{
+                  button() {
+                    return <span className="sr-only">Cargar imagenes</span>
+                  },
+                }}
+              />
+            </>
+          )}
         </div>
       ) : (
         <>
@@ -100,32 +119,43 @@ export function ProductImageUpload({
 
             {canUploadMore && (
               <div className="relative aspect-square rounded-lg border-2 border-dashed border-purple-primary/50 bg-purple-50/50 dark:bg-purple-950/10">
-                <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center">
-                  <Upload className="h-5 w-5 text-purple-primary" aria-hidden="true" />
-                  <span className="text-xs font-medium text-purple-primary">Agregar</span>
-                </div>
-                <UploadButton<OurFileRouter, "productImageUploader">
-                  endpoint="productImageUploader"
-                  onClientUploadComplete={handleUploadComplete}
-                  onUploadError={(error: Error) => {
-                    toast({
-                      title: "Error",
-                      description: error.message,
-                      variant: "destructive",
-                    })
-                  }}
-                  className="absolute inset-0 z-10"
-                  appearance={{
-                    container: "h-full w-full",
-                    button: "h-full w-full mt-0 bg-transparent text-transparent hover:bg-transparent after:hidden",
-                    allowedContent: "hidden",
-                  }}
-                  content={{
-                    button() {
-                      return <span className="sr-only">Agregar imagen</span>
-                    },
-                  }}
-                />
+                {isUploading ? (
+                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center">
+                    <Loader2 className="h-6 w-6 text-purple-primary animate-spin" aria-hidden="true" />
+                    <span className="text-xs font-medium text-purple-primary">Subiendo...</span>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-center">
+                      <Upload className="h-5 w-5 text-purple-primary" aria-hidden="true" />
+                      <span className="text-xs font-medium text-purple-primary">Agregar</span>
+                    </div>
+                    <UploadButton<OurFileRouter, "productImageUploader">
+                      endpoint="productImageUploader"
+                      onUploadBegin={handleUploadBegin}
+                      onClientUploadComplete={handleUploadComplete}
+                      onUploadError={(error: Error) => {
+                        setIsUploading(false)
+                        toast({
+                          title: "Error",
+                          description: error.message,
+                          variant: "destructive",
+                        })
+                      }}
+                      className="absolute inset-0 z-10"
+                      appearance={{
+                        container: "h-full w-full",
+                        button: "h-full w-full mt-0 bg-transparent text-transparent hover:bg-transparent after:hidden",
+                        allowedContent: "hidden",
+                      }}
+                      content={{
+                        button() {
+                          return <span className="sr-only">Agregar imagen</span>
+                        },
+                      }}
+                    />
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/auth"
 
 import { getInventoryReport } from "../actions"
 import { InventoryExportClient } from "./inventory-export-client"
-import { PrintButton } from "@/components/app/print-button"
+import { DownloadPdfButton } from "@/components/app/download-pdf-button"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -23,7 +23,7 @@ export default async function InventoryReportPage() {
           <p className="text-sm text-muted-foreground">Listado de productos con su costo y total de inventario.</p>
         </div>
         <div className="flex items-center gap-2">
-          <PrintButton />
+          <DownloadPdfButton />
           <InventoryExportClient
             products={data.products}
             totalInventoryCostCents={data.totalInventoryCostCents}

@@ -7,7 +7,7 @@ import { formatRD } from "@/lib/money"
 
 import { ReportDateRangeFilter } from "../filter-client"
 import { getPaymentsReport } from "../actions"
-import { PrintButton } from "@/components/app/print-button"
+import { DownloadPdfButton } from "@/components/app/download-pdf-button"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -28,7 +28,7 @@ export default async function PaymentsReportPage({
           <p className="text-sm text-muted-foreground">Abonos registrados por rango.</p>
         </div>
         <div className="flex items-center gap-2">
-          <PrintButton />
+          <DownloadPdfButton />
           <ReportDateRangeFilter basePath="/reports/payments" />
         </div>
       </div>
