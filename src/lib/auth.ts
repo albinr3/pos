@@ -15,6 +15,7 @@ import bcrypt from "bcryptjs"
 import type { UserRole } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
 import { createBillingSubscription, getBillingState, type BillingState } from "@/lib/billing"
+import { logError, ErrorCodes } from "@/lib/error-logger"
 
 // Función helper para obtener prisma de forma segura
 async function getPrisma() {
@@ -408,6 +409,13 @@ export async function authenticateSubUser(
     }
   } catch (error) {
     console.error("Error authenticating sub-user:", error)
+    await logError(error as Error, {
+      code: ErrorCodes.AUTH_FAILED,
+      severity: "HIGH",
+      accountId,
+      endpoint: "/auth/authenticateSubUser",
+      metadata: { username },
+    })
     return { success: false, error: "Error de autenticación" }
   }
 }

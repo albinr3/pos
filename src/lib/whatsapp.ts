@@ -5,6 +5,8 @@
  * - WHATSAPP_ACCESS_TOKEN: Token de acceso de Meta
  */
 
+import { logError, ErrorCodes } from "@/lib/error-logger"
+
 /**
  * Normaliza un número de teléfono al formato E.164
  * Ejemplos:
@@ -42,7 +44,8 @@ export function normalizePhoneNumber(phone: string): string | null {
  */
 export async function sendWhatsAppMessage(
   to: string,
-  message: string
+  message: string,
+  options?: { accountId?: string; userId?: string }
 ): Promise<{ success: boolean; error?: string }> {
   console.log("=== sendWhatsAppMessage called ===")
   console.log("To:", to)
@@ -92,9 +95,19 @@ export async function sendWhatsAppMessage(
 
     if (!response.ok) {
       console.error("WhatsApp API error:", data)
+      const errorMessage = data.error?.message || "Error al enviar mensaje"
+      await logError(new Error(`WhatsApp API error: ${errorMessage}`), {
+        code: ErrorCodes.EXTERNAL_WHATSAPP_ERROR,
+        severity: "MEDIUM",
+        accountId: options?.accountId,
+        userId: options?.userId,
+        endpoint: "graph.facebook.com/messages",
+        method: "POST",
+        metadata: { to: phoneWithoutPlus, statusCode: response.status, errorCode: data.error?.code },
+      })
       return {
         success: false,
-        error: data.error?.message || "Error al enviar mensaje",
+        error: errorMessage,
       }
     }
 
@@ -109,6 +122,15 @@ export async function sendWhatsAppMessage(
     return { success: true }
   } catch (error) {
     console.error("Error sending WhatsApp message:", error)
+    await logError(error as Error, {
+      code: ErrorCodes.EXTERNAL_WHATSAPP_ERROR,
+      severity: "MEDIUM",
+      accountId: options?.accountId,
+      userId: options?.userId,
+      endpoint: "graph.facebook.com/messages",
+      method: "POST",
+      metadata: { to },
+    })
     return {
       success: false,
       error: error instanceof Error ? error.message : "Error desconocido",

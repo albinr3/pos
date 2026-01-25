@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
+import { logError, ErrorCodes } from "@/lib/error-logger"
 
 // Tipos para los datos extraídos del OCR
 export type ExtractedProduct = {
@@ -172,6 +173,15 @@ export async function processInvoiceImage(base64Image: string): Promise<Extracte
       rawText: content,
     }
   } catch (error) {
+    // Registrar error de OCR
+    await logError(error instanceof Error ? error : new Error("Error al procesar la imagen con OCR"), {
+      code: ErrorCodes.EXTERNAL_OCR_ERROR,
+      severity: "MEDIUM",
+      accountId: user.accountId,
+      userId: user.id,
+      endpoint: "/purchases/ocr-actions/processInvoiceImage",
+      metadata: { hasImage: !!base64Image },
+    })
     if (error instanceof Error) {
       throw error
     }

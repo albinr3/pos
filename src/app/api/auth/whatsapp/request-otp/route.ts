@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { normalizePhoneNumber, generateOtpCode, sendWhatsAppMessage } from "@/lib/whatsapp"
 import { checkRateLimit, getClientIdentifier, RateLimitError } from "@/lib/rate-limit"
+import { logError, ErrorCodes } from "@/lib/error-logger"
 
 // Marcar como dinámica para evitar ejecución durante el build
 export const dynamic = "force-dynamic"
@@ -142,6 +143,13 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error("Error in request-otp:", error)
+    await logError(error as Error, {
+      code: ErrorCodes.AUTH_FAILED,
+      severity: "HIGH",
+      endpoint: "/api/auth/whatsapp/request-otp",
+      method: "POST",
+      metadata: { step: "request_otp" },
+    })
     return NextResponse.json(
       { error: "Error interno del servidor" },
       { status: 500 }

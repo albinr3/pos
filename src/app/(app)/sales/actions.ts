@@ -273,7 +273,19 @@ export async function createSale(input: {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  validateCartItems(input.items)
+  try {
+    validateCartItems(input.items)
+  } catch (error) {
+    await logError(error as Error, {
+      code: ErrorCodes.SALE_CREATE_ERROR,
+      severity: "LOW",
+      accountId: user.accountId,
+      userId: user.id,
+      endpoint: "/sales/actions/createSale",
+      metadata: { step: "validation", itemCount: input.items.length },
+    })
+    throw error
+  }
 
   // Validar permiso para cambiar tipo de venta (si no es el tipo por defecto)
   // Nota: Por defecto, todos pueden crear ventas al contado
@@ -285,7 +297,8 @@ export async function createSale(input: {
   })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
 
-  return prisma.$transaction(async (tx) => {
+  try {
+    return await prisma.$transaction(async (tx) => {
     // Validar que el Account existe
     const account = await tx.account.findUnique({
       where: { id: user.accountId },
@@ -493,6 +506,22 @@ export async function createSale(input: {
 
     return sale
   }, TRANSACTION_OPTIONS)
+  } catch (error) {
+    await logError(error as Error, {
+      code: ErrorCodes.SALE_CREATE_ERROR,
+      severity: "HIGH",
+      accountId: user.accountId,
+      userId: user.id,
+      endpoint: "/sales/actions/createSale",
+      metadata: { 
+        step: "transaction",
+        type: input.type,
+        itemCount: input.items.length,
+        customerId: input.customerId,
+      },
+    })
+    throw error
+  }
 }
 
 export async function getSaleById(id: string) {
@@ -536,7 +565,8 @@ export async function cancelSale(id: string, username: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  return prisma.$transaction(async (tx) => {
+  try {
+    return await prisma.$transaction(async (tx) => {
     const sale = await tx.sale.findFirst({
       where: { id, accountId: user.accountId },
       include: {
@@ -613,6 +643,17 @@ export async function cancelSale(id: string, username: string) {
     revalidatePath("/reports/sales")
     revalidatePath("/reports/profit")
   }, TRANSACTION_OPTIONS)
+  } catch (error) {
+    await logError(error as Error, {
+      code: ErrorCodes.SALE_CANCEL_ERROR,
+      severity: "HIGH",
+      accountId: user.accountId,
+      userId: user.id,
+      endpoint: "/sales/actions/cancelSale",
+      metadata: { saleId: id },
+    })
+    throw error
+  }
 }
 
 export async function updateSale(input: {

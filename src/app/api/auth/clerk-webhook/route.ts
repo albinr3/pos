@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
   const { prisma } = await import("@/lib/db")
   const { sendResendEmail } = await import("@/lib/resend")
   const { renderWelcomeOwnerEmail } = await import("@/lib/resend/templates")
+  const { logError, ErrorCodes } = await import("@/lib/error-logger")
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
 
   if (!WEBHOOK_SECRET) {
@@ -57,6 +58,10 @@ export async function POST(request: NextRequest) {
   const eventType = evt.type
   const { id, first_name, last_name, email_addresses } = evt.data
 
+  console.log("[Clerk Webhook] Event type:", eventType)
+  console.log("[Clerk Webhook] User ID:", id)
+  console.log("[Clerk Webhook] Email addresses:", JSON.stringify(email_addresses))
+
   if (eventType === "user.created") {
     try {
       const name = `${first_name || ""} ${last_name || ""}`.trim() || "Mi Negocio"
@@ -66,9 +71,14 @@ export async function POST(request: NextRequest) {
         (e: { id: string; email_address: string }) => e.email_address
       )?.email_address as string | undefined
 
+      console.log("[Clerk Webhook] Extracted primary email:", primaryEmail)
+      console.log("[Clerk Webhook] User name:", name)
+
       let account = await prisma.account.findUnique({
         where: { clerkUserId: id },
       })
+
+      console.log("[Clerk Webhook] Existing account:", account ? account.id : "none")
 
       if (!account) {
         account = await prisma.account.create({
@@ -77,27 +87,75 @@ export async function POST(request: NextRequest) {
             clerkUserId: id,
           },
         })
+        console.log("[Clerk Webhook] Created new account:", account.id)
 
         // Enviar correo de bienvenida al nuevo owner
         if (primaryEmail) {
+          console.log("[Clerk Webhook] Attempting to send welcome email to:", primaryEmail)
           try {
             const { subject, html } = await renderWelcomeOwnerEmail({ name })
+            console.log("[Clerk Webhook] Email rendered, subject:", subject)
+            
             const emailSent = await sendResendEmail({
               to: primaryEmail,
               subject,
               html,
+              accountId: account.id,
             })
 
-            if (!emailSent) {
-              console.warn("No se pudo enviar el correo de bienvenida a", primaryEmail)
+            if (emailSent) {
+              console.log("[Clerk Webhook] Welcome email sent successfully to:", primaryEmail)
+            } else {
+              console.warn("[Clerk Webhook] No se pudo enviar el correo de bienvenida a", primaryEmail)
+              await logError(new Error("Welcome email failed to send - sendResendEmail returned false"), {
+                code: ErrorCodes.EXTERNAL_EMAIL_ERROR,
+                severity: "MEDIUM",
+                accountId: account.id,
+                endpoint: "/api/auth/clerk-webhook",
+                method: "POST",
+                metadata: { 
+                  to: primaryEmail, 
+                  subject,
+                  step: "welcome_email",
+                  clerkUserId: id,
+                },
+              })
             }
           } catch (emailError) {
-            console.error("Error enviando correo de bienvenida:", emailError)
+            console.error("[Clerk Webhook] Error enviando correo de bienvenida:", emailError)
+            await logError(emailError as Error, {
+              code: ErrorCodes.EXTERNAL_EMAIL_ERROR,
+              severity: "MEDIUM",
+              accountId: account.id,
+              endpoint: "/api/auth/clerk-webhook",
+              method: "POST",
+              metadata: { 
+                to: primaryEmail,
+                step: "welcome_email_exception",
+                clerkUserId: id,
+              },
+            })
           }
+        } else {
+          console.warn("[Clerk Webhook] No primary email found, skipping welcome email")
+          await logError(new Error("No primary email found in Clerk webhook data"), {
+            code: ErrorCodes.EXTERNAL_EMAIL_ERROR,
+            severity: "LOW",
+            accountId: account.id,
+            endpoint: "/api/auth/clerk-webhook",
+            method: "POST",
+            metadata: { 
+              step: "no_email_found",
+              clerkUserId: id,
+              emailAddressesReceived: JSON.stringify(email_addresses),
+            },
+          })
         }
+      } else {
+        console.log("[Clerk Webhook] Account already exists, skipping welcome email")
       }
     } catch (error) {
-      console.error("Error procesando webhook de Clerk:", error)
+      console.error("[Clerk Webhook] Error procesando webhook de Clerk:", error)
       return NextResponse.json(
         { error: "Error procesando webhook" },
         { status: 500 }

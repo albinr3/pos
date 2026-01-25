@@ -8,6 +8,7 @@ import type { UserRole } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
 import { sendResendEmail } from "@/lib/resend"
 import { renderWelcomeNewUserEmail } from "@/lib/resend/templates"
+import { sanitizeEmail } from "@/lib/sanitize"
 
 export type UserWithPermissions = {
   id: string
@@ -115,6 +116,11 @@ export async function createUser(data: {
     throw new Error("La contraseña debe tener al menos 4 caracteres")
   }
 
+  const normalizedEmail = data.email ? sanitizeEmail(data.email) : null
+  if (data.email && !normalizedEmail) {
+    throw new Error("Email inválido")
+  }
+
   const passwordHash = await bcrypt.hash(data.password, 10)
 
   const created = await prisma.user.create({
@@ -122,7 +128,7 @@ export async function createUser(data: {
       accountId: currentUser.accountId,
       name: data.name,
       username: data.username,
-      email: data.email || null,
+      email: normalizedEmail,
       passwordHash,
       role: data.role,
       isOwner: false,
@@ -130,6 +136,7 @@ export async function createUser(data: {
     },
   })
 
+  let welcomeEmailSent: boolean | null = null
   if (created.email) {
     try {
       const { subject, html } = await renderWelcomeNewUserEmail({
@@ -141,13 +148,17 @@ export async function createUser(data: {
         to: created.email,
         subject,
         html,
+        accountId: currentUser.accountId,
+        userId: currentUser.id,
       })
 
       if (!emailSent) {
         console.warn("No se pudo enviar el correo de bienvenida a", created.email)
       }
+      welcomeEmailSent = emailSent
     } catch (error) {
       console.error("Error preparando correo de bienvenida:", error)
+      welcomeEmailSent = false
     }
   }
 
@@ -169,6 +180,7 @@ export async function createUser(data: {
   })
 
   revalidatePath("/settings")
+  return { emailSent: welcomeEmailSent }
 }
 
 export async function updateUser(

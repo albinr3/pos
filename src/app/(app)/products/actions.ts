@@ -7,6 +7,7 @@ import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizeCode } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
+import { logError, ErrorCodes } from "@/lib/error-logger"
 
 export async function listProducts(options?: { query?: string; cursor?: string | null; take?: number }) {
   const user = await getCurrentUser()
@@ -82,7 +83,8 @@ export async function upsertProduct(input: {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  const name = sanitizeString(input.name)
+  try {
+    const name = sanitizeString(input.name)
   if (!name) throw new Error("El nombre del producto es requerido")
   if (!input.priceCents || input.priceCents <= 0) throw new Error("El precio de venta es requerido")
   if (!input.costCents || input.costCents < 0) throw new Error("El costo es requerido")
@@ -182,6 +184,21 @@ export async function upsertProduct(input: {
   }
 
   revalidatePath("/products")
+  } catch (error) {
+    await logError(error as Error, {
+      code: ErrorCodes.INVENTORY_UPDATE_ERROR,
+      severity: "MEDIUM",
+      accountId: user.accountId,
+      userId: user.id,
+      endpoint: "/products/actions/upsertProduct",
+      metadata: { 
+        productId: input.id,
+        isNew: !input.id,
+        name: input.name,
+      },
+    })
+    throw error
+  }
 }
 
 export async function deactivateProduct(productId: string) {
