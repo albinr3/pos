@@ -7,6 +7,8 @@ const isPublicRoute = createRouteMatcher([
   "/login(.*)",
   "/api/auth/whatsapp(.*)",
   "/api/auth/clerk-webhook",
+  "/api/auth/subusers(.*)", // Permitir acceso a subusuarios (autenticación manual)
+  "/api/auth/subuser(.*)", // Permitir acceso a login de subusuario (autenticación manual)
   "/api/webhooks(.*)", // Webhooks de Lemon Squeezy
   "/api/cron(.*)", // Cron jobs
   "/about",
