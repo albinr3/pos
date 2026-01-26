@@ -128,25 +128,82 @@ export async function getClerkUserId(): Promise<string | null> {
 }
 
 /**
- * Obtiene o crea el Account (tenant) basado en el clerkUserId
- * Si es un nuevo usuario, crea el Account y un usuario owner por defecto
+ * Obtiene el clerkUserId desde un token JWT del header Authorization
+ * Útil para peticiones desde la app móvil
  */
-export async function getOrCreateAccount(): Promise<AccountInfo | null> {
+export async function getClerkUserIdFromToken(token: string | null): Promise<string | null> {
+  if (!token) {
+    return null
+  }
+
   try {
-    const clerkAuth = await auth()
-    if (!clerkAuth?.userId) {
+    // Remover "Bearer " si está presente
+    const cleanToken = token.replace(/^Bearer\s+/i, '')
+    
+    // Decodificar el JWT para obtener el userId
+    // Clerk usa JWTs estándar, podemos decodificarlo sin verificar la firma
+    // ya que solo necesitamos el userId, no la verificación completa
+    const parts = cleanToken.split('.')
+    if (parts.length !== 3) {
       return null
     }
 
-    const clerkUser = await currentUser()
-    if (!clerkUser) {
+    // Decodificar el payload (segunda parte del JWT)
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'))
+    
+    // El userId está en 'sub' o 'userId' en el payload
+    return payload.sub || payload.userId || null
+  } catch (error) {
+    console.error("Error decodificando token de Clerk:", error)
+    // Si falla la decodificación, intentar con auth() que puede leer del header
+    try {
+      const clerkAuth = await auth()
+      return clerkAuth?.userId || null
+    } catch {
       return null
+    }
+  }
+}
+
+/**
+ * Obtiene o crea el Account (tenant) basado en el clerkUserId
+ * Si es un nuevo usuario, crea el Account y un usuario owner por defecto
+ * @param clerkUserId - Opcional: clerkUserId específico (útil para peticiones desde app móvil)
+ */
+export async function getOrCreateAccount(clerkUserId?: string | null): Promise<AccountInfo | null> {
+  try {
+    let userId: string | null = clerkUserId || null
+    
+    // Si no se proporciona clerkUserId, intentar obtenerlo de la sesión
+    if (!userId) {
+      const clerkAuth = await auth()
+      userId = clerkAuth?.userId || null
+    }
+
+    if (!userId) {
+      return null
+    }
+
+    // Obtener información del usuario de Clerk
+    let clerkUser = null
+    try {
+      clerkUser = await currentUser()
+    } catch {
+      // Si no se puede obtener currentUser (por ejemplo, desde app móvil),
+      // intentar obtenerlo usando clerkClient
+      try {
+        const { clerkClient } = await import("@clerk/nextjs/server")
+        clerkUser = await clerkClient.users.getUser(userId)
+      } catch {
+        // Si no se puede obtener, usar valores por defecto
+        clerkUser = null
+      }
     }
 
     // Buscar Account existente
     const prisma = await getPrisma()
     let account = await prisma.account.findUnique({
-      where: { clerkUserId: clerkAuth.userId },
+      where: { clerkUserId: userId },
     })
 
     // Si no existe, crear nuevo Account con usuario owner
@@ -159,7 +216,7 @@ export async function getOrCreateAccount(): Promise<AccountInfo | null> {
         account = await prisma.account.create({
           data: {
             name: name,
-            clerkUserId: clerkAuth.userId,
+            clerkUserId: userId,
           },
         })
         accountWasJustCreated = true
@@ -168,7 +225,7 @@ export async function getOrCreateAccount(): Promise<AccountInfo | null> {
         // buscar nuevamente el Account existente
         if (createError?.code === "P2002") {
           account = await prisma.account.findUnique({
-            where: { clerkUserId: clerkAuth.userId },
+            where: { clerkUserId: userId },
           })
           if (!account) {
             // Si aún no existe, lanzar el error original

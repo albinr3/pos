@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getClerkUserId, getOrCreateAccount, listSubUsers } from "@/lib/auth"
+import { getClerkUserId, getClerkUserIdFromToken, getOrCreateAccount, listSubUsers } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -7,14 +7,26 @@ export const runtime = "nodejs"
 // GET /api/auth/subusers - Listar subusuarios del account
 export async function GET(request: NextRequest) {
   try {
-    // Verificar autenticación de Clerk
-    const clerkUserId = await getClerkUserId()
+    // Intentar obtener token del header Authorization (para app móvil)
+    const authHeader = request.headers.get("Authorization")
+    let clerkUserId: string | null = null
+
+    if (authHeader) {
+      // Si hay header Authorization, verificar el token
+      clerkUserId = await getClerkUserIdFromToken(authHeader)
+    }
+
+    // Si no se obtuvo del header, intentar desde la sesión (para web)
+    if (!clerkUserId) {
+      clerkUserId = await getClerkUserId()
+    }
+
     if (!clerkUserId) {
       return NextResponse.json({ error: "No autenticado con Clerk" }, { status: 401 })
     }
 
-    // Obtener o crear Account
-    const account = await getOrCreateAccount()
+    // Obtener o crear Account usando el clerkUserId obtenido
+    const account = await getOrCreateAccount(clerkUserId)
     if (!account) {
       return NextResponse.json({ error: "Error al obtener cuenta" }, { status: 500 })
     }
