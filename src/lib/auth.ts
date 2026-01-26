@@ -193,7 +193,8 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
       // intentar obtenerlo usando clerkClient
       try {
         const { clerkClient } = await import("@clerk/nextjs/server")
-        clerkUser = await clerkClient.users.getUser(userId)
+        const client = await clerkClient()
+        clerkUser = await client.users.getUser(userId)
       } catch {
         // Si no se puede obtener, usar valores por defecto
         clerkUser = null
@@ -209,8 +210,11 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
     // Si no existe, crear nuevo Account con usuario owner
     let accountWasJustCreated = false
     if (!account) {
-      const email = clerkUser.emailAddresses?.[0]?.emailAddress
-      const name = `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || "Mi Negocio"
+      // Si no tenemos información del usuario de Clerk, usar valores por defecto
+      const email = clerkUser?.emailAddresses?.[0]?.emailAddress || null
+      const name = clerkUser 
+        ? `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || "Mi Negocio"
+        : "Mi Negocio"
 
       try {
         account = await prisma.account.create({
