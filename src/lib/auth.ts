@@ -175,6 +175,37 @@ export async function getClerkUserIdFromToken(token: string | null): Promise<str
 }
 
 /**
+ * Obtiene el email del usuario desde un token JWT de Clerk
+ * Útil para peticiones desde la app móvil
+ */
+export async function getEmailFromToken(token: string | null): Promise<string | null> {
+  if (!token) {
+    return null
+  }
+
+  try {
+    // Remover "Bearer " si está presente
+    const cleanToken = token.replace(/^Bearer\s+/i, '')
+    
+    // Decodificar el JWT
+    const parts = cleanToken.split('.')
+    if (parts.length !== 3) {
+      return null
+    }
+
+    // Decodificar el payload
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'))
+    
+    // El email puede estar en diferentes campos del payload
+    const email = payload.email || payload.primary_email || payload.email_addresses?.[0]?.email_address || null
+    return email
+  } catch (error) {
+    console.error("❌ [getEmailFromToken] Error decodificando token:", error)
+    return null
+  }
+}
+
+/**
  * Obtiene o crea el Account (tenant) basado en el clerkUserId
  * Si es un nuevo usuario, crea el Account y un usuario owner por defecto
  * @param clerkUserId - Opcional: clerkUserId específico (útil para peticiones desde app móvil)

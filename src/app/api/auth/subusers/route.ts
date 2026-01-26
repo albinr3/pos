@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getClerkUserId, getClerkUserIdFromToken, getOrCreateAccount, listSubUsers } from "@/lib/auth"
+import { getClerkUserId, getClerkUserIdFromToken, getEmailFromToken, getOrCreateAccount, listSubUsers } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -78,69 +78,8 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Obtener información del usuario de Clerk para buscar por email
-    let userEmail: string | null = null
-    try {
-      const { clerkClient } = await import("@clerk/nextjs/server")
-      const client = await clerkClient()
-      const clerkUser = await client.users.getUser(clerkUserId)
-      userEmail = clerkUser.emailAddresses?.[0]?.emailAddress || null
-      console.log("🔍 [subusers] Email del usuario de Clerk:", userEmail)
-    } catch (e) {
-      console.error("❌ [subusers] Error obteniendo email de Clerk:", e)
-    }
-
     // Obtener o crear Account usando el clerkUserId obtenido
     let account = await getOrCreateAccount(clerkUserId)
-    
-    // Si el account no tiene usuarios y tenemos el email, buscar accounts con usuarios que tengan ese email
-    if (account && userEmail) {
-      const users = await listSubUsers(account.id)
-      if (users.length === 0) {
-        console.log("🔍 [subusers] Account no tiene usuarios, buscando por email:", userEmail)
-        
-        // Buscar accounts que tengan usuarios con ese email
-        const { prisma } = await import("@/lib/db")
-        const accountsWithUsers = await prisma.account.findMany({
-          where: {
-            users: {
-              some: {
-                email: userEmail,
-                isActive: true,
-              },
-            },
-          },
-          include: {
-            users: {
-              where: {
-                isActive: true,
-              },
-              select: {
-                id: true,
-                username: true,
-                name: true,
-              },
-            },
-          },
-        })
-        
-        console.log("🔍 [subusers] Accounts encontrados por email:", accountsWithUsers.length, accountsWithUsers.map(a => ({ id: a.id, name: a.name, usersCount: a.users.length })))
-        
-        // Si encontramos accounts con usuarios, usar el que tenga más usuarios
-        if (accountsWithUsers.length > 0) {
-          const bestAccount = accountsWithUsers.reduce((prev, current) => 
-            current.users.length > prev.users.length ? current : prev
-          )
-          console.log("✅ [subusers] Usando account existente con usuarios:", { id: bestAccount.id, name: bestAccount.name, usersCount: bestAccount.users.length })
-          // Convertir a AccountInfo
-          account = {
-            id: bestAccount.id,
-            name: bestAccount.name,
-            clerkUserId: bestAccount.clerkUserId,
-          } as typeof account
-        }
-      }
-    }
     
     if (!account) {
       return NextResponse.json(
