@@ -8,6 +8,7 @@ const footerLinks = {
   legal: [
     { href: "/privacy", label: "Privacidad" },
     { href: "/terms", label: "Términos" },
+    { href: "/sitemap.xml", label: "Sitemap" },
   ],
   empresa: [
     { href: "/about", label: "Nosotros" },

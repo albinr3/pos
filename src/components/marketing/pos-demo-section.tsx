@@ -33,6 +33,7 @@ export function POSDemoSection() {
                   src="/ventatipolista.gif"
                   alt="Proceso de facturación en modo lista"
                   className="w-full h-auto relative z-10"
+                  decoding="async"
                   loading="lazy"
                 />
               </div>
@@ -55,6 +56,7 @@ export function POSDemoSection() {
                   src="/ventatipoimagenes.gif"
                   alt="Proceso de facturación en modo imágenes"
                   className="w-full h-auto relative z-10"
+                  decoding="async"
                   loading="lazy"
                 />
               </div>

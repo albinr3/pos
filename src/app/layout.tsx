@@ -15,13 +15,24 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = "https://movopos.com";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: {
-    default: "MOVOPos - Sistema de Punto de Venta e Inventario",
+    default: "MOVOPos - Software POS en República Dominicana",
     template: "%s | MOVOPos",
   },
-  description: "Sistema completo de punto de venta, inventario y gestión empresarial para tu negocio. Gestiona ventas, compras, cuentas por cobrar y más.",
-  keywords: ["POS", "punto de venta", "inventario", "gestión empresarial", "República Dominicana"],
+  description:
+    "Software POS en la nube para República Dominicana: controla ventas, inventario, compras y cuentas por cobrar con facturación térmica y acceso desde cualquier dispositivo.",
+  keywords: [
+    "software pos",
+    "sistema punto de venta",
+    "inventario",
+    "facturación térmica",
+    "república dominicana",
+    "control de ventas",
+  ],
   authors: [{ name: "Tejada Auto Adornos" }],
   icons: {
     icon: "/favicon.png",
@@ -32,15 +43,31 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "es_DO",
-    url: "https://tejadapos.com",
+    url: siteUrl,
     siteName: "MOVOPos",
-    title: "MOVOPos - Sistema de Punto de Venta e Inventario",
-    description: "Sistema completo de punto de venta, inventario y gestión empresarial para tu negocio.",
+    title: "MOVOPos - Software POS en República Dominicana",
+    description:
+      "Software POS en la nube para República Dominicana: controla ventas, inventario, compras y cuentas por cobrar con facturación térmica y acceso desde cualquier dispositivo.",
+    images: [
+      {
+        url: "/hero-img.svg",
+        width: 1200,
+        height: 630,
+        alt: "Software POS en República Dominicana",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "MOVOPos - Sistema de Punto de Venta e Inventario",
-    description: "Sistema completo de punto de venta, inventario y gestión empresarial para tu negocio.",
+    title: "MOVOPos - Software POS en República Dominicana",
+    description:
+      "Software POS en la nube para República Dominicana: controla ventas, inventario, compras y cuentas por cobrar con facturación térmica y acceso desde cualquier dispositivo.",
+    images: [
+      {
+        url: "/hero-img.svg",
+        alt: "Software POS en República Dominicana",
+      },
+    ],
   },
 };
 

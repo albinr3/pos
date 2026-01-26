@@ -28,7 +28,7 @@ export function BusinessTypesSection() {
             Perfecto para cualquier tipo de negocio
           </h2>
           <p className="text-xl text-white/90 leading-relaxed">
-            MOVOPos se adapta a las necesidades de tu negocio. Ya sea un colmado, auto adorno, repuestos, tienda de ropa, salón, tienda de hogar o cualquier otro comercio, nuestro sistema está diseñado para hacer crecer tu empresa.
+            MOVOPos se adapta a negocios en República Dominicana: colmados, auto adornos, repuestos, tiendas de ropa, salones, hogar y más, con las funciones que necesitas para crecer.
           </p>
         </div>
 
@@ -73,6 +73,7 @@ export function BusinessTypesSection() {
                   src="/colmadero.png"
                   alt="Colmadero usando MOVOPos en laptop para gestionar su negocio"
                   className="w-full h-auto relative z-10"
+                  decoding="async"
                   loading="lazy"
                 />
               </div>
@@ -94,6 +95,7 @@ export function BusinessTypesSection() {
                   src="/autoadorno.png"
                   alt="Dueño de auto adorno utilizando MOVOPos para administrar su tienda"
                   className="w-full h-auto relative z-10"
+                  decoding="async"
                   loading="lazy"
                 />
               </div>
@@ -104,7 +106,7 @@ export function BusinessTypesSection() {
         {/* Texto Final */}
         <div className="mt-12 sm:mt-16 text-center">
           <p className="text-lg sm:text-xl text-white/90 font-medium">
-            Negocios de todo el pais confían en MOVOPos para gestionar sus ventas diarias
+            Negocios de todo el país confían en MOVOPos para gestionar sus ventas diarias en República Dominicana
           </p>
         </div>
       </div>

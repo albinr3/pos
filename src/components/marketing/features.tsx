@@ -15,42 +15,42 @@ import { FeatureCard } from "./feature-card"
 const features = [
   {
     name: "Punto de Venta",
-    description: "Sistema completo de ventas con facturación térmica y gestión de clientes.",
+    description: "Facturación térmica rápida con clientes, impuestos y métodos de pago locales.",
     icon: ShoppingCart,
   },
   {
     name: "Control de Inventario",
-    description: "Gestión completa de productos, stock, proveedores y compras.",
+    description: "Productos, stock mínimo, proveedores y compras centralizados en tiempo real.",
     icon: Package,
   },
   {
     name: "Cuentas por Cobrar",
-    description: "Administra créditos, abonos y seguimiento de pagos pendientes.",
+    description: "Créditos, abonos y seguimiento de pagos pendientes para tus clientes.",
     icon: CreditCard,
   },
   {
     name: "Reportes y Análisis",
-    description: "Dashboard con métricas, reportes de ventas y estado de resultados.",
+    description: "Dashboard con métricas clave, ventas por periodo y resultados del negocio.",
     icon: BarChart3,
   },
   {
     name: "Gestión de Clientes",
-    description: "Base de datos completa de clientes con historial de compras.",
+    description: "Historial de compras, datos de contacto y segmentación para fidelizar.",
     icon: Users,
   },
   {
     name: "Cotizaciones",
-    description: "Crea y comparte cotizaciones profesionales con tus clientes.",
+    description: "Crea y envía cotizaciones profesionales en segundos.",
     icon: FileText,
   },
   {
     name: "Devoluciones",
-    description: "Procesa devoluciones y ajusta inventario automáticamente.",
+    description: "Procesa devoluciones y ajusta inventario automáticamente sin errores.",
     icon: Truck,
   },
   {
     name: "Seguro y Confiable",
-    description: "Tus datos están seguros con respaldos automáticos y control de acceso.",
+    description: "Respaldos automáticos, roles y permisos para proteger tu operación.",
     icon: Shield,
   },
 ]
@@ -61,10 +61,10 @@ export function Features() {
       <div className="container">
         <div className="mx-auto max-w-2xl text-center mb-8">
           <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Todo lo que necesitas en un solo lugar
+            Funciones clave de sistema POS y facturación en República Dominicana
           </h2>
           <p className="mt-6 text-xl text-muted-foreground">
-            Funcionalidades diseñadas para hacer crecer tu negocio de manera eficiente.
+            Operaciones listas para facturar, controlar inventario y cobrar en RD$ desde un solo lugar.
           </p>
         </div>
 

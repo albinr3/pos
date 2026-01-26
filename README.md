@@ -183,9 +183,16 @@ Ruta: `/reports`
 - **Reporte de ventas**: `/reports/sales`
   - Por rango de fecha
   - Reimpresión de tickets y facturas carta
+- **Reporte de recibos (CxC)**: `/reports/receipts`
+  - Filtros: fecha desde/hasta, cliente, código de recibo, método de pago, monto mínimo/máximo
+  - Incluye/omite recibos cancelados, totales por método de pago y montos cancelados
+  - Exporta **CSV/PDF** y enlaza a cada recibo térmico
+- **Reporte de cuentas por cobrar**: `/reports/ar`
+  - Filtros: estado (pendiente/parcial/pagada), cliente, factura, rango de fechas, monto mínimo/máximo, solo vencidas
+  - Métricas: total pendiente, total vencido, facturas vencidas y **top deudores**
+  - Exporta **CSV/PDF** con resaltado de facturas vencidas
 - **Reporte de cobros**: `/reports/payments`
-  - Por rango de fecha
-  - Reimpresión de recibos de pago
+  - Por rango de fecha con total cobrado y reimpresión rápida de recibos
 - **Reporte de ganancia (Estado de Resultados)**: `/reports/profit`
   - Por rango de fecha
   - Desglose completo:
@@ -391,6 +398,7 @@ Rutas públicas:
 - `/pricing` - Precios detallados
 - `/privacy` - Política de privacidad
 - `/terms` - Términos de servicio
+- SEO listo para producción: `sitemap.xml`, `robots.txt` y JSON-LD (Organization/WebPage/FAQ) integrados en la landing
 
 ---
 
@@ -422,6 +430,9 @@ Crear archivo `.env` en la raíz:
 ```env
 # Base de datos (requerido)
 DATABASE_URL="postgresql://postgres:TU_PASSWORD@localhost:PUERTO/movopos?schema=public"
+
+# Base de datos de producción (opcional, para `npm run migrate:prod`)
+DATABASE_URL_PROD="postgresql://postgres:TU_PASSWORD@host-prod:PUERTO/movopos?schema=public"
 
 # Clerk (requerido para autenticación)
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
@@ -501,9 +512,14 @@ npm install
 npm run dev
 ```
 
+### Lint
+```bash
+npm run lint
+```
+
 ### Migraciones (desarrollo)
 ```bash
-npm run prisma:migrate
+npx prisma migrate dev --name "init"
 ```
 
 > **Nota**: Si hay errores de "shadow database", usa:
@@ -513,7 +529,9 @@ npm run prisma:migrate
 
 ### Migraciones (producción)
 ```bash
-npx prisma migrate deploy
+npm run prisma:migrate            # usa DATABASE_URL
+# ó
+npm run migrate:prod              # usa DATABASE_URL_PROD definido en .env
 ```
 
 ### Seed (datos iniciales)
@@ -535,7 +553,7 @@ npm run prisma:studio
 
 ### Regenerar cliente Prisma
 ```bash
-npx prisma generate
+npm run prisma:generate
 ```
 
 ### Build de producción
