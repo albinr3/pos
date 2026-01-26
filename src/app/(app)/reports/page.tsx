@@ -30,11 +30,21 @@ export default async function ReportsPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Cobros (CxC)</CardTitle>
+            <CardTitle>Cuentas por Cobrar</CardTitle>
           </CardHeader>
           <CardContent>
             <Button asChild>
-              <Link href="/reports/payments">Ver reporte de cobros</Link>
+              <Link href="/reports/ar">Ver cuentas por cobrar</Link>
+            </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Recibos CxC</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link href="/reports/receipts">Ver reporte de recibos</Link>
             </Button>
           </CardContent>
         </Card>

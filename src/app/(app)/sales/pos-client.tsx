@@ -148,11 +148,17 @@ export function PosClient() {
 
       const loadCustomersFromCache = async () => {
         const cached = await getCustomersCache()
-        setCustomers(cached)
+        // Ordenar clientes: primero el genérico, luego el resto alfabéticamente
+        const sorted = cached.sort((a, b) => {
+          if (a.isGeneric && !b.isGeneric) return -1
+          if (!a.isGeneric && b.isGeneric) return 1
+          return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' })
+        })
+        setCustomers(sorted)
         if (cached.length === 0) {
           toast({
             title: "Sin datos offline",
-            description: "Con‚ctate y precarga clientes/productos para vender sin internet.",
+            description: "Conéctate y precarga clientes/productos para vender sin internet.",
             variant: "destructive",
           })
         }
@@ -168,13 +174,21 @@ export function PosClient() {
         } catch {
           // Ignore cache errors
         }
-        return cached
+        return sorted
       }
 
       // Cargar clientes (desde servidor o cache)
       if (isOnline) {
         listCustomers()
-          .then(setCustomers)
+          .then((customers) => {
+            // Ordenar clientes: primero el genérico, luego el resto alfabéticamente
+            const sorted = customers.sort((a, b) => {
+              if (a.isGeneric && !b.isGeneric) return -1
+              if (!a.isGeneric && b.isGeneric) return 1
+              return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' })
+            })
+            setCustomers(sorted)
+          })
           .catch(async () => {
             await loadCustomersFromCache()
           })
@@ -198,7 +212,13 @@ export function PosClient() {
           if (Date.now() - state.timestamp < maxAge && state.cart && Array.isArray(state.cart)) {
             // Cargar clientes primero para validar el customerId
             const customersList = await listCustomers().catch(() => loadCustomersFromCache())
-            setCustomers(customersList)
+            // Ordenar clientes: primero el genérico, luego el resto alfabéticamente
+            const sortedCustomers = customersList.sort((a, b) => {
+              if (a.isGeneric && !b.isGeneric) return -1
+              if (!a.isGeneric && b.isGeneric) return 1
+              return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' })
+            })
+            setCustomers(sortedCustomers)
             
             // Validar que el cliente aún existe
             const validCustomerId = state.customerId === "generic" || 

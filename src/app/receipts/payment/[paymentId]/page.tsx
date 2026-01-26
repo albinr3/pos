@@ -82,7 +82,7 @@ export default async function PaymentReceiptPage({
       <div className="no-print mb-2 flex gap-2">
         <PrintButton />
         <DownloadReceiptPdfButton 
-          filename={`recibo-pago-${payment.ar.sale.invoiceCode}`}
+          filename={`recibo-${payment.receiptCode}`}
         />
       </div>
 
@@ -112,6 +112,10 @@ export default async function PaymentReceiptPage({
       <div className="my-2 border-t border-b border-dashed py-2">
         <div className="text-center font-bold">RECIBO DE PAGO</div>
         <div className="mt-2 flex justify-between">
+          <span>Recibo:</span>
+          <span className="font-bold text-[14px]">{payment.receiptCode}</span>
+        </div>
+        <div className="flex justify-between">
           <span>Fecha:</span>
           <span>{fmtDate(payment.paidAt)}</span>
         </div>

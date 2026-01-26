@@ -79,6 +79,7 @@ export function PaymentsListClient() {
     if (!query.trim()) return true
     const q = query.toLowerCase()
     return (
+      p.receiptCode.toLowerCase().includes(q) ||
       p.ar.sale.invoiceCode.toLowerCase().includes(q) ||
       p.ar.customer.name.toLowerCase().includes(q) ||
       methodLabel(p.method).toLowerCase().includes(q)
@@ -96,13 +97,14 @@ export function PaymentsListClient() {
         <CardContent className="grid gap-4">
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
-            <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por factura, cliente o método" />
+            <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por recibo, factura, cliente o método" />
           </div>
 
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Recibo</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Factura</TableHead>
                   <TableHead>Cliente</TableHead>
@@ -114,6 +116,9 @@ export function PaymentsListClient() {
               <TableBody>
                 {filteredPayments.map((p) => (
                   <TableRow key={p.id} className={p.cancelledAt ? "bg-red-50" : ""}>
+                    <TableCell>
+                      <div className="font-mono font-bold text-sm">{p.receiptCode}</div>
+                    </TableCell>
                     <TableCell>
                       {new Date(p.paidAt).toLocaleDateString("es-DO")}
                       {p.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADO</div>}
@@ -151,7 +156,7 @@ export function PaymentsListClient() {
 
                 {!isLoading && filteredPayments.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-12">
+                    <TableCell colSpan={7} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
                           src="/lupa.png"

@@ -150,9 +150,19 @@ export async function upsertProduct(input: {
       },
     })
   } else {
+    // Obtener el siguiente productId de la secuencia
+    const seq = await prisma.productSequence.upsert({
+      where: { accountId: user.accountId },
+      update: { lastNumber: { increment: 1 } },
+      create: { accountId: user.accountId, lastNumber: 1 },
+    })
+
+    const productId = seq.lastNumber
+
     const created = await prisma.product.create({
       data: {
         accountId: user.accountId,
+        productId,
         name,
         sku,
         reference,
@@ -179,6 +189,7 @@ export async function upsertProduct(input: {
         name,
         sku,
         reference,
+        productId,
       },
     })
   }

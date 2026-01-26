@@ -189,15 +189,27 @@ export async function addPayment(input: {
 
     const amount = Math.min(input.amountCents, ar.balanceCents)
 
+    // Obtener o crear la secuencia de recibos para este account
+    const seq = await tx.paymentSequence.upsert({
+      where: { accountId: currentUser.accountId },
+      update: { lastNumber: { increment: 1 } },
+      create: { accountId: currentUser.accountId, lastNumber: 1 },
+    })
+
+    const receiptNumber = seq.lastNumber
+    const receiptCode = `R-${String(receiptNumber).padStart(6, '0')}`
+
     const payment = await tx.payment.create({
       data: {
         arId: ar.id,
         userId: currentUser.id,
+        receiptNumber,
+        receiptCode,
         amountCents: amount,
         method: input.method,
         note: input.note || null,
       },
-      select: { id: true },
+      select: { id: true, receiptCode: true },
     })
 
     const newBalance = ar.balanceCents - amount
@@ -223,6 +235,7 @@ export async function addPayment(input: {
         amountCents: amount,
         method: input.method,
         arId: ar.id,
+        receiptCode: payment.receiptCode,
       },
     }, tx)
 
@@ -230,6 +243,11 @@ export async function addPayment(input: {
     revalidatePath("/dashboard")
     revalidatePath("/daily-close")
 
-    return { paymentId: payment.id, appliedCents: amount, newBalanceCents: newBalance }
+    return { 
+      paymentId: payment.id, 
+      receiptCode: payment.receiptCode,
+      appliedCents: amount, 
+      newBalanceCents: newBalance 
+    }
   }, TRANSACTION_OPTIONS)
 }

@@ -170,6 +170,8 @@ model Account {
   invoiceSequences   InvoiceSequence[]
   returnSequence     ReturnSequence?
   quoteSequence      QuoteSequence?
+  productSequence    ProductSequence?
+  paymentSequence    PaymentSequence?
   subUserLoginTokens SubUserLoginToken[]
 
   // Billing
@@ -331,6 +333,32 @@ model QuoteSequence {
   @@index([accountId])
 }
 
+model ProductSequence {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  lastNumber Int @default(0)
+
+  @@index([accountId])
+}
+
+model PaymentSequence {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  lastNumber Int @default(0)
+
+  @@index([accountId])
+}
+
 // ==========================================
 // CUSTOMER
 // ==========================================
@@ -425,7 +453,7 @@ model Product {
   accountId String
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
-  productId Int @default(autoincrement())
+  productId Int
 
   name String
 
@@ -592,6 +620,9 @@ model Payment {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
+  receiptNumber Int
+  receiptCode   String // e.g. R-000001
+
   paidAt      DateTime      @default(now())
   amountCents Int
   method      PaymentMethod @default(EFECTIVO)
@@ -603,6 +634,7 @@ model Payment {
 
   @@index([paidAt])
   @@index([cancelledAt])
+  @@index([receiptCode])
 }
 
 // ==========================================

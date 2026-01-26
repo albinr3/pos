@@ -211,25 +211,41 @@ async function main() {
   // Insertar productos
   for (const product of products) {
     try {
+      // Obtener el siguiente productId de la secuencia
+      const seq = await prisma.productSequence.upsert({
+        where: { accountId: account.id },
+        update: { lastNumber: { increment: 1 } },
+        create: { accountId: account.id, lastNumber: 1 },
+      })
+
       await prisma.product.create({
         data: {
           ...product,
           accountId: account.id,
+          productId: seq.lastNumber,
         },
       })
-      console.log(`✅ Producto creado: ${product.name}`)
+      console.log(`✅ Producto creado: ${product.name} (ID: ${seq.lastNumber})`)
     } catch (error: any) {
       // Si el SKU ya existe, intentar sin SKU
       if (error.code === "P2002" && error.meta?.target?.includes("sku")) {
         try {
           const { sku, ...productWithoutSku } = product
+          // Obtener el siguiente productId de la secuencia
+          const seq = await prisma.productSequence.upsert({
+            where: { accountId: account.id },
+            update: { lastNumber: { increment: 1 } },
+            create: { accountId: account.id, lastNumber: 1 },
+          })
+          
           await prisma.product.create({
             data: {
               ...productWithoutSku,
               accountId: account.id,
+              productId: seq.lastNumber,
             },
           })
-          console.log(`✅ Producto creado (sin SKU duplicado): ${product.name}`)
+          console.log(`✅ Producto creado (sin SKU duplicado): ${product.name} (ID: ${seq.lastNumber})`)
         } catch (error2) {
           console.error(`❌ Error al crear producto ${product.name}:`, error2)
         }

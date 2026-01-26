@@ -254,9 +254,17 @@ export async function createPurchaseFromOCR(input: {
 
       // Si es producto nuevo y se debe crear
       if (!productId && p.createNew) {
+        // Obtener el siguiente productId de la secuencia
+        const seq = await tx.productSequence.upsert({
+          where: { accountId: currentUser.accountId },
+          update: { lastNumber: { increment: 1 } },
+          create: { accountId: currentUser.accountId, lastNumber: 1 },
+        })
+
         const newProduct = await tx.product.create({
           data: {
             accountId: currentUser.accountId,
+            productId: seq.lastNumber,
             name: p.description,
             sku: p.sku || null,
             reference: p.reference || null,
