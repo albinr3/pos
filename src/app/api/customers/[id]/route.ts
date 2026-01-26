@@ -8,7 +8,7 @@ export const runtime = "nodejs"
 // PUT /api/customers/:id - Actualizar cliente
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUserFromRequest(request)
@@ -16,10 +16,11 @@ export async function PUT(
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
 
+    const { id } = await params
     const body = await request.json()
 
     await upsertCustomer({
-      id: params.id,
+      id,
       name: body.name,
       phone: body.phone || null,
       address: body.address || null,
@@ -33,7 +34,7 @@ export async function PUT(
     const { prisma } = await import("@/lib/db")
     const customer = await prisma.customer.findFirst({
       where: {
-        id: params.id,
+        id,
         accountId: user.accountId,
       },
     })

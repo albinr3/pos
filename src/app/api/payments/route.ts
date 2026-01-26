@@ -58,19 +58,33 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "arId o saleId es requerido" }, { status: 400 })
     }
 
-    const payment = await addPayment({
+    const paymentResult = await addPayment({
       arId,
       amountCents,
       method,
       note: body.note || null,
     })
 
+    // Obtener el pago completo para retornarlo
+    const { prisma } = await import("@/lib/db")
+    const payment = await prisma.payment.findUnique({
+      where: { id: paymentResult.paymentId },
+      include: { ar: { include: { sale: true } } },
+    })
+
+    if (!payment) {
+      return NextResponse.json({ error: "Error al crear pago" }, { status: 500 })
+    }
+
     return NextResponse.json({
       id: payment.id,
       receiptNumber: payment.receiptNumber,
+      receiptCode: payment.receiptCode,
       amountCents: payment.amountCents,
       method: payment.method,
       paidAt: payment.paidAt.toISOString(),
+      appliedCents: paymentResult.appliedCents,
+      newBalanceCents: paymentResult.newBalanceCents,
     }, { status: 201 })
   } catch (error: any) {
     console.error("Error en POST /api/payments:", error)

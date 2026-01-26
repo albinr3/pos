@@ -9,7 +9,7 @@ export const runtime = "nodejs"
 // PUT /api/products/:id - Actualizar producto
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const user = await getCurrentUserFromRequest(request)
@@ -17,6 +17,7 @@ export async function PUT(
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
 
+    const { id } = await params
     const body = await request.json()
     
     // Convertir precio de pesos a centavos si viene como número decimal
@@ -24,7 +25,7 @@ export async function PUT(
     const costCents = body.costCents ?? (body.cost ? Math.round(body.cost * 100) : undefined)
 
     await upsertProduct({
-      id: params.id,
+      id,
       name: body.name,
       sku: body.sku || null,
       reference: body.reference || null,
@@ -44,7 +45,7 @@ export async function PUT(
     const { prisma } = await import("@/lib/db")
     const product = await prisma.product.findFirst({
       where: {
-        id: params.id,
+        id,
         accountId: user.accountId,
       },
     })
