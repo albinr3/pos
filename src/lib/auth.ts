@@ -373,12 +373,33 @@ export async function listSubUsers(accountId: string): Promise<SubUser[]> {
   // Log para debug
   console.log("🔍 [listSubUsers] Buscando usuarios para accountId:", accountId)
   
+  // Verificar el account
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { id: true, name: true, clerkUserId: true },
+  })
+  console.log("🔍 [listSubUsers] Account verificado:", account)
+  
   // Primero verificar cuántos usuarios hay en total (sin filtro de isActive)
   const allUsers = await prisma.user.findMany({
     where: { accountId },
-    select: { id: true, username: true, name: true, isActive: true },
+    select: { id: true, username: true, name: true, isActive: true, accountId: true },
   })
-  console.log("🔍 [listSubUsers] Total de usuarios en account:", allUsers.length, allUsers.map(u => ({ username: u.username, isActive: u.isActive })))
+  console.log("🔍 [listSubUsers] Total de usuarios en account:", allUsers.length, allUsers.map(u => ({ username: u.username, isActive: u.isActive, accountId: u.accountId })))
+  
+  // Si no hay usuarios, verificar si hay usuarios en otros accounts (solo para debug)
+  if (allUsers.length === 0) {
+    const allAccounts = await prisma.account.findMany({
+      select: { id: true, name: true, clerkUserId: true },
+    })
+    console.log("🔍 [listSubUsers] Todos los accounts:", allAccounts.map(a => ({ id: a.id, name: a.name, clerkUserId: a.clerkUserId })))
+    
+    const usersInOtherAccounts = await prisma.user.findMany({
+      select: { id: true, username: true, name: true, accountId: true },
+      take: 10, // Limitar a 10 para no saturar logs
+    })
+    console.log("🔍 [listSubUsers] Usuarios en otros accounts (primeros 10):", usersInOtherAccounts.map(u => ({ username: u.username, accountId: u.accountId })))
+  }
   
   const users = await prisma.user.findMany({
     where: {
