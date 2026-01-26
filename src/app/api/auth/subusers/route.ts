@@ -19,18 +19,29 @@ export async function GET(request: NextRequest) {
   }
   try {
     // Intentar obtener token del header Authorization (para app móvil)
-    // Probar con diferentes casos porque los headers pueden ser case-insensitive
-    const authHeader = 
+    // Vercel puede enviar el header en diferentes lugares
+    let authHeader: string | null = null
+    
+    // 1. Intentar leer directamente
+    authHeader = 
       request.headers.get("Authorization") || 
       request.headers.get("authorization") ||
       request.headers.get("AUTHORIZATION")
     
-    // Log todos los headers para debug
-    const allHeaders: Record<string, string> = {}
-    request.headers.forEach((value, key) => {
-      allHeaders[key] = value
-    })
-    console.log("🔍 [subusers] Todos los headers:", JSON.stringify(allHeaders, null, 2))
+    // 2. Si no está, intentar leer desde x-vercel-sc-headers (Vercel proxy)
+    if (!authHeader) {
+      const vercelHeaders = request.headers.get("x-vercel-sc-headers")
+      if (vercelHeaders) {
+        try {
+          const parsed = JSON.parse(vercelHeaders)
+          authHeader = parsed.Authorization || parsed.authorization || null
+          console.log("🔍 [subusers] Auth header encontrado en x-vercel-sc-headers")
+        } catch (e) {
+          console.error("❌ [subusers] Error parseando x-vercel-sc-headers:", e)
+        }
+      }
+    }
+    
     console.log("🔍 [subusers] Auth header:", authHeader ? `${authHeader.substring(0, 30)}...` : "Ausente")
     
     let clerkUserId: string | null = null
