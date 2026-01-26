@@ -20,8 +20,8 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
     request.headers.get("authorization")
   
   console.log("🔍 Headers recibidos:", {
-    subUserToken: subUserToken ? PRESENTE (...) : "AUSENTE",
-    authorization: authHeader ? PRESENTE (...) : "AUSENTE"
+    subUserToken: subUserToken ? "PRESENTE (" + subUserToken.substring(0, 20) + "...)" : "AUSENTE",
+    authorization: authHeader ? "PRESENTE (" + authHeader.substring(0, 27) + "...)" : "AUSENTE"
   })
   
   // Si hay authHeader, verificar el clerkUserId
@@ -37,7 +37,7 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
     
     // Validar que el subUserToken corresponde a una cuenta válida
     const session = await getSubUserSession(subUserToken)
-    console.log("🔍 Sesión de subuser:", session ? ccountId: , userId:  : "NULL - Token JWT inválido o expirado")
+    console.log("🔍 Sesión de subuser:", session ? "accountId: " + session.accountId + ", userId: " + session.userId : "NULL - Token JWT inválido o expirado")
     
     if (!session) {
       console.error("❌ No se pudo validar el token JWT del subusuario")
@@ -53,7 +53,7 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
       },
     })
     
-    console.log("🔍 Usuario encontrado en DB:", user ? ${user.username} () : "NULL - Usuario no existe en DB")
+    console.log("🔍 Usuario encontrado en DB:", user ? user.username + " (" + user.id + ")" : "NULL - Usuario no existe en DB")
     
     if (!user) {
       console.error("❌ Usuario no encontrado en la base de datos")
