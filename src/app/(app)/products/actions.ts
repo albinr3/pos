@@ -68,8 +68,10 @@ export async function upsertProduct(input: {
   id?: string
   productId?: string
   name: string
-  sku?: string
-  reference?: string
+  sku?: string | null
+  reference?: string | null
+  supplierId?: string | null
+  categoryId?: string | null
   priceCents: number
   costCents: number
   itbisRateBp?: number

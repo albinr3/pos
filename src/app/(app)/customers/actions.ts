@@ -76,14 +76,14 @@ export async function listCustomersPage(options?: { query?: string; cursor?: str
   if (!user) throw new Error("No autenticado")
 
   // Asegurar que el cliente general existe
-  await ensureGenericCustomer(currentUser.accountId)
+  await ensureGenericCustomer(user.accountId)
 
   const q = options?.query?.trim()
   const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
 
   const customers = await prisma.customer.findMany({
     where: {
-      accountId: currentUser.accountId,
+      accountId: user.accountId,
       isActive: true,
       ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
     },
