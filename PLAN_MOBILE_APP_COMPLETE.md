@@ -10,6 +10,9 @@
 - ✅ **Auth:** Clerk + Biométrico (huella/Face ID)
 - ✅ **Nativas:** Cámara, Bluetooth, Notificaciones, GPS
 - ✅ **Estructura:** Repositorio separado
+- ✅ **Ubicación del repo:** Crear el proyecto móvil en carpeta independiente en `C:\\Users\\Albin Rodriguez\\Documents` (otro repositorio fuera del actual)
+- ✅ **UI/Assets:** Mantener apariencia visual idéntica reutilizando las mismas imágenes y gráficos
+- ✅ **Variables de entorno:** Usar las mismas keys/variables que la web para poder copiar/pegar el `.env` existente
 - ✅ **DB Local:** SQLite + custom sync
 - ✅ **Navegación:** Drawer + Bottom Tabs
 - ✅ **Prioridad:** Android primero, luego iOS
@@ -55,6 +58,8 @@ npm install axios date-fns
 API_URL=https://tu-backend.vercel.app
 CLERK_PUBLISHABLE_KEY=pk_test_...
 ```
+
+> Reutilizar el mismo set de variables y claves que usa la app web para poder copiar/pegar el archivo `.env` actual sin cambios.
 
 ### 1.4 Estructura Inicial de Navegación
 - Crear AuthNavigator (Login, WhatsApp OTP)
@@ -865,6 +870,7 @@ eas submit --platform ios
 ## 🚀 Próximos Pasos Inmediatos
 
 1. **Crear repositorio nuevo** para la app móvil
+   - Ubicación: `C:\\Users\\Albin Rodriguez\\Documents` (fuera del repositorio presente)
 2. **Inicializar proyecto** con Expo
 3. **Configurar ambiente** de desarrollo
 4. **Definir API contracts** con el backend

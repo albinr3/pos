@@ -547,10 +547,28 @@ export async function clearSubUserSession() {
 
 /**
  * Obtiene la sesión actual del subusuario
+ * Puede leer desde cookies (web) o desde el header X-SubUser-Token (móvil)
  */
-export async function getSubUserSession(): Promise<{ accountId: string; userId: string } | null> {
-  const cookieStore = await cookies()
-  const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value
+export async function getSubUserSession(
+  subUserToken?: string | null
+): Promise<{ accountId: string; userId: string } | null> {
+  let sessionToken: string | null = null
+
+  // Intentar leer del header X-SubUser-Token (para móvil)
+  if (subUserToken) {
+    sessionToken = subUserToken
+  }
+
+  // Si no hay token en el header, intentar leer de cookies (web)
+  if (!sessionToken) {
+    try {
+      const cookieStore = await cookies()
+      sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value || null
+    } catch {
+      // Si no hay cookies disponibles (por ejemplo, en API routes sin cookies)
+      sessionToken = null
+    }
+  }
 
   if (!sessionToken) {
     return null
@@ -573,16 +591,19 @@ export async function getSubUserSession(): Promise<{ accountId: string; userId: 
 
 /**
  * Obtiene el usuario actual (requiere sesión de Clerk + sesión de subusuario)
+ * @param authHeader - Header Authorization opcional para leer token JWT (móvil)
  */
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+export async function getCurrentUser(
+  authHeader?: string | null
+): Promise<CurrentUser | null> {
   // Verificar sesión de Clerk
   const clerkUserId = await getClerkUserId()
   if (!clerkUserId) {
     return null
   }
 
-  // Verificar sesión de subusuario
-  const subUserSession = await getSubUserSession()
+  // Verificar sesión de subusuario (puede leer de header o cookies)
+  const subUserSession = await getSubUserSession(authHeader)
   if (!subUserSession) {
     return null
   }
