@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { DOMINICAN_PROVINCES } from "@/lib/provinces"
@@ -31,6 +32,8 @@ export function CustomersClient() {
   const [address, setAddress] = useState("")
   const [cedula, setCedula] = useState("")
   const [province, setProvince] = useState("")
+  const [creditEnabled, setCreditEnabled] = useState(false)
+  const [creditDays, setCreditDays] = useState(0)
   const [isSaving, startSaving] = useTransition()
 
   function refresh(q?: string) {
@@ -77,6 +80,8 @@ export function CustomersClient() {
     setAddress(c?.address ?? "")
     setCedula(c?.cedula ?? "")
     setProvince(c?.province ?? "")
+    setCreditEnabled(c?.creditEnabled ?? false)
+    setCreditDays(c?.creditDays ?? 0)
   }
 
   async function onSave() {
@@ -94,6 +99,8 @@ export function CustomersClient() {
           address: address || null,
           cedula: cedula || null,
           province: province || null,
+          creditEnabled,
+          creditDays: creditEnabled ? creditDays : 0,
         })
         toast({ title: "Guardado" })
         setOpen(false)
@@ -184,6 +191,39 @@ export function CustomersClient() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                <div className="grid gap-3 rounded-lg border p-4 bg-muted/50">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="credit-enabled" className="text-base">Venta a crédito</Label>
+                      <div className="text-sm text-muted-foreground">
+                        ¿Permitir ventas a crédito para este cliente?
+                      </div>
+                    </div>
+                    <Switch
+                      id="credit-enabled"
+                      checked={creditEnabled}
+                      onCheckedChange={setCreditEnabled}
+                    />
+                  </div>
+                  
+                  {creditEnabled && (
+                    <div className="grid gap-2">
+                      <Label htmlFor="credit-days">Días de crédito</Label>
+                      <Input
+                        id="credit-days"
+                        type="number"
+                        min="0"
+                        value={creditDays}
+                        onChange={(e) => setCreditDays(parseInt(e.target.value) || 0)}
+                        placeholder="Ej: 30"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Número de días de plazo para pagar
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 

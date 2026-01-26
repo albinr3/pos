@@ -3,7 +3,8 @@ import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
-import { PrintToolbar } from "@/components/app/print-toolbar"
+import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
+import { PrintButton } from "@/components/app/print-button"
 import { formatRD } from "@/lib/money"
 
 // Evitar prerender durante el build
@@ -86,7 +87,12 @@ export default async function ReturnReceiptPage({
         }}
       />
 
-      <PrintToolbar />
+      <div className="no-print mb-2 flex gap-2">
+        <PrintButton />
+        <DownloadReceiptPdfButton 
+          filename={`recibo-devolucion-${returnRecord.returnCode}`}
+        />
+      </div>
 
       <div className="text-center">
         {company?.logoUrl && (

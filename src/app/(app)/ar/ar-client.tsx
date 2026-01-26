@@ -330,16 +330,44 @@ export function ARClient() {
                 <TableRow>
                   <TableHead>Factura</TableHead>
                   <TableHead>Cliente</TableHead>
+                  <TableHead>Vence</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-right">Pendiente</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {items.map((ar) => (
+                {items.map((ar) => {
+                  const isOverdue = ar.dueDate && new Date(ar.dueDate) < new Date()
+                  const daysUntilDue = ar.dueDate 
+                    ? Math.ceil((new Date(ar.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+                    : null
+                  
+                  return (
                   <TableRow key={ar.id}>
                     <TableCell className="font-medium">{ar.sale.invoiceCode}</TableCell>
                     <TableCell>{ar.customer.name}</TableCell>
+                    <TableCell>
+                      {ar.dueDate ? (
+                        <div className="text-sm">
+                          <div className={isOverdue ? "font-semibold text-red-600" : daysUntilDue !== null && daysUntilDue <= 7 ? "font-semibold text-amber-600" : ""}>
+                            {new Intl.DateTimeFormat("es-DO", {
+                              year: "numeric",
+                              month: "2-digit",
+                              day: "2-digit",
+                            }).format(new Date(ar.dueDate))}
+                          </div>
+                          {isOverdue && (
+                            <div className="text-xs text-red-500">Vencida</div>
+                          )}
+                          {!isOverdue && daysUntilDue !== null && daysUntilDue <= 7 && daysUntilDue > 0 && (
+                            <div className="text-xs text-amber-600">{daysUntilDue} día(s)</div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">{formatRD(ar.totalCents)}</TableCell>
                     <TableCell className="text-right">{formatRD(ar.balanceCents)}</TableCell>
                     <TableCell className="text-right">
@@ -372,11 +400,12 @@ export function ARClient() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
 
                 {!isLoading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-12">
+                    <TableCell colSpan={6} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
                           src="/lupa.png"
@@ -434,6 +463,30 @@ export function ARClient() {
                   <span>Pendiente</span>
                   <span className="font-semibold">{formatRD(selected.balanceCents)}</span>
                 </div>
+                {selected.dueDate && (
+                  <>
+                    <Separator className="my-2" />
+                    <div className="flex items-center justify-between">
+                      <span>Vence</span>
+                      <span className={
+                        new Date(selected.dueDate) < new Date() 
+                          ? "font-semibold text-red-600" 
+                          : "font-semibold"
+                      }>
+                        {new Intl.DateTimeFormat("es-DO", {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                        }).format(new Date(selected.dueDate))}
+                      </span>
+                    </div>
+                    {new Date(selected.dueDate) < new Date() && (
+                      <div className="mt-1 text-xs text-red-600 font-semibold">
+                        ⚠️ Factura vencida
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
               <div className="grid gap-2">
@@ -537,6 +590,25 @@ export function ARClient() {
                   <span>Pendiente</span>
                   <span className="font-semibold">{formatRD(selectedForReceipts.balanceCents)}</span>
                 </div>
+                {selectedForReceipts.dueDate && (
+                  <>
+                    <Separator className="my-2" />
+                    <div className="flex items-center justify-between">
+                      <span>Vence</span>
+                      <span className={
+                        new Date(selectedForReceipts.dueDate) < new Date() 
+                          ? "font-semibold text-red-600" 
+                          : "font-semibold"
+                      }>
+                        {new Intl.DateTimeFormat("es-DO", {
+                          year: "numeric",
+                          month: "2-digit",
+                          day: "2-digit",
+                        }).format(new Date(selectedForReceipts.dueDate))}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {selectedForReceipts.payments?.length > 0 ? (

@@ -110,6 +110,8 @@ export async function upsertCustomer(input: {
   address?: string | null
   cedula?: string | null
   province?: string | null
+  creditEnabled: boolean
+  creditDays: number
 }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -147,6 +149,8 @@ export async function upsertCustomer(input: {
         address: sanitized.address,
         cedula: sanitized.cedula,
         province: sanitized.province,
+        creditEnabled: input.creditEnabled,
+        creditDays: input.creditDays,
       },
     })
     if (updated.count === 0) throw new Error("Cliente no encontrado")
@@ -176,6 +180,8 @@ export async function upsertCustomer(input: {
         address: sanitized.address,
         cedula: sanitized.cedula,
         province: sanitized.province,
+        creditEnabled: input.creditEnabled,
+        creditDays: input.creditDays,
         isGeneric: false,
         isActive: true,
       },

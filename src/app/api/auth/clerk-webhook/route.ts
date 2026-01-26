@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
   // Lazy import de Prisma para evitar inicialización durante el build
   const { prisma } = await import("@/lib/db")
   const { sendResendEmail } = await import("@/lib/resend")
-  const { renderWelcomeOwnerEmail } = await import("@/lib/resend/templates")
+  const { renderWelcomeOwnerEmail, renderNewUserSignupNotification } = await import("@/lib/resend/templates")
   const { logError, ErrorCodes } = await import("@/lib/error-logger")
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET
 
@@ -135,6 +135,42 @@ export async function POST(request: NextRequest) {
                 clerkUserId: id,
               },
             })
+          }
+
+          // Enviar notificación al equipo de soporte
+          console.log("[Clerk Webhook] Attempting to send notification to support team")
+          try {
+            const registrationDate = new Date().toLocaleString("es-DO", {
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+              timeZone: "America/Santo_Domingo",
+            })
+
+            const { subject: supportSubject, html: supportHtml } = await renderNewUserSignupNotification({
+              accountName: name,
+              userEmail: primaryEmail,
+              clerkUserId: id,
+              registrationDate,
+            })
+
+            const supportEmailSent = await sendResendEmail({
+              to: "soporte@movopos.com",
+              subject: supportSubject,
+              html: supportHtml,
+              accountId: account.id,
+            })
+
+            if (supportEmailSent) {
+              console.log("[Clerk Webhook] Support notification email sent successfully")
+            } else {
+              console.warn("[Clerk Webhook] No se pudo enviar la notificación a soporte")
+            }
+          } catch (supportEmailError) {
+            console.error("[Clerk Webhook] Error enviando notificación a soporte:", supportEmailError)
+            // No registramos como error crítico ya que es solo una notificación interna
           }
         } else {
           console.warn("[Clerk Webhook] No primary email found, skipping welcome email")

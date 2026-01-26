@@ -257,3 +257,95 @@ export async function renderAccountBlockedEmail(
 
   return { subject, html }
 }
+
+type NewUserSignupNotificationData = {
+  accountName: string
+  userEmail: string
+  clerkUserId: string
+  registrationDate: string
+}
+
+export async function renderNewUserSignupNotification(
+  data: NewUserSignupNotificationData
+) {
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nuevo Usuario Registrado</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f5;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+    <tr>
+      <td style="padding: 40px 30px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">
+          🎉 Nuevo Usuario Registrado
+        </h1>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding: 40px 30px;">
+        <p style="margin: 0 0 20px; color: #18181b; font-size: 16px; line-height: 24px;">
+          Se ha registrado un nuevo usuario en <strong>${escapeHtml(brandName)}</strong>:
+        </p>
+        
+        <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
+          <tr>
+            <td style="padding: 12px; background-color: #f4f4f5; border: 1px solid #e4e4e7; font-weight: 600; color: #52525b;">
+              Nombre de la cuenta:
+            </td>
+            <td style="padding: 12px; background-color: #ffffff; border: 1px solid #e4e4e7; color: #18181b;">
+              ${escapeHtml(data.accountName)}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px; background-color: #f4f4f5; border: 1px solid #e4e4e7; font-weight: 600; color: #52525b;">
+              Email:
+            </td>
+            <td style="padding: 12px; background-color: #ffffff; border: 1px solid #e4e4e7; color: #18181b;">
+              ${escapeHtml(data.userEmail)}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px; background-color: #f4f4f5; border: 1px solid #e4e4e7; font-weight: 600; color: #52525b;">
+              Clerk User ID:
+            </td>
+            <td style="padding: 12px; background-color: #ffffff; border: 1px solid #e4e4e7; color: #18181b; font-family: monospace; font-size: 14px;">
+              ${escapeHtml(data.clerkUserId)}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 12px; background-color: #f4f4f5; border: 1px solid #e4e4e7; font-weight: 600; color: #52525b;">
+              Fecha de registro:
+            </td>
+            <td style="padding: 12px; background-color: #ffffff; border: 1px solid #e4e4e7; color: #18181b;">
+              ${escapeHtml(data.registrationDate)}
+            </td>
+          </tr>
+        </table>
+
+        <p style="margin: 20px 0 0; color: #71717a; font-size: 14px; line-height: 20px;">
+          Esta es una notificación automática del sistema ${escapeHtml(brandName)}.
+        </p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding: 30px; text-align: center; border-top: 1px solid #e4e4e7; background-color: #fafafa;">
+        <p style="margin: 0; color: #71717a; font-size: 12px;">
+          © ${new Date().getFullYear()} ${escapeHtml(brandName)}. Todos los derechos reservados.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim()
+
+  const subject = `🎉 Nuevo usuario registrado: ${data.accountName}`
+
+  return { subject, html }
+}

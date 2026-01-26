@@ -4,7 +4,8 @@ import { PaymentMethod } from "@prisma/client"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
-import { PrintToolbar } from "@/components/app/print-toolbar"
+import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
+import { PrintButton } from "@/components/app/print-button"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -56,6 +57,7 @@ export default async function SaleReceiptPage({
         items: { include: { product: true } },
         cancelledUser: { select: { name: true } },
         payments: true,
+        ar: true,
       },
     }),
   ])
@@ -105,7 +107,17 @@ export default async function SaleReceiptPage({
         }}
       />
 
-      <PrintToolbar secondaryLink={{ href: `/invoices/${sale.invoiceCode}`, label: "Ver carta" }} />
+      <div className="no-print mb-2 flex items-center justify-between">
+        <div className="flex gap-2">
+          <PrintButton />
+          <DownloadReceiptPdfButton 
+            filename={`recibo-venta-${sale.invoiceCode}`}
+          />
+        </div>
+        <a className="text-xs text-neutral-600 hover:text-neutral-800" href={`/invoices/${sale.invoiceCode}`} target="_blank" rel="noopener noreferrer">
+          Ver carta
+        </a>
+      </div>
 
       <div className="text-center">
         {company?.logoUrl && (
@@ -201,6 +213,21 @@ export default async function SaleReceiptPage({
               {formatPaymentMethod(paymentMethod)}
             </div>
           ) : null}
+        </div>
+      )}
+
+      {sale.type === "CREDITO" && sale.ar && sale.ar.dueDate && (
+        <div className="mt-2 border-t border-dashed pt-2">
+          <div className="text-center">
+            <div className="text-[11px] font-semibold">⏰ VENTA A CRÉDITO</div>
+            <div className="text-[11px]">
+              Vence: {new Intl.DateTimeFormat("es-DO", {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              }).format(new Date(sale.ar.dueDate))}
+            </div>
+          </div>
         </div>
       )}
 

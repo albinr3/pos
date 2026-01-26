@@ -4,7 +4,7 @@ import { Decimal } from "@prisma/client/runtime/library"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
-import { PrintToolbar } from "@/components/app/print-toolbar"
+import { DownloadInvoicePdfButton } from "@/components/app/download-invoice-pdf-button"
 import { PaymentMethod } from "@prisma/client"
 
 // Evitar prerender y forzar evaluación dinámica (requiere autenticación y DB)
@@ -59,6 +59,7 @@ export default async function InvoicePrintPage({
         },
         cancelledUser: { select: { name: true } },
         payments: true,
+        ar: true,
       },
     }),
   ])
@@ -103,8 +104,10 @@ export default async function InvoicePrintPage({
         }}
       />
 
-      <PrintToolbar />
-      <div className="no-print mb-6 text-sm text-neutral-600">Factura {sale.invoiceCode}</div>
+      <div className="no-print mb-6 flex items-center justify-between">
+        <div className="text-sm text-neutral-600">Factura {sale.invoiceCode}</div>
+        <DownloadInvoicePdfButton filename={`factura-${sale.invoiceCode}`} />
+      </div>
 
       {sale.cancelledAt && (
         <div className="mb-4 border-2 border-red-500 bg-red-50 p-4 text-center">
@@ -170,6 +173,19 @@ export default async function InvoicePrintPage({
                 {formatPaymentMethod(paymentMethod)}
               </div>
             ) : null}
+          </div>
+        )}
+        {sale.type === "CREDITO" && sale.ar && sale.ar.dueDate && (
+          <div className="mt-2 rounded-md bg-amber-50 p-3 text-sm border border-amber-200">
+            <div className="font-semibold text-amber-900">⏰ Venta a Crédito</div>
+            <div className="mt-1 text-amber-800">
+              <span className="font-semibold">Fecha de vencimiento:</span>{" "}
+              {new Intl.DateTimeFormat("es-DO", {
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+              }).format(new Date(sale.ar.dueDate))}
+            </div>
           </div>
         )}
       </div>

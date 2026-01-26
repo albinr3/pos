@@ -2,7 +2,8 @@ import { notFound } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
-import { PrintToolbar } from "@/components/app/print-toolbar"
+import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
+import { PrintButton } from "@/components/app/print-button"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -78,7 +79,12 @@ export default async function PaymentReceiptPage({
         }}
       />
 
-      <PrintToolbar />
+      <div className="no-print mb-2 flex gap-2">
+        <PrintButton />
+        <DownloadReceiptPdfButton 
+          filename={`recibo-pago-${payment.ar.sale.invoiceCode}`}
+        />
+      </div>
 
       <div className="text-center">
         {company?.logoUrl && (

@@ -489,6 +489,20 @@ export async function createSale(input: {
         // Si no hay cliente, usar el genérico (aunque no debería pasar)
         throw new Error("Para crédito debes seleccionar un cliente.")
       }
+      
+      // Obtener los días de crédito del cliente
+      const customer = await tx.customer.findUnique({
+        where: { id: customerIdForAR },
+        select: { creditDays: true },
+      })
+      
+      // Calcular fecha de vencimiento
+      let dueDate: Date | null = null
+      if (customer && customer.creditDays > 0) {
+        dueDate = new Date()
+        dueDate.setDate(dueDate.getDate() + customer.creditDays)
+      }
+      
       await tx.accountReceivable.create({
         data: {
           saleId: sale.id,
@@ -496,6 +510,7 @@ export async function createSale(input: {
           totalCents,
           balanceCents: totalCents,
           status: "PENDIENTE",
+          dueDate,
         },
       })
     }
@@ -830,6 +845,19 @@ export async function updateSale(input: {
       if (!customerId) throw new Error("Para crédito debes seleccionar un cliente.")
 
       if (existingSale.ar) {
+        // Obtener los días de crédito del cliente
+        const customer = await tx.customer.findUnique({
+          where: { id: customerId },
+          select: { creditDays: true },
+        })
+        
+        // Calcular fecha de vencimiento
+        let dueDate: Date | null = null
+        if (customer && customer.creditDays > 0) {
+          dueDate = new Date()
+          dueDate.setDate(dueDate.getDate() + customer.creditDays)
+        }
+        
         const updatedAr = await tx.accountReceivable.updateMany({
           where: {
             id: existingSale.ar.id,
@@ -840,10 +868,24 @@ export async function updateSale(input: {
             totalCents,
             balanceCents: totalCents,
             status: "PENDIENTE",
+            dueDate,
           },
         })
         if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
       } else {
+        // Obtener los días de crédito del cliente
+        const customer = await tx.customer.findUnique({
+          where: { id: customerId },
+          select: { creditDays: true },
+        })
+        
+        // Calcular fecha de vencimiento
+        let dueDate: Date | null = null
+        if (customer && customer.creditDays > 0) {
+          dueDate = new Date()
+          dueDate.setDate(dueDate.getDate() + customer.creditDays)
+        }
+        
         await tx.accountReceivable.create({
           data: {
             saleId: input.id,
@@ -851,6 +893,7 @@ export async function updateSale(input: {
             totalCents,
             balanceCents: totalCents,
             status: "PENDIENTE",
+            dueDate,
           },
         })
       }

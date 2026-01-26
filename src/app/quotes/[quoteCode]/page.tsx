@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
-import { PrintToolbar } from "@/components/app/print-toolbar"
+import { DownloadInvoicePdfButton } from "@/components/app/download-invoice-pdf-button"
 import { QuoteShareButton } from "@/components/app/quote-share-button"
 
 // Evitar prerender y forzar evaluación dinámica (requiere autenticación y DB)
@@ -74,10 +74,12 @@ export default async function QuotePage({
       />
 
       <div className="no-print mb-6 flex items-center justify-between">
-        <PrintToolbar />
-        <QuoteShareButton quoteCode={quoteCode} customerPhone={quote.customer?.phone} />
+        <div className="text-sm text-neutral-600">Cotización {quote.quoteCode}</div>
+        <div className="flex items-center gap-2">
+          <DownloadInvoicePdfButton filename={`cotizacion-${quote.quoteCode}`} />
+          <QuoteShareButton quoteCode={quoteCode} customerPhone={quote.customer?.phone} />
+        </div>
       </div>
-      <div className="no-print mb-6 text-sm text-neutral-600">Cotización {quote.quoteCode}</div>
 
       <header className="flex items-start justify-between gap-6">
         <div className="flex items-start gap-4">

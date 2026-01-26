@@ -351,6 +351,9 @@ model Customer {
   isGeneric Boolean @default(false)
   isActive  Boolean @default(true)
 
+  creditEnabled Boolean @default(false)
+  creditDays    Int     @default(0)
+
   sales   Sale[]
   arItems AccountReceivable[]
   quotes  Quote[]
@@ -569,11 +572,14 @@ model AccountReceivable {
   totalCents   Int
   balanceCents Int
   status       AROpenStatus @default(PENDIENTE)
+  
+  dueDate DateTime?
 
   payments Payment[]
 
   @@index([status])
   @@index([customerId])
+  @@index([dueDate])
 }
 
 model Payment {
