@@ -133,33 +133,42 @@ export async function getClerkUserId(): Promise<string | null> {
  */
 export async function getClerkUserIdFromToken(token: string | null): Promise<string | null> {
   if (!token) {
+    console.log("⚠️ [getClerkUserIdFromToken] Token es null")
     return null
   }
 
   try {
     // Remover "Bearer " si está presente
     const cleanToken = token.replace(/^Bearer\s+/i, '')
+    console.log("🔍 [getClerkUserIdFromToken] Token limpio (primeros 20 chars):", cleanToken.substring(0, 20) + "...")
     
     // Decodificar el JWT para obtener el userId
     // Clerk usa JWTs estándar, podemos decodificarlo sin verificar la firma
     // ya que solo necesitamos el userId, no la verificación completa
     const parts = cleanToken.split('.')
     if (parts.length !== 3) {
+      console.error("❌ [getClerkUserIdFromToken] Token no tiene formato JWT válido (3 partes)")
       return null
     }
 
     // Decodificar el payload (segunda parte del JWT)
     const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'))
+    console.log("🔍 [getClerkUserIdFromToken] Payload decodificado:", JSON.stringify(payload, null, 2))
     
     // El userId está en 'sub' o 'userId' en el payload
-    return payload.sub || payload.userId || null
+    const userId = payload.sub || payload.userId || payload.id || null
+    console.log("✅ [getClerkUserIdFromToken] userId encontrado:", userId)
+    return userId
   } catch (error) {
-    console.error("Error decodificando token de Clerk:", error)
+    console.error("❌ [getClerkUserIdFromToken] Error decodificando token:", error)
     // Si falla la decodificación, intentar con auth() que puede leer del header
     try {
       const clerkAuth = await auth()
-      return clerkAuth?.userId || null
-    } catch {
+      const userId = clerkAuth?.userId || null
+      console.log("🔍 [getClerkUserIdFromToken] userId desde auth():", userId)
+      return userId
+    } catch (authError) {
+      console.error("❌ [getClerkUserIdFromToken] Error con auth():", authError)
       return null
     }
   }

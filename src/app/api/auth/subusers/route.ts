@@ -11,17 +11,22 @@ export async function GET(request: NextRequest) {
     const authHeader = request.headers.get("Authorization")
     let clerkUserId: string | null = null
 
+    console.log("🔍 [subusers] Auth header:", authHeader ? "Presente" : "Ausente")
+
     if (authHeader) {
       // Si hay header Authorization, verificar el token
       clerkUserId = await getClerkUserIdFromToken(authHeader)
+      console.log("🔍 [subusers] clerkUserId desde token:", clerkUserId || "null")
     }
 
     // Si no se obtuvo del header, intentar desde la sesión (para web)
     if (!clerkUserId) {
       clerkUserId = await getClerkUserId()
+      console.log("🔍 [subusers] clerkUserId desde sesión:", clerkUserId || "null")
     }
 
     if (!clerkUserId) {
+      console.error("❌ [subusers] No se pudo obtener clerkUserId")
       return NextResponse.json({ error: "No autenticado con Clerk" }, { status: 401 })
     }
 
