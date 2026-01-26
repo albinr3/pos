@@ -8,7 +8,7 @@ export const runtime = "nodejs"
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-SubUser-Token",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-SubUser-Token, X-Clerk-Authorization",
 }
 
 // GET /api/auth/subusers - Listar subusuarios del account
@@ -19,23 +19,35 @@ export async function GET(request: NextRequest) {
   }
   try {
     // Intentar obtener token del header Authorization (para app móvil)
-    // Vercel puede enviar el header en diferentes lugares
+    // Vercel intercepta el header Authorization, así que usamos un header personalizado
     let authHeader: string | null = null
     
-    // 1. Intentar leer directamente
+    // 1. Intentar leer desde header personalizado (evita interceptación de Vercel)
     authHeader = 
-      request.headers.get("Authorization") || 
-      request.headers.get("authorization") ||
-      request.headers.get("AUTHORIZATION")
+      request.headers.get("X-Clerk-Authorization") || 
+      request.headers.get("x-clerk-authorization") ||
+      request.headers.get("X-CLERK-AUTHORIZATION")
     
-    // 2. Si no está, intentar leer desde x-vercel-sc-headers (Vercel proxy)
+    // 2. Si no está, intentar leer directamente (puede funcionar en desarrollo)
+    if (!authHeader) {
+      authHeader = 
+        request.headers.get("Authorization") || 
+        request.headers.get("authorization") ||
+        request.headers.get("AUTHORIZATION")
+    }
+    
+    // 3. Si aún no está, intentar leer desde x-vercel-sc-headers (último recurso)
     if (!authHeader) {
       const vercelHeaders = request.headers.get("x-vercel-sc-headers")
       if (vercelHeaders) {
         try {
           const parsed = JSON.parse(vercelHeaders)
-          authHeader = parsed.Authorization || parsed.authorization || null
-          console.log("🔍 [subusers] Auth header encontrado en x-vercel-sc-headers")
+          // Verificar que no sea el token de Vercel (tiene campo 'iss: serverless')
+          const tempAuth = parsed.Authorization || parsed.authorization || null
+          if (tempAuth && !tempAuth.includes('"iss":"serverless"')) {
+            authHeader = tempAuth
+            console.log("🔍 [subusers] Auth header encontrado en x-vercel-sc-headers")
+          }
         } catch (e) {
           console.error("❌ [subusers] Error parseando x-vercel-sc-headers:", e)
         }

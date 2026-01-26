@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
   getClerkUserId,
+  getClerkUserIdFromToken,
   getOrCreateAccount,
   authenticateSubUser,
   createSubUserSession,
@@ -12,14 +13,38 @@ export const runtime = "nodejs"
 // POST /api/auth/subuser/login - Autenticar subusuario y obtener token JWT
 export async function POST(request: NextRequest) {
   try {
-    // Verificar autenticación de Clerk
-    const clerkUserId = await getClerkUserId()
+    // Intentar obtener token de Clerk desde header personalizado (evita interceptación de Vercel)
+    let authHeader: string | null = null
+    authHeader = 
+      request.headers.get("X-Clerk-Authorization") || 
+      request.headers.get("x-clerk-authorization") ||
+      request.headers.get("X-CLERK-AUTHORIZATION")
+    
+    // Si no está, intentar leer directamente
+    if (!authHeader) {
+      authHeader = 
+        request.headers.get("Authorization") || 
+        request.headers.get("authorization") ||
+        request.headers.get("AUTHORIZATION")
+    }
+    
+    let clerkUserId: string | null = null
+    
+    if (authHeader) {
+      clerkUserId = await getClerkUserIdFromToken(authHeader)
+    }
+    
+    // Si no se obtuvo del header, intentar desde la sesión (para web)
+    if (!clerkUserId) {
+      clerkUserId = await getClerkUserId()
+    }
+    
     if (!clerkUserId) {
       return NextResponse.json({ error: "No autenticado con Clerk" }, { status: 401 })
     }
 
-    // Obtener o crear Account
-    const account = await getOrCreateAccount()
+    // Obtener o crear Account usando el clerkUserId obtenido
+    const account = await getOrCreateAccount(clerkUserId)
     if (!account) {
       return NextResponse.json({ error: "Error al obtener cuenta" }, { status: 500 })
     }
