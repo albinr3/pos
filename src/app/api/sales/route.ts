@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
       items,
       shippingCents,
       username: user.username,
+      user,
     })
 
     return NextResponse.json({

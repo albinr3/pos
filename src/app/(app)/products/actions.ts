@@ -9,8 +9,8 @@ import { sanitizeString, sanitizeCode } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 
-export async function listProducts(options?: { query?: string; cursor?: string | null; take?: number }) {
-  const user = await getCurrentUser()
+export async function listProducts(options?: { query?: string; cursor?: string | null; take?: number; user?: any }) {
+  const user = options?.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   const q = options?.query?.trim()
@@ -66,11 +66,10 @@ export async function listProducts(options?: { query?: string; cursor?: string |
 
 export async function upsertProduct(input: {
   id?: string
+  productId?: string
   name: string
-  sku?: string | null
-  reference?: string | null
-  supplierId?: string | null
-  categoryId?: string | null
+  sku?: string
+  reference?: string
   priceCents: number
   costCents: number
   itbisRateBp?: number
@@ -79,8 +78,9 @@ export async function upsertProduct(input: {
   imageUrls?: string[]
   purchaseUnit: UnitType
   saleUnit: UnitType
+  user?: any
 }) {
-  const user = await getCurrentUser()
+  const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   try {

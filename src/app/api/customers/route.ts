@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const query = searchParams.get("query") || undefined
 
-    const customers = await listCustomers(query)
+    const customers = await listCustomers(query, user)
 
     return NextResponse.json({
       data: customers.map((c) => ({

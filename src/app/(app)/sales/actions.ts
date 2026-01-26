@@ -269,8 +269,9 @@ export async function createSale(input: {
   items: CartItemInput[]
   shippingCents?: number
   username: string
+  user?: any
 }) {
-  const user = await getCurrentUser()
+  const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   try {

@@ -52,17 +52,17 @@ async function ensureGenericCustomer(accountId: string): Promise<string> {
   }
 }
 
-export async function listCustomers(query?: string) {
-  const user = await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+export async function listCustomers(query?: string, user?: any) {
+  const currentUser = user ?? await getCurrentUser()
+  if (!currentUser) throw new Error("No autenticado")
 
   // Asegurar que el cliente general existe
-  await ensureGenericCustomer(user.accountId)
+  await ensureGenericCustomer(currentUser.accountId)
 
   const q = query?.trim()
   return prisma.customer.findMany({
     where: {
-      accountId: user.accountId,
+      accountId: currentUser.accountId,
       isActive: true,
       ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
     },
@@ -76,14 +76,14 @@ export async function listCustomersPage(options?: { query?: string; cursor?: str
   if (!user) throw new Error("No autenticado")
 
   // Asegurar que el cliente general existe
-  await ensureGenericCustomer(user.accountId)
+  await ensureGenericCustomer(currentUser.accountId)
 
   const q = options?.query?.trim()
   const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
 
   const customers = await prisma.customer.findMany({
     where: {
-      accountId: user.accountId,
+      accountId: currentUser.accountId,
       isActive: true,
       ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
     },

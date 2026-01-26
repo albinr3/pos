@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const cursor = searchParams.get("cursor") || undefined
     const take = searchParams.get("take") ? parseInt(searchParams.get("take")!) : undefined
 
-    const result = await listProducts({ query, cursor, take })
+    const result = await listProducts({ query, cursor, take, user })
 
     // Convertir Decimal a número para la respuesta JSON
     const products = result.items.map((p: any) => ({
@@ -83,6 +83,7 @@ export async function POST(request: NextRequest) {
       imageUrls: body.imageUrls || [],
       purchaseUnit: body.purchaseUnit || "UNIDAD",
       saleUnit: body.saleUnit || "UNIDAD",
+      user,
     })
 
     // Obtener el producto creado para retornarlo
