@@ -9,6 +9,13 @@ import { getCurrentUser, getClerkUserIdFromToken, getSubUserSession } from "@/li
 export async function getCurrentUserFromRequest(request: NextRequest) {
   console.log("🔍 [getCurrentUserFromRequest] Iniciando validación de request...")
   
+  // Log de TODOS los headers para debugging
+  const allHeaders: any = {}
+  request.headers.forEach((value, key) => {
+    allHeaders[key] = value
+  })
+  console.log("📋 [getCurrentUserFromRequest] TODOS los headers recibidos:", JSON.stringify(allHeaders, null, 2))
+  
   const subUserToken = request.headers.get("X-SubUser-Token")
   
   // Si hay token de subusuario pero no hay sesión de Clerk activa,
@@ -87,3 +94,4 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
   // Si no hay headers de Clerk, usar el método normal (para web)
   return await getCurrentUser(subUserToken)
 }
+
