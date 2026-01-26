@@ -369,6 +369,17 @@ export async function linkAccountToClerk(accountId: string, clerkUserId: string)
  */
 export async function listSubUsers(accountId: string): Promise<SubUser[]> {
   const prisma = await getPrisma()
+  
+  // Log para debug
+  console.log("🔍 [listSubUsers] Buscando usuarios para accountId:", accountId)
+  
+  // Primero verificar cuántos usuarios hay en total (sin filtro de isActive)
+  const allUsers = await prisma.user.findMany({
+    where: { accountId },
+    select: { id: true, username: true, name: true, isActive: true },
+  })
+  console.log("🔍 [listSubUsers] Total de usuarios en account:", allUsers.length, allUsers.map(u => ({ username: u.username, isActive: u.isActive })))
+  
   const users = await prisma.user.findMany({
     where: {
       accountId,
@@ -388,6 +399,7 @@ export async function listSubUsers(accountId: string): Promise<SubUser[]> {
     ],
   })
 
+  console.log("🔍 [listSubUsers] Usuarios activos encontrados:", users.length)
   return users
 }
 

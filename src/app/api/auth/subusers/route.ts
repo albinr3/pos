@@ -87,8 +87,11 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    console.log("🔍 [subusers] Account obtenido:", { id: account.id, name: account.name })
+
     // Listar subusuarios
     const users = await listSubUsers(account.id)
+    console.log("🔍 [subusers] Usuarios encontrados:", users.length, users.map(u => ({ id: u.id, username: u.username, name: u.name })))
 
     return NextResponse.json(
       {
