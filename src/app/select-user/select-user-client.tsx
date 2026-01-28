@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useEffect } from "react"
 import { UploadButton } from "@uploadthing/react"
 import type { OurFileRouter } from "@/app/api/uploadthing/core"
 import { User, Lock, Loader2, Building2, ChevronRight, UserPlus, Image as ImageIcon, Upload, X } from "lucide-react"
@@ -18,6 +18,7 @@ import {
   createFirstUser,
   sendSubUserTemporaryCode,
   loginSubUserWithCode,
+  clearInvalidSubUserSession,
 } from "./actions"
 
 type SubUser = {
@@ -35,6 +36,7 @@ type Props = {
     name: string
   }
   users: SubUser[]
+  shouldClearSession?: boolean
 }
 
 function maskEmail(email: string) {
@@ -49,7 +51,7 @@ function maskEmail(email: string) {
   return `${local[0]}${middle}${local.slice(-1)}@${domain}`
 }
 
-export function SelectUserClient({ account, users }: Props) {
+export function SelectUserClient({ account, users, shouldClearSession }: Props) {
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
   const [selectedUser, setSelectedUser] = useState<SubUser | null>(
@@ -57,6 +59,13 @@ export function SelectUserClient({ account, users }: Props) {
   )
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+
+  // Limpiar sesión inválida si es necesario (cuando el usuario cambió de cuenta en Clerk)
+  useEffect(() => {
+    if (shouldClearSession) {
+      clearInvalidSubUserSession()
+    }
+  }, [shouldClearSession])
   const [temporaryCode, setTemporaryCode] = useState("")
   const [tempCodeError, setTempCodeError] = useState("")
   const [tempCodeMessage, setTempCodeMessage] = useState<string | null>(null)
@@ -74,7 +83,7 @@ export function SelectUserClient({ account, users }: Props) {
     setIsVerifyingTempCode(false)
     setShowForgotPassword(false)
   }
-  
+
   // Estado para onboarding (primer usuario)
   const isOnboarding = users.length === 0
   const [onboardingStep, setOnboardingStep] = useState(isOnboarding ? 1 : 0)
@@ -189,7 +198,7 @@ export function SelectUserClient({ account, users }: Props) {
 
   const handleCreateFirstUser = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!businessName.trim()) {
       setError("El nombre del negocio es requerido")
       return
@@ -199,7 +208,7 @@ export function SelectUserClient({ account, users }: Props) {
       setError("El usuario es requerido")
       return
     }
-    
+
     if (!newUserPassword) {
       setError("La contraseña es requerida")
       return
@@ -267,8 +276,8 @@ export function SelectUserClient({ account, users }: Props) {
                 ? "Cuéntanos sobre tu negocio"
                 : "Crea tu primer usuario"
               : selectedUser
-              ? "Ingresa tu contraseña"
-              : "Selecciona tu usuario"}
+                ? "Ingresa tu contraseña"
+                : "Selecciona tu usuario"}
           </CardTitle>
           <CardDescription>
             {isOnboarding
@@ -276,8 +285,8 @@ export function SelectUserClient({ account, users }: Props) {
                 ? "Ingresa el nombre de tu negocio y agrega un logo opcional."
                 : "El usuario predeterminado es ADMIN. Puedes cambiarlo y crear una contraseña de 4 dígitos."
               : selectedUser
-              ? `Ingresa la contraseña para ${selectedUser.name}`
-              : "Elige el usuario con el que deseas trabajar"}
+                ? `Ingresa la contraseña para ${selectedUser.name}`
+                : "Elige el usuario con el que deseas trabajar"}
           </CardDescription>
         </CardHeader>
         <CardContent>

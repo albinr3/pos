@@ -241,7 +241,7 @@ async function connectToPrinter(printer: BluetoothPrinter): Promise<any> { // Bl
  * Convierte HTML/texto a comandos ESC/POS
  * Extrae el texto del contenido HTML y lo formatea para impresoras térmicas
  */
-function convertToESCPOS(content: string | HTMLElement): Uint8Array {
+export function convertToESCPOS(content: string | HTMLElement): Uint8Array {
   // Comandos ESC/POS básicos
   const ESC = 0x1b
   const GS = 0x1d
@@ -281,7 +281,7 @@ function convertToESCPOS(content: string | HTMLElement): Uint8Array {
 /**
  * Extrae y formatea texto de un elemento HTML para impresión térmica
  */
-function extractTextFromElement(element: HTMLElement): string {
+export function extractTextFromElement(element: HTMLElement): string {
   // Clonar el elemento para no modificar el original
   const clone = element.cloneNode(true) as HTMLElement
 

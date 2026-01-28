@@ -4,7 +4,53 @@ import { prisma } from "@/lib/db"
 import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-auth"
 import { processBillingEngine } from "@/lib/billing"
 import { revalidatePath } from "next/cache"
+import { hash } from "bcryptjs"
 import type { BillingStatus, BillingCurrency, BillingProvider } from "@prisma/client"
+
+export async function resetUserPassword(
+  userId: string,
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const admin = await getCurrentSuperAdmin()
+    if (!admin || !admin.canManageAccounts) {
+      return { success: false, error: "No tienes permisos para restablecer contraseñas" }
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { account: true },
+    })
+
+    if (!user) {
+      return { success: false, error: "Usuario no encontrado" }
+    }
+
+    const hashedPassword = await hash(newPassword, 12)
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash: hashedPassword },
+    })
+
+    await logSuperAdminAction(admin.id, "reset_user_password", {
+      targetAccountId: user.accountId,
+      metadata: {
+        targetUserId: user.id,
+        username: user.username
+      },
+    })
+
+    revalidatePath("/super-admin")
+    revalidatePath(`/super-admin/accounts/${user.accountId}`)
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error resetting password:", error)
+    return { success: false, error: "Error al restablecer la contraseña" }
+  }
+}
+
 
 // ==========================================
 // TYPES
@@ -15,7 +61,7 @@ export type AccountListItem = {
   name: string
   createdAt: Date
   clerkUserId: string
-  
+
   // Billing info
   status: BillingStatus
   currency: BillingCurrency
@@ -25,11 +71,11 @@ export type AccountListItem = {
   graceEndsAt: Date | null
   priceDopCents: number
   priceUsdCents: number
-  
+
   // Owner info
   ownerEmail: string | null
   ownerName: string | null
-  
+
   // Stats
   usersCount: number
   productsCount: number
@@ -43,14 +89,14 @@ export type AccountDetail = AccountListItem & {
   companyPhone: string | null
   companyAddress: string | null
   logoUrl: string | null
-  
+
   // Billing Profile
   billingLegalName: string | null
   billingTaxId: string | null
   billingAddress: string | null
   billingEmail: string | null
   billingPhone: string | null
-  
+
   // Users
   users: {
     id: string
@@ -61,7 +107,7 @@ export type AccountDetail = AccountListItem & {
     isActive: boolean
     createdAt: Date
   }[]
-  
+
   // Payment History
   payments: {
     id: string
@@ -72,13 +118,13 @@ export type AccountDetail = AccountListItem & {
     paidAt: Date | null
     proofsCount: number
   }[]
-  
+
   // Subscription details
   subscriptionId: string | null
   manualVerificationStatus: string | null
   lemonCustomerId: string | null
   lemonSubscriptionId: string | null
-  
+
   // Billing Plan
   billingPlanId: string | null
   billingPlanName: string | null
@@ -126,7 +172,7 @@ export async function getAccounts(): Promise<AccountListItem[]> {
       name: account.name,
       createdAt: account.createdAt,
       clerkUserId: account.clerkUserId,
-      
+
       status: sub?.status || "BLOCKED",
       currency: sub?.currency || "DOP",
       provider: sub?.provider || "MANUAL",
@@ -135,10 +181,10 @@ export async function getAccounts(): Promise<AccountListItem[]> {
       graceEndsAt: sub?.graceEndsAt || null,
       priceDopCents: sub?.priceDopCents || 130000,
       priceUsdCents: sub?.priceUsdCents || 2000,
-      
+
       ownerEmail: account.billingProfile?.email || owner?.email || null,
       ownerName: owner?.name || null,
-      
+
       usersCount: account._count.users,
       productsCount: account._count.products,
       salesCount: account._count.sales,
@@ -193,7 +239,7 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
     name: account.name,
     createdAt: account.createdAt,
     clerkUserId: account.clerkUserId,
-    
+
     // Billing
     status: sub?.status || "BLOCKED",
     currency: sub?.currency || "DOP",
@@ -207,30 +253,30 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
     manualVerificationStatus: sub?.manualVerificationStatus || null,
     lemonCustomerId: sub?.lemonCustomerId || null,
     lemonSubscriptionId: sub?.lemonSubscriptionId || null,
-    
+
     // Owner
     ownerEmail: account.billingProfile?.email || owner?.email || null,
     ownerName: owner?.name || null,
-    
+
     // Stats
     usersCount: account._count.users,
     productsCount: account._count.products,
     salesCount: account._count.sales,
     lastPaymentAt: lastPayment?.paidAt || null,
-    
+
     // Company Settings
     companyName: account.companySettings?.name || null,
     companyPhone: account.companySettings?.phone || null,
     companyAddress: account.companySettings?.address || null,
     logoUrl: account.companySettings?.logoUrl || null,
-    
+
     // Billing Profile
     billingLegalName: account.billingProfile?.legalName || null,
     billingTaxId: account.billingProfile?.taxId || null,
     billingAddress: account.billingProfile?.address || null,
     billingEmail: account.billingProfile?.email || null,
     billingPhone: account.billingProfile?.phone || null,
-    
+
     // Users
     users: account.users.map((u) => ({
       id: u.id,
@@ -241,7 +287,7 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
       isActive: u.isActive,
       createdAt: u.createdAt,
     })),
-    
+
     // Payments
     payments: (sub?.payments || []).map((p) => ({
       id: p.id,
@@ -252,7 +298,7 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
       paidAt: p.paidAt,
       proofsCount: p.proofs.length,
     })),
-    
+
     // Billing Plan
     billingPlanId: sub?.billingPlanId || null,
     billingPlanName: sub?.billingPlan?.name || null,

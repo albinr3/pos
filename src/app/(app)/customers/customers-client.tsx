@@ -33,7 +33,7 @@ export function CustomersClient() {
   const [cedula, setCedula] = useState("")
   const [province, setProvince] = useState("")
   const [creditEnabled, setCreditEnabled] = useState(false)
-  const [creditDays, setCreditDays] = useState(0)
+  const [creditDays, setCreditDays] = useState<number | "">(0)
   const [isSaving, startSaving] = useTransition()
 
   function refresh(q?: string) {
@@ -100,7 +100,7 @@ export function CustomersClient() {
           cedula: cedula || null,
           province: province || null,
           creditEnabled,
-          creditDays: creditEnabled ? creditDays : 0,
+          creditDays: creditEnabled ? (Number(creditDays) || 0) : 0,
         })
         toast({ title: "Guardado" })
         setOpen(false)
@@ -113,7 +113,7 @@ export function CustomersClient() {
   }
 
   async function onDelete(id: string) {
-    if (!confirm("¿Desactivar este cliente?") ) return
+    if (!confirm("¿Desactivar este cliente?")) return
     try {
       await deactivateCustomer(id)
       toast({ title: "Listo", description: "Cliente desactivado" })
@@ -207,7 +207,7 @@ export function CustomersClient() {
                       onCheckedChange={setCreditEnabled}
                     />
                   </div>
-                  
+
                   {creditEnabled && (
                     <div className="grid gap-2">
                       <Label htmlFor="credit-days">Días de crédito</Label>
@@ -216,7 +216,10 @@ export function CustomersClient() {
                         type="number"
                         min="0"
                         value={creditDays}
-                        onChange={(e) => setCreditDays(parseInt(e.target.value) || 0)}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setCreditDays(val === "" ? "" : (parseInt(val) || 0))
+                        }}
                         placeholder="Ej: 30"
                       />
                       <p className="text-xs text-muted-foreground">

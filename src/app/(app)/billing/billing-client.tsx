@@ -19,6 +19,13 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { UploadButton } from "@uploadthing/react"
 import type { OurFileRouter } from "@/app/api/uploadthing/core"
@@ -66,6 +73,8 @@ export function BillingClient({ initialData }: BillingClientProps) {
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>(
     data.bankAccounts?.[0]?.id || ""
   )
+
+  const [isBankModalOpen, setIsBankModalOpen] = useState(false)
   const pendingProofKey = "billing-proof-pending"
 
   useEffect(() => {
@@ -170,7 +179,7 @@ export function BillingClient({ initialData }: BillingClientProps) {
         setUploadedProofType(null)
         try {
           localStorage.removeItem(pendingProofKey)
-        } catch {}
+        } catch { }
         await refreshData()
       } else {
         toast({ title: "Error", description: result.error, variant: "destructive" })
@@ -206,7 +215,7 @@ export function BillingClient({ initialData }: BillingClientProps) {
         setUploadedProofType(null)
         try {
           localStorage.removeItem(pendingProofKey)
-        } catch {}
+        } catch { }
         await refreshData()
         router.refresh()
       } else {
@@ -274,15 +283,15 @@ export function BillingClient({ initialData }: BillingClientProps) {
   const pendingPayment = payments.find(
     (p) => p.status === "PENDING" && (p.proofs?.length ?? 0) === 0
   )
-  const paymentNeedingProof = activePaymentId 
-    ? payments.find(p => p.id === activePaymentId) 
+  const paymentNeedingProof = activePaymentId
+    ? payments.find(p => p.id === activePaymentId)
     : pendingPayment
 
   useEffect(() => {
     if (uploadedProofUrl) return
     try {
       localStorage.removeItem(pendingProofKey)
-    } catch {}
+    } catch { }
   }, [uploadedProofUrl, pendingProofKey])
 
   useEffect(() => {
@@ -311,7 +320,7 @@ export function BillingClient({ initialData }: BillingClientProps) {
               <h2 className="text-lg font-semibold">Estado de tu suscripción</h2>
               {getStatusBadge(state.status)}
             </div>
-            
+
             {state.isTrialing && state.trialDaysRemaining !== null && (
               <p className="text-muted-foreground">
                 <Clock className="inline h-4 w-4 mr-1" />
@@ -400,48 +409,88 @@ export function BillingClient({ initialData }: BillingClientProps) {
                       <Label className="text-sm font-medium mb-2 block">
                         Selecciona el banco donde harás la transferencia:
                       </Label>
-                      <div className="grid gap-3">
-                        {bankAccounts.map((account) => (
-                          <div
-                            key={account.id}
-                            onClick={() => setSelectedBankAccountId(account.id)}
-                            className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                              selectedBankAccountId === account.id
-                                ? "border-primary bg-primary/5"
-                                : "border-muted hover:border-muted-foreground/30"
-                            }`}
-                          >
+
+                      <Dialog open={isBankModalOpen} onOpenChange={setIsBankModalOpen}>
+                        <DialogTrigger asChild>
+                          <div className="w-full p-4 rounded-lg border-2 cursor-pointer transition-all border-muted hover:border-muted-foreground/30 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              {account.bankLogo ? (
-                                <img
-                                  src={account.bankLogo}
-                                  alt={account.bankName}
-                                  className="h-8 w-8 object-contain"
-                                />
+                              {selectedBankAccount ? (
+                                <>
+                                  {selectedBankAccount.bankLogo ? (
+                                    <img
+                                      src={selectedBankAccount.bankLogo}
+                                      alt={selectedBankAccount.bankName}
+                                      className="h-8 w-8 object-contain"
+                                    />
+                                  ) : (
+                                    <Building2 className="h-8 w-8 text-muted-foreground" />
+                                  )}
+                                  <div className="text-left">
+                                    <p className="font-medium">{selectedBankAccount.bankName}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      {selectedBankAccount.accountType}
+                                    </p>
+                                  </div>
+                                </>
                               ) : (
-                                <Building2 className="h-8 w-8 text-muted-foreground" />
+                                <div className="flex items-center gap-3">
+                                  <Building2 className="h-8 w-8 text-muted-foreground" />
+                                  <span className="font-medium text-muted-foreground">Seleccionar banco...</span>
+                                </div>
                               )}
-                              <div className="flex-1">
-                                <p className="font-medium">{account.bankName}</p>
-                                <p className="text-sm text-muted-foreground">
-                                  {account.accountType}
-                                </p>
-                              </div>
-                              <div
-                                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                                  selectedBankAccountId === account.id
-                                    ? "border-primary bg-primary"
-                                    : "border-muted-foreground/30"
-                                }`}
-                              >
-                                {selectedBankAccountId === account.id && (
-                                  <CheckCircle className="h-3 w-3 text-white" />
-                                )}
-                              </div>
                             </div>
+                            <Button variant="ghost" size="sm">Cambiar</Button>
                           </div>
-                        ))}
-                      </div>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl">
+                          <DialogHeader>
+                            <DialogTitle>Selecciona un banco</DialogTitle>
+                          </DialogHeader>
+                          <div className="grid gap-3 mt-4">
+                            {bankAccounts.map((account) => (
+                              <div
+                                key={account.id}
+                                onClick={() => {
+                                  setSelectedBankAccountId(account.id)
+                                  setIsBankModalOpen(false)
+                                }}
+                                className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${selectedBankAccountId === account.id
+                                  ? "border-primary bg-primary/5"
+                                  : "border-muted hover:border-muted-foreground/30"
+                                  }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  {account.bankLogo ? (
+                                    <img
+                                      src={account.bankLogo}
+                                      alt={account.bankName}
+                                      className="h-8 w-8 object-contain"
+                                    />
+                                  ) : (
+                                    <Building2 className="h-8 w-8 text-muted-foreground" />
+                                  )}
+                                  <div className="flex-1">
+                                    <p className="font-medium">{account.bankName}</p>
+                                    <p className="text-sm text-muted-foreground">
+                                      {account.accountType}
+                                    </p>
+                                  </div>
+                                  <div
+                                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${selectedBankAccountId === account.id
+                                      ? "border-primary bg-primary"
+                                      : "border-muted-foreground/30"
+                                      }`}
+                                  >
+                                    {selectedBankAccountId === account.id && (
+                                      <CheckCircle className="h-3 w-3 text-white" />
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     </div>
 
                     {/* Selected Bank Account Details */}
@@ -509,7 +558,7 @@ export function BillingClient({ initialData }: BillingClientProps) {
                           )
                           try {
                             localStorage.setItem(pendingProofKey, "1")
-                          } catch {}
+                          } catch { }
                         }
                       }}
                       onUploadError={(error) => {
@@ -585,13 +634,13 @@ export function BillingClient({ initialData }: BillingClientProps) {
                                     setUploadedProofUrl(file.url)
                                     setUploadedProofName(
                                       file.name ||
-                                        file.fileName ||
-                                        file.originalName ||
-                                        getFileNameFromUrl(file.url)
+                                      file.fileName ||
+                                      file.originalName ||
+                                      getFileNameFromUrl(file.url)
                                     )
                                     try {
                                       localStorage.setItem(pendingProofKey, "1")
-                                    } catch {}
+                                    } catch { }
                                   }
                                 }}
                                 onUploadError={(error) => {

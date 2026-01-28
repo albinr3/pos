@@ -129,6 +129,7 @@ export function generateReceiptHtml(
           color: #333;
           background: #f5f5f5;
           padding: 20px;
+          font-size: 18px;
         }
         .receipt {
           max-width: 600px;
@@ -145,11 +146,11 @@ export function generateReceiptHtml(
           text-align: center;
         }
         .header h1 {
-          font-size: 24px;
+          font-size: 30px;
           margin-bottom: 5px;
         }
         .header .receipt-number {
-          font-size: 14px;
+          font-size: 18px;
           opacity: 0.9;
         }
         .content {
@@ -159,14 +160,14 @@ export function generateReceiptHtml(
           margin-bottom: 25px;
         }
         .section-title {
-          font-size: 12px;
+          font-size: 15px;
           text-transform: uppercase;
           color: #666;
           margin-bottom: 8px;
           letter-spacing: 0.5px;
         }
         .section-content {
-          font-size: 14px;
+          font-size: 18px;
         }
         .amount-section {
           background: #f8fafc;
@@ -176,12 +177,12 @@ export function generateReceiptHtml(
           margin: 20px 0;
         }
         .amount {
-          font-size: 32px;
+          font-size: 40px;
           font-weight: bold;
           color: #16a34a;
         }
         .amount-label {
-          font-size: 12px;
+          font-size: 15px;
           color: #666;
           margin-top: 5px;
         }
@@ -194,7 +195,7 @@ export function generateReceiptHtml(
           border-top: 1px solid #eee;
           padding: 20px 30px;
           text-align: center;
-          font-size: 12px;
+          font-size: 15px;
           color: #666;
         }
         .badge {
@@ -203,7 +204,7 @@ export function generateReceiptHtml(
           color: #16a34a;
           padding: 4px 12px;
           border-radius: 20px;
-          font-size: 12px;
+          font-size: 15px;
           font-weight: 600;
         }
         @media print {

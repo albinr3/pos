@@ -33,11 +33,11 @@ export default async function PaymentReceiptPage({
   if (!user) return notFound()
 
   const [company, payment] = await Promise.all([
-    prisma.companySettings.findFirst({ 
-      where: { accountId: user.accountId } 
+    prisma.companySettings.findFirst({
+      where: { accountId: user.accountId }
     }),
     prisma.payment.findFirst({
-      where: { 
+      where: {
         id: paymentId,
         // Verificar que el payment pertenece a una venta del mismo account
         ar: {
@@ -62,7 +62,7 @@ export default async function PaymentReceiptPage({
   if (!payment) return notFound()
 
   return (
-    <div className="mx-auto w-[80mm] bg-white p-3 text-[12px] leading-4 text-black print-content">
+    <div className="mx-auto w-[80mm] bg-white p-3 text-[15.5px] leading-4 text-black print-content">
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -81,7 +81,7 @@ export default async function PaymentReceiptPage({
 
       <div className="no-print mb-2 flex gap-2">
         <PrintButton />
-        <DownloadReceiptPdfButton 
+        <DownloadReceiptPdfButton
           filename={`recibo-${payment.receiptCode}`}
         />
       </div>
@@ -94,41 +94,41 @@ export default async function PaymentReceiptPage({
             </div>
           </div>
         )}
-        <div className="text-[14px] font-bold">{company?.name || "Mi Negocio"}</div>
+        <div className="text-[18px] font-bold">{company?.name || "Mi Negocio"}</div>
         {company?.address && <div>{company.address}</div>}
         {company?.phone && <div>Tel: {company.phone}</div>}
       </div>
 
       {payment.cancelledAt && (
         <div className="my-2 border-2 border-red-500 bg-red-50 p-2 text-center">
-          <div className="text-[14px] font-bold text-red-600">⚠️ RECIBO CANCELADO</div>
-          <div className="text-[11px] text-red-600">
+          <div className="text-[18px] font-bold text-red-600">⚠️ RECIBO CANCELADO</div>
+          <div className="text-[14.5px] text-red-600">
             Cancelado el {fmtDate(payment.cancelledAt)}
             {payment.cancelledUser && ` por ${payment.cancelledUser.name}`}
           </div>
         </div>
       )}
 
-      <div className="my-2 border-t border-b border-dashed py-2">
-        <div className="text-center font-bold">RECIBO DE PAGO</div>
-        <div className="mt-2 flex justify-between">
+      <div className="my-4 border-t border-b border-dashed py-3">
+        <div className="text-center font-bold text-[18px]">RECIBO DE PAGO</div>
+        <div className="mt-3 flex justify-between">
           <span>Recibo:</span>
-          <span className="font-bold text-[14px]">{payment.receiptCode}</span>
+          <span className="font-bold text-[18px]">{payment.receiptCode}</span>
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between mt-1">
           <span>Fecha:</span>
           <span>{fmtDate(payment.paidAt)}</span>
         </div>
-        <div className="flex justify-between">
+        <div className="flex justify-between mt-1">
           <span>Factura:</span>
           <span className="font-semibold">{payment.ar.sale.invoiceCode}</span>
         </div>
-        <div className="mt-1">
+        <div className="mt-2">
           <span className="font-semibold">Cliente:</span> {payment.ar.customer.name}
         </div>
       </div>
 
-      <div className="space-y-1">
+      <div className="space-y-3 pb-2">
         <div className="flex justify-between">
           <span>Monto pagado</span>
           <span className="font-semibold">{formatRD(payment.amountCents)}</span>
@@ -144,15 +144,15 @@ export default async function PaymentReceiptPage({
       </div>
 
       {payment.note && (
-        <div className="mt-2 border-t border-dashed pt-2 text-[11px] text-neutral-700">
+        <div className="mt-4 border-t border-dashed pt-3 text-[14.5px] text-neutral-700">
           <div className="font-semibold">Nota</div>
           <div>{payment.note}</div>
         </div>
       )}
 
-      <div className="mt-3 text-center">
+      <div className="mt-6 text-center">
         <div className="font-semibold">Gracias</div>
-        <div className="text-[11px] text-neutral-700">Cajero: {payment.user.name}</div>
+        <div className="text-[14.5px] text-neutral-700">Cajero: {payment.user.name}</div>
       </div>
     </div>
   )

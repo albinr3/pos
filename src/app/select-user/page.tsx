@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { getAccountAndUsers, clearInvalidSubUserSession } from "./actions"
+import { getAccountAndUsers } from "./actions"
 import { SelectUserClient } from "./select-user-client"
 import { hasCompleteSession, hasSubUserSession } from "@/lib/auth"
 
@@ -11,13 +11,8 @@ export default async function SelectUserPage() {
   }
 
   // Si hay sesión de subusuario pero no es válida (cuenta cambió),
-  // limpiarla para evitar inconsistencias
-  const hasSubUser = await hasSubUserSession()
-  if (hasSubUser) {
-    // La sesión existe pero no es válida (hasCompleteSession retornó false)
-    // Esto significa que el usuario cambió de cuenta en Clerk
-    await clearInvalidSubUserSession()
-  }
+  // pasar flag al cliente para limpiarla (no podemos modificar cookies aquí)
+  const shouldClearSession = await hasSubUserSession()
 
   // Obtener account y usuarios
   const result = await getAccountAndUsers()
@@ -30,5 +25,11 @@ export default async function SelectUserPage() {
     redirect("/login")
   }
 
-  return <SelectUserClient account={result.account} users={result.users} />
+  return (
+    <SelectUserClient
+      account={result.account}
+      users={result.users}
+      shouldClearSession={shouldClearSession}
+    />
+  )
 }

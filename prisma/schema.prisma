@@ -285,6 +285,7 @@ model CompanySettings {
 
   barcodeLabelSize  String @default("4x2")
   shippingLabelSize String @default("4x6")
+  defaultViewMode   String @default("list")
 
   @@index([accountId])
 }

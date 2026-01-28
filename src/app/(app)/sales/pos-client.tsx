@@ -72,18 +72,18 @@ function getCachedUser(): CurrentUser | null {
   }
 }
 
-export function PosClient() {
+export function PosClient({ defaultViewMode = "list" }: { defaultViewMode?: string }) {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState("")
-  
+
   // Evitar error de hidratación: solo mostrar indicador después de montar
   useEffect(() => {
     setMounted(true)
   }, [])
   const [results, setResults] = useState<ProductResult[]>([])
   const [isSearching, startSearch] = useTransition()
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list")
+  const [viewMode, setViewMode] = useState<"list" | "grid">(defaultViewMode as "list" | "grid")
   const [allProducts, setAllProducts] = useState<ProductResult[]>([])
   const [isLoadingProducts, startLoadingProducts] = useTransition()
 
@@ -102,17 +102,17 @@ export function PosClient() {
   const [showChangeDialog, setShowChangeDialog] = useState(false)
   const [amountPaidInput, setAmountPaidInput] = useState("")
   const [showSplitPaymentDialog, setShowSplitPaymentDialog] = useState(false)
-  const [paymentSplits, setPaymentSplits] = useState<Array<{method: PaymentMethod, amountCents: number}>>([])
+  const [paymentSplits, setPaymentSplits] = useState<Array<{ method: PaymentMethod, amountCents: number }>>([])
   const [editingPaymentAmounts, setEditingPaymentAmounts] = useState<Record<number, string>>({})
   // Estado temporal para valores de cantidad en edición (productId -> string)
   const [editingQuantities, setEditingQuantities] = useState<Record<string, string>>({})
   const [showNavigationDialog, setShowNavigationDialog] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
-  
+
   // Ref para rastrear el tiempo de la primera y última tecla (para detectar escaneo de código de barras)
   const firstKeyPressTime = useRef<number>(0)
   const lastKeyPressTime = useRef<number>(0)
-  
+
   const router = useRouter()
   const pathname = usePathname()
 
@@ -197,11 +197,12 @@ export function PosClient() {
       }
 
       // Cargar preferencia de vista desde localStorage
-      const savedViewMode = localStorage.getItem("posViewMode") as "list" | "grid" | null
-      if (savedViewMode) {
-        setViewMode(savedViewMode)
-      }
-      
+      // REMOVED: Respect defaultViewMode from settings instead
+      // const savedViewMode = localStorage.getItem("posViewMode") as "list" | "grid" | null
+      // if (savedViewMode) {
+      //   setViewMode(savedViewMode)
+      // }
+
       // Restaurar el estado del carrito
       try {
         const saved = localStorage.getItem("posCartState")
@@ -219,18 +220,18 @@ export function PosClient() {
               return a.name.localeCompare(b.name, 'es', { sensitivity: 'base' })
             })
             setCustomers(sortedCustomers)
-            
+
             // Validar que el cliente aún existe
-            const validCustomerId = state.customerId === "generic" || 
-              customersList.some(c => c.id === state.customerId) 
-              ? state.customerId 
+            const validCustomerId = state.customerId === "generic" ||
+              customersList.some(c => c.id === state.customerId)
+              ? state.customerId
               : "generic"
-            
+
             setCustomerId(validCustomerId)
             setSaleType(state.saleType)
             setPaymentMethod(state.paymentMethod)
             setShippingInput(state.shippingInput || "")
-            
+
             // Validar y limpiar el carrito antes de restaurarlo
             // Asegurarse de que todos los valores sean serializables (números, strings, etc.)
             const cleanedCart = state.cart.map((item: any) => ({
@@ -245,12 +246,12 @@ export function PosClient() {
               unit: item.unit || "UNIDAD",
               itbisRateBp: typeof item.itbisRateBp === "number" ? item.itbisRateBp : Number(item.itbisRateBp) || 1800,
             })).filter((item: any) => item.productId && item.name) // Filtrar items inválidos
-            
+
             if (cleanedCart.length > 0) {
               setCart(cleanedCart)
-              toast({ 
-                title: "Pedido restaurado", 
-                description: "Se ha restaurado tu pedido anterior. Puedes continuar donde lo dejaste." 
+              toast({
+                title: "Pedido restaurado",
+                description: "Se ha restaurado tu pedido anterior. Puedes continuar donde lo dejaste."
               })
             } else {
               // Si no hay items válidos, limpiar el estado
@@ -272,9 +273,9 @@ export function PosClient() {
         }
       }
     }
-    
+
     loadInitialData()
-    
+
     // Actualizar contadores de pendientes
     const updatePendingCounts = async () => {
       const counts = await getPendingCounts()
@@ -282,7 +283,7 @@ export function PosClient() {
     }
     updatePendingCounts()
     const interval = setInterval(updatePendingCounts, 5000) // Actualizar cada 5 segundos
-    
+
     return () => clearInterval(interval)
   }, [isOnline])
 
@@ -343,7 +344,7 @@ export function PosClient() {
           unit: String(item.unit),
           itbisRateBp: Number(item.itbisRateBp ?? 1800),
         }))
-        
+
         const state = {
           cart: serializableCart,
           customerId,
@@ -369,7 +370,7 @@ export function PosClient() {
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       const link = target.closest("a")
-      
+
       if (link && cart.length > 0) {
         const href = link.getAttribute("href")
         if (href && href !== pathname && !href.startsWith("#") && !link.hasAttribute("data-allow-navigation")) {
@@ -386,7 +387,7 @@ export function PosClient() {
 
     // Interceptar clicks en links
     document.addEventListener("click", handleClick, true)
-    
+
     // Interceptar beforeunload para cerrar pestaña/ventana
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (cart.length > 0) {
@@ -404,7 +405,7 @@ export function PosClient() {
             unit: String(item.unit),
             itbisRateBp: Number(item.itbisRateBp ?? 1800),
           }))
-          
+
           const state = {
             cart: serializableCart,
             customerId,
@@ -422,7 +423,7 @@ export function PosClient() {
         return ""
       }
     }
-    
+
     window.addEventListener("beforeunload", handleBeforeUnload)
 
     return () => {
@@ -433,7 +434,7 @@ export function PosClient() {
 
   useEffect(() => {
     const q = query.trim()
-    
+
     const handle = setTimeout(() => {
       if (q) {
         startSearch(async () => {
@@ -531,7 +532,7 @@ export function PosClient() {
   function addToCart(p: ProductResult) {
     const productUnit = (p.saleUnit as UnitType) ?? "UNIDAD"
     const stockNum = decimalToNumber(p.stock)
-    
+
     setCart((prev) => {
       const existing = prev.find((x) => x.productId === p.id)
       if (existing) {
@@ -745,7 +746,7 @@ export function PosClient() {
           </div>
         </div>
       )}
-      
+
       <div className="space-y-4">
         <Card>
           <CardHeader>
@@ -831,7 +832,7 @@ export function PosClient() {
                   onChange={(e) => {
                     const now = Date.now()
                     const newValue = e.target.value
-                    
+
                     // Si el campo se vacía, resetear tiempos
                     if (newValue.length === 0) {
                       firstKeyPressTime.current = 0
@@ -848,7 +849,7 @@ export function PosClient() {
                       }
                       lastKeyPressTime.current = now
                     }
-                    
+
                     setQuery(newValue)
                   }}
                   onKeyDown={async (e) => {
@@ -856,16 +857,16 @@ export function PosClient() {
                       const now = Date.now()
                       const timeSinceFirstKey = firstKeyPressTime.current > 0 ? now - firstKeyPressTime.current : 0
                       const timeSinceLastKey = lastKeyPressTime.current > 0 ? now - lastKeyPressTime.current : 0
-                      
+
                       // Detectar escaneo de código de barras:
                       // - Tiempo total muy corto (< 500ms) para códigos de más de 3 caracteres O
                       // - Tiempo desde última tecla muy corto (< 100ms) O
                       // - Texto tiene más de 10 caracteres (códigos de barras suelen ser largos)
-                      const isLikelyBarcode = 
+                      const isLikelyBarcode =
                         (timeSinceFirstKey > 0 && timeSinceFirstKey < 500 && query.length > 3) ||
                         (timeSinceLastKey > 0 && timeSinceLastKey < 100) ||
                         query.length > 10
-                      
+
                       if (isLikelyBarcode) {
                         e.preventDefault()
                         await handleBarcodeScan(query)
@@ -1055,7 +1056,7 @@ export function PosClient() {
                     const increment = allowsDecimals ? 0.5 : 1
                     const minQty = allowsDecimals ? 0.5 : 1
                     const unitInfo = getUnitInfo(c.unit)
-                    
+
                     return (
                       <div key={c.productId} className="flex items-start justify-between gap-3 rounded-md border p-3">
                         <div className="min-w-0">
@@ -1093,18 +1094,18 @@ export function PosClient() {
                               onChange={(e) => {
                                 // Solo actualizar el estado temporal mientras el usuario escribe
                                 let rawValue = e.target.value
-                                
+
                                 // Si no permite decimales, remover cualquier punto decimal
                                 if (!allowsDecimals && rawValue.includes(".")) {
                                   rawValue = rawValue.replace(".", "")
                                 }
-                                
+
                                 // Solo permitir números enteros si no permite decimales
                                 if (!allowsDecimals) {
                                   // Remover cualquier carácter no numérico excepto el menos al inicio (aunque no usamos negativos)
                                   rawValue = rawValue.replace(/[^\d]/g, "")
                                 }
-                                
+
                                 setEditingQuantities((prev) => ({ ...prev, [c.productId]: rawValue }))
                               }}
                               onBlur={(e) => {
@@ -1112,13 +1113,13 @@ export function PosClient() {
                                 const rawValue = e.target.value.trim()
                                 const newQty = parseQty(rawValue, c.unit)
                                 const finalQty = newQty < (allowsDecimals ? 0.01 : 1) ? (allowsDecimals ? 0.5 : 1) : newQty
-                                
+
                                 setCart((p) =>
                                   p.map((x) =>
                                     x.productId === c.productId ? { ...x, qty: finalQty } : x
                                   )
                                 )
-                                
+
                                 // Limpiar el estado de edición
                                 setEditingQuantities((prev) => {
                                   const next = { ...prev }
@@ -1162,10 +1163,10 @@ export function PosClient() {
                                       p.map((x) =>
                                         x.productId === c.productId
                                           ? {
-                                              ...x,
-                                              unitPriceCents,
-                                              wasPriceOverridden: unitPriceCents !== originalPriceCents,
-                                            }
+                                            ...x,
+                                            unitPriceCents,
+                                            wasPriceOverridden: unitPriceCents !== originalPriceCents,
+                                          }
                                           : x
                                       )
                                     )
@@ -1229,7 +1230,7 @@ export function PosClient() {
                     const increment = allowsDecimals ? 0.5 : 1
                     const minQty = allowsDecimals ? 0.5 : 1
                     const unitInfo = getUnitInfo(c.unit)
-                    
+
                     return (
                       <div key={c.productId} className="space-y-2">
                         <div className="flex items-start gap-3">
@@ -1380,9 +1381,9 @@ export function PosClient() {
           <Card>
             <CardContent className="py-6">
               <div className="flex flex-col items-center text-center space-y-3">
-                <img 
-                  src="/barcodereader.png" 
-                  alt="Lector de código de barras" 
+                <img
+                  src="/barcodereader.png"
+                  alt="Lector de código de barras"
                   className="w-32 h-32 object-contain"
                 />
                 <div className="space-y-1">
@@ -1505,7 +1506,7 @@ export function PosClient() {
                   {paymentSplits.map((split, index) => {
                     const amountInput = editingPaymentAmounts[index] ?? (split.amountCents > 0 ? (split.amountCents / 100).toFixed(2) : "")
                     const remainingCents = totalCents - paymentSplits.reduce((sum, s, i) => i !== index ? sum + s.amountCents : sum, 0)
-                    
+
                     return (
                       <div key={index} className="flex items-start gap-3 p-3 border rounded-md">
                         <div className="flex-1 grid gap-2">
@@ -1534,7 +1535,7 @@ export function PosClient() {
                               const numericValue = value.replace(/[^\d.]/g, "")
                               const parts = numericValue.split(".")
                               const filteredValue = parts.length > 2 ? parts[0] + "." + parts.slice(1).join("") : numericValue
-                              
+
                               // Actualizar estado temporal mientras el usuario escribe
                               setEditingPaymentAmounts((prev) => ({ ...prev, [index]: filteredValue }))
                             }}
@@ -1542,11 +1543,11 @@ export function PosClient() {
                               // Parsear y validar el valor al perder el foco
                               const rawValue = e.target.value.trim()
                               const amountCents = toCents(rawValue)
-                              
+
                               const newSplits = [...paymentSplits]
                               newSplits[index].amountCents = amountCents
                               setPaymentSplits(newSplits)
-                              
+
                               // Limpiar el estado de edición
                               setEditingPaymentAmounts((prev) => {
                                 const next = { ...prev }
@@ -1691,7 +1692,7 @@ export function PosClient() {
                       unit: String(item.unit),
                       itbisRateBp: Number(item.itbisRateBp ?? 1800),
                     }))
-                    
+
                     const state = {
                       cart: serializableCart,
                       customerId,

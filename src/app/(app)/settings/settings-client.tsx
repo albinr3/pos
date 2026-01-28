@@ -28,7 +28,7 @@ import {
   saveARCache,
 } from "@/lib/indexed-db"
 
-import { getSettings, updateLabelSizes } from "./actions"
+import { getSettings, updateLabelSizes, updateSalesSettings } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
@@ -65,6 +65,7 @@ export function SettingsClient({ isOwner }: Props) {
 
   const [barcodeLabelSize, setBarcodeLabelSize] = useState("4x2")
   const [shippingLabelSize, setShippingLabelSize] = useState("4x6")
+  const [defaultViewMode, setDefaultViewMode] = useState("list")
   const [isSaving, startSaving] = useTransition()
   const isOnline = useOnlineStatus()
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
@@ -81,8 +82,9 @@ export function SettingsClient({ isOwner }: Props) {
       setLogoUrl(s.logoUrl)
       setBarcodeLabelSize(s.barcodeLabelSize)
       setShippingLabelSize(s.shippingLabelSize)
+      setDefaultViewMode(s.defaultViewMode)
     })
-    
+
     // Actualizar contadores de pendientes
     const updatePendingCounts = async () => {
       const counts = await getPendingCounts()
@@ -94,10 +96,10 @@ export function SettingsClient({ isOwner }: Props) {
     if (typeof window !== "undefined") {
       setLastPreloadDay(parseLastSyncDay(localStorage.getItem(CACHE_SYNC_KEY)))
     }
-    
+
     return () => clearInterval(interval)
   }, [])
-  
+
   async function handleSync() {
     if (!isOnline) {
       toast({
@@ -107,7 +109,7 @@ export function SettingsClient({ isOwner }: Props) {
       })
       return
     }
-    
+
     setIsSyncing(true)
     try {
       await syncPendingData()
@@ -123,7 +125,7 @@ export function SettingsClient({ isOwner }: Props) {
       setIsSyncing(false)
     }
   }
-  
+
   async function handlePreload() {
     if (!isOnline) {
       toast({
@@ -133,7 +135,7 @@ export function SettingsClient({ isOwner }: Props) {
       })
       return
     }
-    
+
     setIsPreloading(true)
     try {
       const [productsData, customersData, arData] = await Promise.all([
@@ -141,7 +143,7 @@ export function SettingsClient({ isOwner }: Props) {
         syncCustomersToIndexedDB(),
         syncARToIndexedDB(),
       ])
-      
+
       await Promise.all([
         saveProductsCache(productsData),
         saveCustomersCache(customersData),
@@ -149,7 +151,7 @@ export function SettingsClient({ isOwner }: Props) {
       ])
       markCacheSynced()
       setLastPreloadDay(formatDateKey(new Date()))
-      
+
       toast({
         title: "Datos pre-cargados",
         description: "Los datos están listos para usar en modo offline",
@@ -348,6 +350,38 @@ export function SettingsClient({ isOwner }: Props) {
 
       <Card>
         <CardHeader>
+          <CardTitle>Configuración de Ventas</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="text-sm text-muted-foreground">Personaliza el comportamiento de la ventana de ventas.</div>
+          <Separator />
+          <div className="grid gap-2">
+            <Label>Vista por defecto</Label>
+            <select
+              className="h-10 rounded-md border bg-background px-3 text-sm w-full md:w-[300px]"
+              value={defaultViewMode}
+              onChange={(e) => {
+                const newValue = e.target.value
+                setDefaultViewMode(newValue)
+                startSaving(async () => {
+                  try {
+                    await updateSalesSettings(newValue)
+                    toast({ title: "Preferencia guardada" })
+                  } catch (e) {
+                    toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
+                  }
+                })
+              }}
+            >
+              <option value="list">Lista (texto y campos compactos)</option>
+              <option value="grid">Imágenes (cuadrícula con fotos)</option>
+            </select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Modo Offline</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -355,7 +389,7 @@ export function SettingsClient({ isOwner }: Props) {
             Gestiona la sincronización de datos para usar la aplicación sin conexión a internet.
           </div>
           <Separator />
-          
+
           <div className="grid gap-4">
             <div className="flex items-center justify-between rounded-md border p-4">
               <div className="flex items-center gap-3">
@@ -376,7 +410,7 @@ export function SettingsClient({ isOwner }: Props) {
                 </div>
               </div>
             </div>
-            
+
             {(pendingCounts.sales > 0 || pendingCounts.payments > 0) && (
               <div className="rounded-md border border-yellow-500 bg-yellow-50 p-4 dark:bg-yellow-900/20">
                 <div className="font-medium text-yellow-800 dark:text-yellow-200">
@@ -389,7 +423,7 @@ export function SettingsClient({ isOwner }: Props) {
                 </div>
               </div>
             )}
-            
+
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -410,7 +444,7 @@ export function SettingsClient({ isOwner }: Props) {
                 {isPreloading ? "Pre-cargando..." : "Pre-cargar datos offline"}
               </Button>
             </div>
-            
+
             <div className="text-xs text-muted-foreground">
               Ultima precarga: {lastPreloadDay ?? "sin registro"}
             </div>

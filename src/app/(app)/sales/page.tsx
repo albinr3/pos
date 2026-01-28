@@ -1,8 +1,11 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { PosClient } from "./pos-client"
+import { getSettings } from "../settings/actions"
 
-export default function SalesPage() {
+export default async function SalesPage() {
+  const settings = await getSettings()
+
   return (
     <div className="grid gap-6">
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -18,7 +21,7 @@ export default function SalesPage() {
           </Button>
         </div>
       </div>
-      <PosClient />
+      <PosClient defaultViewMode={settings.defaultViewMode} />
     </div>
   )
 }

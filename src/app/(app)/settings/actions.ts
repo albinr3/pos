@@ -13,7 +13,7 @@ export async function getSettings() {
   const s = await prisma.companySettings.findFirst({
     where: { accountId: user.accountId },
   })
-  
+
   return {
     name: s?.name ?? "Mi Negocio",
     phone: s?.phone ?? "",
@@ -22,6 +22,7 @@ export async function getSettings() {
     allowNegativeStock: s?.allowNegativeStock ?? false,
     barcodeLabelSize: s?.barcodeLabelSize ?? "4x2",
     shippingLabelSize: s?.shippingLabelSize ?? "4x6",
+    defaultViewMode: s?.defaultViewMode ?? "list",
   }
 }
 
@@ -90,4 +91,38 @@ export async function updateLabelSizes(barcodeLabelSize: string, shippingLabelSi
   revalidatePath("/settings")
   revalidatePath("/products")
   revalidatePath("/shipping-labels")
+
 }
+
+export async function updateSalesSettings(defaultViewMode: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const sanitizedViewMode = sanitizeString(defaultViewMode)
+
+  await prisma.companySettings.upsert({
+    where: { accountId: user.accountId },
+    update: { defaultViewMode: sanitizedViewMode },
+    create: {
+      accountId: user.accountId,
+      name: "Mi Negocio",
+      phone: "",
+      address: "",
+      allowNegativeStock: false,
+      itbisRateBp: 1800,
+      defaultViewMode: sanitizedViewMode,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    action: "SETTINGS_CHANGED",
+    resourceType: "CompanySettings",
+    details: { defaultViewMode: sanitizedViewMode },
+  })
+
+  revalidatePath("/settings")
+  revalidatePath("/sales")
+}
+

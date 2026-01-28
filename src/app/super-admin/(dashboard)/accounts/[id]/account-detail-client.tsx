@@ -27,6 +27,7 @@ import {
   Play,
   Pause,
   Trash2,
+  Key,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -64,9 +65,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import type { AccountDetail } from "../actions"
-import { deleteAccount, simulateTrialExpiry, runBillingEngine } from "../actions"
+import { deleteAccount, simulateTrialExpiry, runBillingEngine, resetUserPassword } from "../actions"
 import { updateSubscriptionStatus, extendTrial } from "../../actions"
 import { assignPlanToAccount, getActiveBillingPlans } from "../../plans/actions"
 
@@ -120,13 +131,19 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showStatusDialog, setShowStatusDialog] = useState(false)
   const [newStatus, setNewStatus] = useState(account.status)
-  
+
+  // Password Reset
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [newPassword, setNewPassword] = useState("")
+  const [isResetting, setIsResetting] = useState(false)
+
   // Plan selection
   const [availablePlans, setAvailablePlans] = useState<BillingPlanOption[]>([])
   const [selectedPlanId, setSelectedPlanId] = useState<string>(account.billingPlanId || "")
   const [isLoadingPlans, setIsLoadingPlans] = useState(true)
   const [isChangingPlan, setIsChangingPlan] = useState(false)
-  
+
   // Load available plans on mount
   useEffect(() => {
     async function loadPlans() {
@@ -141,10 +158,10 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
     }
     loadPlans()
   }, [])
-  
+
   const handlePlanChange = async (planId: string) => {
     if (planId === account.billingPlanId) return
-    
+
     setIsChangingPlan(true)
     try {
       const result = await assignPlanToAccount(account.id, planId)
@@ -256,6 +273,27 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
       toast({ title: "Error", description: "Error al ejecutar el billing engine", variant: "destructive" })
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const handlePasswordReset = async () => {
+    if (!selectedUserId || !newPassword) return
+
+    setIsResetting(true)
+    try {
+      const result = await resetUserPassword(selectedUserId, newPassword)
+      if (result.success) {
+        toast({ title: "Contraseña actualizada", description: "La contraseña ha sido restablecida correctamente." })
+        setShowPasswordDialog(false)
+        setNewPassword("")
+        setSelectedUserId(null)
+      } else {
+        toast({ title: "Error", description: result.error, variant: "destructive" })
+      }
+    } catch {
+      toast({ title: "Error", description: "Error al restablecer contraseña", variant: "destructive" })
+    } finally {
+      setIsResetting(false)
     }
   }
 
@@ -385,9 +423,9 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                   </p>
                 )}
               </div>
-              
+
               <Separator />
-              
+
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
                   <p className="text-sm text-muted-foreground">Estado</p>
@@ -624,6 +662,17 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                       {!user.isActive && (
                         <Badge variant="destructive" className="text-xs">Inactivo</Badge>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => {
+                          setSelectedUserId(user.id)
+                          setShowPasswordDialog(true)
+                        }}
+                      >
+                        <Key className="h-4 w-4 text-muted-foreground" />
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -687,6 +736,39 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+
+      {/* Dialog para resetear password */}
+      <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restablecer contraseña</DialogTitle>
+            <DialogDescription>
+              Ingresa la nueva contraseña para el usuario. Esta acción es inmediata.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="new-password">Nueva contraseña</Label>
+              <Input
+                id="new-password"
+                type="text"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPasswordDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handlePasswordReset} disabled={isResetting || newPassword.length < 6}>
+              {isResetting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar contraseña
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div >
   )
 }
