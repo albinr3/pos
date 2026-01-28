@@ -162,6 +162,39 @@ export async function logError(
       console.error(`[ErrorLog ${severity}] ${options.code ?? "UNKNOWN"}:`, error.message)
     }
 
+    // Enviar notificación por correo si no es un error de email
+    if (options.code !== ErrorCodes.EXTERNAL_EMAIL_ERROR) {
+      try {
+        // Importación dinámica para evitar dependencias circulares
+        const { sendResendEmail } = await import("@/lib/resend")
+        const { renderErrorNotification } = await import("@/lib/resend/templates")
+
+        const { subject, html } = await renderErrorNotification({
+          error,
+          code: options.code,
+          severity,
+          accountId: options.accountId,
+          userId: options.userId,
+          endpoint: options.endpoint,
+          method: options.method,
+          metadata: options.metadata,
+        })
+
+        // Enviar al email de soporte
+        // Usamos una cuenta nula o de sistema si no hay accountId para evitar errores si la cuenta no existe/está bloqueada
+        await sendResendEmail({
+          to: "soporte@movopos.com",
+          subject,
+          html,
+          accountId: options.accountId, // Pasamos el accountId para tracking si existe
+        }).catch(err => console.error("[ErrorLogger] Failed to send email notification:", err))
+
+      } catch (emailError) {
+        // Silenciosamente fallar si no se puede enviar el correo para no afectar el flujo principal
+        console.error("[ErrorLogger] Error preparing email notification:", emailError)
+      }
+    }
+
     return errorLog.id
   } catch (logError) {
     // Si falla el logging, al menos mostrar en consola
@@ -236,32 +269,32 @@ export const ErrorCodes = {
   AUTH_FAILED: "AUTH_FAILED",
   AUTH_EXPIRED: "AUTH_EXPIRED",
   AUTH_UNAUTHORIZED: "AUTH_UNAUTHORIZED",
-  
+
   // Billing
   BILLING_PAYMENT_FAILED: "BILLING_PAYMENT_FAILED",
   BILLING_SUBSCRIPTION_ERROR: "BILLING_SUBSCRIPTION_ERROR",
   BILLING_WEBHOOK_ERROR: "BILLING_WEBHOOK_ERROR",
-  
+
   // Database
   DB_CONNECTION_ERROR: "DB_CONNECTION_ERROR",
   DB_QUERY_ERROR: "DB_QUERY_ERROR",
   DB_TRANSACTION_ERROR: "DB_TRANSACTION_ERROR",
-  
+
   // Sales
   SALE_CREATE_ERROR: "SALE_CREATE_ERROR",
   SALE_CANCEL_ERROR: "SALE_CANCEL_ERROR",
   SALE_SYNC_ERROR: "SALE_SYNC_ERROR",
-  
+
   // Inventory
   INVENTORY_UPDATE_ERROR: "INVENTORY_UPDATE_ERROR",
   INVENTORY_NEGATIVE_STOCK: "INVENTORY_NEGATIVE_STOCK",
-  
+
   // External services
   EXTERNAL_OCR_ERROR: "EXTERNAL_OCR_ERROR",
   EXTERNAL_EMAIL_ERROR: "EXTERNAL_EMAIL_ERROR",
   EXTERNAL_WHATSAPP_ERROR: "EXTERNAL_WHATSAPP_ERROR",
   EXTERNAL_UPLOAD_ERROR: "EXTERNAL_UPLOAD_ERROR",
-  
+
   // General
   VALIDATION_ERROR: "VALIDATION_ERROR",
   NOT_FOUND: "NOT_FOUND",

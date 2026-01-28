@@ -31,10 +31,20 @@ async function renderTemplate(
   variables: Record<string, string>
 ) {
   const template = await loadTemplate(templateName)
-  return template.replace(/{{\s*([\w-]+)\s*}}/g, (_, key) => {
+
+  // Primero reemplazar variables sin escapar {{{ variable }}}
+  let rendered = template.replace(/{{{\s*([\w-]+)\s*}}}/g, (_, key) => {
+    const value = variables[key]
+    return value !== undefined ? value : ""
+  })
+
+  // Luego reemplazar variables escapadas {{ variable }}
+  rendered = rendered.replace(/{{\s*([\w-]+)\s*}}/g, (_, key) => {
     const value = variables[key]
     return value !== undefined ? escapeHtml(value) : ""
   })
+
+  return rendered
 }
 
 type WelcomeNewUserTemplateData = {
@@ -269,7 +279,7 @@ export async function renderNewUserSignupNotification(
   data: NewUserSignupNotificationData
 ) {
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
-  
+
   const html = `
 <!DOCTYPE html>
 <html>
@@ -346,6 +356,45 @@ export async function renderNewUserSignupNotification(
   `.trim()
 
   const subject = `🎉 Nuevo usuario registrado: ${data.accountName}`
+
+  return { subject, html }
+}
+
+type ErrorNotificationTemplateData = {
+  error: Error
+  code?: string
+  severity: string
+  accountId?: string
+  userId?: string
+  endpoint?: string
+  method?: string
+  metadata?: Record<string, unknown>
+}
+
+export async function renderErrorNotification(data: ErrorNotificationTemplateData) {
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+
+  const metadataHtml = data.metadata
+    ? `<pre style="background-color: #f4f4f5; padding: 10px; border-radius: 4px; overflow-x: auto;">${escapeHtml(JSON.stringify(data.metadata, null, 2))}</pre>`
+    : "N/A"
+
+  const html = await renderTemplate("error-notification.html", {
+    brandName,
+    errorMessage: data.error.message,
+    errorCode: data.code || "N/A",
+    severity: data.severity,
+    severityBgColor: data.severity === 'CRITICAL' ? '#fee2e2' : '#f3f4f6',
+    severityTextColor: data.severity === 'CRITICAL' ? '#991b1b' : '#374151',
+    endpoint: data.endpoint || "N/A",
+    method: data.method || "N/A",
+    accountId: data.accountId || "N/A",
+    userId: data.userId || "N/A",
+    stackTrace: data.error.stack || "No stack trace available",
+    metadataHtml, // Usamos {{{ metadataHtml }}} en el template para que no se escape
+    year: new Date().getFullYear().toString(),
+  })
+
+  const subject = `🚨 [${data.severity}] Error en ${brandName}: ${data.code || "UNKNOWN"}`
 
   return { subject, html }
 }

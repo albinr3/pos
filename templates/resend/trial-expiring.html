@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -12,6 +13,7 @@
       color: #e2e8f0;
       padding: 32px;
     }
+
     .card {
       max-width: 600px;
       margin: 0 auto;
@@ -21,40 +23,48 @@
       box-shadow: 0 20px 40px rgba(15, 23, 42, 0.65);
       overflow: hidden;
     }
+
     .header {
       padding: 32px;
-      background: linear-gradient(135deg, #3b82f6, #60a5fa);
+      background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
       color: white;
     }
+
     .header h1 {
       margin: 0;
       font-size: 28px;
       letter-spacing: 0.01em;
     }
+
     .header p {
       opacity: 0.9;
       margin: 8px 0 0;
     }
+
     .content {
       padding: 32px;
       line-height: 1.6;
       color: #cbd5e1;
     }
+
     .content h2 {
       margin-top: 0;
       color: #e2e8f0;
     }
+
     .content p {
       margin: 16px 0;
     }
+
     .highlight {
       display: inline-block;
       padding: 4px 12px;
-      background: rgba(59, 130, 246, 0.2);
+      background: rgba(99, 102, 241, 0.2);
       border-radius: 8px;
-      color: #60a5fa;
+      color: #a5b4fc;
       font-weight: 600;
     }
+
     .button {
       display: inline-flex;
       align-items: center;
@@ -65,9 +75,10 @@
       text-decoration: none;
       color: white;
       font-weight: 600;
-      background: linear-gradient(135deg, #3b82f6, #2563eb);
-      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
     }
+
     .footer {
       padding: 20px 32px 28px;
       background: #0f172a;
@@ -75,12 +86,14 @@
       font-size: 12px;
       color: #94a3b8;
     }
+
     .footer a {
       color: #a5b4fc;
       text-decoration: none;
     }
   </style>
 </head>
+
 <body>
   <div class="card">
     <div class="header">
@@ -91,12 +104,12 @@
       <h2>Hola {{accountName}},</h2>
       <p>{{message}}</p>
       <p>
-        Para continuar usando todas las funcionalidades sin interrupciones, 
+        Para continuar usando todas las funcionalidades sin interrupciones,
         te recomendamos elegir un plan de pago.
       </p>
       <a class="button" href="{{billingUrl}}">Ver planes de pago</a>
       <p style="margin-top: 24px; font-size: 14px; color: #94a3b8;">
-        Si tienes alguna pregunta, no dudes en contactarnos en 
+        Si tienes alguna pregunta, no dudes en contactarnos en
         <a style="color: #a5b4fc; text-decoration: none;" href="mailto:{{supportEmail}}">{{supportEmail}}</a>.
       </p>
     </div>
@@ -105,4 +118,5 @@
     © {{year}} {{brandName}} · <a href="{{appUrl}}">Ir al portal</a>
   </div>
 </body>
+
 </html>

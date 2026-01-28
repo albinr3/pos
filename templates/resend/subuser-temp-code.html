@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -12,6 +13,7 @@
       color: #e2e8f0;
       padding: 32px;
     }
+
     .card {
       max-width: 520px;
       margin: 0 auto;
@@ -21,21 +23,25 @@
       box-shadow: 0 20px 40px rgba(15, 23, 42, 0.65);
       overflow: hidden;
     }
+
     .header {
       padding: 32px;
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
       color: white;
     }
+
     .header h1 {
       margin: 0;
       font-size: 28px;
       letter-spacing: 0.01em;
     }
+
     .content {
       padding: 32px;
       line-height: 1.6;
       color: #cbd5f5;
     }
+
     .code {
       display: inline-flex;
       padding: 18px 28px;
@@ -46,6 +52,7 @@
       font-weight: 600;
       letter-spacing: 0.2em;
     }
+
     .button {
       display: inline-flex;
       align-items: center;
@@ -56,13 +63,15 @@
       text-decoration: none;
       color: white;
       font-weight: 600;
-      background: linear-gradient(135deg, #34d399, #10b981);
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
     }
+
     .note {
       margin-top: 24px;
       font-size: 14px;
       color: #9ca3af;
     }
+
     .footer {
       padding: 20px 32px 28px;
       background: #0f172a;
@@ -70,12 +79,14 @@
       font-size: 12px;
       color: #94a3b8;
     }
+
     .footer a {
       color: #a5b4fc;
       text-decoration: none;
     }
   </style>
 </head>
+
 <body>
   <div class="card">
     <div class="header">
@@ -95,7 +106,8 @@
       </p>
       <a class="button" href="{{loginUrl}}">Ingresar a {{brandName}}</a>
       <p class="note">
-        Usuario vinculado: {{username}} · Puedes actualizar tu contraseña desde tu zona segura después de iniciar sesión.
+        Usuario vinculado: {{username}} · Puedes actualizar tu contraseña desde tu zona segura después de iniciar
+        sesión.
       </p>
     </div>
   </div>
@@ -103,4 +115,5 @@
     {{brandName}} · <a href="{{appUrl}}">Ir al portal</a>
   </div>
 </body>
+
 </html>
