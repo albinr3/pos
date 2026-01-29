@@ -1,5 +1,6 @@
 import { PricingCard } from "@/components/marketing/pricing-card"
 import type { PricingPlan } from "@/components/marketing/pricing-card"
+import type { Metadata } from "next"
 
 const plans: PricingPlan[] = [
   {
@@ -24,9 +25,12 @@ const plans: PricingPlan[] = [
   },
 ]
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Precios | MOVOPos",
   description: "Elige el plan perfecto para tu negocio. Precios transparentes y sin sorpresas.",
+  alternates: {
+    canonical: "/pricing",
+  },
 }
 
 export default function PricingPage() {

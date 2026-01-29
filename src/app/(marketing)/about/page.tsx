@@ -1,8 +1,13 @@
 import Image from "next/image"
 
-export const metadata = {
+import { Metadata } from "next"
+
+export const metadata: Metadata = {
   title: "Sobre Nosotros | MOVOPos",
   description: "Conoce más sobre MOVOPos y nuestro equipo",
+  alternates: {
+    canonical: "/about",
+  },
 }
 
 export default function AboutPage() {

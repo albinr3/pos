@@ -1,12 +1,9 @@
-export const metadata = {
-  title: "Contacto | MOVOPos",
-  description: "Ponte en contacto con el equipo de MOVOPos. Envíanos un mensaje o contáctanos por teléfono o email.",
-}
+import type { Metadata } from "next"
 
-export default function ContactLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
-  return <>{children}</>
+export const metadata: Metadata = {
+  title: "Contáctanos | MOVOPos",
+  description: "¿Tienes preguntas, sugerencias o necesitas ayuda? Estamos aquí para ti. Envíanos un mensaje y te responderemos lo antes posible.",
+  alternates: {
+    canonical: "/contact",
+  },
 }

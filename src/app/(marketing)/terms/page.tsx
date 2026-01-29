@@ -1,6 +1,11 @@
-export const metadata = {
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
   title: "Términos y Condiciones | MOVOPos",
   description: "Términos y condiciones de uso de MOVOPos",
+  alternates: {
+    canonical: "/terms",
+  },
 }
 
 export default function TermsPage() {
@@ -8,7 +13,7 @@ export default function TermsPage() {
     <div className="py-24 sm:py-32">
       <div className="container max-w-3xl">
         <h1 className="text-4xl font-bold tracking-tight mb-8">Términos y Condiciones</h1>
-        
+
         <div className="prose prose-neutral dark:prose-invert max-w-none space-y-6">
           <section>
             <h2 className="text-2xl font-semibold mt-8 mb-4">1. Aceptación de los Términos</h2>

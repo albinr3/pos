@@ -1,6 +1,11 @@
-export const metadata = {
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
   title: "Política de Privacidad | MOVOPos",
   description: "Política de privacidad de MOVOPos",
+  alternates: {
+    canonical: "/privacy",
+  },
 }
 
 export default function PrivacyPage() {
@@ -8,7 +13,7 @@ export default function PrivacyPage() {
     <div className="py-24 sm:py-32">
       <div className="container max-w-3xl">
         <h1 className="text-4xl font-bold tracking-tight mb-8">Política de Privacidad</h1>
-        
+
         <div className="prose prose-neutral dark:prose-invert max-w-none space-y-6">
           <section>
             <h2 className="text-2xl font-semibold mt-8 mb-4">1. Información que Recopilamos</h2>
