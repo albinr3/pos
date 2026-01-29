@@ -167,6 +167,7 @@ model Account {
   returns            Return[]
   quotes             Quote[]
   auditLogs          AuditLog[]
+  inventoryAdjustments InventoryAdjustment[]
   invoiceSequences   InvoiceSequence[]
   returnSequence     ReturnSequence?
   quoteSequence      QuoteSequence?
@@ -237,6 +238,7 @@ model User {
   quotes             Quote[]
   whatsappOtps       WhatsappOtp[]
   auditLogs          AuditLog[]
+  inventoryAdjustments InventoryAdjustment[]
 
   // Username único dentro del mismo account
   @@unique([accountId, username])
@@ -486,6 +488,7 @@ model Product {
   purchaseItems PurchaseItem[]
   returnItems   ReturnItem[]
   quoteItems    QuoteItem[]
+  inventoryAdjustments InventoryAdjustment[]
 
   // productId único dentro del account
   @@unique([accountId, productId])
@@ -497,6 +500,30 @@ model Product {
   @@index([supplierId])
   @@index([categoryId])
   @@index([accountId, stock])
+}
+
+model InventoryAdjustment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  qtyDelta Decimal @db.Decimal(10, 3)
+
+  reason  String?
+  note    String?
+  batchId String?
+
+  @@index([accountId, createdAt])
+  @@index([productId, createdAt])
+  @@index([batchId])
 }
 
 // ==========================================

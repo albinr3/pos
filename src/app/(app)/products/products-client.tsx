@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition, type FocusEvent } from "react"
-import { Edit, Plus, Printer, Search, Trash2 } from "lucide-react"
+import { Edit, History, Plus, Printer, Search, Trash2 } from "lucide-react"
 import { UnitType } from "@prisma/client"
 
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
 import { UNIT_OPTIONS, formatQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
@@ -19,14 +21,26 @@ import { BarcodeLabel } from "@/components/app/barcode-label"
 import { ProductImageUpload } from "@/components/app/product-image-upload"
 import type { CurrentUser } from "@/lib/auth"
 
-import { deactivateProduct, listProducts, upsertProduct } from "./actions"
+import { adjustManyStock, deactivateProduct, listProductMovements, listProducts, upsertProduct } from "./actions"
 import { getAllSuppliers } from "../suppliers/actions"
 import { getAllCategories } from "../categories/actions"
 import { getSettings } from "../settings/actions"
 
 type Product = Awaited<ReturnType<typeof listProducts>>["items"][number]
+type ProductMovement = Awaited<ReturnType<typeof listProductMovements>>[number]
 
 const PAGE_SIZE = 50
+
+const MOVEMENT_LABELS: Record<ProductMovement["type"], string> = {
+  SALE: "Venta",
+  SALE_CANCELLED: "Venta cancelada",
+  PURCHASE: "Compra",
+  PURCHASE_CANCELLED: "Compra cancelada",
+  RETURN: "Devolución",
+  RETURN_CANCELLED: "Devolución cancelada",
+  ADJUSTMENT: "Ajuste",
+  INITIAL: "Stock inicial",
+}
 
 function toInt(v: string) {
   const n = Number(v || 0)
@@ -36,6 +50,65 @@ function toInt(v: string) {
 function toDecimal(v: string) {
   const n = Number(v || 0)
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0
+}
+
+function formatMovementDate(value: string) {
+  return new Date(value).toLocaleString("es-DO", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  })
+}
+
+type BulkParseResult = {
+  items: { productId: number; delta: number }[]
+  errors: string[]
+}
+
+function parseBulkLines(value: string): BulkParseResult {
+  const items: { productId: number; delta: number }[] = []
+  const errors: string[] = []
+  const lines = value.split(/\r?\n/)
+
+  lines.forEach((line, index) => {
+    const raw = line.trim()
+    if (!raw) return
+
+    // Ignorar encabezados comunes
+    if (!/\d/.test(raw) && /id|producto|cantidad/i.test(raw)) return
+
+    let parts: string[]
+    if (raw.includes("\t")) {
+      parts = raw.split("\t")
+    } else if (raw.includes(",")) {
+      parts = raw.split(",")
+    } else if (raw.includes(";")) {
+      parts = raw.split(";")
+    } else {
+      parts = raw.split(/\s+/)
+    }
+
+    const [idRaw, deltaRaw] = parts.map((p) => p.trim()).filter(Boolean)
+    if (!idRaw || !deltaRaw) {
+      errors.push(`Línea ${index + 1}: formato inválido (usa ID y cantidad).`)
+      return
+    }
+
+    const productId = Number(idRaw)
+    const delta = Number(deltaRaw.replace(",", "."))
+
+    if (!Number.isInteger(productId) || productId <= 0) {
+      errors.push(`Línea ${index + 1}: ID inválido.`)
+      return
+    }
+    if (!Number.isFinite(delta) || delta === 0) {
+      errors.push(`Línea ${index + 1}: cantidad inválida.`)
+      return
+    }
+
+    items.push({ productId, delta })
+  })
+
+  return { items, errors }
 }
 
 export function ProductsClient() {
@@ -48,6 +121,14 @@ export function ProductsClient() {
   const [editing, setEditing] = useState<Product | null>(null)
   const [printingProduct, setPrintingProduct] = useState<Product | null>(null)
   const [barcodeLabelSize, setBarcodeLabelSize] = useState("4x2")
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkLines, setBulkLines] = useState("")
+  const [bulkReason, setBulkReason] = useState("Ajuste masivo")
+  const [isBulkSaving, startBulkSaving] = useTransition()
+  const [movementsOpen, setMovementsOpen] = useState(false)
+  const [movementsProduct, setMovementsProduct] = useState<Product | null>(null)
+  const [movements, setMovements] = useState<ProductMovement[]>([])
+  const [isMovementsLoading, startMovementsLoading] = useTransition()
 
   const [name, setName] = useState("")
   const [sku, setSku] = useState("")
@@ -161,6 +242,7 @@ export function ProductsClient() {
   }
 
   const title = useMemo(() => (editing ? "Editar producto" : "Nuevo producto"), [editing])
+  const bulkParsed = useMemo(() => parseBulkLines(bulkLines), [bulkLines])
 
   async function onSave() {
     const trimmedName = name.trim()
@@ -211,6 +293,46 @@ export function ProductsClient() {
     })
   }
 
+  async function onBulkSave() {
+    const { items: parsedItems, errors } = parseBulkLines(bulkLines)
+    if (!parsedItems.length) {
+      toast({ title: "Sin datos", description: "Ingresa al menos un ID y cantidad.", variant: "destructive" })
+      return
+    }
+    if (errors.length) {
+      toast({ title: "Revisa el formato", description: errors[0], variant: "destructive" })
+      return
+    }
+    startBulkSaving(async () => {
+      try {
+        await adjustManyStock({
+          items: parsedItems,
+          reason: bulkReason,
+        })
+        toast({ title: "Ajustes aplicados", description: "Inventario actualizado correctamente." })
+        setBulkOpen(false)
+        setBulkLines("")
+        refresh(query)
+      } catch (e) {
+        toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo aplicar el ajuste masivo" })
+      }
+    })
+  }
+
+  function openMovements(product: Product) {
+    setMovementsProduct(product)
+    setMovementsOpen(true)
+    startMovementsLoading(async () => {
+      try {
+        const data = await listProductMovements({ productId: product.id })
+        setMovements(data)
+      } catch (e) {
+        setMovements([])
+        toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudieron cargar los movimientos" })
+      }
+    })
+  }
+
   async function onDelete(id: string) {
     if (!confirm("¿Desactivar este producto?") ) return
     try {
@@ -223,6 +345,7 @@ export function ProductsClient() {
   }
 
   const totalProducts = items.length
+  const canAdjustStock = !!user && (user.canEditProducts || user.role === "ADMIN")
 
   return (
     <div className="grid gap-6">
@@ -243,7 +366,54 @@ export function ProductsClient() {
             <CardTitle>Productos</CardTitle>
             <div className="text-sm text-muted-foreground">Descripción, código (SKU), referencia, precio y existencia.</div>
           </div>
-          <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) resetForm(null) }}>
+          <div className="flex items-center gap-2">
+            <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" disabled={!canAdjustStock}>Ajuste masivo</Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[720px]">
+                <DialogHeader>
+                  <DialogTitle>Ajuste masivo de inventario</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4">
+                  <div className="grid gap-2">
+                    <Label>Motivo (opcional)</Label>
+                    <Input
+                      value={bulkReason}
+                      onChange={(e) => setBulkReason(e.target.value)}
+                      placeholder="Ej: Conteo físico"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>IDs y cantidades (una línea por producto)</Label>
+                    <Textarea
+                      value={bulkLines}
+                      onChange={(e) => setBulkLines(e.target.value)}
+                      rows={8}
+                      placeholder={"101\t+5\n102\t-2"}
+                      className="font-mono"
+                    />
+                    <div className="text-xs text-muted-foreground">
+                      Formato: ID y cantidad (usa + o -). Puedes pegar desde Excel/Sheets (tabulado).
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Líneas válidas: {bulkParsed.items.length}
+                    {bulkParsed.errors.length > 0 ? ` · Errores: ${bulkParsed.errors.length}` : ""}
+                  </div>
+                  {bulkParsed.errors.length > 0 && (
+                    <div className="text-xs text-red-500">{bulkParsed.errors[0]}</div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="secondary" onClick={() => setBulkOpen(false)} type="button">Cancelar</Button>
+                  <Button onClick={onBulkSave} disabled={isBulkSaving || !canAdjustStock} type="button">
+                    {isBulkSaving ? "Aplicando…" : "Aplicar ajustes"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+            <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) resetForm(null) }}>
             <DialogTrigger asChild>
               <Button onClick={() => { resetForm(null); setOpen(true) }}>
                 <Plus className="mr-2 h-4 w-4" /> Nuevo
@@ -366,6 +536,7 @@ export function ProductsClient() {
                             onChange={(e) => setStock(e.target.value)}
                             inputMode="numeric"
                             placeholder="Ej: 100"
+                            disabled={!!editing}
                             onFocus={selectAllOnFocus}
                           />
                         </div>
@@ -380,6 +551,11 @@ export function ProductsClient() {
                           />
                         </div>
                       </div>
+                      {editing && (
+                        <div className="text-xs text-muted-foreground">
+                          La existencia se ajusta desde Ajuste masivo.
+                        </div>
+                      )}
                     </TabsContent>
 
                     <TabsContent value="measured" className="mt-0 space-y-4">
@@ -454,13 +630,24 @@ export function ProductsClient() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="grid gap-2">
                           <Label>Existencia ({getUnitInfo(saleUnit).abbr})</Label>
-                          <Input value={stock} onChange={(e) => setStock(e.target.value)} inputMode="decimal" placeholder="Ej: 45.5" />
+                          <Input
+                            value={stock}
+                            onChange={(e) => setStock(e.target.value)}
+                            inputMode="decimal"
+                            placeholder="Ej: 45.5"
+                            disabled={!!editing}
+                          />
                         </div>
                         <div className="grid gap-2">
                           <Label>Existencia mínima ({getUnitInfo(saleUnit).abbr})</Label>
                           <Input value={minStock} onChange={(e) => setMinStock(e.target.value)} inputMode="decimal" placeholder="Ej: 5" />
                         </div>
                       </div>
+                      {editing && (
+                        <div className="text-xs text-muted-foreground">
+                          La existencia se ajusta desde Ajuste masivo.
+                        </div>
+                      )}
                       <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
                         Los productos con medidas permiten cantidades decimales (ej: 2.5 kg, 1.75 m).
                       </div>
@@ -502,7 +689,8 @@ export function ProductsClient() {
                 <Button onClick={onSave} disabled={isSaving} type="button">{isSaving ? "Guardando…" : "Guardar"}</Button>
               </DialogFooter>
             </DialogContent>
-          </Dialog>
+            </Dialog>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="relative">
@@ -538,6 +726,15 @@ export function ProductsClient() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={() => openMovements(p)}
+                          aria-label="Movimientos"
+                          title="Movimientos"
+                        >
+                          <History className="h-4 w-4" />
+                        </Button>
                         <Button
                           className="bg-green-500 hover:bg-green-600 text-white"
                           size="icon"
@@ -605,6 +802,92 @@ export function ProductsClient() {
           )}
         </CardContent>
       </Card>
+
+      {movementsProduct && (
+        <Dialog
+          open={movementsOpen}
+          onOpenChange={(v) => {
+            setMovementsOpen(v)
+            if (!v) {
+              setMovementsProduct(null)
+              setMovements([])
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-[900px] max-h-[85vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>
+                Movimientos de {movementsProduct.name} (ID {movementsProduct.productId})
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto">
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead className="text-right">Cantidad</TableHead>
+                      <TableHead>Referencia</TableHead>
+                      <TableHead>Detalle</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isMovementsLoading && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                          Cargando movimientos...
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {!isMovementsLoading && movements.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground">
+                          No hay movimientos para este producto.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {movements.map((movement) => {
+                      const unit = (movementsProduct.saleUnit as UnitType) ?? "UNIDAD"
+                      const qty = Math.abs(movement.qtyDelta)
+                      const isInitial = movement.type === "INITIAL"
+                      const qtyLabel = isInitial
+                        ? formatQty(qty, unit)
+                        : `${movement.qtyDelta > 0 ? "+" : ""}${formatQty(qty, unit)}`
+                      const qtyClass = isInitial
+                        ? "text-muted-foreground"
+                        : movement.qtyDelta > 0 ? "text-emerald-600" : "text-red-600"
+                      const detailParts = [movement.actor, movement.note].filter(Boolean)
+                      return (
+                        <TableRow key={movement.id}>
+                          <TableCell className="whitespace-nowrap">
+                            {formatMovementDate(movement.occurredAt)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{MOVEMENT_LABELS[movement.type]}</Badge>
+                          </TableCell>
+                          <TableCell className={`text-right font-medium ${qtyClass}`}>{qtyLabel}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {movement.reference ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {detailParts.length ? detailParts.join(" • ") : "—"}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="secondary" onClick={() => setMovementsOpen(false)} type="button">
+                Cerrar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {printingProduct && (
         <BarcodeLabel

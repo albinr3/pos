@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
+import { INITIAL_STOCK_REASON } from "@/lib/inventory"
 
 // Tipos para los datos extraídos del OCR
 export type ExtractedProduct = {
@@ -272,8 +273,27 @@ export async function createPurchaseFromOCR(input: {
             costCents: netCostCents, // Usar costo neto
             stock: 0, // Se actualizará con la compra
           },
-          select: { id: true },
+          select: { id: true, createdAt: true },
         })
+        try {
+          await tx.inventoryAdjustment.create({
+            data: {
+              accountId: currentUser.accountId,
+              productId: newProduct.id,
+              userId: currentUser.id,
+              qtyDelta: 0,
+              reason: INITIAL_STOCK_REASON,
+              note: null,
+              batchId: null,
+              createdAt: newProduct.createdAt,
+            },
+          })
+        } catch (error) {
+          const code = (error as { code?: string })?.code
+          if (code !== "P2021") {
+            console.error("Error creating inventory adjustment:", error)
+          }
+        }
         productId = newProduct.id
       }
 
