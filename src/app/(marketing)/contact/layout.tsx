@@ -7,3 +7,11 @@ export const metadata: Metadata = {
     canonical: "/contact",
   },
 }
+
+export default function ContactLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return <>{children}</>
+}
