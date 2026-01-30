@@ -247,6 +247,9 @@ export function BillingClient({ initialData }: BillingClientProps) {
   const payments = data.payments ?? []
 
   const latestPayment = payments[0]
+  const nextBillingDate = state.currentPeriodEndsAt
+    ? format(new Date(state.currentPeriodEndsAt), "dd/MM/yyyy", { locale: es })
+    : null
 
   const formatMoney = (cents: number, currency: string) => {
     const amount = cents / 100
@@ -342,7 +345,9 @@ export function BillingClient({ initialData }: BillingClientProps) {
             {state.isActive && state.daysRemaining !== null && (
               <p className="text-muted-foreground">
                 <CheckCircle className="inline h-4 w-4 mr-1" />
-                Próxima facturación en {state.daysRemaining} días
+                {nextBillingDate
+                  ? `Próxima facturación el ${nextBillingDate} (${state.daysRemaining} días)`
+                  : `Próxima facturación en ${state.daysRemaining} días`}
               </p>
             )}
 

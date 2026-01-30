@@ -449,7 +449,8 @@ export async function processLemonPayment(
   externalId: string,
   amountCents: number,
   lemonCustomerId?: string,
-  lemonSubscriptionId?: string
+  lemonSubscriptionId?: string,
+  periodEndsAtOverride?: Date
 ): Promise<BillingPayment> {
   const prisma = await getPrisma()
   const now = new Date()
@@ -474,6 +475,10 @@ export async function processLemonPayment(
     // Si no, empieza ahora
     periodStartsAt = now
     periodEndsAt = addDays(now, BILLING_CYCLE_DAYS)
+  }
+
+  if (periodEndsAtOverride && periodEndsAtOverride > periodStartsAt) {
+    periodEndsAt = periodEndsAtOverride
   }
 
   // Crear el pago
@@ -829,8 +834,14 @@ export async function getLemonCheckoutUrl(accountId: string, email?: string): Pr
     include: { billingPlan: true },
   })
 
-  // Usar el variant ID del plan si existe, sino el default
-  const variantId = subscription?.billingPlan?.lemonVariantId || defaultVariantId
+  let variantId = subscription?.billingPlan?.lemonVariantId
+
+  if (!variantId) {
+    const defaultPlan = await prisma.billingPlan.findFirst({
+      where: { isDefault: true, isActive: true },
+    })
+    variantId = defaultPlan?.lemonVariantId || defaultVariantId
+  }
 
   if (!variantId) {
     throw new Error("Lemon Squeezy not configured: missing variant ID")

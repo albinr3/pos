@@ -248,13 +248,17 @@ async function handlePaymentSuccess(
 
   const amountCents = subscription.priceUsdCents
   const lemonCustomerId = data.relationships?.customer?.data?.id
+  const renewsAtRaw = data.attributes.renews_at
+  const renewsAt = renewsAtRaw ? new Date(renewsAtRaw) : undefined
+  const validRenewsAt = renewsAt && !Number.isNaN(renewsAt.getTime()) ? renewsAt : undefined
 
   await processLemonPayment(
     accountId,
     externalId,
     amountCents,
     lemonCustomerId,
-    data.id
+    data.id,
+    validRenewsAt
   )
 
   console.log(`Processed payment success for account ${accountId}`)
