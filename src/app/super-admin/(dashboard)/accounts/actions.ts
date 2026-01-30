@@ -325,9 +325,29 @@ export async function deleteAccount(accountId: string): Promise<{ success: boole
       return { success: false, error: "Cuenta no encontrada" }
     }
 
-    // Eliminar (cascade eliminará los relacionados)
-    await prisma.account.delete({
-      where: { id: accountId },
+    // Eliminar en orden para evitar errores de llaves foráneas por userId
+    await prisma.$transaction(async (tx) => {
+      // 1) Eliminar entidades dependientes de usuarios (sin onDelete cascade)
+      await tx.return.deleteMany({ where: { accountId } })
+      await tx.payment.deleteMany({
+        where: {
+          ar: {
+            sale: {
+              accountId,
+            },
+          },
+        },
+      })
+      await tx.purchase.deleteMany({ where: { accountId } })
+      await tx.operatingExpense.deleteMany({ where: { accountId } })
+      await tx.quote.deleteMany({ where: { accountId } })
+      await tx.sale.deleteMany({ where: { accountId } })
+
+      // 2) Eliminar usuarios del account
+      await tx.user.deleteMany({ where: { accountId } })
+
+      // 3) Eliminar el account (cascade eliminará lo restante)
+      await tx.account.delete({ where: { id: accountId } })
     })
 
     await logSuperAdminAction(admin.id, "deleted_account", {
