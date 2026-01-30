@@ -129,6 +129,7 @@ export function ProductsClient() {
   const [movementsProduct, setMovementsProduct] = useState<Product | null>(null)
   const [movements, setMovements] = useState<ProductMovement[]>([])
   const [isMovementsLoading, startMovementsLoading] = useTransition()
+  const [movementsPage, setMovementsPage] = useState(0)
 
   const [name, setName] = useState("")
   const [sku, setSku] = useState("")
@@ -322,9 +323,11 @@ export function ProductsClient() {
   function openMovements(product: Product) {
     setMovementsProduct(product)
     setMovementsOpen(true)
+    setMovementsPage(0)
+    setMovements([])
     startMovementsLoading(async () => {
       try {
-        const data = await listProductMovements({ productId: product.id })
+        const data = await listProductMovements({ productId: product.id, take: 500 })
         setMovements(data)
       } catch (e) {
         setMovements([])
@@ -346,6 +349,18 @@ export function ProductsClient() {
 
   const totalProducts = items.length
   const canAdjustStock = !!user && (user.canEditProducts || user.role === "ADMIN")
+  const movementInitial = useMemo(() => movements.find((m) => m.type === "INITIAL") ?? null, [movements])
+  const movementItems = useMemo(() => movements.filter((m) => m.type !== "INITIAL"), [movements])
+  const movementPageSize = 10
+  const movementPageCount = Math.max(Math.ceil(movementItems.length / movementPageSize), 1)
+  const movementStart = movementsPage * movementPageSize
+  const movementPageItems = movementItems.slice(movementStart, movementStart + movementPageSize)
+
+  useEffect(() => {
+    if (movementsPage > movementPageCount - 1) {
+      setMovementsPage(0)
+    }
+  }, [movementsPage, movementPageCount])
 
   return (
     <div className="grid gap-6">
@@ -820,8 +835,8 @@ export function ProductsClient() {
                 Movimientos de {movementsProduct.name} (ID {movementsProduct.productId})
               </DialogTitle>
             </DialogHeader>
-            <div className="flex-1 overflow-y-auto">
-              <div className="rounded-md border">
+            <div className="flex-1">
+              <div className="rounded-md border max-h-[60vh] overflow-y-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -840,23 +855,40 @@ export function ProductsClient() {
                         </TableCell>
                       </TableRow>
                     )}
-                    {!isMovementsLoading && movements.length === 0 && (
+                    {!isMovementsLoading && movementItems.length === 0 && !movementInitial && (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center text-muted-foreground">
                           No hay movimientos para este producto.
                         </TableCell>
                       </TableRow>
                     )}
-                    {movements.map((movement) => {
+                    {movementInitial && !isMovementsLoading && (() => {
+                      const unit = (movementsProduct.saleUnit as UnitType) ?? "UNIDAD"
+                      const qty = Math.abs(movementInitial.qtyDelta)
+                      const qtyLabel = formatQty(qty, unit)
+                      return (
+                        <TableRow key={movementInitial.id} className="bg-muted/30">
+                          <TableCell className="whitespace-nowrap">
+                            {formatMovementDate(movementInitial.occurredAt)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{MOVEMENT_LABELS[movementInitial.type]}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-medium text-muted-foreground">{qtyLabel}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {movementInitial.reference ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {movementInitial.note ?? "—"}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })()}
+                    {movementPageItems.map((movement) => {
                       const unit = (movementsProduct.saleUnit as UnitType) ?? "UNIDAD"
                       const qty = Math.abs(movement.qtyDelta)
-                      const isInitial = movement.type === "INITIAL"
-                      const qtyLabel = isInitial
-                        ? formatQty(qty, unit)
-                        : `${movement.qtyDelta > 0 ? "+" : ""}${formatQty(qty, unit)}`
-                      const qtyClass = isInitial
-                        ? "text-muted-foreground"
-                        : movement.qtyDelta > 0 ? "text-emerald-600" : "text-red-600"
+                      const qtyLabel = `${movement.qtyDelta > 0 ? "+" : ""}${formatQty(qty, unit)}`
+                      const qtyClass = movement.qtyDelta > 0 ? "text-emerald-600" : "text-red-600"
                       const detailParts = [movement.actor, movement.note].filter(Boolean)
                       return (
                         <TableRow key={movement.id}>
@@ -881,6 +913,31 @@ export function ProductsClient() {
               </div>
             </div>
             <DialogFooter>
+              <div className="flex items-center justify-between w-full">
+                <div className="text-xs text-muted-foreground">
+                  Página {Math.min(movementsPage + 1, movementPageCount)} de {movementPageCount}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setMovementsPage((p) => Math.max(p - 1, 0))}
+                    disabled={movementsPage === 0}
+                    type="button"
+                  >
+                    Anterior
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setMovementsPage((p) => Math.min(p + 1, movementPageCount - 1))}
+                    disabled={movementsPage >= movementPageCount - 1}
+                    type="button"
+                  >
+                    Siguiente
+                  </Button>
+                </div>
+              </div>
               <Button variant="secondary" onClick={() => setMovementsOpen(false)} type="button">
                 Cerrar
               </Button>

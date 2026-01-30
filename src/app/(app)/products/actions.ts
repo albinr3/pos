@@ -716,8 +716,7 @@ export async function listProductMovements(input: {
   const filtered = movements.filter((m) => withinRange(new Date(m.occurredAt)))
   filtered.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
 
-  const limit = Math.max(take - (initialMovement ? 1 : 0), 0)
-  const limited = filtered.slice(0, limit)
+  const limited = filtered.slice(0, take)
 
   return initialMovement ? [initialMovement, ...limited] : limited
 }

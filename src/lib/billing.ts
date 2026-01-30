@@ -751,6 +751,65 @@ export async function getPaymentHistory(
 // LEMON SQUEEZY HELPERS
 // ==========================================
 
+type LemonCheckoutTarget = {
+  baseUrl: string
+  params: URLSearchParams
+}
+
+function normalizeLemonStoreSlug(storeId: string): string {
+  const trimmed = storeId.trim()
+  if (!trimmed) {
+    throw new Error("Lemon Squeezy not configured: missing LEMON_STORE_ID")
+  }
+
+  let slug = trimmed.replace(/^https?:\/\//i, "")
+  slug = slug.replace(/\.lemonsqueezy\.com\/?$/i, "")
+  return slug
+}
+
+function buildLemonCheckoutTarget(storeSlug: string, variantOrUrl: string): LemonCheckoutTarget {
+  const raw = variantOrUrl.trim()
+  if (!raw) {
+    throw new Error("Lemon Squeezy not configured: missing variant ID")
+  }
+
+  // Full URL (with protocol)
+  if (/^https?:\/\//i.test(raw)) {
+    const url = new URL(raw)
+    return {
+      baseUrl: `${url.origin}${url.pathname}`,
+      params: new URLSearchParams(url.search),
+    }
+  }
+
+  // Full URL (without protocol)
+  if (raw.includes("lemonsqueezy.com/")) {
+    const url = new URL(`https://${raw}`)
+    return {
+      baseUrl: `${url.origin}${url.pathname}`,
+      params: new URLSearchParams(url.search),
+    }
+  }
+
+  const [pathPart, queryPart] = raw.split("?")
+  const params = new URLSearchParams(queryPart || "")
+  const normalizedPath = pathPart.replace(/^\/+/, "")
+
+  // Allow passing full checkout path (checkout/buy/...)
+  if (normalizedPath.startsWith("checkout/buy/")) {
+    return {
+      baseUrl: `https://${storeSlug}.lemonsqueezy.com/${normalizedPath}`,
+      params,
+    }
+  }
+
+  // Default: treat as variant/price id
+  return {
+    baseUrl: `https://${storeSlug}.lemonsqueezy.com/checkout/buy/${pathPart}`,
+    params,
+  }
+}
+
 /**
  * Genera la URL de checkout de Lemon Squeezy
  * Usa el variant ID del plan asignado a la cuenta, o el default si no tiene
@@ -777,16 +836,16 @@ export async function getLemonCheckoutUrl(accountId: string, email?: string): Pr
     throw new Error("Lemon Squeezy not configured: missing variant ID")
   }
 
-  const baseUrl = `https://${storeId}.lemonsqueezy.com/checkout/buy/${variantId}`
-  const params = new URLSearchParams({
-    "checkout[custom][account_id]": accountId,
-  })
+  const storeSlug = normalizeLemonStoreSlug(storeId)
+  const target = buildLemonCheckoutTarget(storeSlug, variantId)
 
+  const params = new URLSearchParams(target.params)
+  params.set("checkout[custom][account_id]", accountId)
   if (email) {
-    params.append("checkout[email]", email)
+    params.set("checkout[email]", email)
   }
 
-  return `${baseUrl}?${params.toString()}`
+  return `${target.baseUrl}?${params.toString()}`
 }
 
 // ==========================================

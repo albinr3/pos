@@ -457,8 +457,8 @@ WHATSAPP_ACCESS_TOKEN="tu_access_token"
 # === BILLING (Sistema de Facturación) ===
 
 # Lemon Squeezy (opcional - para pagos con tarjeta USD)
-LEMON_STORE_ID="tu-store-id"
-LEMON_VARIANT_ID_USD="123456"
+LEMON_STORE_ID="tu-store-slug"
+LEMON_VARIANT_ID_USD="05406e62-66d2-4304-87b7-8f246a8fa145"
 LEMON_WEBHOOK_SECRET="tu-webhook-secret"
 
 # Resend (opcional - para emails de billing)
@@ -581,8 +581,8 @@ Configura estas variables en Settings → Environment Variables:
 | `JWT_SECRET` | ✅ | Secret para sesiones de subusuarios |
 | `CLERK_WEBHOOK_SECRET` | ✅ | Signing secret del webhook de Clerk |
 | `OPENAI_API_KEY` | ❌ | Para OCR de facturas (opcional) |
-| `LEMON_STORE_ID` | ❌ | ID de tienda en Lemon Squeezy |
-| `LEMON_VARIANT_ID_USD` | ❌ | ID del producto USD en Lemon Squeezy |
+| `LEMON_STORE_ID` | ❌ | Slug de la tienda en Lemon Squeezy (subdominio) |
+| `LEMON_VARIANT_ID_USD` | ❌ | Variant ID (UUID o numérico) del plan USD en Lemon Squeezy |
 | `LEMON_WEBHOOK_SECRET` | ❌ | Secret del webhook de Lemon Squeezy |
 | `RESEND_API_KEY` | ❌ | API Key de Resend para emails |
 | `EMAIL_FROM` | ❌ | Email remitente para notificaciones |
@@ -598,13 +598,13 @@ Configura estas variables en Settings → Environment Variables:
 
 ### Configurar Lemon Squeezy (pagos USD)
 1. Crea cuenta en [lemonsqueezy.com](https://lemonsqueezy.com)
-2. Crea una tienda (Store) → copia el `LEMON_STORE_ID`
+2. Crea una tienda (Store) → copia el slug (subdominio) como `LEMON_STORE_ID`
 3. Crea productos/variantes para cada plan de precios:
-   - Producto "Plan Estándar" → $20/mes → copia el `variant_id`
-   - Producto "Plan Promocional" → $10/mes → copia el `variant_id`
+   - Producto "Plan Estándar" → $20/mes → copia el `variant_id` (UUID o numérico)
+   - Producto "Plan Promocional" → $10/mes → copia el `variant_id` (UUID o numérico)
    - (puedes crear tantos como necesites)
 4. En `.env` usa el variant ID del plan por defecto: `LEMON_VARIANT_ID_USD`
-5. En Super Admin → Planes, asigna los variant IDs correspondientes a cada plan
+5. En Super Admin → Planes, asigna los variant IDs correspondientes a cada plan (o pega la URL completa de checkout)
 6. Ve a Settings → Webhooks → crea uno:
    - URL: `https://tu-app.vercel.app/api/webhooks/lemon`
    - Eventos: Todos los de subscription

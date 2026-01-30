@@ -401,10 +401,10 @@ export function PlansClient({ initialPlans }: Props) {
                 id="lemonVariantId"
                 value={formData.lemonVariantId}
                 onChange={(e) => setFormData({ ...formData, lemonVariantId: e.target.value })}
-                placeholder="Ej: 123456 (opcional)"
+                placeholder="Ej: 05406e62-66d2-4304-87b7-8f246a8fa145 (opcional)"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                ID del producto/variant en Lemon Squeezy para pagos USD
+                Puedes usar el variant ID (UUID) o pegar la URL completa de checkout
               </p>
             </div>
 
@@ -508,8 +508,11 @@ export function PlansClient({ initialPlans }: Props) {
                 id="edit-lemonVariantId"
                 value={formData.lemonVariantId}
                 onChange={(e) => setFormData({ ...formData, lemonVariantId: e.target.value })}
-                placeholder="Ej: 123456 (opcional)"
+                placeholder="Ej: 05406e62-66d2-4304-87b7-8f246a8fa145 (opcional)"
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Puedes usar el variant ID (UUID) o pegar la URL completa de checkout
+              </p>
             </div>
 
             <div className="flex items-center justify-between">
