@@ -880,7 +880,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                     }
                   }}
                   className="pl-10"
-                  placeholder="Ej: alfombra / 12345 / REF-01"
+                  placeholder="Buscar productos"
                 />
               </div>
             </div>
