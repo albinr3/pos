@@ -177,12 +177,14 @@ export default async function SaleReceiptPage({
       <div className="mt-2 space-y-1">
         <div className="flex justify-between">
           <span>Subtotal</span>
-          <span>{formatRD(sale.subtotalCents)}</span>
+          <span>{formatRD((company?.showItbisOnReceipts ?? true) ? sale.subtotalCents : (sale.subtotalCents + sale.itbisCents))}</span>
         </div>
-        <div className="flex justify-between">
-          <span>ITBIS (18% incluido)</span>
-          <span>{formatRD(sale.itbisCents)}</span>
-        </div>
+        {(company?.showItbisOnReceipts ?? true) && (
+          <div className="flex justify-between">
+            <span>ITBIS (18% incluido)</span>
+            <span>{formatRD(sale.itbisCents)}</span>
+          </div>
+        )}
         {sale.shippingCents > 0 && (
           <div className="flex justify-between">
             <span>Flete</span>

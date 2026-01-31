@@ -72,10 +72,11 @@ function getCachedUser(): CurrentUser | null {
   }
 }
 
-export function PosClient({ defaultViewMode = "list" }: { defaultViewMode?: string }) {
+export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true }: { defaultViewMode?: string, showItbisOnReceipts?: boolean }) {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState("")
+  const [isInitialized, setIsInitialized] = useState(false)
 
   // Evitar error de hidratación: solo mostrar indicador después de montar
   useEffect(() => {
@@ -274,7 +275,7 @@ export function PosClient({ defaultViewMode = "list" }: { defaultViewMode?: stri
       }
     }
 
-    loadInitialData()
+    loadInitialData().finally(() => setIsInitialized(true))
 
     // Actualizar contadores de pendientes
     const updatePendingCounts = async () => {
@@ -329,6 +330,8 @@ export function PosClient({ defaultViewMode = "list" }: { defaultViewMode?: stri
 
   // Guardar el estado del carrito cada vez que cambia
   useEffect(() => {
+    if (!isInitialized) return
+
     if (cart.length > 0) {
       try {
         // Asegurarse de que todos los valores sean serializables
@@ -363,7 +366,7 @@ export function PosClient({ defaultViewMode = "list" }: { defaultViewMode?: stri
       // Si el carrito está vacío, limpiar el estado guardado
       localStorage.removeItem("posCartState")
     }
-  }, [cart, customerId, saleType, paymentMethod, shippingInput])
+  }, [cart, customerId, saleType, paymentMethod, shippingInput, isInitialized])
 
   // Interceptar navegación cuando hay productos en el carrito
   useEffect(() => {
@@ -1288,7 +1291,31 @@ export function PosClient({ defaultViewMode = "list" }: { defaultViewMode?: stri
                               >
                                 +
                               </Button>
-                              <div className="ml-auto text-sm font-semibold">{formatRD(c.unitPriceCents)}</div>
+                              {user && user.canOverridePrice ? (
+                                <div className="w-24 ml-auto">
+                                  <PriceInput
+                                    valueCents={c.unitPriceCents}
+                                    onChangeCents={(unitPriceCents) => {
+                                      // Obtener el precio original del producto para comparar
+                                      const product = allProducts.find((p) => p.id === c.productId) || results.find((p) => p.id === c.productId)
+                                      const originalPriceCents = product?.priceCents || c.unitPriceCents
+                                      setCart((p) =>
+                                        p.map((x) =>
+                                          x.productId === c.productId
+                                            ? {
+                                              ...x,
+                                              unitPriceCents,
+                                              wasPriceOverridden: unitPriceCents !== originalPriceCents,
+                                            }
+                                            : x
+                                        )
+                                      )
+                                    }}
+                                  />
+                                </div>
+                              ) : (
+                                <div className="ml-auto text-sm font-semibold">{formatRD(c.unitPriceCents)}</div>
+                              )}
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -1341,25 +1368,27 @@ export function PosClient({ defaultViewMode = "list" }: { defaultViewMode?: stri
                 />
               </div>
             </div>
-            <div className="grid gap-1 text-sm text-muted-foreground">
-              <div className="flex items-center justify-between">
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span suppressHydrationWarning>{formatRD(subtotalCents)}</span>
+                <span>{formatRD(showItbisOnReceipts ? subtotalCents : totalCents)}</span>
               </div>
-              <div className="flex items-center justify-between">
-                <span>ITBIS (18% incluido)</span>
-                <span suppressHydrationWarning>{formatRD(itbisCents)}</span>
-              </div>
-              {shippingCents > 0 && (
-                <div className="flex items-center justify-between">
-                  <span>Flete</span>
-                  <span suppressHydrationWarning>{formatRD(shippingCents)}</span>
+              {!showItbisOnReceipts ? null : (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>ITBIS</span>
+                  <span>{formatRD(itbisCents)}</span>
                 </div>
               )}
-              <Separator />
-              <div className="flex items-center justify-between text-base font-semibold text-foreground">
+              {shippingCents > 0 && (
+                <div className="flex justify-between">
+                  <span>Envío</span>
+                  <span>{formatRD(shippingCents)}</span>
+                </div>
+              )}
+              <Separator className="my-2" />
+              <div className="flex justify-between font-bold text-base">
                 <span>Total</span>
-                <span suppressHydrationWarning>{formatRD(totalCents)}</span>
+                <span>{formatRD(totalCents)}</span>
               </div>
             </div>
             <Button

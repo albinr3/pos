@@ -28,7 +28,7 @@ import {
   saveARCache,
 } from "@/lib/indexed-db"
 
-import { getSettings, updateLabelSizes, updateSalesSettings } from "./actions"
+import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
@@ -66,6 +66,7 @@ export function SettingsClient({ isOwner }: Props) {
   const [barcodeLabelSize, setBarcodeLabelSize] = useState("4x2")
   const [shippingLabelSize, setShippingLabelSize] = useState("4x6")
   const [defaultViewMode, setDefaultViewMode] = useState("list")
+  const [showItbisOnReceipts, setShowItbisOnReceipts] = useState(true)
   const [isSaving, startSaving] = useTransition()
   const isOnline = useOnlineStatus()
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
@@ -83,6 +84,7 @@ export function SettingsClient({ isOwner }: Props) {
       setBarcodeLabelSize(s.barcodeLabelSize)
       setShippingLabelSize(s.shippingLabelSize)
       setDefaultViewMode(s.defaultViewMode)
+      setShowItbisOnReceipts(s.showItbisOnReceipts)
     })
 
     // Actualizar contadores de pendientes
@@ -376,6 +378,29 @@ export function SettingsClient({ isOwner }: Props) {
               <option value="list">Lista (texto y campos compactos)</option>
               <option value="grid">Imágenes (cuadrícula con fotos)</option>
             </select>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <Label className="text-base">Desglosar ITBIS en recibos</Label>
+              <div className="text-sm text-muted-foreground">
+                Si se activa, se mostrará el detalle del ITBIS en los recibos y facturas (térmica y carta).
+              </div>
+            </div>
+            <Switch
+              checked={showItbisOnReceipts}
+              onCheckedChange={(checked) => {
+                setShowItbisOnReceipts(checked)
+                startSaving(async () => {
+                  try {
+                    await updateReceiptSettings(checked)
+                    toast({ title: "Preferencia guardada" })
+                  } catch (e) {
+                    toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
+                  }
+                })
+              }}
+              disabled={isSaving}
+            />
           </div>
         </CardContent>
       </Card>

@@ -29,18 +29,18 @@ type CartItem = {
   netCostCents: number
 }
 
-type Supplier = Awaited<ReturnType<typeof getAllSuppliers>>[number]
+type Supplier = Awaited<ReturnType<typeof getAllSuppliers>>[number] & { chargesItbis?: boolean }
 
 function toInt(v: string) {
   const n = Number(v || 0)
   return Number.isFinite(n) ? Math.trunc(n) : 0
 }
 
-// Calcular costo neto: (costo - descuento) * 1.18 (ITBIS)
-function calculateNetCost(unitCostCents: number, discountPercentBp: number): number {
+// Calcular costo neto: (costo - descuento) * (1 + ITBIS)
+function calculateNetCost(unitCostCents: number, discountPercentBp: number, chargesItbis: boolean): number {
   const discountRate = discountPercentBp / 10000
   const costAfterDiscount = unitCostCents * (1 - discountRate)
-  const itbisRate = 0.18
+  const itbisRate = chargesItbis ? 0.18 : 0
   const netCost = costAfterDiscount * (1 + itbisRate)
   return Math.round(netCost)
 }
@@ -77,7 +77,7 @@ export function PurchasesClient() {
 
   useEffect(() => {
     refreshPurchases()
-    getAllSuppliers().then(setSuppliers).catch(() => {})
+    getAllSuppliers().then(setSuppliers).catch(() => { })
   }, [])
 
   // Cuando se selecciona un proveedor, aplicar su descuento a los items del carrito
@@ -91,10 +91,11 @@ export function PurchasesClient() {
           prev.map((item) => {
             // Solo aplicar si el item no tiene descuento personalizado (0)
             const discountBp = item.discountPercentBp > 0 ? item.discountPercentBp : supplier.discountPercentBp
+            const chargesItbis = supplier.chargesItbis ?? false
             return {
               ...item,
               discountPercentBp: discountBp,
-              netCostCents: calculateNetCost(item.unitCostCents, discountBp),
+              netCostCents: calculateNetCost(item.unitCostCents, discountBp, chargesItbis),
             }
           })
         )
@@ -131,10 +132,12 @@ export function PurchasesClient() {
         return prev.map((x) => {
           if (x.productId === p.id) {
             const discountBp = x.discountPercentBp
+            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
+            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
             return {
               ...x,
               qty: x.qty + 1,
-              netCostCents: calculateNetCost(x.unitCostCents, discountBp),
+              netCostCents: calculateNetCost(x.unitCostCents, discountBp, chargesItbis),
             }
           }
           return x
@@ -142,6 +145,8 @@ export function PurchasesClient() {
       }
       const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
       const discountBp = supplier?.discountPercentBp ?? 0
+      // Default to true (legacy) if no supplier, or use supplier setting
+      const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
       const unitCostCents = p.costCents ?? 0
       return [
         ...prev,
@@ -153,7 +158,7 @@ export function PurchasesClient() {
           qty: 1,
           unitCostCents,
           discountPercentBp: discountBp,
-          netCostCents: calculateNetCost(unitCostCents, discountBp),
+          netCostCents: calculateNetCost(unitCostCents, discountBp, chargesItbis),
         },
       ]
     })
@@ -211,7 +216,8 @@ export function PurchasesClient() {
                       prev.map((item) => ({
                         ...item,
                         discountPercentBp: 0,
-                        netCostCents: calculateNetCost(item.unitCostCents, 0),
+                        // If no supplier, default ITBIS = true
+                        netCostCents: calculateNetCost(item.unitCostCents, 0, true),
                       }))
                     )
                   }
@@ -338,13 +344,16 @@ export function PurchasesClient() {
                           value={String(c.qty)}
                           onChange={(e) => {
                             const newQty = Math.max(1, toInt(e.target.value))
+                            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
+                            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
                             setCart((p) =>
                               p.map((x) =>
                                 x.productId === c.productId
                                   ? {
-                                      ...x,
-                                      qty: newQty,
-                                    }
+                                    ...x,
+                                    qty: newQty,
+                                    netCostCents: calculateNetCost(x.unitCostCents, x.discountPercentBp, chargesItbis),
+                                  }
                                   : x
                               )
                             )
@@ -359,14 +368,16 @@ export function PurchasesClient() {
                           onChange={(e) => {
                             const newCost = toCents(e.target.value)
                             const discountBp = c.discountPercentBp
+                            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
+                            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
                             setCart((p) =>
                               p.map((x) =>
                                 x.productId === c.productId
                                   ? {
-                                      ...x,
-                                      unitCostCents: newCost,
-                                      netCostCents: calculateNetCost(newCost, discountBp),
-                                    }
+                                    ...x,
+                                    unitCostCents: newCost,
+                                    netCostCents: calculateNetCost(newCost, discountBp, chargesItbis),
+                                  }
                                   : x
                               )
                             )
@@ -382,54 +393,57 @@ export function PurchasesClient() {
                           value={discountInputs[c.productId] ?? (c.discountPercentBp / 100).toFixed(2)}
                           onChange={(e) => {
                             let newValue = e.target.value
-                            
+
                             // Guardar el valor en el estado local
                             setDiscountInputs((prev) => ({ ...prev, [c.productId]: newValue }))
-                            
+
+                            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
+                            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
+
                             // Solo permitir números y un punto decimal
                             if (newValue === "") {
                               setCart((p) =>
                                 p.map((x) =>
                                   x.productId === c.productId
                                     ? {
-                                        ...x,
-                                        discountPercentBp: 0,
-                                        netCostCents: calculateNetCost(x.unitCostCents, 0),
-                                      }
+                                      ...x,
+                                      discountPercentBp: 0,
+                                      netCostCents: calculateNetCost(x.unitCostCents, 0, chargesItbis),
+                                    }
                                     : x
                                 )
                               )
                               return
                             }
-                            
+
                             // Remover todo excepto números y un punto decimal
                             const cleaned = newValue.replace(/[^0-9.]/g, "")
                             const parts = cleaned.split(".")
-                            
+
                             // Si hay más de un punto, mantener solo el primero
                             if (parts.length > 2) {
                               newValue = parts[0] + "." + parts.slice(1).join("")
                             } else {
                               newValue = cleaned
                             }
-                            
+
                             // Limitar a 2 decimales
                             if (parts.length === 2 && parts[1].length > 2) {
                               newValue = parts[0] + "." + parts[1].substring(0, 2)
                             }
-                            
+
                             // Limitar a máximo 100
                             const discountPercent = Math.min(parseFloat(newValue) || 0, 100)
                             const discountBp = Math.round(discountPercent * 100)
-                            
+
                             setCart((p) =>
                               p.map((x) =>
                                 x.productId === c.productId
                                   ? {
-                                      ...x,
-                                      discountPercentBp: discountBp,
-                                      netCostCents: calculateNetCost(x.unitCostCents, discountBp),
-                                    }
+                                    ...x,
+                                    discountPercentBp: discountBp,
+                                    netCostCents: calculateNetCost(x.unitCostCents, discountBp, chargesItbis),
+                                  }
                                   : x
                               )
                             )
@@ -438,21 +452,24 @@ export function PurchasesClient() {
                             // Al perder el foco, formatear y limpiar el estado local
                             const discountPercent = Math.min(parseFloat(e.target.value) || 0, 100)
                             const discountBp = Math.round(discountPercent * 100)
-                            
+
                             setDiscountInputs((prev) => {
                               const newState = { ...prev }
                               delete newState[c.productId]
                               return newState
                             })
-                            
+
+                            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
+                            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
+
                             setCart((p) =>
                               p.map((x) =>
                                 x.productId === c.productId
                                   ? {
-                                      ...x,
-                                      discountPercentBp: discountBp,
-                                      netCostCents: calculateNetCost(x.unitCostCents, discountBp),
-                                    }
+                                    ...x,
+                                    discountPercentBp: discountBp,
+                                    netCostCents: calculateNetCost(x.unitCostCents, discountBp, chargesItbis),
+                                  }
                                   : x
                               )
                             )

@@ -7,12 +7,13 @@ import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 
-// Calcular costo neto: (costo - descuento) * 1.18 (ITBIS)
-function calculateNetCost(unitCostCents: number, discountPercentBp: number): number {
+// Calcular costo neto: (costo - descuento) * (1 + ITBIS)
+function calculateNetCost(unitCostCents: number, discountPercentBp: number, chargesItbis: boolean): number {
   // discountPercentBp está en basis points (1000 = 10%)
   const discountRate = discountPercentBp / 10000
   const costAfterDiscount = unitCostCents * (1 - discountRate)
-  const itbisRate = 0.18 // 18% ITBIS
+  // Si chargesItbis es true, aplicar 18%; si no, 0%
+  const itbisRate = chargesItbis ? 0.18 : 0
   const netCost = costAfterDiscount * (1 + itbisRate)
   return Math.round(netCost)
 }
@@ -31,10 +32,10 @@ function normalizePurchase<T extends { items: { qty: Decimal | number; product?:
       qty: toNumber(item.qty),
       product: item.product
         ? {
-            ...item.product,
-            stock: item.product.stock === undefined ? item.product.stock : toNumber(item.product.stock),
-            minStock: item.product.minStock === undefined ? item.product.minStock : toNumber(item.product.minStock),
-          }
+          ...item.product,
+          stock: item.product.stock === undefined ? item.product.stock : toNumber(item.product.stock),
+          minStock: item.product.minStock === undefined ? item.product.minStock : toNumber(item.product.minStock),
+        }
         : item.product,
     })),
   } as T
@@ -88,8 +89,8 @@ export async function createPurchase(input: {
     // Obtener el proveedor si se proporcionó supplierId
     let supplier = null
     if (input.supplierId) {
-      supplier = await tx.supplier.findFirst({ 
-        where: { accountId: currentUser.accountId, id: input.supplierId } 
+      supplier = await tx.supplier.findFirst({
+        where: { accountId: currentUser.accountId, id: input.supplierId }
       })
     }
 
@@ -106,7 +107,15 @@ export async function createPurchase(input: {
     const itemsWithNetCost = input.items.map((item) => {
       // Usar descuento del item o del proveedor
       const discountBp = item.discountPercentBp ?? supplier?.discountPercentBp ?? 0
-      const netCostCents = calculateNetCost(item.unitCostCents, discountBp)
+      // Usar configuración de ITBIS del proveedor. Si no hay proveedor, se asume sin ITBIS o por defecto?
+      // El usuario pidió "si el proveedor tiene casilla marcada suma itbis".
+      // Si no hay proveedor, asumiremos QUE SI SUMA (comportamiento anterior) o QUE NO?
+      // "en compras SIEMPRE suma el itbis". Comportamiento legacy = true.
+      // Pero si quiero desmarcarlo, necesito un proveedor.
+      // ASUMIREMOS: Si hay supplier, usar supplier.chargesItbis. Si no hay supplier, usar TRUE (legacy logic).
+      const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
+
+      const netCostCents = calculateNetCost(item.unitCostCents, discountBp, chargesItbis)
       return {
         ...item,
         discountPercentBp: discountBp,
@@ -196,7 +205,7 @@ export async function searchProductsForPurchase(query: string) {
     orderBy: { name: "asc" },
     take: 20,
   })
-  
+
   // Convertir Decimal a número
   return products.map((p) => ({
     ...p,
@@ -223,9 +232,9 @@ export async function getPurchaseById(id: string) {
       },
     },
   })
-  
+
   if (!purchase) return null
-  
+
   // Convertir Decimal a numero en items
   return {
     ...purchase,
@@ -323,8 +332,8 @@ export async function updatePurchase(input: {
     // Obtener el proveedor si se proporcionó supplierId
     let supplier = null
     if (input.supplierId) {
-      supplier = await tx.supplier.findFirst({ 
-        where: { accountId: currentUser.accountId, id: input.supplierId } 
+      supplier = await tx.supplier.findFirst({
+        where: { accountId: currentUser.accountId, id: input.supplierId }
       })
     }
 
@@ -359,7 +368,8 @@ export async function updatePurchase(input: {
     // Calcular items con descuento e ITBIS
     const itemsWithNetCost = input.items.map((item) => {
       const discountBp = item.discountPercentBp ?? supplier?.discountPercentBp ?? 0
-      const netCostCents = calculateNetCost(item.unitCostCents, discountBp)
+      const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
+      const netCostCents = calculateNetCost(item.unitCostCents, discountBp, chargesItbis)
       return {
         ...item,
         discountPercentBp: discountBp,

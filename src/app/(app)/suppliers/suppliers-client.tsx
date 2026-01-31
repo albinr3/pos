@@ -31,6 +31,7 @@ export function SuppliersClient() {
   const [address, setAddress] = useState("")
   const [notes, setNotes] = useState("")
   const [discountPercent, setDiscountPercent] = useState("")
+  const [chargesItbis, setChargesItbis] = useState(false)
   const [isSaving, startSaving] = useTransition()
 
   function refresh(q?: string) {
@@ -64,6 +65,7 @@ export function SuppliersClient() {
     setAddress(x?.address ?? "")
     setNotes(x?.notes ?? "")
     setDiscountPercent(x?.discountPercentBp ? (x.discountPercentBp / 100).toFixed(2) : "")
+    setChargesItbis(x?.chargesItbis ?? false)
   }
 
   const title = useMemo(() => (editing ? "Editar proveedor" : "Nuevo proveedor"), [editing])
@@ -86,6 +88,7 @@ export function SuppliersClient() {
           address: address || null,
           notes: notes || null,
           discountPercentBp: discountBp,
+          chargesItbis,
         })
         toast({ title: "Guardado", description: "Proveedor actualizado" })
         setOpen(false)
@@ -168,6 +171,22 @@ export function SuppliersClient() {
                   <div className="text-xs text-muted-foreground">
                     Este descuento se aplicará automáticamente al registrar compras de este proveedor.
                   </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="charges-itbis"
+                    checked={chargesItbis}
+                    onChange={(e) => setChargesItbis(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  />
+                  <Label htmlFor="charges-itbis" className="cursor-pointer">
+                    Sumar ITBIS en compras
+                  </Label>
+                </div>
+                <div className="text-xs text-muted-foreground -mt-3 ml-6">
+                  Si se marca, se sumará el 18% de ITBIS al costo de los productos de este proveedor.
                 </div>
 
                 <div className="grid gap-2">

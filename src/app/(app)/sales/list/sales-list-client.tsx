@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useTransition, useMemo } from "react"
-import { Edit, Receipt, Trash2, Search, Printer } from "lucide-react"
+import { Edit, Receipt, Trash2, Search, Printer, Plus } from "lucide-react"
 import Link from "next/link"
 import { SaleType, PaymentMethod } from "@prisma/client"
 
@@ -92,7 +92,7 @@ export function SalesListClient() {
 
   useEffect(() => {
     refresh("")
-    listCustomers().then(setCustomers).catch(() => {})
+    listCustomers().then(setCustomers).catch(() => { })
   }, [])
 
   useEffect(() => {
@@ -225,11 +225,15 @@ export function SalesListClient() {
   async function handleCancel(id: string) {
     if (!confirm("¿Cancelar esta venta? Se revertirá el stock descontado.")) return
     try {
-      await cancelSale(id, "admin")
-      toast({ title: "Listo", description: "Venta cancelada" })
-      refresh(query)
+      const result = await cancelSale(id, "admin")
+      if (result.success) {
+        toast({ title: "Listo", description: "Venta cancelada" })
+        refresh(query)
+      } else {
+        toast({ title: "No se pudo cancelar", description: result.error })
+      }
     } catch (e) {
-      toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo cancelar" })
+      toast({ title: "Error", description: "Error de comunicación con el servidor" })
     }
   }
 
@@ -239,10 +243,16 @@ export function SalesListClient() {
   return (
     <div className="grid gap-6">
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 text-left">
           <CardTitle className="flex items-center gap-2">
             <Receipt className="h-5 w-5 text-green-600" /> Lista de Facturas
           </CardTitle>
+          <Button asChild size="sm" className="bg-purple-600 hover:bg-purple-700 text-white shadow-sm">
+            <Link href="/sales">
+              <Plus className="mr-2 h-4 w-4" />
+              Nueva venta
+            </Link>
+          </Button>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="relative">
@@ -287,9 +297,9 @@ export function SalesListClient() {
                     <TableCell className="text-right font-medium">{formatRD(s.totalCents)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button 
-                          asChild 
-                          size="icon" 
+                        <Button
+                          asChild
+                          size="icon"
                           className="bg-green-500 hover:bg-green-600 text-white"
                           title="Reimprimir"
                         >
@@ -299,9 +309,9 @@ export function SalesListClient() {
                         </Button>
                         {!s.cancelledAt && (
                           <>
-                            <Button 
-                              size="icon" 
-                              onClick={() => loadSaleForEdit(s.id)} 
+                            <Button
+                              size="icon"
+                              onClick={() => loadSaleForEdit(s.id)}
                               aria-label="Editar"
                               className="bg-blue-500 hover:bg-blue-600 text-white"
                               title="Editar"
@@ -309,9 +319,9 @@ export function SalesListClient() {
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button 
-                              size="icon" 
-                              onClick={() => handleCancel(s.id)} 
+                            <Button
+                              size="icon"
+                              onClick={() => handleCancel(s.id)}
                               aria-label="Cancelar"
                               className="bg-red-500 hover:bg-red-600 text-white"
                               title="Cancelar"
@@ -464,14 +474,14 @@ export function SalesListClient() {
                           <div>
                             <Label className="text-xs">Precio unitario</Label>
                             {user && user.canOverridePrice ? (
-                              <PriceInput 
-                                valueCents={c.unitPriceCents} 
+                              <PriceInput
+                                valueCents={c.unitPriceCents}
                                 onChangeCents={(cents) => {
                                   // Obtener el precio original del producto
                                   const product = searchResults.find((p) => p.id === c.productId) || editingSale?.items.find((item) => item.productId === c.productId)?.product
                                   const originalPriceCents = product?.priceCents || c.unitPriceCents
                                   setCart((p) => p.map((x) => (x.productId === c.productId ? { ...x, unitPriceCents: cents, wasPriceOverridden: cents !== originalPriceCents } : x)))
-                                }} 
+                                }}
                               />
                             ) : (
                               <div className="h-10 rounded-md border bg-muted px-3 py-2 text-sm font-semibold">{formatRD(c.unitPriceCents)}</div>

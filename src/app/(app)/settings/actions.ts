@@ -23,6 +23,7 @@ export async function getSettings() {
     barcodeLabelSize: s?.barcodeLabelSize ?? "4x2",
     shippingLabelSize: s?.shippingLabelSize ?? "4x6",
     defaultViewMode: s?.defaultViewMode ?? "list",
+    showItbisOnReceipts: s?.showItbisOnReceipts ?? true,
   }
 }
 
@@ -124,5 +125,34 @@ export async function updateSalesSettings(defaultViewMode: string) {
 
   revalidatePath("/settings")
   revalidatePath("/sales")
+}
+
+export async function updateReceiptSettings(showItbis: boolean) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  await prisma.companySettings.upsert({
+    where: { accountId: user.accountId },
+    update: { showItbisOnReceipts: showItbis },
+    create: {
+      accountId: user.accountId,
+      name: "Mi Negocio",
+      phone: "",
+      address: "",
+      allowNegativeStock: false,
+      itbisRateBp: 1800,
+      showItbisOnReceipts: showItbis,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    action: "SETTINGS_CHANGED",
+    resourceType: "CompanySettings",
+    details: { showItbisOnReceipts: showItbis },
+  })
+
+  revalidatePath("/settings")
 }
 

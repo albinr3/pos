@@ -17,12 +17,12 @@ export async function listSuppliers(query?: string) {
       isActive: true,
       ...(q
         ? {
-            OR: [
-              { name: { contains: q, mode: "insensitive" } },
-              { contactName: { contains: q, mode: "insensitive" } },
-              { phone: { contains: q, mode: "insensitive" } },
-            ],
-          }
+          OR: [
+            { name: { contains: q, mode: "insensitive" } },
+            { contactName: { contains: q, mode: "insensitive" } },
+            { phone: { contains: q, mode: "insensitive" } },
+          ],
+        }
         : {}),
     },
     orderBy: { name: "asc" },
@@ -49,6 +49,7 @@ export async function upsertSupplier(input: {
   address?: string | null
   notes?: string | null
   discountPercentBp?: number
+  chargesItbis?: boolean
 }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -77,6 +78,7 @@ export async function upsertSupplier(input: {
         address,
         notes,
         discountPercentBp: input.discountPercentBp ?? 0,
+        chargesItbis: input.chargesItbis ?? false,
       },
     })
     if (updated.count === 0) throw new Error("Proveedor no encontrado")
@@ -96,6 +98,7 @@ export async function upsertSupplier(input: {
         email,
         address,
         discountPercentBp: input.discountPercentBp ?? 0,
+        chargesItbis: input.chargesItbis ?? false,
       },
     })
   } else {
@@ -109,6 +112,7 @@ export async function upsertSupplier(input: {
         address,
         notes,
         discountPercentBp: input.discountPercentBp ?? 0,
+        chargesItbis: input.chargesItbis ?? false,
       },
     })
 
@@ -127,6 +131,7 @@ export async function upsertSupplier(input: {
         email,
         address,
         discountPercentBp: input.discountPercentBp ?? 0,
+        chargesItbis: input.chargesItbis ?? false,
       },
     })
   }

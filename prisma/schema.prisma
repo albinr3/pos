@@ -284,6 +284,7 @@ model CompanySettings {
 
   allowNegativeStock Boolean @default(false)
   itbisRateBp        Int     @default(1800)
+  showItbisOnReceipts Boolean @default(true)
 
   barcodeLabelSize  String @default("4x2")
   shippingLabelSize String @default("4x6")
@@ -413,6 +414,7 @@ model Supplier {
   notes       String?
 
   discountPercentBp Int @default(0)
+  chargesItbis      Boolean @default(false)
 
   isActive Boolean @default(true)
 

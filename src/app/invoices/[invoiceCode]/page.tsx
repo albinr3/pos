@@ -44,13 +44,13 @@ export default async function InvoicePrintPage({
   if (!user) return notFound()
 
   const [company, sale] = await Promise.all([
-    prisma.companySettings.findFirst({ 
-      where: { accountId: user.accountId } 
+    prisma.companySettings.findFirst({
+      where: { accountId: user.accountId }
     }),
     prisma.sale.findFirst({
-      where: { 
+      where: {
         accountId: user.accountId,
-        invoiceCode 
+        invoiceCode
       },
       include: {
         customer: true,
@@ -225,12 +225,14 @@ export default async function InvoicePrintPage({
         <div className="ml-auto w-full max-w-sm rounded-md border p-4 text-sm">
           <div className="flex items-center justify-between">
             <span>Subtotal</span>
-            <span>{formatRD(sale.subtotalCents)}</span>
+            <span>{formatRD((company?.showItbisOnReceipts ?? true) ? sale.subtotalCents : (sale.subtotalCents + sale.itbisCents))}</span>
           </div>
-          <div className="mt-1 flex items-center justify-between">
-            <span>ITBIS (18% incluido)</span>
-            <span>{formatRD(sale.itbisCents)}</span>
-          </div>
+          {(company?.showItbisOnReceipts ?? true) && (
+            <div className="mt-1 flex items-center justify-between">
+              <span>ITBIS (18% incluido)</span>
+              <span>{formatRD(sale.itbisCents)}</span>
+            </div>
+          )}
           {sale.shippingCents > 0 && (
             <div className="mt-1 flex items-center justify-between">
               <span>Flete</span>
