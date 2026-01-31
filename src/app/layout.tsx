@@ -35,9 +35,12 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "Tejada Auto Adornos" }],
   icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
-    apple: "/favicon.png",
+    icon: [
+      { url: "/favicon.ico" },
+      { url: "/icon.png", sizes: "192x192", type: "image/png" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/icon.png",
   },
   manifest: "/manifest.webmanifest",
   openGraph: {
