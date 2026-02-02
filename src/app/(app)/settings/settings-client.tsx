@@ -358,7 +358,7 @@ export function SettingsClient({ isOwner }: Props) {
           <div className="text-sm text-muted-foreground">Personaliza el comportamiento de la ventana de ventas.</div>
           <Separator />
           <div className="grid gap-2">
-            <Label>Vista por defecto</Label>
+            <Label>Vista por defecto de productos en Ventas</Label>
             <select
               className="h-10 rounded-md border bg-background px-3 text-sm w-full md:w-[300px]"
               value={defaultViewMode}
