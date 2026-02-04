@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { PropsWithChildren, useMemo } from "react"
+import { PropsWithChildren, useMemo, type ComponentPropsWithoutRef } from "react"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 import type { BillingState, CurrentUser } from "@/lib/auth"
@@ -310,6 +310,16 @@ export function AppShell({ children, billingState }: AppShellProps) {
                   </Button>
                 )
               })}
+              <Button asChild variant="outline" className="mt-2 w-full justify-start gap-2 text-base">
+                <a
+                  href="https://wa.me/18499254434?text=Hola%20MOVOPos"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <WhatsappIcon />
+                  Ayuda por WhatsApp
+                </a>
+              </Button>
             </nav>
             <Separator />
             <div className="px-6 py-4 text-xs text-muted-foreground">
@@ -387,6 +397,18 @@ export function AppShell({ children, billingState }: AppShellProps) {
                       </Button>
                     )
                   })}
+                  <Button asChild variant="outline" className="mt-2 w-full justify-start gap-2 text-base">
+                    <SheetClose asChild>
+                      <a
+                        href="https://wa.me/18499254434?text=Hola%20necesito%20ayuda%20MOVOPos"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <WhatsappIcon />
+                        Ayuda por WhatsApp
+                      </a>
+                    </SheetClose>
+                  </Button>
                 </nav>
                 <Separator className="flex-shrink-0" />
                 <div className="px-6 py-4 text-xs text-muted-foreground flex-shrink-0">Local (1 PC) · RD$ · ITBIS incluido</div>
@@ -443,5 +465,28 @@ export function AppShell({ children, billingState }: AppShellProps) {
         </div>
       </div>
     </div>
+  )
+}
+
+type WhatsappIconProps = ComponentPropsWithoutRef<"svg">
+
+function WhatsappIcon({ className, ...props }: WhatsappIconProps) {
+  return (
+    <svg
+      className={cn("h-5 w-5", className)}
+      aria-hidden="true"
+      focusable="false"
+      role="img"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      {...props}
+    >
+      <title>WhatsApp</title>
+      <circle cx="12" cy="12" r="12" fill="#25D366" />
+      <path
+        d="M17.472 14.382c-.297-.149-1.758-.867-2.031-.967-.272-.099-.47-.149-.669.15-.198.297-.768.967-.941 1.164-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.654-2.059-.173-.297-.018-.458.13-.607.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.372-.025-.521-.074-.149-.669-1.611-.916-2.206-.242-.579-.487-.5-.669-.51-.173-.008-.372-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.463 1.065 2.876 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.694.626.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 5.659h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c0-5.45 4.436-9.884 9.893-9.884a9.86 9.86 0 0 1 6.995 2.9 9.84 9.84 0 0 1 2.898 6.994c0 5.45-4.436 9.884-9.893 9.884"
+        fill="#FFFFFF"
+      />
+    </svg>
   )
 }

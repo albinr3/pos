@@ -29,7 +29,6 @@ export default function ContactPage() {
       })
       return
     }
-
     // Validación de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(email)) {
@@ -211,10 +210,10 @@ export default function ContactPage() {
                     <div>
                       <h3 className="font-semibold text-foreground mb-1">Email</h3>
                       <a
-                        href="mailto:soporte@tejadapos.com"
+                        href="mailto:soporte@movopos.com"
                         className="text-muted-foreground hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
                       >
-                        soporte@tejadapos.com
+                        soporte@movopos.com
                       </a>
                     </div>
                   </div>
@@ -226,10 +225,10 @@ export default function ContactPage() {
                     <div>
                       <h3 className="font-semibold text-foreground mb-1">Teléfono</h3>
                       <a
-                        href="tel:8294751454"
+                        href="tel:+18499254434"
                         className="text-muted-foreground hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
                       >
-                        829-475-1454
+                        +1 (849) 925-4434
                       </a>
                     </div>
                   </div>
@@ -241,7 +240,7 @@ export default function ContactPage() {
                     <div>
                       <h3 className="font-semibold text-foreground mb-1">Dirección</h3>
                       <p className="text-muted-foreground">
-                        Carretera la Rosa, Moca<br />
+                        Moca, Espaillat<br />
                         República Dominicana
                       </p>
                     </div>
@@ -271,15 +270,25 @@ export default function ContactPage() {
                 </p>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Button asChild variant="outline" className="flex-1">
-                    <a href="mailto:soporte@tejadapos.com">
+                    <a href="mailto:soporte@movopos.com">
                       <Mail className="h-4 w-4 mr-2" />
                       Enviar email
                     </a>
                   </Button>
                   <Button asChild variant="outline" className="flex-1">
-                    <a href="tel:8294751454">
+                    <a href="tel:+18499254434">
                       <Phone className="h-4 w-4 mr-2" />
                       Llamar ahora
+                    </a>
+                  </Button>
+                  <Button asChild variant="outline" className="flex-1">
+                    <a
+                      href="https://wa.me/18499254434?text=Hola%20tengo%20una%20duda"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <WhatsappIcon />
+                      Hablar por WhatsApp
                     </a>
                   </Button>
                 </div>
@@ -289,5 +298,25 @@ export default function ContactPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function WhatsappIcon() {
+  return (
+    <svg
+      className="h-4 w-4 mr-2"
+      aria-hidden="true"
+      focusable="false"
+      role="img"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <title>WhatsApp</title>
+      <circle cx="12" cy="12" r="12" fill="#25D366" />
+      <path
+        d="M17.472 14.382c-.297-.149-1.758-.867-2.031-.967-.272-.099-.47-.149-.669.15-.198.297-.768.967-.941 1.164-.173.198-.347.223-.644.074-.297-.149-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.654-2.059-.173-.297-.018-.458.13-.607.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.372-.025-.521-.074-.149-.669-1.611-.916-2.206-.242-.579-.487-.5-.669-.51-.173-.008-.372-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.463 1.065 2.876 1.213 3.074.149.198 2.095 3.2 5.076 4.487.709.306 1.262.489 1.694.626.712.227 1.36.195 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 5.659h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c0-5.45 4.436-9.884 9.893-9.884a9.86 9.86 0 0 1 6.995 2.9 9.84 9.84 0 0 1 2.898 6.994c0 5.45-4.436 9.884-9.893 9.884"
+        fill="#FFFFFF"
+      />
+    </svg>
   )
 }

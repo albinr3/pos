@@ -88,9 +88,9 @@ export default function AboutPage() {
               ¿Tienes preguntas, sugerencias o necesitas ayuda? Estamos aquí para ti.
             </p>
             <div className="space-y-2 text-muted-foreground">
-              <p><strong>Email:</strong> soporte@tejadapos.com</p>
+              <p><strong>Email:</strong> soporte@movopos.com</p>
               <p><strong>Teléfono:</strong> 829-475-1454</p>
-              <p><strong>Dirección:</strong> Carretera la Rosa, Moca, República Dominicana</p>
+              <p><strong>Dirección:</strong> Moca, Espaillat, República Dominicana</p>
             </div>
           </section>
         </div>
