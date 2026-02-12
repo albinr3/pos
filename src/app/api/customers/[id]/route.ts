@@ -28,7 +28,7 @@ export async function PUT(
       province: body.province || null,
       creditEnabled: body.creditEnabled ?? false,
       creditDays: body.creditDays ?? 0,
-    })
+    }, user)
 
     // Obtener el cliente actualizado para retornarlo
     const { prisma } = await import("@/lib/db")

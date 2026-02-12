@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       province: body.province || null,
       creditEnabled: body.creditEnabled ?? false,
       creditDays: body.creditDays ?? 0,
-    })
+    }, user)
 
     // Obtener el cliente creado para retornarlo
     const { prisma } = await import("@/lib/db")

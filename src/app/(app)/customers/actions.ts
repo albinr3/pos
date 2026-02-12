@@ -112,8 +112,8 @@ export async function upsertCustomer(input: {
   province?: string | null
   creditEnabled: boolean
   creditDays: number
-}) {
-  const user = await getCurrentUser()
+}, actor?: any) {
+  const user = actor ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   // 🔐 SANITIZAR todos los inputs
