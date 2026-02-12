@@ -181,9 +181,9 @@ export async function addPayment(input: {
   amountCents: number
   method: PaymentMethod
   note?: string | null
-}) {
-  const currentUser = await getCurrentUser()
-  if (!currentUser) throw new Error("No autenticado")
+}, actor?: AuthActor) {
+  const currentUser = actor ?? await getCurrentUser()
+  assertAuthActor(currentUser)
 
   if (input.amountCents <= 0) throw new Error("El abono debe ser mayor a 0")
 

@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       amountCents,
       method,
       note: body.note || null,
-    })
+    }, user)
 
     // Obtener el pago completo para retornarlo
     const { prisma } = await import("@/lib/db")
