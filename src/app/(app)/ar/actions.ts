@@ -7,9 +7,22 @@ import { PaymentMethod } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 
-export async function listOpenAR(options?: { query?: string; skip?: number; take?: number }) {
-  const user = await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+type AuthActor = {
+  id: string
+  accountId: string
+  email?: string | null
+  username?: string | null
+}
+
+function assertAuthActor(actor: any): asserts actor is AuthActor {
+  if (!actor || typeof actor !== "object") throw new Error("No autenticado")
+  if (typeof actor.id !== "string" || actor.id.length === 0) throw new Error("No autenticado")
+  if (typeof actor.accountId !== "string" || actor.accountId.length === 0) throw new Error("No autenticado")
+}
+
+export async function listOpenAR(options?: { query?: string; skip?: number; take?: number }, actor?: AuthActor) {
+  const user = actor ?? await getCurrentUser()
+  assertAuthActor(user)
 
   const query = options?.query?.trim()
   const skip = options?.skip ?? 0

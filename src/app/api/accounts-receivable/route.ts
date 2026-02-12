@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     const skip = searchParams.get("skip") ? parseInt(searchParams.get("skip")!) : undefined
     const take = searchParams.get("take") ? parseInt(searchParams.get("take")!) : undefined
 
-    const arList = await listOpenAR({ query, skip, take })
+    const arList = await listOpenAR({ query, skip, take }, user)
 
     return NextResponse.json({
       data: arList.map((ar) => ({

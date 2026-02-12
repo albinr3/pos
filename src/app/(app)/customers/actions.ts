@@ -6,6 +6,19 @@ import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizePhone, sanitizeCedula, validateLength } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
 
+type AuthActor = {
+  id: string
+  accountId: string
+  email?: string | null
+  username?: string | null
+}
+
+function assertAuthActor(actor: any): asserts actor is AuthActor {
+  if (!actor || typeof actor !== "object") throw new Error("No autenticado")
+  if (typeof actor.id !== "string" || actor.id.length === 0) throw new Error("No autenticado")
+  if (typeof actor.accountId !== "string" || actor.accountId.length === 0) throw new Error("No autenticado")
+}
+
 /**
  * Asegura que el cliente general existe y devuelve su ID
  * Maneja condiciones de carrera donde múltiples solicitudes pueden intentar crear el cliente
@@ -52,9 +65,9 @@ async function ensureGenericCustomer(accountId: string): Promise<string> {
   }
 }
 
-export async function listCustomers(query?: string, user?: any) {
+export async function listCustomers(query?: string, user?: AuthActor) {
   const currentUser = user ?? await getCurrentUser()
-  if (!currentUser) throw new Error("No autenticado")
+  assertAuthActor(currentUser)
 
   // Asegurar que el cliente general existe
   await ensureGenericCustomer(currentUser.accountId)
@@ -112,9 +125,9 @@ export async function upsertCustomer(input: {
   province?: string | null
   creditEnabled: boolean
   creditDays: number
-}, actor?: any) {
+}, actor?: AuthActor) {
   const user = actor ?? await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+  assertAuthActor(user)
 
   // 🔐 SANITIZAR todos los inputs
   const sanitized = {
