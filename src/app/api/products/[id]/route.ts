@@ -39,6 +39,7 @@ export async function PUT(
       imageUrls: body.imageUrls || [],
       purchaseUnit: body.purchaseUnit || "UNIDAD",
       saleUnit: body.saleUnit || "UNIDAD",
+      user,
     })
 
     // Obtener el producto actualizado para retornarlo
