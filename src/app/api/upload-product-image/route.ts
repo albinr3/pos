@@ -7,6 +7,22 @@ export const runtime = "nodejs"
 
 const utapi = new UTApi()
 
+async function uploadAndGetUrl(file: File): Promise<string> {
+  const uploaded = await utapi.uploadFiles(file)
+  const data = Array.isArray(uploaded) ? uploaded[0]?.data : uploaded?.data
+  const error = Array.isArray(uploaded) ? uploaded[0]?.error : uploaded?.error
+
+  if (error || !data) {
+    throw new Error(error?.message || "No se pudo subir la imagen")
+  }
+
+  const url = data.ufsUrl || data.url
+  if (!url) {
+    throw new Error("La subida no devolvió URL")
+  }
+  return url
+}
+
 // POST /api/upload-product-image - Subir una imagen de producto y retornar URL pública
 export async function POST(request: NextRequest) {
   try {
@@ -15,10 +31,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
 
-    const formData = await request.formData()
-    const file = formData.get("file")
+    const contentType = request.headers.get("content-type") || ""
+    let file: File | null = null
 
-    if (!(file instanceof File)) {
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData()
+      const raw = formData.get("file")
+      if (raw instanceof File) file = raw
+    } else if (contentType.includes("application/json")) {
+      const body = await request.json()
+      const rawBase64 = String(body?.base64 || body?.fileBase64 || "").trim()
+      if (!rawBase64) {
+        return NextResponse.json({ error: "Base64 requerido" }, { status: 400 })
+      }
+
+      const cleanBase64 = rawBase64.replace(/^data:[^;]+;base64,/, "")
+      const fileName = String(body?.fileName || `product-${Date.now()}.jpg`)
+      const mimeType = String(body?.mimeType || "image/jpeg")
+      const bytes = Buffer.from(cleanBase64, "base64")
+      file = new File([bytes], fileName, { type: mimeType })
+    } else {
+      // Intento defensivo por si el cliente no envía content-type correcto
+      try {
+        const formData = await request.formData()
+        const raw = formData.get("file")
+        if (raw instanceof File) file = raw
+      } catch {
+        // no-op
+      }
+    }
+
+    if (!file) {
       return NextResponse.json({ error: "Archivo requerido" }, { status: 400 })
     }
 
@@ -26,19 +69,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Solo se permiten imágenes" }, { status: 400 })
     }
 
-    const uploaded = await utapi.uploadFiles(file)
-    const data = Array.isArray(uploaded) ? uploaded[0]?.data : uploaded?.data
-    const error = Array.isArray(uploaded) ? uploaded[0]?.error : uploaded?.error
-
-    if (error || !data) {
-      return NextResponse.json({ error: error?.message || "No se pudo subir la imagen" }, { status: 500 })
-    }
-
-    const url = data.ufsUrl || data.url
-    if (!url) {
-      return NextResponse.json({ error: "La subida no devolvió URL" }, { status: 500 })
-    }
-
+    const url = await uploadAndGetUrl(file)
     return NextResponse.json({ url })
   } catch (error: any) {
     console.error("Error en POST /api/upload-product-image:", error)
