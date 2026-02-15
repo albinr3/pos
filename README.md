@@ -62,6 +62,21 @@ Permisos configurables por usuario:
 - **Página offline**: Se corrige el CTA para permitir **cobrar** (CxC) en lugar de **comprar**, con enlace directo a `/ar`.
 - **Service Worker**: Se incrementa la versión de cache para asegurar que se sirvan los recursos actualizados.
 
+### API móvil (autenticación por request)
+- Se corrigió el uso mixto de autenticación en endpoints API que usaban `getCurrentUserFromRequest(...)` pero luego llamaban actions que internamente volvían a usar `getCurrentUser()` (cookies web), causando `No autenticado` en móvil.
+- Patrón aplicado:
+  - La route API valida usuario con `getCurrentUserFromRequest(request)`.
+  - La action server acepta un `actor` tipado y validado.
+  - La route pasa ese `actor` explícitamente a la action.
+- Endpoints/actions ajustados:
+  - `POST /api/customers` -> `upsertCustomer(..., user)`
+  - `PUT /api/customers/:id` -> `upsertCustomer(..., user)`
+  - `GET /api/accounts-receivable` -> `listOpenAR(..., user)`
+  - `POST /api/payments` -> `addPayment(..., user)`
+- Seguridad:
+  - El `actor` no viene del body del cliente; se inyecta desde la route ya autenticada.
+  - Se agregó validación runtime (`id`, `accountId`) para rechazar objetos inválidos.
+
 ---
 
 ## Módulos
