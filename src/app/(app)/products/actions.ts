@@ -30,6 +30,15 @@ async function safeCreateInventoryAdjustment(client: InventoryAdjustmentClient, 
   }
 }
 
+function safeRevalidate(path: string) {
+  try {
+    revalidatePath(path)
+  } catch (error) {
+    // En algunos contextos (p. ej. route handlers/API) no existe store de revalidate.
+    console.warn(`revalidatePath(${path}) no disponible en este contexto`, error)
+  }
+}
+
 export async function listProducts(options?: { query?: string; cursor?: string | null; take?: number; user?: any }) {
   const user = options?.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -232,7 +241,7 @@ export async function upsertProduct(input: {
     })
   }
 
-  revalidatePath("/products")
+  safeRevalidate("/products")
   } catch (error) {
     await logError(error as Error, {
       code: ErrorCodes.INVENTORY_UPDATE_ERROR,
@@ -273,7 +282,7 @@ export async function deactivateProduct(productId: string) {
     resourceType: "Product",
     resourceId: productId,
   })
-  revalidatePath("/products")
+  safeRevalidate("/products")
 }
 
 type BulkStockAdjustmentItem = {
@@ -419,8 +428,8 @@ export async function adjustManyStock(input: {
       }
     })
 
-    revalidatePath("/products")
-    revalidatePath("/reports/inventory")
+    safeRevalidate("/products")
+    safeRevalidate("/reports/inventory")
 
     return { count: items.length, batchId }
   } catch (error) {
