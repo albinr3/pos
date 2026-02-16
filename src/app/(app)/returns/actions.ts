@@ -16,8 +16,8 @@ function toNumber(value: Decimal | number) {
   return value instanceof Decimal ? value.toNumber() : Number(value)
 }
 
-export async function listReturns() {
-  const user = await getCurrentUser()
+export async function listReturns(currentUserArg?: any) {
+  const user = currentUserArg ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   const returnsList = await prisma.return.findMany({
@@ -135,8 +135,8 @@ export async function getReturnById(id: string) {
   }
 }
 
-export async function getSaleForReturn(saleId: string) {
-  const user = await getCurrentUser()
+export async function getSaleForReturn(saleId: string, currentUserArg?: any) {
+  const user = currentUserArg ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   const sale = await prisma.sale.findFirst({
@@ -209,8 +209,8 @@ export async function createReturn(input: {
   saleId: string
   items: ReturnItemInput[]
   notes?: string | null
-}) {
-  const currentUser = await getCurrentUser()
+}, currentUserArg?: any) {
+  const currentUser = currentUserArg ?? await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
 
   if (!input.items.length) throw new Error("La devolución no tiene productos.")
@@ -468,27 +468,37 @@ export async function cancelReturn(id: string) {
   }, TRANSACTION_OPTIONS)
 }
 
-export async function searchSalesForReturn(query: string) {
-  const user = await getCurrentUser()
+export async function searchSalesForReturn(
+  query: string,
+  currentUserArg?: any,
+  options?: { customerId?: string | null }
+) {
+  const user = currentUserArg ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   const q = query.trim()
-  if (!q) return []
+  const customerId = options?.customerId?.trim() || null
+  if (!q && !customerId) return []
 
   const sales = await prisma.sale.findMany({
     where: {
       accountId: user.accountId,
       cancelledAt: null,
-      OR: [
-        { invoiceCode: { contains: q, mode: "insensitive" } },
-        { customer: { name: { contains: q, mode: "insensitive" } } },
-      ],
+      ...(customerId ? { customerId } : {}),
+      ...(q
+        ? {
+            OR: [
+              { invoiceCode: { contains: q, mode: "insensitive" } },
+              { customer: { name: { contains: q, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
     },
     include: {
       customer: true,
     },
     orderBy: { soldAt: "desc" },
-    take: 20,
+    take: q ? 20 : 50,
   })
 
   return sales
