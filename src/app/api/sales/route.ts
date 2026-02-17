@@ -2,9 +2,90 @@ import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { createSale } from "@/app/(app)/sales/actions"
 import { SaleType, PaymentMethod } from "@prisma/client"
+import { prisma } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+
+type SaleBodyItem = {
+  productId?: string
+  quantity?: number
+  qty?: number
+  unitPriceCents?: number
+  price?: number
+  wasPriceOverridden?: boolean
+}
+
+type SaleCreateBody = {
+  items?: SaleBodyItem[]
+  shippingCents?: number
+  shipping?: number
+  type?: string
+  paymentMethod?: string
+  customerId?: string | null
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
+// GET /api/sales - Listar ventas/facturas
+export async function GET(request: NextRequest) {
+  try {
+    const user = await getCurrentUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+
+    const searchParams = request.nextUrl.searchParams
+    const query = (searchParams.get("query") || "").trim()
+
+    const sales = await prisma.sale.findMany({
+      where: {
+        accountId: user.accountId,
+        ...(query
+          ? {
+              OR: [
+                { invoiceCode: { contains: query, mode: "insensitive" } },
+                { customer: { name: { contains: query, mode: "insensitive" } } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { soldAt: "desc" },
+      include: {
+        customer: { select: { id: true, name: true } },
+        items: { select: { id: true } },
+      },
+      take: 300,
+    })
+
+    return NextResponse.json({
+      data: sales.map((sale) => ({
+        id: sale.id,
+        invoiceCode: sale.invoiceCode,
+        soldAt: sale.soldAt.toISOString(),
+        type: sale.type,
+        paymentMethod: sale.paymentMethod,
+        customerId: sale.customerId,
+        customerName: sale.customer?.name || null,
+        subtotalCents: sale.subtotalCents,
+        itbisCents: sale.itbisCents,
+        shippingCents: sale.shippingCents,
+        totalCents: sale.totalCents,
+        cancelledAt: sale.cancelledAt ? sale.cancelledAt.toISOString() : null,
+        itemsCount: sale.items.length,
+      })),
+    })
+  } catch (error: unknown) {
+    console.error("Error en GET /api/sales:", error)
+    return NextResponse.json(
+      { error: getErrorMessage(error, "Error al listar ventas") },
+      { status: 500 }
+    )
+  }
+}
 
 // POST /api/sales - Crear venta
 export async function POST(request: NextRequest) {
@@ -14,10 +95,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
 
-    const body = await request.json()
+    const body = (await request.json()) as SaleCreateBody
 
     // Convertir items del formato móvil al formato esperado
-    const items = (body.items || []).map((item: any) => ({
+    const items = (body.items || []).map((item) => ({
       productId: item.productId,
       qty: item.quantity || item.qty,
       unitPriceCents: item.unitPriceCents || Math.round((item.price || 0) * 100),
@@ -59,10 +140,10 @@ export async function POST(request: NextRequest) {
       invoiceCode: sale.invoiceCode,
       type: sale.type,
     }, { status: 201 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en POST /api/sales:", error)
     return NextResponse.json(
-      { error: error.message || "Error al crear venta" },
+      { error: getErrorMessage(error, "Error al crear venta") },
       { status: 500 }
     )
   }
