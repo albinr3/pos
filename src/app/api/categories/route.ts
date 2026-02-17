@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
+import { sanitizeString } from "@/lib/sanitize"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -46,6 +47,72 @@ export async function GET(request: NextRequest) {
     console.error("Error en GET /api/categories:", error)
     return NextResponse.json(
       { error: error.message || "Error al obtener categorías" },
+      { status: 500 }
+    )
+  }
+}
+
+// POST /api/categories - Crear categoría
+export async function POST(request: NextRequest) {
+  try {
+    const user = await getCurrentUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const name = sanitizeString(String(body?.name || ""))
+    const descriptionRaw = body?.description
+    const description =
+      typeof descriptionRaw === "string" && descriptionRaw.trim()
+        ? sanitizeString(descriptionRaw)
+        : null
+
+    if (!name) {
+      return NextResponse.json(
+        { error: "El nombre es requerido" },
+        { status: 400 }
+      )
+    }
+
+    const existing = await prisma.category.findFirst({
+      where: {
+        accountId: user.accountId,
+        isActive: true,
+        name: { equals: name, mode: "insensitive" },
+      },
+      select: { id: true },
+    })
+
+    if (existing) {
+      return NextResponse.json(
+        { error: "Ya existe una categoría con ese nombre" },
+        { status: 409 }
+      )
+    }
+
+    const created = await prisma.category.create({
+      data: {
+        accountId: user.accountId,
+        name,
+        description,
+      },
+    })
+
+    return NextResponse.json(
+      {
+        id: created.id,
+        name: created.name,
+        description: created.description,
+        createdAt: created.createdAt.toISOString(),
+        updatedAt: created.updatedAt.toISOString(),
+      },
+      { status: 201 }
+    )
+  } catch (error: any) {
+    console.error("Error en POST /api/categories:", error)
+    return NextResponse.json(
+      { error: error.message || "Error al crear categoría" },
       { status: 500 }
     )
   }
