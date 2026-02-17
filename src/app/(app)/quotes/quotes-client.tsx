@@ -95,8 +95,8 @@ export function QuotesClient() {
             name: item.product?.name ?? "Producto",
             sku: item.product?.sku ?? null,
             reference: item.product?.reference ?? null,
-            stock: item.product?.stock ?? 0,
-            qty: item.qty,
+            stock: Number(item.product?.stock ?? 0),
+            qty: Number(item.qty),
             unitPriceCents: item.unitPriceCents,
             wasPriceOverridden: item.wasPriceOverridden,
           }))

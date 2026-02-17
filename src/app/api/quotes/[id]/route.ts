@@ -135,7 +135,7 @@ export async function PUT(
       return NextResponse.json({ error: "Cotización no encontrada" }, { status: 404 })
     }
 
-    const requestItems = Array.isArray(body.items) && body.items.length > 0
+    const requestItems: QuoteBodyItem[] = Array.isArray(body.items) && body.items.length > 0
       ? body.items
       : existing.items.map((item) => ({
           productId: item.productId,
@@ -217,7 +217,7 @@ export async function PUT(
           userId: user.id,
           userEmail: user.email ?? null,
           userUsername: user.username ?? null,
-          action: "QUOTE_UPDATED",
+          action: "QUOTE_EDITED",
           resourceType: "Quote",
           resourceId: updated.id,
           details: {
