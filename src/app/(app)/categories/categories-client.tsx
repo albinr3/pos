@@ -113,6 +113,15 @@ export function CategoriesClient() {
 
               <div className="grid gap-4">
                 <div className="grid gap-2">
+                  <Label>ID</Label>
+                  <Input
+                    value={editing?.categoryId ?? "Se asignará automáticamente"}
+                    disabled
+                    className="bg-muted"
+                  />
+                </div>
+
+                <div className="grid gap-2">
                   <Label>Nombre de la categoría *</Label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Alfombras" />
                 </div>
@@ -162,6 +171,7 @@ export function CategoriesClient() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>ID</TableHead>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Descripción</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
@@ -170,6 +180,7 @@ export function CategoriesClient() {
               <TableBody>
                 {items.map((item) => (
                   <TableRow key={item.id}>
+                    <TableCell className="font-mono text-xs">{item.categoryId}</TableCell>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell className="text-muted-foreground">{item.description || "—"}</TableCell>
                     <TableCell className="text-right">

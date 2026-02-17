@@ -24,7 +24,7 @@ export async function listCategories(query?: string) {
           }
         : {}),
     },
-    orderBy: { name: "asc" },
+    orderBy: { categoryId: "asc" },
     take: 200,
   })
 }
@@ -35,7 +35,7 @@ export async function getAllCategories() {
 
   return prisma.category.findMany({
     where: { accountId: user.accountId, isActive: true },
-    orderBy: { name: "asc" },
+    orderBy: { categoryId: "asc" },
   })
 }
 
@@ -74,7 +74,7 @@ export async function upsertCategory(input: {
       action: "CATEGORY_EDITED",
       resourceType: "Category",
       resourceId: input.id,
-      details: { name, description },
+      details: { name, description, categoryId: existing.categoryId },
     })
   } else {
     // Verificar que no exista otra categoría con el mismo nombre en el account
@@ -87,12 +87,21 @@ export async function upsertCategory(input: {
     })
     if (existing) throw new Error("Ya existe una categoría con ese nombre")
     
-    const created = await prisma.category.create({
-      data: {
-        accountId: user.accountId,
-        name,
-        description,
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const sequence = await tx.categorySequence.upsert({
+        where: { accountId: user.accountId },
+        update: { lastNumber: { increment: 1 } },
+        create: { accountId: user.accountId, lastNumber: 1 },
+      })
+
+      return tx.category.create({
+        data: {
+          accountId: user.accountId,
+          categoryId: sequence.lastNumber,
+          name,
+          description,
+        },
+      })
     })
 
     await logAuditEvent({
@@ -103,7 +112,7 @@ export async function upsertCategory(input: {
       action: "CATEGORY_CREATED",
       resourceType: "Category",
       resourceId: created.id,
-      details: { name, description },
+      details: { name, description, categoryId: created.categoryId },
     })
   }
 

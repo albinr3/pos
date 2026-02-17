@@ -3,9 +3,9 @@
 import { randomUUID } from "crypto"
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { UnitType } from "@prisma/client"
+import { UnitType, type Prisma } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
-import { getCurrentUser } from "@/lib/auth"
+import { getCurrentUser, type CurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizeCode } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
 import { logError, ErrorCodes } from "@/lib/error-logger"
@@ -302,6 +302,560 @@ function normalizeDelta(delta: number, allowsDecimals: boolean) {
   }
   // Redondear a 2 decimales para mantener consistencia con UI
   return Math.round(delta * 100) / 100
+}
+
+export type BulkProductImportRow = {
+  rowNumber: number
+  nombre?: string
+  sku?: string
+  referencia?: string
+  tipo_producto?: "BASICO" | "MEDIDO"
+  unidad_compra?: UnitType
+  unidad_venta?: UnitType
+  precio_venta?: number
+  costo?: number
+  itbis?: number
+  stock?: number
+  stock_minimo?: number
+  categoria?: string
+  proveedor?: string
+  imagenes?: string
+}
+
+export type BulkProductImportChunkInput = {
+  rows: BulkProductImportRow[]
+  reason?: string
+  user?: unknown
+}
+
+export type BulkProductImportRowResult = {
+  rowNumber: number
+  status: "CREATED" | "UPDATED" | "FAILED"
+  productId?: number
+  sku?: string | null
+  name?: string
+  message: string
+}
+
+export type BulkProductImportChunkResult = {
+  created: number
+  updated: number
+  failed: number
+  results: BulkProductImportRowResult[]
+}
+
+const IMPORT_REASON_DEFAULT = "Importación masiva Excel"
+const MAX_IMPORT_ROWS_PER_CHUNK = 200
+
+function hasImportValue(value: unknown) {
+  if (value === null || value === undefined) return false
+  if (typeof value === "string") return value.trim().length > 0
+  return true
+}
+
+function parseImportNumber(value: unknown, fieldLabel: string) {
+  if (!hasImportValue(value)) return null
+  const normalized = typeof value === "string" ? value.replace(",", ".").trim() : value
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${fieldLabel} inválido`)
+  }
+  return parsed
+}
+
+function parseImportItbisBp(value: unknown) {
+  const percent = parseImportNumber(value, "ITBIS")
+  if (percent === null) return null
+  if (percent < 0 || percent > 100) {
+    throw new Error("ITBIS debe estar entre 0 y 100")
+  }
+  return Math.round(percent * 100)
+}
+
+function parseImportUnit(value: unknown) {
+  if (!hasImportValue(value)) return null
+  const raw = String(value).trim().toUpperCase()
+  const map: Record<string, UnitType> = {
+    UNIDAD: "UNIDAD",
+    UND: "UNIDAD",
+    U: "UNIDAD",
+    KG: "KG",
+    KILO: "KG",
+    KILOGRAMO: "KG",
+    KILOGRAMOS: "KG",
+    LIBRA: "LIBRA",
+    LIBRAS: "LIBRA",
+    LB: "LIBRA",
+    GRAMO: "GRAMO",
+    GRAMOS: "GRAMO",
+    G: "GRAMO",
+    LITRO: "LITRO",
+    LITROS: "LITRO",
+    L: "LITRO",
+    ML: "ML",
+    MILILITRO: "ML",
+    MILILITROS: "ML",
+    GALON: "GALON",
+    GALONES: "GALON",
+    GAL: "GALON",
+    METRO: "METRO",
+    METROS: "METRO",
+    M: "METRO",
+    CM: "CM",
+    CENTIMETRO: "CM",
+    CENTIMETROS: "CM",
+    PIE: "PIE",
+    PIES: "PIE",
+    FT: "PIE",
+  }
+  return map[raw] ?? null
+}
+
+function parseImportProductType(value: unknown): "BASICO" | "MEDIDO" | null {
+  if (!hasImportValue(value)) return null
+  const raw = String(value).trim().toUpperCase()
+  if (raw === "BASICO" || raw === "BÁSICO") return "BASICO"
+  if (raw === "MEDIDO") return "MEDIDO"
+  return null
+}
+
+function normalizeQtyForUnit(value: number, unit: UnitType) {
+  if (!Number.isFinite(value)) {
+    throw new Error("Cantidad inválida")
+  }
+  const allowsDecimals = unitAllowsDecimals(unit)
+  if (!allowsDecimals && !Number.isInteger(value)) {
+    throw new Error("Este producto solo permite cantidades enteras")
+  }
+  if (!allowsDecimals) {
+    return Math.trunc(value)
+  }
+  return Math.round(value * 100) / 100
+}
+
+function parseImageUrls(value: unknown) {
+  if (!hasImportValue(value)) return null
+  const raw = String(value).trim()
+  if (!raw) return null
+  return raw
+    .split(/[\n,;]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+export async function importProductsChunk(input: BulkProductImportChunkInput): Promise<BulkProductImportChunkResult> {
+  const user = (input.user as CurrentUser | null | undefined) ?? await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  if (!user.canEditProducts && user.role !== "ADMIN") {
+    throw new Error("No tienes permiso para importar productos")
+  }
+
+  const rows = input.rows ?? []
+  if (!rows.length) {
+    throw new Error("No hay filas para importar")
+  }
+  if (rows.length > MAX_IMPORT_ROWS_PER_CHUNK) {
+    throw new Error(`Máximo ${MAX_IMPORT_ROWS_PER_CHUNK} filas por lote`)
+  }
+
+  const reason = sanitizeString(input.reason ?? IMPORT_REASON_DEFAULT) || IMPORT_REASON_DEFAULT
+  const shouldUseBatchId = rows.length > 1
+  const batchId = shouldUseBatchId ? randomUUID() : null
+  const categoryCache = new Map<string, string>()
+  const supplierCache = new Map<string, string>()
+
+  const resolveCategoryId = async (tx: Prisma.TransactionClient, categoryName: string) => {
+    const cleanName = sanitizeString(categoryName)
+    if (!cleanName) return null
+    const cacheKey = cleanName.toLowerCase()
+    const cached = categoryCache.get(cacheKey)
+    if (cached) return cached
+
+    let category = await tx.category.findFirst({
+      where: {
+        accountId: user.accountId,
+        name: { equals: cleanName, mode: "insensitive" },
+      },
+    })
+
+    if (!category) {
+      const sequence = await tx.categorySequence.upsert({
+        where: { accountId: user.accountId },
+        update: { lastNumber: { increment: 1 } },
+        create: { accountId: user.accountId, lastNumber: 1 },
+      })
+
+      category = await tx.category.create({
+        data: {
+          accountId: user.accountId,
+          categoryId: sequence.lastNumber,
+          name: cleanName,
+          isActive: true,
+        },
+      })
+    } else if (!category.isActive) {
+      category = await tx.category.update({
+        where: { id: category.id },
+        data: { isActive: true },
+      })
+    }
+
+    categoryCache.set(cacheKey, category.id)
+    return category.id
+  }
+
+  const resolveSupplierId = async (tx: Prisma.TransactionClient, supplierName: string) => {
+    const cleanName = sanitizeString(supplierName)
+    if (!cleanName) return null
+    const cacheKey = cleanName.toLowerCase()
+    const cached = supplierCache.get(cacheKey)
+    if (cached) return cached
+
+    let supplier = await tx.supplier.findFirst({
+      where: {
+        accountId: user.accountId,
+        name: { equals: cleanName, mode: "insensitive" },
+      },
+    })
+
+    if (!supplier) {
+      supplier = await tx.supplier.create({
+        data: {
+          accountId: user.accountId,
+          name: cleanName,
+          isActive: true,
+        },
+      })
+    } else if (!supplier.isActive) {
+      supplier = await tx.supplier.update({
+        where: { id: supplier.id },
+        data: { isActive: true },
+      })
+    }
+
+    supplierCache.set(cacheKey, supplier.id)
+    return supplier.id
+  }
+
+  const results: BulkProductImportRowResult[] = []
+  let created = 0
+  let updated = 0
+  let failed = 0
+
+  for (const row of rows) {
+    const rowNumber = Number.isInteger(row.rowNumber) && row.rowNumber > 0 ? row.rowNumber : 0
+    try {
+      const skuSanitized = row.sku ? sanitizeCode(String(row.sku)) : ""
+      const sku = skuSanitized || null
+      const hasName = hasImportValue(row.nombre)
+      const name = hasName ? sanitizeString(String(row.nombre)) : ""
+      const hasReference = hasImportValue(row.referencia)
+      const reference = hasReference ? sanitizeCode(String(row.referencia)) : ""
+
+      const productType = parseImportProductType(row.tipo_producto)
+      if (hasImportValue(row.tipo_producto) && !productType) {
+        throw new Error("tipo_producto inválido (usa BASICO o MEDIDO)")
+      }
+
+      const purchaseUnitFromRow = parseImportUnit(row.unidad_compra)
+      if (hasImportValue(row.unidad_compra) && !purchaseUnitFromRow) {
+        throw new Error("unidad_compra inválida")
+      }
+      const saleUnitFromRow = parseImportUnit(row.unidad_venta)
+      if (hasImportValue(row.unidad_venta) && !saleUnitFromRow) {
+        throw new Error("unidad_venta inválida")
+      }
+
+      const hasPrice = hasImportValue(row.precio_venta)
+      const priceValue = parseImportNumber(row.precio_venta, "Precio de venta")
+      const hasCost = hasImportValue(row.costo)
+      const costValue = parseImportNumber(row.costo, "Costo")
+      const hasStock = hasImportValue(row.stock)
+      const stockValue = parseImportNumber(row.stock, "Stock")
+      const hasMinStock = hasImportValue(row.stock_minimo)
+      const minStockValue = parseImportNumber(row.stock_minimo, "Stock mínimo")
+      const hasItbis = hasImportValue(row.itbis)
+      const itbisRateBp = parseImportItbisBp(row.itbis)
+      const images = parseImageUrls(row.imagenes)
+      const hasImages = hasImportValue(row.imagenes)
+      const hasCategory = hasImportValue(row.categoria)
+      const hasSupplier = hasImportValue(row.proveedor)
+      const categoryName = hasCategory ? String(row.categoria).trim() : ""
+      const supplierName = hasSupplier ? String(row.proveedor).trim() : ""
+
+      if (hasPrice && (priceValue === null || priceValue <= 0)) {
+        throw new Error("precio_venta debe ser mayor que 0")
+      }
+      if (hasCost && (costValue === null || costValue <= 0)) {
+        throw new Error("costo debe ser mayor que 0")
+      }
+      if (hasMinStock && minStockValue !== null && minStockValue < 0) {
+        throw new Error("stock_minimo no puede ser negativo")
+      }
+
+      const existing = sku
+        ? await prisma.product.findFirst({
+            where: {
+              accountId: user.accountId,
+              sku: { equals: sku, mode: "insensitive" },
+            },
+          })
+        : null
+
+      if (existing) {
+        const nextName = hasName ? name : existing.name
+        if (!nextName) {
+          throw new Error("nombre inválido")
+        }
+
+        const basePurchaseUnit = existing.purchaseUnit
+        const baseSaleUnit = existing.saleUnit
+        let nextPurchaseUnit = purchaseUnitFromRow ?? basePurchaseUnit
+        let nextSaleUnit = saleUnitFromRow ?? baseSaleUnit
+
+        if (productType === "BASICO") {
+          nextPurchaseUnit = "UNIDAD"
+          nextSaleUnit = "UNIDAD"
+        } else if (productType === "MEDIDO") {
+          nextPurchaseUnit = purchaseUnitFromRow ?? (basePurchaseUnit !== "UNIDAD" ? basePurchaseUnit : "KG")
+          nextSaleUnit = saleUnitFromRow ?? (baseSaleUnit !== "UNIDAD" ? baseSaleUnit : "KG")
+        }
+
+        if (hasPrice && priceValue !== null) {
+          const priceCents = Math.round(priceValue * 100)
+          if (priceCents !== Number(existing.priceCents) && !user.canOverridePrice && user.role !== "ADMIN") {
+            throw new Error("No tienes permiso para modificar el precio del producto")
+          }
+        }
+
+        const nextPriceCents = hasPrice && priceValue !== null ? Math.round(priceValue * 100) : Number(existing.priceCents)
+        const nextCostCents = hasCost && costValue !== null ? Math.round(costValue * 100) : Number(existing.costCents)
+        const nextItbisRateBp = hasItbis && itbisRateBp !== null ? itbisRateBp : Number(existing.itbisRateBp)
+
+        const nextMinStock = hasMinStock && minStockValue !== null
+          ? normalizeQtyForUnit(minStockValue, nextSaleUnit)
+          : decimalToNumber(existing.minStock)
+
+        const nextReference = hasReference ? (reference || null) : existing.reference
+        const nextSku = sku ? sku : existing.sku
+
+        const updateData: Prisma.ProductUncheckedUpdateInput = {
+          name: nextName,
+          sku: nextSku,
+          reference: nextReference,
+          priceCents: nextPriceCents,
+          costCents: nextCostCents,
+          itbisRateBp: nextItbisRateBp,
+          minStock: nextMinStock,
+          purchaseUnit: nextPurchaseUnit,
+          saleUnit: nextSaleUnit,
+          isActive: true,
+        }
+
+        if (hasImages) {
+          updateData.imageUrls = images ?? []
+        }
+
+        await prisma.$transaction(async (tx) => {
+          if (hasCategory) {
+            updateData.categoryId = await resolveCategoryId(tx, categoryName)
+          }
+          if (hasSupplier) {
+            updateData.supplierId = await resolveSupplierId(tx, supplierName)
+          }
+
+          await tx.product.update({
+            where: { id: existing.id },
+            data: updateData,
+          })
+
+          if (hasStock && stockValue !== null && stockValue !== 0) {
+            const stockDelta = normalizeDelta(stockValue, unitAllowsDecimals(nextSaleUnit))
+            const stockUpdate = stockDelta >= 0
+              ? { increment: stockDelta }
+              : { decrement: Math.abs(stockDelta) }
+
+            await tx.product.update({
+              where: { id: existing.id },
+              data: { stock: stockUpdate },
+            })
+
+            await tx.inventoryAdjustment.create({
+              data: {
+                accountId: user.accountId,
+                productId: existing.id,
+                userId: user.id,
+                qtyDelta: new Decimal(stockDelta),
+                reason,
+                note: null,
+                batchId,
+              },
+            })
+
+            await logAuditEvent({
+              accountId: user.accountId,
+              userId: user.id,
+              userEmail: user.email ?? null,
+              userUsername: user.username ?? null,
+              action: "STOCK_ADJUSTED",
+              resourceType: "Product",
+              resourceId: existing.id,
+              details: {
+                productId: existing.productId,
+                delta: stockDelta,
+                reason,
+                source: "bulk_excel",
+                rowNumber,
+                batchId,
+              },
+            }, tx)
+          }
+
+          await logAuditEvent({
+            accountId: user.accountId,
+            userId: user.id,
+            userEmail: user.email ?? null,
+            userUsername: user.username ?? null,
+            action: "PRODUCT_EDITED",
+            resourceType: "Product",
+            resourceId: existing.id,
+            details: {
+              source: "bulk_excel",
+              rowNumber,
+              matchedBy: "sku",
+              sku: nextSku,
+              name: nextName,
+            },
+          }, tx)
+        })
+
+        updated += 1
+        results.push({
+          rowNumber,
+          status: "UPDATED",
+          productId: existing.productId,
+          sku: existing.sku,
+          name: nextName,
+          message: "Producto actualizado por SKU",
+        })
+        continue
+      }
+
+      if (!name) {
+        throw new Error("nombre es requerido para crear productos")
+      }
+      if (priceValue === null || priceValue <= 0) {
+        throw new Error("precio_venta es requerido y debe ser mayor que 0")
+      }
+      if (costValue === null || costValue <= 0) {
+        throw new Error("costo es requerido y debe ser mayor que 0")
+      }
+
+      const resolvedProductType = productType ?? "BASICO"
+      const purchaseUnit = resolvedProductType === "BASICO"
+        ? "UNIDAD"
+        : (purchaseUnitFromRow ?? "KG")
+      const saleUnit = resolvedProductType === "BASICO"
+        ? "UNIDAD"
+        : (saleUnitFromRow ?? "KG")
+
+      const initialStockRaw = stockValue ?? 0
+      const initialStock = normalizeQtyForUnit(initialStockRaw, saleUnit)
+      const minStock = minStockValue === null ? 0 : normalizeQtyForUnit(minStockValue, saleUnit)
+
+      const createdProduct = await prisma.$transaction(async (tx) => {
+        const seq = await tx.productSequence.upsert({
+          where: { accountId: user.accountId },
+          update: { lastNumber: { increment: 1 } },
+          create: { accountId: user.accountId, lastNumber: 1 },
+        })
+
+        const categoryId = hasCategory ? await resolveCategoryId(tx, categoryName) : null
+        const supplierId = hasSupplier ? await resolveSupplierId(tx, supplierName) : null
+
+        const created = await tx.product.create({
+          data: {
+            accountId: user.accountId,
+            productId: seq.lastNumber,
+            name,
+            sku,
+            reference: reference || null,
+            supplierId,
+            categoryId,
+            priceCents: Math.round(priceValue * 100),
+            costCents: Math.round(costValue * 100),
+            itbisRateBp: itbisRateBp ?? 1800,
+            stock: initialStock,
+            minStock,
+            imageUrls: images ?? [],
+            purchaseUnit,
+            saleUnit,
+            isActive: true,
+          },
+        })
+
+        await safeCreateInventoryAdjustment(tx, {
+          accountId: user.accountId,
+          productId: created.id,
+          userId: user.id,
+          qtyDelta: new Decimal(initialStock),
+          reason: INITIAL_STOCK_REASON,
+          note: null,
+          batchId,
+          createdAt: created.createdAt,
+        })
+
+        await logAuditEvent({
+          accountId: user.accountId,
+          userId: user.id,
+          userEmail: user.email ?? null,
+          userUsername: user.username ?? null,
+          action: "PRODUCT_CREATED",
+          resourceType: "Product",
+          resourceId: created.id,
+          details: {
+            source: "bulk_excel",
+            rowNumber,
+            name,
+            sku,
+            productId: created.productId,
+          },
+        }, tx)
+
+        return created
+      })
+
+      created += 1
+      results.push({
+        rowNumber,
+        status: "CREATED",
+        productId: createdProduct.productId,
+        sku: createdProduct.sku,
+        name: createdProduct.name,
+        message: "Producto creado",
+      })
+    } catch (error) {
+      failed += 1
+      results.push({
+        rowNumber,
+        status: "FAILED",
+        sku: row.sku ?? null,
+        name: row.nombre ?? undefined,
+        message: error instanceof Error ? error.message : "Error desconocido en la fila",
+      })
+    }
+  }
+
+  safeRevalidate("/products")
+  safeRevalidate("/reports/inventory")
+
+  return {
+    created,
+    updated,
+    failed,
+    results,
+  }
 }
 
 export async function adjustManyStock(input: {

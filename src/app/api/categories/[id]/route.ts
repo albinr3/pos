@@ -18,9 +18,14 @@ export async function GET(
     }
 
     const { id } = await params
+    const categoryId = Number(id)
+    if (!Number.isInteger(categoryId) || categoryId <= 0) {
+      return NextResponse.json({ error: "ID de categoría inválido" }, { status: 400 })
+    }
+
     const category = await prisma.category.findFirst({
       where: {
-        id,
+        categoryId,
         accountId: user.accountId,
         isActive: true,
       },
@@ -31,16 +36,18 @@ export async function GET(
     }
 
     return NextResponse.json({
-      id: category.id,
+      id: category.categoryId,
+      internalId: category.id,
       name: category.name,
       description: category.description,
       createdAt: category.createdAt.toISOString(),
       updatedAt: category.updatedAt.toISOString(),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error al obtener categoría"
     console.error("Error en GET /api/categories/[id]:", error)
     return NextResponse.json(
-      { error: error.message || "Error al obtener categoría" },
+      { error: message },
       { status: 500 }
     )
   }
@@ -58,6 +65,11 @@ export async function PUT(
     }
 
     const { id } = await params
+    const categoryId = Number(id)
+    if (!Number.isInteger(categoryId) || categoryId <= 0) {
+      return NextResponse.json({ error: "ID de categoría inválido" }, { status: 400 })
+    }
+
     const body = await request.json()
     const name = sanitizeString(String(body?.name || ""))
     const descriptionRaw = body?.description
@@ -71,7 +83,7 @@ export async function PUT(
     }
 
     const exists = await prisma.category.findFirst({
-      where: { id, accountId: user.accountId, isActive: true },
+      where: { categoryId, accountId: user.accountId, isActive: true },
       select: { id: true },
     })
     if (!exists) {
@@ -82,7 +94,7 @@ export async function PUT(
       where: {
         accountId: user.accountId,
         isActive: true,
-        id: { not: id },
+        id: { not: exists.id },
         name: { equals: name, mode: "insensitive" },
       },
       select: { id: true },
@@ -95,21 +107,23 @@ export async function PUT(
     }
 
     const updated = await prisma.category.update({
-      where: { id },
+      where: { id: exists.id },
       data: { name, description },
     })
 
     return NextResponse.json({
-      id: updated.id,
+      id: updated.categoryId,
+      internalId: updated.id,
       name: updated.name,
       description: updated.description,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error al editar categoría"
     console.error("Error en PUT /api/categories/[id]:", error)
     return NextResponse.json(
-      { error: error.message || "Error al editar categoría" },
+      { error: message },
       { status: 500 }
     )
   }

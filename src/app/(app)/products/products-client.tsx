@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition, type FocusEvent } from "react"
-import { Edit, History, Plus, Printer, Search, Trash2 } from "lucide-react"
+import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent, type DragEvent, type FocusEvent } from "react"
+import { Edit, History, Loader2, Plus, Printer, Search, Trash2, Upload } from "lucide-react"
 import { UnitType } from "@prisma/client"
+import * as XLSX from "xlsx"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -21,7 +22,16 @@ import { BarcodeLabel } from "@/components/app/barcode-label"
 import { ProductImageUpload } from "@/components/app/product-image-upload"
 import type { CurrentUser } from "@/lib/auth"
 
-import { adjustManyStock, deactivateProduct, listProductMovements, listProducts, upsertProduct } from "./actions"
+import {
+  adjustManyStock,
+  deactivateProduct,
+  importProductsChunk,
+  listProductMovements,
+  listProducts,
+  type BulkProductImportRow,
+  type BulkProductImportRowResult,
+  upsertProduct,
+} from "./actions"
 import { getAllSuppliers } from "../suppliers/actions"
 import { getAllCategories } from "../categories/actions"
 import { getSettings } from "../settings/actions"
@@ -30,6 +40,26 @@ type Product = Awaited<ReturnType<typeof listProducts>>["items"][number]
 type ProductMovement = Awaited<ReturnType<typeof listProductMovements>>[number]
 
 const PAGE_SIZE = 50
+const INVENTORY_IMPORT_MAX_ROWS = 5000
+const INVENTORY_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024
+const INVENTORY_IMPORT_CHUNK_SIZE = 50
+
+const INVENTORY_TEMPLATE_HEADERS = [
+  "nombre",
+  "sku",
+  "referencia",
+  "tipo_producto",
+  "unidad_compra",
+  "unidad_venta",
+  "precio_venta",
+  "costo",
+  "itbis",
+  "existencia",
+  "existencia_minima",
+  "categoria",
+  "proveedor",
+  "imagenes",
+] as const
 
 const MOVEMENT_LABELS: Record<ProductMovement["type"], string> = {
   SALE: "Venta",
@@ -62,6 +92,14 @@ function formatMovementDate(value: string) {
 type BulkParseResult = {
   items: { productId: number; delta: number }[]
   errors: string[]
+}
+
+type InventoryImportSummary = {
+  total: number
+  created: number
+  updated: number
+  failed: number
+  results: BulkProductImportRowResult[]
 }
 
 function parseBulkLines(value: string): BulkParseResult {
@@ -111,6 +149,158 @@ function parseBulkLines(value: string): BulkParseResult {
   return { items, errors }
 }
 
+function normalizeHeader(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+}
+
+function getCellValue(row: Record<string, unknown>, aliases: string[]) {
+  for (const alias of aliases) {
+    if (alias in row) return row[alias]
+  }
+  return undefined
+}
+
+function hasCellValue(value: unknown) {
+  if (value === null || value === undefined) return false
+  if (typeof value === "string") return value.trim().length > 0
+  return true
+}
+
+function parseExcelNumber(value: unknown) {
+  if (!hasCellValue(value)) return undefined
+  const parsed = Number(String(value).replace(",", ".").trim())
+  if (!Number.isFinite(parsed)) {
+    throw new Error("Número inválido")
+  }
+  return parsed
+}
+
+function parseExcelUnit(value: unknown): UnitType | undefined {
+  if (!hasCellValue(value)) return undefined
+  const raw = String(value).trim().toUpperCase()
+  const map: Record<string, UnitType> = {
+    UNIDAD: "UNIDAD",
+    UND: "UNIDAD",
+    U: "UNIDAD",
+    KG: "KG",
+    KILO: "KG",
+    KILOGRAMO: "KG",
+    KILOGRAMOS: "KG",
+    LIBRA: "LIBRA",
+    LIBRAS: "LIBRA",
+    LB: "LIBRA",
+    GRAMO: "GRAMO",
+    GRAMOS: "GRAMO",
+    G: "GRAMO",
+    LITRO: "LITRO",
+    LITROS: "LITRO",
+    L: "LITRO",
+    ML: "ML",
+    MILILITRO: "ML",
+    MILILITROS: "ML",
+    GALON: "GALON",
+    GALONES: "GALON",
+    GAL: "GALON",
+    METRO: "METRO",
+    METROS: "METRO",
+    M: "METRO",
+    CM: "CM",
+    CENTIMETRO: "CM",
+    CENTIMETROS: "CM",
+    PIE: "PIE",
+    PIES: "PIE",
+    FT: "PIE",
+  }
+  return map[raw]
+}
+
+function parseExcelProductType(value: unknown): "BASICO" | "MEDIDO" | undefined {
+  if (!hasCellValue(value)) return undefined
+  const raw = String(value).trim().toUpperCase()
+  if (raw === "BASICO" || raw === "BÁSICO") return "BASICO"
+  if (raw === "MEDIDO") return "MEDIDO"
+  return undefined
+}
+
+function mapExcelRowsToImportRows(rows: Record<string, unknown>[]) {
+  return rows.map((rawRow, index) => {
+    const normalized: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(rawRow)) {
+      normalized[normalizeHeader(key)] = value
+    }
+    const parseNumberWithContext = (value: unknown, label: string) => {
+      try {
+        return parseExcelNumber(value)
+      } catch {
+        throw new Error(`Línea ${index + 2}: ${label} inválido`)
+      }
+    }
+
+    const nombre = getCellValue(normalized, ["nombre", "name"])
+    const sku = getCellValue(normalized, ["sku", "codigo", "codigo_de_proveedor"])
+    const referencia = getCellValue(normalized, ["referencia", "reference"])
+    const tipoProducto = getCellValue(normalized, ["tipo_producto", "tipo"])
+    const unidadCompra = getCellValue(normalized, ["unidad_compra"])
+    const unidadVenta = getCellValue(normalized, ["unidad_venta"])
+    const precioVenta = getCellValue(normalized, ["precio_venta", "precio", "price"])
+    const costo = getCellValue(normalized, ["costo", "cost"])
+    const itbis = getCellValue(normalized, ["itbis", "itbis_percent"])
+    const stock = getCellValue(normalized, ["stock", "existencia"])
+    const stockMinimo = getCellValue(normalized, ["stock_minimo", "existencia_minima", "min_stock"])
+    const categoria = getCellValue(normalized, ["categoria", "category"])
+    const proveedor = getCellValue(normalized, ["proveedor", "supplier"])
+    const imagenes = getCellValue(normalized, ["imagenes", "image_urls", "images"])
+
+    const parsed: BulkProductImportRow = {
+      rowNumber: index + 2,
+    }
+
+    if (hasCellValue(nombre)) parsed.nombre = String(nombre).trim()
+    if (hasCellValue(sku)) parsed.sku = String(sku).trim()
+    if (hasCellValue(referencia)) parsed.referencia = String(referencia).trim()
+    if (hasCellValue(categoria)) parsed.categoria = String(categoria).trim()
+    if (hasCellValue(proveedor)) parsed.proveedor = String(proveedor).trim()
+    if (hasCellValue(imagenes)) parsed.imagenes = String(imagenes).trim()
+
+    const parsedType = parseExcelProductType(tipoProducto)
+    if (hasCellValue(tipoProducto) && !parsedType) {
+      throw new Error(`Línea ${index + 2}: tipo_producto inválido (usa BASICO o MEDIDO)`)
+    }
+    if (parsedType) parsed.tipo_producto = parsedType
+
+    const parsedPurchaseUnit = parseExcelUnit(unidadCompra)
+    if (hasCellValue(unidadCompra) && !parsedPurchaseUnit) {
+      throw new Error(`Línea ${index + 2}: unidad_compra inválida`)
+    }
+    if (parsedPurchaseUnit) parsed.unidad_compra = parsedPurchaseUnit
+
+    const parsedSaleUnit = parseExcelUnit(unidadVenta)
+    if (hasCellValue(unidadVenta) && !parsedSaleUnit) {
+      throw new Error(`Línea ${index + 2}: unidad_venta inválida`)
+    }
+    if (parsedSaleUnit) parsed.unidad_venta = parsedSaleUnit
+
+    const precio = parseNumberWithContext(precioVenta, "precio_venta")
+    if (precio !== undefined) parsed.precio_venta = precio
+    const cost = parseNumberWithContext(costo, "costo")
+    if (cost !== undefined) parsed.costo = cost
+    const itbisNumber = parseNumberWithContext(itbis, "itbis")
+    if (itbisNumber !== undefined) parsed.itbis = itbisNumber
+    const stockNumber = parseNumberWithContext(stock, "existencia")
+    if (stockNumber !== undefined) parsed.stock = stockNumber
+    const stockMinNumber = parseNumberWithContext(stockMinimo, "existencia_minima")
+    if (stockMinNumber !== undefined) parsed.stock_minimo = stockMinNumber
+
+    return parsed
+  })
+}
+
 export function ProductsClient() {
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Product[]>([])
@@ -125,6 +315,16 @@ export function ProductsClient() {
   const [bulkLines, setBulkLines] = useState("")
   const [bulkReason, setBulkReason] = useState("Ajuste masivo")
   const [isBulkSaving, startBulkSaving] = useTransition()
+  const [inventoryBulkOpen, setInventoryBulkOpen] = useState(false)
+  const [inventoryFile, setInventoryFile] = useState<File | null>(null)
+  const [inventoryRows, setInventoryRows] = useState<BulkProductImportRow[]>([])
+  const [inventoryParseError, setInventoryParseError] = useState<string | null>(null)
+  const [isInventoryDragOver, setIsInventoryDragOver] = useState(false)
+  const [isInventoryUploading, setIsInventoryUploading] = useState(false)
+  const [inventoryProgress, setInventoryProgress] = useState(0)
+  const [inventoryStatus, setInventoryStatus] = useState("Listo para cargar")
+  const [inventorySummary, setInventorySummary] = useState<InventoryImportSummary | null>(null)
+  const inventoryFileInputRef = useRef<HTMLInputElement>(null)
   const [movementsOpen, setMovementsOpen] = useState(false)
   const [movementsProduct, setMovementsProduct] = useState<Product | null>(null)
   const [movements, setMovements] = useState<ProductMovement[]>([])
@@ -320,6 +520,248 @@ export function ProductsClient() {
     })
   }
 
+  function resetInventoryImportState() {
+    setInventoryFile(null)
+    setInventoryRows([])
+    setInventoryParseError(null)
+    setInventoryProgress(0)
+    setInventoryStatus("Listo para cargar")
+    setInventorySummary(null)
+    setIsInventoryDragOver(false)
+    setIsInventoryUploading(false)
+    if (inventoryFileInputRef.current) {
+      inventoryFileInputRef.current.value = ""
+    }
+  }
+
+  function closeInventoryImportModal() {
+    resetInventoryImportState()
+    setInventoryBulkOpen(false)
+  }
+
+  function downloadInventoryTemplate() {
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      [...INVENTORY_TEMPLATE_HEADERS],
+      [
+        "Ejemplo producto",
+        "SKU-001",
+        "REF-001",
+        "BASICO",
+        "",
+        "",
+        150,
+        100,
+        18,
+        25,
+        5,
+        "General",
+        "Proveedor A",
+        "",
+      ],
+    ])
+    worksheet["!cols"] = INVENTORY_TEMPLATE_HEADERS.map((header) => ({ wch: Math.max(header.length + 4, 16) }))
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Plantilla")
+    XLSX.writeFile(workbook, "plantilla_inventario_masivo.xlsx")
+  }
+
+  async function parseInventoryFile(file: File) {
+    const fileName = file.name.toLowerCase()
+    if (!fileName.endsWith(".xlsx") && !fileName.endsWith(".xls")) {
+      throw new Error("Formato inválido. Solo se permiten archivos .xlsx o .xls")
+    }
+    if (file.size > INVENTORY_IMPORT_MAX_FILE_SIZE) {
+      throw new Error("El archivo supera el límite de 10 MB")
+    }
+
+    setInventoryStatus("Leyendo archivo...")
+    const buffer = await file.arrayBuffer()
+    const workbook = XLSX.read(buffer, { type: "array" })
+    const firstSheetName = workbook.SheetNames[0]
+    if (!firstSheetName) {
+      throw new Error("El archivo no contiene hojas")
+    }
+
+    setInventoryStatus("Validando archivo...")
+    const worksheet = workbook.Sheets[firstSheetName]
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: "" })
+    if (rawRows.length > INVENTORY_IMPORT_MAX_ROWS) {
+      throw new Error(`El archivo supera el límite de ${INVENTORY_IMPORT_MAX_ROWS} filas`)
+    }
+
+    const mappedRows = mapExcelRowsToImportRows(rawRows)
+    const nonEmptyRows = mappedRows.filter((row) =>
+      Object.entries(row).some(([key, value]) => key !== "rowNumber" && hasCellValue(value)),
+    )
+    if (!nonEmptyRows.length) {
+      throw new Error("No se encontraron filas con datos en el archivo")
+    }
+    if (nonEmptyRows.length > INVENTORY_IMPORT_MAX_ROWS) {
+      throw new Error(`El archivo supera el límite de ${INVENTORY_IMPORT_MAX_ROWS} filas`)
+    }
+
+    return nonEmptyRows
+  }
+
+  async function loadInventoryFile(file: File) {
+    setInventoryParseError(null)
+    setInventorySummary(null)
+    setInventoryProgress(0)
+    try {
+      const parsedRows = await parseInventoryFile(file)
+      setInventoryFile(file)
+      setInventoryRows(parsedRows)
+      setInventoryStatus(`${parsedRows.length} fila(s) lista(s) para importar`)
+    } catch (error) {
+      setInventoryFile(null)
+      setInventoryRows([])
+      setInventoryStatus("Listo para cargar")
+      if (inventoryFileInputRef.current) {
+        inventoryFileInputRef.current.value = ""
+      }
+      const message = error instanceof Error ? error.message : "No se pudo leer el archivo"
+      setInventoryParseError(message)
+    }
+  }
+
+  function onInventoryFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    void loadInventoryFile(file)
+  }
+
+  function onInventoryDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setIsInventoryDragOver(false)
+    const file = event.dataTransfer.files?.[0]
+    if (!file) return
+    void loadInventoryFile(file)
+  }
+
+  function onInventoryDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setIsInventoryDragOver(true)
+  }
+
+  function onInventoryDragLeave(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setIsInventoryDragOver(false)
+  }
+
+  async function onInventoryUpload() {
+    if (!canAdjustStock) {
+      toast({ title: "Sin permiso", description: "No tienes permiso para importar productos.", variant: "destructive" })
+      return
+    }
+
+    if (!inventoryRows.length) {
+      toast({ title: "Sin datos", description: "Selecciona un archivo con filas para importar.", variant: "destructive" })
+      return
+    }
+
+    setIsInventoryUploading(true)
+    setInventorySummary(null)
+    setInventoryParseError(null)
+    setInventoryProgress(0)
+    setInventoryStatus("Iniciando carga...")
+
+    const allResults: BulkProductImportRowResult[] = []
+    let created = 0
+    let updated = 0
+    let failed = 0
+    let processed = 0
+    const total = inventoryRows.length
+
+    try {
+      for (let start = 0; start < total; start += INVENTORY_IMPORT_CHUNK_SIZE) {
+        const chunk = inventoryRows.slice(start, start + INVENTORY_IMPORT_CHUNK_SIZE)
+        const chunkEnd = Math.min(start + chunk.length, total)
+        setInventoryStatus(`Procesando ${chunkEnd}/${total}`)
+
+        try {
+          const result = await importProductsChunk({
+            rows: chunk,
+            reason: "Importación masiva Excel",
+          })
+          created += result.created
+          updated += result.updated
+          failed += result.failed
+          allResults.push(...result.results)
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Error al procesar el lote"
+          failed += chunk.length
+          allResults.push(
+            ...chunk.map((row) => ({
+              rowNumber: row.rowNumber,
+              status: "FAILED" as const,
+              sku: row.sku ?? null,
+              name: row.nombre,
+              message,
+            })),
+          )
+        }
+
+        processed += chunk.length
+        setInventoryProgress(Math.min(Math.round((processed / total) * 100), 100))
+      }
+
+      const summary: InventoryImportSummary = {
+        total,
+        created,
+        updated,
+        failed,
+        results: allResults,
+      }
+      setInventorySummary(summary)
+      setInventoryStatus("Carga finalizada")
+      refresh(query)
+
+      if (failed > 0) {
+        toast({
+          title: "Carga completada con observaciones",
+          description: `Creados: ${created}, actualizados: ${updated}, errores: ${failed}`,
+        })
+      } else {
+        toast({
+          title: "Carga completada",
+          description: `Se procesaron ${total} fila(s) correctamente.`,
+        })
+      }
+    } finally {
+      setIsInventoryUploading(false)
+    }
+  }
+
+  function downloadInventoryErrorReport() {
+    if (!inventorySummary) return
+    const failedRows = inventorySummary.results.filter((item) => item.status === "FAILED")
+    if (!failedRows.length) return
+
+    const rowByNumber = new Map(inventoryRows.map((row) => [row.rowNumber, row]))
+    const reportRows = failedRows.map((item) => {
+      const sourceRow = rowByNumber.get(item.rowNumber)
+      return {
+        fila: item.rowNumber,
+        sku: item.sku ?? sourceRow?.sku ?? "",
+        nombre: item.name ?? sourceRow?.nombre ?? "",
+        error: item.message,
+      }
+    })
+
+    const worksheet = XLSX.utils.json_to_sheet(reportRows)
+    worksheet["!cols"] = [
+      { wch: 8 },
+      { wch: 20 },
+      { wch: 40 },
+      { wch: 60 },
+    ]
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Errores")
+    const date = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(workbook, `reporte_errores_inventario_masivo_${date}.xlsx`)
+  }
+
   function openMovements(product: Product) {
     setMovementsProduct(product)
     setMovementsOpen(true)
@@ -382,6 +824,139 @@ export function ProductsClient() {
             <div className="text-sm text-muted-foreground">Descripción, código (SKU), referencia, precio y existencia.</div>
           </div>
           <div className="flex items-center gap-2">
+            <Dialog
+              open={inventoryBulkOpen}
+              onOpenChange={(v) => {
+                setInventoryBulkOpen(v)
+                if (!v) resetInventoryImportState()
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  disabled={!canAdjustStock}
+                  className="bg-green-100 border-green-300 text-green-900 hover:bg-green-200"
+                >
+                  Inventario masivo
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[780px]">
+                <DialogHeader>
+                  <DialogTitle>Inventario masivo</DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-6">
+                  <div className="grid gap-2">
+                    <div className="text-sm font-medium">Primer paso: descargar plantilla</div>
+                    <div className="text-xs text-muted-foreground">
+                      Usa esta plantilla para completar productos. Campos requeridos para crear: nombre, precio_venta y costo.
+                    </div>
+                    <div>
+                      <Button type="button" variant="secondary" onClick={downloadInventoryTemplate}>
+                        Descargar plantilla
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  <div className="grid gap-2">
+                    <div className="text-sm font-medium">Segundo paso: subir archivo con productos</div>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onDragOver={onInventoryDragOver}
+                      onDragLeave={onInventoryDragLeave}
+                      onDrop={onInventoryDrop}
+                      onClick={() => inventoryFileInputRef.current?.click()}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault()
+                          inventoryFileInputRef.current?.click()
+                        }
+                      }}
+                      className={`relative rounded-lg border-2 border-dashed p-10 text-center transition-colors ${
+                        isInventoryDragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/60"
+                      }`}
+                    >
+                      <input
+                        ref={inventoryFileInputRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        onChange={onInventoryFileChange}
+                        className="hidden"
+                      />
+                      <div className="flex flex-col items-center gap-2">
+                        <Plus className="h-8 w-8 text-primary" />
+                        <div className="text-sm font-medium">Arrastra y suelta el archivo aquí</div>
+                        <div className="text-xs text-muted-foreground">o haz click para seleccionar (.xlsx, .xls)</div>
+                        <div className="text-xs text-muted-foreground">Máximo 10 MB y 5,000 filas</div>
+                      </div>
+                    </div>
+                    {inventoryFile && (
+                      <div className="text-xs text-muted-foreground">
+                        Archivo: <span className="font-medium">{inventoryFile.name}</span> · Filas detectadas:{" "}
+                        <span className="font-medium">{inventoryRows.length}</span>
+                      </div>
+                    )}
+                    {inventoryParseError && (
+                      <div className="text-xs text-red-500">{inventoryParseError}</div>
+                    )}
+                  </div>
+
+                  <div className="grid gap-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{inventoryStatus}</span>
+                      <span>{inventoryProgress}%</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-muted">
+                      <div
+                        className="h-2 rounded-full bg-primary transition-all"
+                        style={{ width: `${inventoryProgress}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {inventorySummary && (
+                    <div className="rounded-md border p-3 text-sm">
+                      <div className="font-medium">Resultado de la carga</div>
+                      <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                        <div>Total filas: {inventorySummary.total}</div>
+                        <div>Creados: {inventorySummary.created}</div>
+                        <div>Actualizados por SKU: {inventorySummary.updated}</div>
+                        <div>Errores: {inventorySummary.failed}</div>
+                      </div>
+                      {inventorySummary.failed > 0 && (
+                        <div className="mt-3">
+                          <Button type="button" variant="outline" size="sm" onClick={downloadInventoryErrorReport}>
+                            Descargar reporte de errores
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <DialogFooter>
+                  <Button variant="secondary" onClick={closeInventoryImportModal} type="button">
+                    Cerrar
+                  </Button>
+                  <Button
+                    onClick={onInventoryUpload}
+                    disabled={isInventoryUploading || !inventoryRows.length || !canAdjustStock}
+                    type="button"
+                  >
+                    {isInventoryUploading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="mr-2 h-4 w-4" /> Cargar
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
             <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
               <DialogTrigger asChild>
                 <Button variant="outline" disabled={!canAdjustStock}>Ajuste masivo</Button>
@@ -512,7 +1087,7 @@ export function ProductsClient() {
                     {/* Campos específicos según el tipo de producto */}
                     <TabsContent value="basic" className="mt-0 space-y-4">
                       <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-                        Los productos básicos se compran y venden por unidad. Las unidades de compra y venta se establecen automáticamente como "Unidad".
+                        Los productos básicos se compran y venden por unidad. Las unidades de compra y venta se establecen automáticamente como Unidad.
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="grid gap-2">

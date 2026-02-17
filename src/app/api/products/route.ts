@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { listProducts, upsertProduct } from "@/app/(app)/products/actions"
 import { Decimal } from "@prisma/client/runtime/library"
+import { prisma } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+
+function hasValue(value: unknown) {
+  if (value === null || value === undefined) return false
+  if (typeof value === "string") return value.trim().length > 0
+  return true
+}
 
 // GET /api/products - Listar productos
 export async function GET(request: NextRequest) {
@@ -38,6 +45,8 @@ export async function GET(request: NextRequest) {
       imageUrls: p.imageUrls,
       purchaseUnit: p.purchaseUnit,
       saleUnit: p.saleUnit,
+      categoryId: p.category?.categoryId ?? null,
+      categoryInternalId: p.categoryId ?? null,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
     }))
@@ -68,13 +77,33 @@ export async function POST(request: NextRequest) {
     // Convertir precio de pesos a centavos si viene como número decimal
     const priceCents = body.priceCents ?? (body.price ? Math.round(body.price * 100) : undefined)
     const costCents = body.costCents ?? (body.cost ? Math.round(body.cost * 100) : undefined)
+    let resolvedCategoryInternalId: string | null = null
 
-    const result = await upsertProduct({
+    if (hasValue(body.categoryId)) {
+      const parsedCategoryId = Number(body.categoryId)
+      if (!Number.isInteger(parsedCategoryId) || parsedCategoryId <= 0) {
+        return NextResponse.json({ error: "categoryId inválido" }, { status: 400 })
+      }
+      const category = await prisma.category.findFirst({
+        where: {
+          accountId: user.accountId,
+          categoryId: parsedCategoryId,
+          isActive: true,
+        },
+        select: { id: true },
+      })
+      if (!category) {
+        return NextResponse.json({ error: "Categoría no encontrada" }, { status: 400 })
+      }
+      resolvedCategoryInternalId = category.id
+    }
+
+    await upsertProduct({
       name: body.name,
       sku: body.sku || null,
       reference: body.reference || null,
       supplierId: body.supplierId || null,
-      categoryId: body.categoryId || null,
+      categoryId: resolvedCategoryInternalId,
       priceCents: priceCents!,
       costCents: costCents ?? 0,
       itbisRateBp: body.itbisRateBp ?? 1800,
@@ -87,11 +116,15 @@ export async function POST(request: NextRequest) {
     })
 
     // Obtener el producto creado para retornarlo
-    const { prisma } = await import("@/lib/db")
     const product = await prisma.product.findFirst({
       where: {
         accountId: user.accountId,
         name: body.name,
+      },
+      include: {
+        category: {
+          select: { id: true, categoryId: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     })
@@ -116,6 +149,8 @@ export async function POST(request: NextRequest) {
       imageUrls: product.imageUrls,
       purchaseUnit: product.purchaseUnit,
       saleUnit: product.saleUnit,
+      categoryId: product.category?.categoryId ?? null,
+      categoryInternalId: product.categoryId ?? null,
     }, { status: 201 })
   } catch (error: any) {
     console.error("Error en POST /api/products:", error)

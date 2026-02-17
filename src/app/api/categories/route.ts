@@ -30,23 +30,25 @@ export async function GET(request: NextRequest) {
             }
           : {}),
       },
-      orderBy: { name: "asc" },
+      orderBy: { categoryId: "asc" },
       take: 200,
     })
 
     return NextResponse.json({
       data: categories.map((c) => ({
-        id: c.id,
+        id: c.categoryId,
+        internalId: c.id,
         name: c.name,
         description: c.description,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
+        createdAt: c.createdAt.toISOString(),
+        updatedAt: c.updatedAt.toISOString(),
       })),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error al obtener categorías"
     console.error("Error en GET /api/categories:", error)
     return NextResponse.json(
-      { error: error.message || "Error al obtener categorías" },
+      { error: message },
       { status: 500 }
     )
   }
@@ -91,17 +93,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const created = await prisma.category.create({
-      data: {
-        accountId: user.accountId,
-        name,
-        description,
-      },
+    const created = await prisma.$transaction(async (tx) => {
+      const sequence = await tx.categorySequence.upsert({
+        where: { accountId: user.accountId },
+        update: { lastNumber: { increment: 1 } },
+        create: { accountId: user.accountId, lastNumber: 1 },
+      })
+
+      return tx.category.create({
+        data: {
+          accountId: user.accountId,
+          categoryId: sequence.lastNumber,
+          name,
+          description,
+        },
+      })
     })
 
     return NextResponse.json(
       {
-        id: created.id,
+        id: created.categoryId,
+        internalId: created.id,
         name: created.name,
         description: created.description,
         createdAt: created.createdAt.toISOString(),
@@ -109,10 +121,11 @@ export async function POST(request: NextRequest) {
       },
       { status: 201 }
     )
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Error al crear categoría"
     console.error("Error en POST /api/categories:", error)
     return NextResponse.json(
-      { error: error.message || "Error al crear categoría" },
+      { error: message },
       { status: 500 }
     )
   }

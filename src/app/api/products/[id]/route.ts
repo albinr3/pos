@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { upsertProduct } from "@/app/(app)/products/actions"
 import { Decimal } from "@prisma/client/runtime/library"
+import { prisma } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+
+function hasValue(value: unknown) {
+  if (value === null || value === undefined) return false
+  if (typeof value === "string") return value.trim().length > 0
+  return true
+}
 
 // PUT /api/products/:id - Actualizar producto
 export async function PUT(
@@ -23,6 +30,26 @@ export async function PUT(
     // Convertir precio de pesos a centavos si viene como número decimal
     const priceCents = body.priceCents ?? (body.price ? Math.round(body.price * 100) : undefined)
     const costCents = body.costCents ?? (body.cost ? Math.round(body.cost * 100) : undefined)
+    let resolvedCategoryInternalId: string | null = null
+
+    if (hasValue(body.categoryId)) {
+      const parsedCategoryId = Number(body.categoryId)
+      if (!Number.isInteger(parsedCategoryId) || parsedCategoryId <= 0) {
+        return NextResponse.json({ error: "categoryId inválido" }, { status: 400 })
+      }
+      const category = await prisma.category.findFirst({
+        where: {
+          accountId: user.accountId,
+          categoryId: parsedCategoryId,
+          isActive: true,
+        },
+        select: { id: true },
+      })
+      if (!category) {
+        return NextResponse.json({ error: "Categoría no encontrada" }, { status: 400 })
+      }
+      resolvedCategoryInternalId = category.id
+    }
 
     await upsertProduct({
       id,
@@ -30,7 +57,7 @@ export async function PUT(
       sku: body.sku || null,
       reference: body.reference || null,
       supplierId: body.supplierId || null,
-      categoryId: body.categoryId || null,
+      categoryId: resolvedCategoryInternalId,
       priceCents: priceCents!,
       costCents: costCents ?? 0,
       itbisRateBp: body.itbisRateBp ?? 1800,
@@ -43,11 +70,15 @@ export async function PUT(
     })
 
     // Obtener el producto actualizado para retornarlo
-    const { prisma } = await import("@/lib/db")
     const product = await prisma.product.findFirst({
       where: {
         id,
         accountId: user.accountId,
+      },
+      include: {
+        category: {
+          select: { id: true, categoryId: true },
+        },
       },
     })
 
@@ -71,6 +102,8 @@ export async function PUT(
       imageUrls: product.imageUrls,
       purchaseUnit: product.purchaseUnit,
       saleUnit: product.saleUnit,
+      categoryId: product.category?.categoryId ?? null,
+      categoryInternalId: product.categoryId ?? null,
     })
   } catch (error: any) {
     console.error("Error en PUT /api/products/:id:", error)
