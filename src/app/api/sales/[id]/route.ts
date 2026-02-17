@@ -143,7 +143,7 @@ export async function PUT(
       body?.cancel === true
 
     if (shouldCancel) {
-      const result = await cancelSale(id, user.username || user.name || "api")
+      const result = await cancelSale(id, user.username || user.name || "api", user)
       if (!result.success) {
         return NextResponse.json({ error: result.error || "No se pudo cancelar la venta" }, { status: 400 })
       }
@@ -203,6 +203,7 @@ export async function PUT(
       paymentMethod,
       items,
       username: user.username || user.name || "api",
+      user,
     })
 
     const updatedSale = await prisma.sale.findFirst({
@@ -243,7 +244,7 @@ export async function DELETE(
     }
 
     const { id } = await params
-    const result = await cancelSale(id, user.username || user.name || "api")
+    const result = await cancelSale(id, user.username || user.name || "api", user)
     if (!result.success) {
       return NextResponse.json({ error: result.error || "No se pudo cancelar la venta" }, { status: 400 })
     }

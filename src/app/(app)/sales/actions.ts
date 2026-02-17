@@ -577,8 +577,8 @@ export async function getSaleById(id: string) {
   }
 }
 
-export async function cancelSale(id: string, username: string) {
-  const user = await getCurrentUser()
+export async function cancelSale(id: string, username: string, currentUserArg?: any) {
+  const user = currentUserArg ?? await getCurrentUser()
   if (!user) return { success: false, error: "No autenticado" }
 
   try {
@@ -681,8 +681,9 @@ export async function updateSale(input: {
   paymentMethod?: PaymentMethod | null
   items: CartItemInput[]
   username?: string
+  user?: any
 }) {
-  const user = await getCurrentUser()
+  const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   validateCartItems(input.items)
