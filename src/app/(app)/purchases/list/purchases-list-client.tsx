@@ -676,11 +676,14 @@ export function PurchasesListClient() {
                           </div>
                         </div>
 
-                        <div className="mt-2 text-xs text-muted-foreground">
+                        <div className="mt-2 text-xs font-semibold text-muted-foreground">
                           Descuento proveedor aplicado: {(c.discountPercentBp / 100).toFixed(2)}% · Compra con ITBIS: {c.purchaseIncludesItbis ? "Si" : "No"} · Venta con ITBIS: {c.appliedItbisRateBp > 0 ? "Si" : "No"}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
-                          NOTA: Si quieres que el producto se venda sin ITBIS debes modificar el perfil del producto y ponerlo como exento.
+                          NOTA: Si quieres que el producto se venda con o sin ITBIS debes modificar el perfil del producto y ponerlo como exento.
+                        </div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          NOTA2: Si quieres que el producto su compra sea con o sin ITBIS debes modificar el perfil del proveedor.
                         </div>
                         <div className="mt-2 flex items-center justify-between rounded-md border bg-muted/50 p-2">
                           <div className="text-xs text-muted-foreground">Total linea:</div>
