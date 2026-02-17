@@ -41,6 +41,8 @@ export async function GET(request: NextRequest) {
         name: s.name,
         contactName: s.contactName,
         phone: s.phone,
+        discountPercentBp: s.discountPercentBp,
+        chargesItbis: s.chargesItbis,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
       })),
