@@ -168,9 +168,9 @@ export async function PUT(
       return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 })
     }
 
-    const baseItems = existingSale.items.map((item) => ({
+    const baseItems: EditableSaleItem[] = existingSale.items.map((item) => ({
       productId: item.productId,
-      qty: decimalToNumber(item.qty),
+      quantity: decimalToNumber(item.qty),
       unitPriceCents: item.unitPriceCents,
       wasPriceOverridden: item.wasPriceOverridden,
     }))
