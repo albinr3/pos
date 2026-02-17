@@ -1,22 +1,102 @@
 import { NextRequest, NextResponse } from "next/server"
+import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
+import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-function calculateNetCost(unitCostCents: number, discountPercentBp: number, chargesItbis: boolean): number {
-  const discountRate = discountPercentBp / 10000
-  const costAfterDiscount = unitCostCents * (1 - discountRate)
-  const itbisRate = chargesItbis ? 0.18 : 0
-  return Math.round(costAfterDiscount * (1 + itbisRate))
+function toNumber(value: unknown): number {
+  if (typeof value === "number") return value
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toNumber" in value &&
+    typeof (value as { toNumber: () => number }).toNumber === "function"
+  ) {
+    return Number((value as { toNumber: () => number }).toNumber())
+  }
+  return Number(value || 0)
 }
 
-function toNumber(value: any): number {
-  if (typeof value === "number") return value
-  if (value && typeof value.toNumber === "function") return Number(value.toNumber())
-  return Number(value || 0)
+async function buildPurchaseItems(params: {
+  tx: Prisma.TransactionClient
+  accountId: string
+  supplier: { discountPercentBp?: number; chargesItbis?: boolean } | null
+  items: Array<{
+    productId: string
+    qty: number
+    unitCostCents: number
+    discountPercentBp?: number
+    salePriceCents?: number
+    saleMarginBp?: number
+    purchaseIncludesItbis?: boolean
+  }>
+}) {
+  const settings = await params.tx.companySettings.findFirst({
+    where: { accountId: params.accountId },
+    select: { itbisRateBp: true, defaultProfitMarginBp: true },
+  })
+
+  const purchaseItbisRateBp = settings?.itbisRateBp ?? 1800
+  const defaultProfitMarginBp = settings?.defaultProfitMarginBp ?? 3000
+
+  const products = await params.tx.product.findMany({
+    where: { accountId: params.accountId, id: { in: params.items.map((i) => i.productId) } },
+    select: { id: true, itbisRateBp: true },
+  })
+  if (products.length !== params.items.length) {
+    throw new Error("Algunos productos no existen o no pertenecen a esta cuenta")
+  }
+
+  const productById = new Map(products.map((p: { id: string; itbisRateBp: number }) => [p.id, p]))
+
+  return params.items.map((item) => {
+    const product = productById.get(item.productId)
+    if (!product) throw new Error("Producto no encontrado")
+
+    const discountPercentBp = item.discountPercentBp ?? params.supplier?.discountPercentBp ?? 0
+    const purchaseIncludesItbis = params.supplier
+      ? (params.supplier.chargesItbis ?? false)
+      : (item.purchaseIncludesItbis ?? true)
+    const pricing = resolvePurchaseSalePricing({
+      unitCostCents: item.unitCostCents,
+      discountPercentBp,
+      purchaseIncludesItbis,
+      purchaseItbisRateBp,
+      productItbisRateBp: product.itbisRateBp,
+      defaultSaleMarginBp: defaultProfitMarginBp,
+      saleMarginBp: item.saleMarginBp,
+      salePriceCents: item.salePriceCents,
+    })
+
+    return {
+      ...item,
+      discountPercentBp: pricing.discountPercentBp,
+      netCostCents: pricing.netCostCents,
+      lineTotalCents: Math.round(pricing.netCostCents * item.qty),
+      salePriceCents: pricing.salePriceCents,
+      saleMarginBp: pricing.saleMarginBp,
+      purchaseIncludesItbis: pricing.purchaseIncludesItbis,
+      appliedItbisRateBp: pricing.appliedItbisRateBp,
+    }
+  })
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Error inesperado"
+}
+
+type ApiPurchaseItemInput = {
+  productId: string
+  qty: number
+  unitCostCents: number
+  discountPercentBp?: number
+  salePriceCents?: number
+  saleMarginBp?: number
+  purchaseIncludesItbis?: boolean
 }
 
 // GET /api/purchases - Listar compras
@@ -62,7 +142,7 @@ export async function GET(request: NextRequest) {
         totalCents: purchase.totalCents,
         cancelledAt: purchase.cancelledAt ? purchase.cancelledAt.toISOString() : null,
         itemsCount: purchase.items.length,
-        items: purchase.items.map((item) => ({
+        items: purchase.items.map((item: (typeof purchase.items)[number]) => ({
           id: item.id,
           productId: item.productId,
           productName: item.product?.name || null,
@@ -70,14 +150,18 @@ export async function GET(request: NextRequest) {
           unitCostCents: item.unitCostCents,
           discountPercentBp: item.discountPercentBp,
           netCostCents: item.netCostCents,
+          salePriceCents: item.salePriceCents,
+          saleMarginBp: item.saleMarginBp,
+          purchaseIncludesItbis: item.purchaseIncludesItbis,
+          appliedItbisRateBp: item.appliedItbisRateBp,
           lineTotalCents: item.lineTotalCents,
         })),
       })),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en GET /api/purchases:", error)
     return NextResponse.json(
-      { error: error.message || "Error al obtener compras" },
+      { error: getErrorMessage(error) || "Error al obtener compras" },
       { status: 500 }
     )
   }
@@ -98,57 +182,56 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      let supplier: any = null
+      let supplier: { name: string; discountPercentBp: number; chargesItbis: boolean } | null = null
       if (body?.supplierId) {
         supplier = await tx.supplier.findFirst({
           where: { accountId: user.accountId, id: String(body.supplierId) },
+          select: { name: true, discountPercentBp: true, chargesItbis: true },
         })
       }
 
-      const normalizedItems = inputItems.map((item: any) => {
-        const qty = Number(item?.qty || 0)
-        const unitCostCents = Number(item?.unitCostCents || 0)
-        const discountPercentBp = Number.isFinite(Number(item?.discountPercentBp))
+      const normalizedItems: ApiPurchaseItemInput[] = inputItems.map((rawItem: unknown) => {
+        const item = (rawItem ?? {}) as Record<string, unknown>
+        const qty = Number(item.qty || 0)
+        const unitCostCents = Number(item.unitCostCents || 0)
+        const discountPercentBp = Number.isFinite(Number(item.discountPercentBp))
           ? Number(item.discountPercentBp)
           : undefined
+        const salePriceCents = Number.isFinite(Number(item.salePriceCents))
+          ? Number(item.salePriceCents)
+          : undefined
+        const saleMarginBp = Number.isFinite(Number(item.saleMarginBp))
+          ? Number(item.saleMarginBp)
+          : undefined
+        const purchaseIncludesItbis = typeof item.purchaseIncludesItbis === "boolean"
+          ? item.purchaseIncludesItbis
+          : undefined
         return {
-          productId: String(item?.productId || ""),
+          productId: String(item.productId || ""),
           qty,
           unitCostCents,
           discountPercentBp,
+          salePriceCents,
+          saleMarginBp,
+          purchaseIncludesItbis,
         }
       })
 
-      if (normalizedItems.some((item: any) => !item.productId || item.qty <= 0 || item.unitCostCents < 0)) {
+      if (normalizedItems.some((item) => !item.productId || item.qty <= 0 || item.unitCostCents < 0)) {
         throw new Error("Hay productos con cantidad o costo inválido")
       }
 
-      const products = await tx.product.findMany({
-        where: {
-          accountId: user.accountId,
-          id: { in: normalizedItems.map((i: any) => i.productId) },
-        },
-        select: { id: true },
-      })
-      if (products.length !== normalizedItems.length) {
-        throw new Error("Algunos productos no existen o no pertenecen a esta cuenta")
-      }
-
-      const itemsWithComputed = normalizedItems.map((item: any) => {
-        const discountBp = item.discountPercentBp ?? supplier?.discountPercentBp ?? 0
-        const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
-        const netCostCents = calculateNetCost(item.unitCostCents, discountBp, chargesItbis)
-        return {
-          ...item,
-          discountPercentBp: discountBp,
-          netCostCents,
-          lineTotalCents: Math.round(netCostCents * item.qty),
-        }
+      const itemsWithComputed = await buildPurchaseItems({
+        tx,
+        accountId: user.accountId,
+        supplier,
+        items: normalizedItems,
       })
 
-      const totalCents = itemsWithComputed.reduce((sum: number, item: any) => sum + item.lineTotalCents, 0)
+      const totalCents = itemsWithComputed.reduce((sum, item) => sum + item.lineTotalCents, 0)
       const supplierName = (body?.supplierName || "").trim() || supplier?.name || null
       const updateProductCost = Boolean(body?.updateProductCost)
+      const updateProductPrice = body?.updateProductPrice !== false
 
       const purchase = await tx.purchase.create({
         data: {
@@ -158,12 +241,16 @@ export async function POST(request: NextRequest) {
           userId: user.id,
           totalCents,
           items: {
-            create: itemsWithComputed.map((i: any) => ({
+            create: itemsWithComputed.map((i) => ({
               productId: i.productId,
               qty: i.qty,
               unitCostCents: i.unitCostCents,
               discountPercentBp: i.discountPercentBp,
               netCostCents: i.netCostCents,
+              salePriceCents: i.salePriceCents,
+              saleMarginBp: i.saleMarginBp,
+              purchaseIncludesItbis: i.purchaseIncludesItbis,
+              appliedItbisRateBp: i.appliedItbisRateBp,
               lineTotalCents: i.lineTotalCents,
             })),
           },
@@ -176,6 +263,7 @@ export async function POST(request: NextRequest) {
           data: {
             stock: { increment: item.qty },
             ...(updateProductCost ? { costCents: item.netCostCents } : {}),
+            ...(updateProductPrice ? { priceCents: item.salePriceCents } : {}),
           },
         })
         if (updated.count === 0) throw new Error("Producto no encontrado")
@@ -193,10 +281,10 @@ export async function POST(request: NextRequest) {
       createdAt: result.createdAt.toISOString(),
       updatedAt: result.updatedAt.toISOString(),
     }, { status: 201 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en POST /api/purchases:", error)
     return NextResponse.json(
-      { error: error.message || "Error al crear compra" },
+      { error: getErrorMessage(error) || "Error al crear compra" },
       { status: 500 }
     )
   }

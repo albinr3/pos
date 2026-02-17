@@ -20,9 +20,11 @@ export async function getSettings() {
     address: s?.address ?? "",
     logoUrl: s?.logoUrl ?? null,
     allowNegativeStock: s?.allowNegativeStock ?? false,
+    itbisRateBp: s?.itbisRateBp ?? 1800,
     barcodeLabelSize: s?.barcodeLabelSize ?? "4x2",
     shippingLabelSize: s?.shippingLabelSize ?? "4x6",
     defaultViewMode: s?.defaultViewMode ?? "list",
+    defaultProfitMarginBp: s?.defaultProfitMarginBp ?? 3000,
     showItbisOnReceipts: s?.showItbisOnReceipts ?? true,
   }
 }
@@ -41,6 +43,7 @@ export async function updateAllowNegativeStock(allow: boolean) {
       address: "",
       allowNegativeStock: allow,
       itbisRateBp: 1800,
+      defaultProfitMarginBp: 3000,
     },
   })
 
@@ -73,6 +76,7 @@ export async function updateLabelSizes(barcodeLabelSize: string, shippingLabelSi
       address: "",
       allowNegativeStock: false,
       itbisRateBp: 1800,
+      defaultProfitMarginBp: 3000,
       barcodeLabelSize: sanitizedBarcodeLabelSize,
       shippingLabelSize: sanitizedShippingLabelSize,
     },
@@ -111,6 +115,7 @@ export async function updateSalesSettings(defaultViewMode: string) {
       address: "",
       allowNegativeStock: false,
       itbisRateBp: 1800,
+      defaultProfitMarginBp: 3000,
       defaultViewMode: sanitizedViewMode,
     },
   })
@@ -141,6 +146,7 @@ export async function updateReceiptSettings(showItbis: boolean) {
       address: "",
       allowNegativeStock: false,
       itbisRateBp: 1800,
+      defaultProfitMarginBp: 3000,
       showItbisOnReceipts: showItbis,
     },
   })
@@ -156,3 +162,34 @@ export async function updateReceiptSettings(showItbis: boolean) {
   revalidatePath("/settings")
 }
 
+export async function updatePurchasePricingSettings(defaultProfitMarginBp: number) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const normalizedMargin = Math.min(50000, Math.max(0, Math.round(defaultProfitMarginBp || 0)))
+
+  await prisma.companySettings.upsert({
+    where: { accountId: user.accountId },
+    update: { defaultProfitMarginBp: normalizedMargin },
+    create: {
+      accountId: user.accountId,
+      name: "Mi Negocio",
+      phone: "",
+      address: "",
+      allowNegativeStock: false,
+      itbisRateBp: 1800,
+      defaultProfitMarginBp: normalizedMargin,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    action: "SETTINGS_CHANGED",
+    resourceType: "CompanySettings",
+    details: { defaultProfitMarginBp: normalizedMargin },
+  })
+
+  revalidatePath("/settings")
+  revalidatePath("/purchases")
+}

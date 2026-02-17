@@ -25,8 +25,9 @@ export async function GET() {
       logoUrl: company?.logoUrl ?? null,
       address: company?.address || "",
       phone: company?.phone || "",
+      defaultProfitMarginBp: company?.defaultProfitMarginBp ?? 3000,
     })
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: "Error al obtener configuración de empresa" },
       { status: 500 }

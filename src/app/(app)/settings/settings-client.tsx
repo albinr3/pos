@@ -28,7 +28,7 @@ import {
   saveARCache,
 } from "@/lib/indexed-db"
 
-import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings } from "./actions"
+import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
@@ -66,6 +66,7 @@ export function SettingsClient({ isOwner }: Props) {
   const [barcodeLabelSize, setBarcodeLabelSize] = useState("4x2")
   const [shippingLabelSize, setShippingLabelSize] = useState("4x6")
   const [defaultViewMode, setDefaultViewMode] = useState("list")
+  const [defaultProfitMargin, setDefaultProfitMargin] = useState("30.00")
   const [showItbisOnReceipts, setShowItbisOnReceipts] = useState(true)
   const [isSaving, startSaving] = useTransition()
   const isOnline = useOnlineStatus()
@@ -84,6 +85,7 @@ export function SettingsClient({ isOwner }: Props) {
       setBarcodeLabelSize(s.barcodeLabelSize)
       setShippingLabelSize(s.shippingLabelSize)
       setDefaultViewMode(s.defaultViewMode)
+      setDefaultProfitMargin((s.defaultProfitMarginBp / 100).toFixed(2))
       setShowItbisOnReceipts(s.showItbisOnReceipts)
     })
 
@@ -401,6 +403,46 @@ export function SettingsClient({ isOwner }: Props) {
               }}
               disabled={isSaving}
             />
+          </div>
+          <div className="grid gap-2">
+            <Label>% ganancia por defecto en compras</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                value={defaultProfitMargin}
+                onChange={(e) => {
+                  const cleaned = e.target.value.replace(/[^0-9.]/g, "")
+                  const parts = cleaned.split(".")
+                  if (parts.length > 2) return
+                  const normalized = parts.length === 2 ? `${parts[0]}.${parts[1].slice(0, 2)}` : parts[0]
+                  setDefaultProfitMargin(normalized)
+                }}
+                inputMode="decimal"
+                className="w-full md:w-[180px]"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSaving}
+                onClick={() => {
+                  startSaving(async () => {
+                    try {
+                      const parsedMargin = Number.parseFloat(defaultProfitMargin || "0")
+                      const marginBp = Math.round((Number.isFinite(parsedMargin) ? parsedMargin : 0) * 100)
+                      await updatePurchasePricingSettings(marginBp)
+                      setDefaultProfitMargin((marginBp / 100).toFixed(2))
+                      toast({ title: "Ganancia por defecto guardada" })
+                    } catch (e) {
+                      toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
+                    }
+                  })
+                }}
+              >
+                Guardar
+              </Button>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Este porcentaje se usa para calcular el precio de venta automático en compras.
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -10,9 +10,11 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
+import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
 
 import { createPurchase, listPurchases, searchProductsForPurchase } from "./actions"
 import { getAllSuppliers } from "../suppliers/actions"
+import { getSettings } from "../settings/actions"
 
 type Purchase = Awaited<ReturnType<typeof listPurchases>>[number]
 
@@ -27,6 +29,11 @@ type CartItem = {
   unitCostCents: number
   discountPercentBp: number
   netCostCents: number
+  salePriceCents: number
+  saleMarginBp: number
+  productItbisRateBp: number
+  purchaseIncludesItbis: boolean
+  appliedItbisRateBp: number
 }
 
 type Supplier = Awaited<ReturnType<typeof getAllSuppliers>>[number] & { chargesItbis?: boolean }
@@ -36,13 +43,26 @@ function toInt(v: string) {
   return Number.isFinite(n) ? Math.trunc(n) : 0
 }
 
-// Calcular costo neto: (costo - descuento) * (1 + ITBIS)
-function calculateNetCost(unitCostCents: number, discountPercentBp: number, chargesItbis: boolean): number {
-  const discountRate = discountPercentBp / 10000
-  const costAfterDiscount = unitCostCents * (1 - discountRate)
-  const itbisRate = chargesItbis ? 0.18 : 0
-  const netCost = costAfterDiscount * (1 + itbisRate)
-  return Math.round(netCost)
+function calculatePricing(input: {
+  unitCostCents: number
+  discountPercentBp: number
+  purchaseIncludesItbis: boolean
+  purchaseItbisRateBp: number
+  productItbisRateBp: number
+  defaultMarginBp: number
+  saleMarginBp?: number
+  salePriceCents?: number
+}) {
+  return resolvePurchaseSalePricing({
+    unitCostCents: input.unitCostCents,
+    discountPercentBp: input.discountPercentBp,
+    purchaseIncludesItbis: input.purchaseIncludesItbis,
+    purchaseItbisRateBp: input.purchaseItbisRateBp,
+    productItbisRateBp: input.productItbisRateBp,
+    defaultSaleMarginBp: input.defaultMarginBp,
+    saleMarginBp: input.saleMarginBp,
+    salePriceCents: input.salePriceCents,
+  })
 }
 
 export function PurchasesClient() {
@@ -50,6 +70,8 @@ export function PurchasesClient() {
   const [supplierName, setSupplierName] = useState("")
   const [notes, setNotes] = useState("")
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [defaultProfitMarginBp, setDefaultProfitMarginBp] = useState(3000)
+  const [itbisRateBp, setItbisRateBp] = useState(1800)
 
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<ProductResult[]>([])
@@ -57,8 +79,11 @@ export function PurchasesClient() {
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [updateCost, setUpdateCost] = useState(true)
+  const [updatePrice, setUpdatePrice] = useState(true)
   // Estado para los valores de los inputs de descuento mientras se escriben
   const [discountInputs, setDiscountInputs] = useState<Record<string, string>>({})
+  const [saleMarginInputs, setSaleMarginInputs] = useState<Record<string, string>>({})
+  const [salePriceInputs, setSalePriceInputs] = useState<Record<string, string>>({})
 
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [isLoading, startLoading] = useTransition()
@@ -75,35 +100,75 @@ export function PurchasesClient() {
     })
   }
 
+  const selectedSupplier = supplierId ? suppliers.find((s) => s.id === supplierId) ?? null : null
+
+  function recalcCartItem(
+    item: CartItem,
+    overrides?: Partial<CartItem> & { salePriceCents?: number; saleMarginBp?: number }
+  ): CartItem {
+    const nextItem = { ...item, ...overrides }
+    const pricing = calculatePricing({
+      unitCostCents: nextItem.unitCostCents,
+      discountPercentBp: nextItem.discountPercentBp,
+      purchaseIncludesItbis: nextItem.purchaseIncludesItbis,
+      purchaseItbisRateBp: itbisRateBp,
+      productItbisRateBp: nextItem.productItbisRateBp,
+      defaultMarginBp: defaultProfitMarginBp,
+      saleMarginBp: overrides && "salePriceCents" in overrides ? undefined : nextItem.saleMarginBp,
+      salePriceCents: overrides?.salePriceCents,
+    })
+
+    return {
+      ...nextItem,
+      discountPercentBp: pricing.discountPercentBp,
+      netCostCents: pricing.netCostCents,
+      salePriceCents: pricing.salePriceCents,
+      saleMarginBp: pricing.saleMarginBp,
+      purchaseIncludesItbis: pricing.purchaseIncludesItbis,
+      appliedItbisRateBp: pricing.appliedItbisRateBp,
+    }
+  }
+
   useEffect(() => {
     refreshPurchases()
-    getAllSuppliers().then(setSuppliers).catch(() => { })
+    Promise.all([getAllSuppliers(), getSettings()])
+      .then(([supplierList, settings]) => {
+        setSuppliers(supplierList)
+        setDefaultProfitMarginBp(settings.defaultProfitMarginBp)
+        setItbisRateBp(settings.itbisRateBp)
+      })
+      .catch(() => { })
   }, [])
 
-  // Cuando se selecciona un proveedor, aplicar su descuento a los items del carrito
-  useEffect(() => {
-    if (supplierId && suppliers.length > 0) {
-      const supplier = suppliers.find((s) => s.id === supplierId)
-      if (supplier) {
-        setSupplierName(supplier.name)
-        // Aplicar descuento del proveedor a items sin descuento personalizado
-        setCart((prev) =>
-          prev.map((item) => {
-            // Solo aplicar si el item no tiene descuento personalizado (0)
-            const discountBp = item.discountPercentBp > 0 ? item.discountPercentBp : supplier.discountPercentBp
-            const chargesItbis = supplier.chargesItbis ?? false
-            return {
-              ...item,
-              discountPercentBp: discountBp,
-              netCostCents: calculateNetCost(item.unitCostCents, discountBp, chargesItbis),
-            }
+  function applySupplierSelection(nextSupplierId: string) {
+    setSupplierId(nextSupplierId)
+
+    if (!nextSupplierId) {
+      setSupplierName("")
+      setCart((prev) =>
+        prev.map((item) =>
+          recalcCartItem(item, {
+            discountPercentBp: 0,
+            purchaseIncludesItbis: true,
           })
         )
-      }
-    } else {
-      setSupplierName("")
+      )
+      return
     }
-  }, [supplierId, suppliers])
+
+    const supplier = suppliers.find((s) => s.id === nextSupplierId)
+    if (!supplier) return
+
+    setSupplierName(supplier.name)
+    setCart((prev) =>
+      prev.map((item) =>
+        recalcCartItem(item, {
+          discountPercentBp: supplier.discountPercentBp,
+          purchaseIncludesItbis: supplier.chargesItbis ?? false,
+        })
+      )
+    )
+  }
 
   useEffect(() => {
     const q = query.trim()
@@ -129,25 +194,21 @@ export function PurchasesClient() {
     setCart((prev) => {
       const existing = prev.find((x) => x.productId === p.id)
       if (existing) {
-        return prev.map((x) => {
-          if (x.productId === p.id) {
-            const discountBp = x.discountPercentBp
-            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
-            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
-            return {
-              ...x,
-              qty: x.qty + 1,
-              netCostCents: calculateNetCost(x.unitCostCents, discountBp, chargesItbis),
-            }
-          }
-          return x
-        })
+        return prev.map((x) => (x.productId === p.id ? recalcCartItem(x, { qty: x.qty + 1 }) : x))
       }
-      const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
-      const discountBp = supplier?.discountPercentBp ?? 0
-      // Default to true (legacy) if no supplier, or use supplier setting
-      const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
+
+      const discountBp = selectedSupplier?.discountPercentBp ?? 0
       const unitCostCents = p.costCents ?? 0
+      const purchaseIncludes = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : true
+      const pricing = calculatePricing({
+        unitCostCents,
+        discountPercentBp: discountBp,
+        purchaseIncludesItbis: purchaseIncludes,
+        purchaseItbisRateBp: itbisRateBp,
+        productItbisRateBp: p.itbisRateBp ?? 0,
+        defaultMarginBp: defaultProfitMarginBp,
+      })
+
       return [
         ...prev,
         {
@@ -158,13 +219,23 @@ export function PurchasesClient() {
           qty: 1,
           unitCostCents,
           discountPercentBp: discountBp,
-          netCostCents: calculateNetCost(unitCostCents, discountBp, chargesItbis),
+          netCostCents: pricing.netCostCents,
+          salePriceCents: pricing.salePriceCents,
+          saleMarginBp: pricing.saleMarginBp,
+          productItbisRateBp: p.itbisRateBp ?? 0,
+          purchaseIncludesItbis: pricing.purchaseIncludesItbis,
+          appliedItbisRateBp: pricing.appliedItbisRateBp,
         },
       ]
     })
   }
 
   async function save() {
+    if (!supplierId) {
+      toast({ title: "Proveedor requerido", description: "Debes seleccionar un proveedor para guardar la compra." })
+      return
+    }
+
     startSaving(async () => {
       try {
         await createPurchase({
@@ -176,8 +247,11 @@ export function PurchasesClient() {
             qty: c.qty,
             unitCostCents: c.unitCostCents,
             discountPercentBp: c.discountPercentBp,
+            salePriceCents: c.salePriceCents,
+            saleMarginBp: c.saleMarginBp,
           })),
           updateProductCost: updateCost,
+          updateProductPrice: updatePrice,
         })
 
         toast({ title: "Compra registrada" })
@@ -187,6 +261,9 @@ export function PurchasesClient() {
         setCart([])
         setQuery("")
         setResults([])
+        setDiscountInputs({})
+        setSaleMarginInputs({})
+        setSalePriceInputs({})
         refreshPurchases()
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo registrar" })
@@ -208,19 +285,7 @@ export function PurchasesClient() {
                 className="h-10 rounded-md border bg-background px-3 text-sm"
                 value={supplierId}
                 onChange={(e) => {
-                  setSupplierId(e.target.value)
-                  if (!e.target.value) {
-                    setSupplierName("")
-                    // Remover descuentos cuando no hay proveedor
-                    setCart((prev) =>
-                      prev.map((item) => ({
-                        ...item,
-                        discountPercentBp: 0,
-                        // If no supplier, default ITBIS = true
-                        netCostCents: calculateNetCost(item.unitCostCents, 0, true),
-                      }))
-                    )
-                  }
+                  applySupplierSelection(e.target.value)
                 }}
               >
                 <option value="">Sin proveedor</option>
@@ -247,20 +312,36 @@ export function PurchasesClient() {
             </div>
 
             <div className="rounded-md border p-3">
-              <label className="flex items-start gap-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={updateCost}
-                  onChange={(e) => setUpdateCost(e.target.checked)}
-                  className="mt-1"
-                />
-                <span>
-                  <span className="font-medium">Actualizar costo del producto</span>
-                  <span className="block text-xs text-muted-foreground">
-                    Si lo activas, el costo del producto se actualizará al costo unitario de esta compra.
+              <div className="grid gap-3">
+                <label className="flex items-start gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={updateCost}
+                    onChange={(e) => setUpdateCost(e.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="font-medium">Actualizar costo del producto</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Si lo activas, el costo del producto se actualizará al costo neto de esta compra.
+                    </span>
                   </span>
-                </span>
-              </label>
+                </label>
+                <label className="flex items-start gap-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={updatePrice}
+                    onChange={(e) => setUpdatePrice(e.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="font-medium">Actualizar precio de venta</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Si lo activas, se guardará el precio de venta calculado/ajustado de cada renglón.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </div>
 
             <Separator />
@@ -331,28 +412,35 @@ export function PurchasesClient() {
                             delete newState[c.productId]
                             return newState
                           })
+                          setSaleMarginInputs((prev) => {
+                            const newState = { ...prev }
+                            delete newState[c.productId]
+                            return newState
+                          })
+                          setSalePriceInputs((prev) => {
+                            const newState = { ...prev }
+                            delete newState[c.productId]
+                            return newState
+                          })
                         }}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       <div className="grid gap-1">
                         <div className="text-xs text-muted-foreground">Cantidad</div>
                         <Input
                           value={String(c.qty)}
                           onChange={(e) => {
                             const newQty = Math.max(1, toInt(e.target.value))
-                            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
-                            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
                             setCart((p) =>
                               p.map((x) =>
                                 x.productId === c.productId
                                   ? {
                                     ...x,
                                     qty: newQty,
-                                    netCostCents: calculateNetCost(x.unitCostCents, x.discountPercentBp, chargesItbis),
                                   }
                                   : x
                               )
@@ -367,17 +455,10 @@ export function PurchasesClient() {
                           value={((c.unitCostCents ?? 0) / 100).toFixed(2)}
                           onChange={(e) => {
                             const newCost = toCents(e.target.value)
-                            const discountBp = c.discountPercentBp
-                            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
-                            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
                             setCart((p) =>
                               p.map((x) =>
                                 x.productId === c.productId
-                                  ? {
-                                    ...x,
-                                    unitCostCents: newCost,
-                                    netCostCents: calculateNetCost(newCost, discountBp, chargesItbis),
-                                  }
+                                  ? recalcCartItem(x, { unitCostCents: newCost })
                                   : x
                               )
                             )
@@ -397,19 +478,12 @@ export function PurchasesClient() {
                             // Guardar el valor en el estado local
                             setDiscountInputs((prev) => ({ ...prev, [c.productId]: newValue }))
 
-                            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
-                            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
-
                             // Solo permitir números y un punto decimal
                             if (newValue === "") {
                               setCart((p) =>
                                 p.map((x) =>
                                   x.productId === c.productId
-                                    ? {
-                                      ...x,
-                                      discountPercentBp: 0,
-                                      netCostCents: calculateNetCost(x.unitCostCents, 0, chargesItbis),
-                                    }
+                                    ? recalcCartItem(x, { discountPercentBp: 0 })
                                     : x
                                 )
                               )
@@ -439,11 +513,7 @@ export function PurchasesClient() {
                             setCart((p) =>
                               p.map((x) =>
                                 x.productId === c.productId
-                                  ? {
-                                    ...x,
-                                    discountPercentBp: discountBp,
-                                    netCostCents: calculateNetCost(x.unitCostCents, discountBp, chargesItbis),
-                                  }
+                                  ? recalcCartItem(x, { discountPercentBp: discountBp })
                                   : x
                               )
                             )
@@ -459,22 +529,15 @@ export function PurchasesClient() {
                               return newState
                             })
 
-                            const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : null
-                            const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
-
                             setCart((p) =>
                               p.map((x) =>
                                 x.productId === c.productId
-                                  ? {
-                                    ...x,
-                                    discountPercentBp: discountBp,
-                                    netCostCents: calculateNetCost(x.unitCostCents, discountBp, chargesItbis),
-                                  }
+                                  ? recalcCartItem(x, { discountPercentBp: discountBp })
                                   : x
                               )
                             )
                           }}
-                          onFocus={(e) => {
+                          onFocus={() => {
                             // Al enfocar, inicializar el estado local con el valor actual
                             const currentValue = (c.discountPercentBp / 100).toFixed(2)
                             setDiscountInputs((prev) => ({ ...prev, [c.productId]: currentValue }))
@@ -483,9 +546,88 @@ export function PurchasesClient() {
                         />
                       </div>
                       <div className="grid gap-1">
-                        <div className="text-xs text-muted-foreground">Costo neto (con ITBIS)</div>
+                        <div className="text-xs text-muted-foreground">Ganancia (%)</div>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={saleMarginInputs[c.productId] ?? (c.saleMarginBp / 100).toFixed(2)}
+                          onChange={(e) => {
+                            let newValue = e.target.value
+                            setSaleMarginInputs((prev) => ({ ...prev, [c.productId]: newValue }))
+
+                            if (newValue === "") {
+                              setCart((p) => p.map((x) => (x.productId === c.productId ? recalcCartItem(x, { saleMarginBp: 0 }) : x)))
+                              return
+                            }
+
+                            const cleaned = newValue.replace(/[^0-9.]/g, "")
+                            const parts = cleaned.split(".")
+                            if (parts.length > 2) {
+                              newValue = parts[0] + "." + parts.slice(1).join("")
+                            } else {
+                              newValue = cleaned
+                            }
+                            if (parts.length === 2 && parts[1].length > 2) {
+                              newValue = parts[0] + "." + parts[1].substring(0, 2)
+                            }
+
+                            const marginPercent = Math.min(parseFloat(newValue) || 0, 500)
+                            const marginBp = Math.round(marginPercent * 100)
+                            setCart((p) => p.map((x) => (x.productId === c.productId ? recalcCartItem(x, { saleMarginBp: marginBp }) : x)))
+                          }}
+                          onBlur={(e) => {
+                            const marginPercent = Math.min(parseFloat(e.target.value) || 0, 500)
+                            const marginBp = Math.round(marginPercent * 100)
+                            setSaleMarginInputs((prev) => {
+                              const newState = { ...prev }
+                              delete newState[c.productId]
+                              return newState
+                            })
+                            setCart((p) => p.map((x) => (x.productId === c.productId ? recalcCartItem(x, { saleMarginBp: marginBp }) : x)))
+                          }}
+                          onFocus={() => {
+                            setSaleMarginInputs((prev) => ({ ...prev, [c.productId]: (c.saleMarginBp / 100).toFixed(2) }))
+                          }}
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <div className="text-xs text-muted-foreground">Precio de venta (RD$)</div>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={salePriceInputs[c.productId] ?? (c.salePriceCents / 100).toFixed(2)}
+                          onChange={(e) => {
+                            const value = e.target.value
+                            setSalePriceInputs((prev) => ({ ...prev, [c.productId]: value }))
+                            const priceCents = toCents(value)
+                            setCart((p) => p.map((x) => (x.productId === c.productId ? recalcCartItem(x, { salePriceCents: priceCents }) : x)))
+                          }}
+                          onBlur={(e) => {
+                            const priceCents = toCents(e.target.value)
+                            setSalePriceInputs((prev) => {
+                              const newState = { ...prev }
+                              delete newState[c.productId]
+                              return newState
+                            })
+                            setCart((p) => p.map((x) => (x.productId === c.productId ? recalcCartItem(x, { salePriceCents: priceCents }) : x)))
+                          }}
+                          onFocus={() => {
+                            setSalePriceInputs((prev) => ({ ...prev, [c.productId]: (c.salePriceCents / 100).toFixed(2) }))
+                          }}
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <div className="text-xs text-muted-foreground">Costo neto compra</div>
                         <div className="h-10 rounded-md border bg-muted px-3 py-2 text-sm font-semibold">{formatRD(c.netCostCents)}</div>
                       </div>
+                    </div>
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Descuento proveedor aplicado: {(c.discountPercentBp / 100).toFixed(2)}% · Compra con ITBIS: {c.purchaseIncludesItbis ? "Sí" : "No"} · Venta con ITBIS: {c.appliedItbisRateBp > 0 ? "Sí" : "No"}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      NOTA: Si quieres que el producto se venda sin ITBIS debes modificar el perfil del producto y ponerlo como exento.
                     </div>
                     <div className="mt-2 flex items-center justify-between rounded-md border bg-muted/50 p-2">
                       <div className="text-xs text-muted-foreground">Total línea:</div>
@@ -506,7 +648,7 @@ export function PurchasesClient() {
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="text-4xl font-semibold tracking-tight">{formatRD(totalCents)}</div>
-            <Button className="w-full" size="lg" disabled={cart.length === 0 || isSaving} onClick={save}>
+            <Button className="w-full" size="lg" disabled={cart.length === 0 || isSaving || !supplierId} onClick={save}>
               {isSaving ? "Guardando…" : "Guardar compra"}
             </Button>
           </CardContent>

@@ -1,14 +1,25 @@
--- Enable RLS for Prisma migrations table in public schema (PostgREST-exposed)
-ALTER TABLE public."_prisma_migrations" ENABLE ROW LEVEL SECURITY;
-
 DO $$
 DECLARE
+  prisma_migrations_exists boolean;
   service_role_exists boolean;
 BEGIN
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_tables
+    WHERE schemaname = 'public'
+      AND tablename = '_prisma_migrations'
+  ) INTO prisma_migrations_exists;
+
+  IF prisma_migrations_exists THEN
+    EXECUTE 'ALTER TABLE public."_prisma_migrations" ENABLE ROW LEVEL SECURITY';
+  END IF;
+
   SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = 'service_role')
     INTO service_role_exists;
 
-  IF service_role_exists AND NOT EXISTS (
+  IF prisma_migrations_exists
+    AND service_role_exists
+    AND NOT EXISTS (
     SELECT 1
     FROM pg_policies
     WHERE schemaname = 'public'
@@ -23,7 +34,8 @@ BEGIN
       WITH CHECK (true);
   END IF;
 
-  IF NOT EXISTS (
+  IF prisma_migrations_exists
+    AND NOT EXISTS (
     SELECT 1
     FROM pg_policies
     WHERE schemaname = 'public'

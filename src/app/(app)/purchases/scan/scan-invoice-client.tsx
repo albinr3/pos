@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, useTransition, useEffect, useMemo } from "react"
+import { useRef, useState, useTransition, useEffect } from "react"
 import { Camera, Upload, X, Loader2, Check, AlertCircle, Plus, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 
@@ -13,13 +13,17 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
+import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
 
 import { processInvoiceImage, createPurchaseFromOCR, ExtractedInvoiceData, ExtractedProduct } from "../ocr-actions"
 import { getAllSuppliers } from "../../suppliers/actions"
+import { getSettings } from "../../settings/actions"
 
 type ReviewProduct = ExtractedProduct & {
-  sellPrice: string // Para input de precio de venta
   createNew: boolean
+  netCostCents: number
+  salePriceCents: number
+  saleMarginBp: number
 }
 
 export function ScanInvoiceClient() {
@@ -41,53 +45,90 @@ export function ScanInvoiceClient() {
   const [supplierName, setSupplierName] = useState("")
   const [suppliers, setSuppliers] = useState<Awaited<ReturnType<typeof getAllSuppliers>>>([])
   const [updateCost, setUpdateCost] = useState(true)
+  const [updatePrice, setUpdatePrice] = useState(true)
+  const [defaultProfitMarginBp, setDefaultProfitMarginBp] = useState(3000)
+  const [itbisRateBp, setItbisRateBp] = useState(1800)
   // Estado para los valores de los inputs de costo unitario mientras se escriben
   const [unitPriceInputs, setUnitPriceInputs] = useState<Record<number, string>>({})
+  const [saleMarginInputs, setSaleMarginInputs] = useState<Record<number, string>>({})
+  const [salePriceInputs, setSalePriceInputs] = useState<Record<number, string>>({})
   // Estado para los descuentos por producto
   const [productDiscounts, setProductDiscounts] = useState<Record<number, number>>({})
 
   // Paso actual: "capture" | "review"
   const [step, setStep] = useState<"capture" | "review">("capture")
+  const selectedSupplier = supplierId ? suppliers.find((s) => s.id === supplierId) ?? null : null
 
   // Cargar proveedores al montar
   useEffect(() => {
-    getAllSuppliers().then(setSuppliers).catch(() => {})
+    Promise.all([getAllSuppliers(), getSettings()])
+      .then(([supplierList, settings]) => {
+        setSuppliers(supplierList)
+        setDefaultProfitMarginBp(settings.defaultProfitMarginBp)
+        setItbisRateBp(settings.itbisRateBp)
+      })
+      .catch(() => {})
   }, [])
 
-  // Calcular costo neto: (costo - descuento) * 1.18 (ITBIS)
-  function calculateNetCost(unitCostCents: number, discountPercentBp: number): number {
-    const discountRate = discountPercentBp / 10000
-    const costAfterDiscount = unitCostCents * (1 - discountRate)
-    const itbisRate = 0.18
-    const netCost = costAfterDiscount * (1 + itbisRate)
-    return Math.round(netCost)
+  function resolveLinePricing(product: ReviewProduct, discountBp: number, overrides?: { saleMarginBp?: number; salePriceCents?: number }) {
+    const purchaseIncludesItbis = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : true
+    const saleItbisRateBp = product.matchedProductItbisRateBp > 0
+      ? product.matchedProductItbisRateBp
+      : (product.isNewProduct
+        ? (selectedSupplier ? (selectedSupplier.chargesItbis ? itbisRateBp : 0) : itbisRateBp)
+        : 0)
+
+    return resolvePurchaseSalePricing({
+      unitCostCents: product.unitPrice,
+      discountPercentBp: discountBp,
+      purchaseIncludesItbis,
+      purchaseItbisRateBp: itbisRateBp,
+      productItbisRateBp: saleItbisRateBp,
+      defaultSaleMarginBp: defaultProfitMarginBp,
+      saleMarginBp: overrides && "salePriceCents" in overrides ? undefined : (overrides?.saleMarginBp ?? product.saleMarginBp),
+      salePriceCents: overrides?.salePriceCents,
+    })
   }
 
-  // Cuando se selecciona un proveedor, aplicar su descuento
-  useEffect(() => {
-    if (supplierId && suppliers.length > 0) {
-      const supplier = suppliers.find((s) => s.id === supplierId)
-      if (supplier) {
-        setSupplierName(supplier.name)
-        // Aplicar descuento del proveedor a productos sin descuento personalizado
-        setProductDiscounts((prev) => {
-          const newDiscounts: Record<number, number> = { ...prev }
-          reviewProducts.forEach((_, index) => {
-            // Solo aplicar si no tiene descuento personalizado
-            if (!(index in newDiscounts)) {
-              newDiscounts[index] = supplier.discountPercentBp
-            }
-          })
-          return newDiscounts
-        })
-      }
-    } else {
-      setSupplierName("")
+  function recalculateProduct(product: ReviewProduct, discountBp: number, overrides?: { saleMarginBp?: number; salePriceCents?: number }) {
+    const pricing = resolveLinePricing(product, discountBp, overrides)
+
+    return {
+      ...product,
+      netCostCents: pricing.netCostCents,
+      salePriceCents: pricing.salePriceCents,
+      saleMarginBp: pricing.saleMarginBp,
+      matchedProductItbisRateBp: pricing.appliedItbisRateBp > 0 ? pricing.appliedItbisRateBp : product.matchedProductItbisRateBp,
     }
-  }, [supplierId, suppliers, reviewProducts.length])
+  }
+
+  function applySupplierSelection(nextSupplierId: string) {
+    setSupplierId(nextSupplierId)
+    const supplier = suppliers.find((s) => s.id === nextSupplierId)
+
+    if (!supplier) {
+      setSupplierName("")
+      const discounts: Record<number, number> = {}
+      reviewProducts.forEach((_, index) => {
+        discounts[index] = 0
+      })
+      setProductDiscounts(discounts)
+      setReviewProducts((prev) => prev.map((product) => recalculateProduct(product, 0)))
+      return
+    }
+
+    setSupplierName(supplier.name)
+    const supplierDiscount = supplier.discountPercentBp
+    const discounts: Record<number, number> = {}
+    reviewProducts.forEach((_, index) => {
+      discounts[index] = supplierDiscount
+    })
+    setProductDiscounts(discounts)
+    setReviewProducts((prev) => prev.map((product) => recalculateProduct(product, supplierDiscount)))
+  }
 
   // Calcular totales con descuento e ITBIS
-  const totals = useMemo(() => {
+  const totals = (() => {
     const includedProducts = reviewProducts.filter((p) => p.included)
     
     // Subtotal sin descuento ni ITBIS
@@ -96,20 +137,20 @@ export function ScanInvoiceClient() {
     // Calcular descuentos y costos netos
     let totalDiscountCents = 0
     let totalNetCents = 0
+    let totalPurchaseNoItbisCents = 0
     
     includedProducts.forEach((product, index) => {
       const discountBp = productDiscounts[index] ?? 0
-      const discountRate = discountBp / 10000
-      const lineSubtotal = product.unitPrice * product.quantity
-      const lineDiscount = Math.round(lineSubtotal * discountRate)
-      const lineAfterDiscount = lineSubtotal - lineDiscount
-      const lineNetCost = Math.round(lineAfterDiscount * 1.18) // + ITBIS
-      
+      const pricing = resolveLinePricing(product, discountBp)
+      const lineDiscount = (pricing.unitCostCents - pricing.discountedCostCents) * product.quantity
+      const lineNetCost = pricing.netCostCents * product.quantity
+
       totalDiscountCents += lineDiscount
       totalNetCents += lineNetCost
+      totalPurchaseNoItbisCents += pricing.purchaseNoItbisCents * product.quantity
     })
     
-    const itbisCents = totalNetCents - (subtotalCents - totalDiscountCents)
+    const itbisCents = totalNetCents - totalPurchaseNoItbisCents
     
     return {
       subtotalCents,
@@ -117,7 +158,7 @@ export function ScanInvoiceClient() {
       itbisCents,
       totalCents: totalNetCents,
     }
-  }, [reviewProducts, productDiscounts])
+  })()
 
   // Abrir cámara
   async function openCamera() {
@@ -130,7 +171,7 @@ export function ScanInvoiceClient() {
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream
       }
-    } catch (error) {
+    } catch {
       toast({
         title: "Error",
         description: "No se pudo acceder a la cámara. Verifica los permisos.",
@@ -205,23 +246,21 @@ export function ScanInvoiceClient() {
 
         // Convertir a productos para revisión
         const products: ReviewProduct[] = result.products.map((p) => ({
-          ...p,
-          sellPrice: formatRD(Math.round(p.unitPrice * 1.3)).replace("RD$", "").trim(), // Margen 30%
-          createNew: p.isNewProduct,
+          ...recalculateProduct({
+            ...p,
+            createNew: p.isNewProduct,
+            netCostCents: p.unitPrice,
+            salePriceCents: p.unitPrice,
+            saleMarginBp: defaultProfitMarginBp,
+          }, selectedSupplier?.discountPercentBp ?? 0),
         }))
         setReviewProducts(products)
         
-        // Si hay un proveedor seleccionado, aplicar su descuento
-        if (supplierId && suppliers.length > 0) {
-          const supplier = suppliers.find((s) => s.id === supplierId)
-          if (supplier && supplier.discountPercentBp > 0) {
-            const discounts: Record<number, number> = {}
-            products.forEach((_, index) => {
-              discounts[index] = supplier.discountPercentBp
-            })
-            setProductDiscounts(discounts)
-          }
-        }
+        const discounts: Record<number, number> = {}
+        products.forEach((_, index) => {
+          discounts[index] = selectedSupplier?.discountPercentBp ?? 0
+        })
+        setProductDiscounts(discounts)
         
         setStep("review")
 
@@ -239,7 +278,7 @@ export function ScanInvoiceClient() {
   }
 
   // Actualizar producto en revisión
-  function updateProduct(index: number, field: keyof ReviewProduct, value: any) {
+  function updateProduct<K extends keyof ReviewProduct>(index: number, field: K, value: ReviewProduct[K]) {
     setReviewProducts((prev) =>
       prev.map((p, i) => (i === index ? { ...p, [field]: value } : p))
     )
@@ -248,11 +287,47 @@ export function ScanInvoiceClient() {
   // Eliminar producto de la lista
   function removeProduct(index: number) {
     setReviewProducts((prev) => prev.filter((_, i) => i !== index))
+    setProductDiscounts((prev) => {
+      const newState: Record<number, number> = {}
+      Object.keys(prev).forEach((key) => {
+        const keyNum = parseInt(key, 10)
+        if (keyNum < index) {
+          newState[keyNum] = prev[keyNum]
+        } else if (keyNum > index) {
+          newState[keyNum - 1] = prev[keyNum]
+        }
+      })
+      return newState
+    })
     // Limpiar el estado del input de este producto
     setUnitPriceInputs((prev) => {
       const newState: Record<number, string> = {}
       Object.keys(prev).forEach((key) => {
-        const keyNum = parseInt(key)
+        const keyNum = parseInt(key, 10)
+        if (keyNum < index) {
+          newState[keyNum] = prev[keyNum]
+        } else if (keyNum > index) {
+          newState[keyNum - 1] = prev[keyNum]
+        }
+      })
+      return newState
+    })
+    setSaleMarginInputs((prev) => {
+      const newState: Record<number, string> = {}
+      Object.keys(prev).forEach((key) => {
+        const keyNum = parseInt(key, 10)
+        if (keyNum < index) {
+          newState[keyNum] = prev[keyNum]
+        } else if (keyNum > index) {
+          newState[keyNum - 1] = prev[keyNum]
+        }
+      })
+      return newState
+    })
+    setSalePriceInputs((prev) => {
+      const newState: Record<number, string> = {}
+      Object.keys(prev).forEach((key) => {
+        const keyNum = parseInt(key, 10)
         if (keyNum < index) {
           newState[keyNum] = prev[keyNum]
         } else if (keyNum > index) {
@@ -265,6 +340,11 @@ export function ScanInvoiceClient() {
 
   // Guardar compra
   function savePurchase() {
+    if (!supplierId) {
+      toast({ title: "Proveedor requerido", description: "Debes seleccionar un proveedor para guardar la compra." })
+      return
+    }
+
     const includedProducts = reviewProducts.filter((p) => p.included)
     if (!includedProducts.length) {
       toast({ title: "Error", description: "Debe incluir al menos un producto" })
@@ -276,10 +356,13 @@ export function ScanInvoiceClient() {
         await createPurchaseFromOCR({
           supplierId: supplierId || null,
           supplierName: supplierName || null,
-          products: includedProducts.map((p, idx) => {
+          products: includedProducts.map((p) => {
             const originalIndex = reviewProducts.findIndex((prod) => prod === p)
             const discountBp = productDiscounts[originalIndex] ?? 0
-            const netCostCents = calculateNetCost(p.unitPrice, discountBp)
+            const pricing = resolveLinePricing(p, discountBp, {
+              saleMarginBp: p.saleMarginBp,
+              salePriceCents: p.salePriceCents,
+            })
             return {
               productId: p.matchedProductId,
               sku: p.sku,
@@ -288,12 +371,14 @@ export function ScanInvoiceClient() {
               quantity: p.quantity,
               unitCostCents: p.unitPrice,
               discountPercentBp: discountBp,
-              netCostCents: netCostCents,
+              netCostCents: pricing.netCostCents,
+              saleMarginBp: pricing.saleMarginBp,
               createNew: p.isNewProduct && p.createNew,
-              sellPriceCents: toCents(p.sellPrice),
+              sellPriceCents: pricing.salePriceCents,
             }
           }),
           updateProductCost: updateCost,
+          updateProductPrice: updatePrice,
         })
 
         toast({ title: "Compra registrada", description: "La compra se guardó correctamente" })
@@ -425,11 +510,7 @@ export function ScanInvoiceClient() {
                     className="h-10 rounded-md border bg-background px-3 text-sm"
                     value={supplierId}
                     onChange={(e) => {
-                      setSupplierId(e.target.value)
-                      if (!e.target.value) {
-                        setSupplierName("")
-                        setProductDiscounts({})
-                      }
+                      applySupplierSelection(e.target.value)
                     }}
                   >
                     <option value="">Sin proveedor / Escribir nombre</option>
@@ -493,6 +574,7 @@ export function ScanInvoiceClient() {
                         <TableHead className="text-right">Cant.</TableHead>
                         <TableHead className="text-right">Costo Unit.</TableHead>
                         <TableHead className="text-right">Descuento (%)</TableHead>
+                        <TableHead className="text-right">Ganancia (%)</TableHead>
                         <TableHead className="text-right">Total</TableHead>
                         <TableHead className="text-right">Precio Venta</TableHead>
                         <TableHead className="w-10"></TableHead>
@@ -587,7 +669,12 @@ export function ScanInvoiceClient() {
                                 
                                 // Solo permitir números y un punto decimal
                                 if (newValue === "") {
-                                  updateProduct(index, "unitPrice", 0)
+                                  setReviewProducts((prev) =>
+                                    prev.map((p, i) => {
+                                      if (i !== index) return p
+                                      return recalculateProduct({ ...p, unitPrice: 0 }, productDiscounts[index] ?? 0)
+                                    })
+                                  )
                                   return
                                 }
                                 
@@ -609,12 +696,22 @@ export function ScanInvoiceClient() {
                                 
                                 // Convertir a centavos
                                 const priceCents = Math.round((parseFloat(newValue) || 0) * 100)
-                                updateProduct(index, "unitPrice", priceCents)
+                                setReviewProducts((prev) =>
+                                  prev.map((p, i) => {
+                                    if (i !== index) return p
+                                    return recalculateProduct({ ...p, unitPrice: priceCents }, productDiscounts[index] ?? 0)
+                                  })
+                                )
                               }}
                               onBlur={(e) => {
                                 // Al perder el foco, formatear y limpiar el estado local
                                 const priceCents = Math.round((parseFloat(e.target.value) || 0) * 100)
-                                updateProduct(index, "unitPrice", priceCents)
+                                setReviewProducts((prev) =>
+                                  prev.map((p, i) => {
+                                    if (i !== index) return p
+                                    return recalculateProduct({ ...p, unitPrice: priceCents }, productDiscounts[index] ?? 0)
+                                  })
+                                )
                                 
                                 setUnitPriceInputs((prev) => {
                                   const newState = { ...prev }
@@ -622,7 +719,7 @@ export function ScanInvoiceClient() {
                                   return newState
                                 })
                               }}
-                              onFocus={(e) => {
+                              onFocus={() => {
                                 // Al enfocar, inicializar el estado local con el valor actual
                                 const currentValue = (product.unitPrice / 100).toFixed(2)
                                 setUnitPriceInputs((prev) => ({ ...prev, [index]: currentValue }))
@@ -649,6 +746,9 @@ export function ScanInvoiceClient() {
                                     delete newState[index]
                                     return newState
                                   })
+                                  setReviewProducts((prev) =>
+                                    prev.map((p, i) => (i === index ? recalculateProduct(p, 0) : p))
+                                  )
                                   return
                                 }
                                 
@@ -672,34 +772,113 @@ export function ScanInvoiceClient() {
                                 const discountPercent = Math.min(parseFloat(newValue) || 0, 100)
                                 const discountBp = Math.round(discountPercent * 100)
                                 setProductDiscounts((prev) => ({ ...prev, [index]: discountBp }))
+                                setReviewProducts((prev) =>
+                                  prev.map((p, i) => (i === index ? recalculateProduct(p, discountBp) : p))
+                                )
                               }}
                               onBlur={(e) => {
                                 const discountPercent = Math.min(parseFloat(e.target.value) || 0, 100)
                                 const discountBp = Math.round(discountPercent * 100)
                                 setProductDiscounts((prev) => ({ ...prev, [index]: discountBp }))
+                                setReviewProducts((prev) =>
+                                  prev.map((p, i) => (i === index ? recalculateProduct(p, discountBp) : p))
+                                )
+                              }}
+                              className="w-20 text-right"
+                              placeholder="0.00"
+                            />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              value={saleMarginInputs[index] ?? (product.saleMarginBp / 100).toFixed(2)}
+                              onChange={(e) => {
+                                let newValue = e.target.value
+                                setSaleMarginInputs((prev) => ({ ...prev, [index]: newValue }))
+
+                                if (newValue === "") {
+                                  setReviewProducts((prev) =>
+                                    prev.map((p, i) => (i === index ? recalculateProduct(p, productDiscounts[index] ?? 0, { saleMarginBp: 0 }) : p))
+                                  )
+                                  return
+                                }
+
+                                const cleaned = newValue.replace(/[^0-9.]/g, "")
+                                const parts = cleaned.split(".")
+                                if (parts.length > 2) {
+                                  newValue = parts[0] + "." + parts.slice(1).join("")
+                                } else {
+                                  newValue = cleaned
+                                }
+                                if (parts.length === 2 && parts[1].length > 2) {
+                                  newValue = parts[0] + "." + parts[1].substring(0, 2)
+                                }
+
+                                const marginPercent = Math.min(parseFloat(newValue) || 0, 500)
+                                const marginBp = Math.round(marginPercent * 100)
+                                setReviewProducts((prev) =>
+                                  prev.map((p, i) => (i === index ? recalculateProduct(p, productDiscounts[index] ?? 0, { saleMarginBp: marginBp }) : p))
+                                )
+                              }}
+                              onBlur={(e) => {
+                                const marginPercent = Math.min(parseFloat(e.target.value) || 0, 500)
+                                const marginBp = Math.round(marginPercent * 100)
+                                setSaleMarginInputs((prev) => {
+                                  const newState = { ...prev }
+                                  delete newState[index]
+                                  return newState
+                                })
+                                setReviewProducts((prev) =>
+                                  prev.map((p, i) => (i === index ? recalculateProduct(p, productDiscounts[index] ?? 0, { saleMarginBp: marginBp }) : p))
+                                )
+                              }}
+                              onFocus={() => {
+                                setSaleMarginInputs((prev) => ({ ...prev, [index]: (product.saleMarginBp / 100).toFixed(2) }))
                               }}
                               className="w-20 text-right"
                               placeholder="0.00"
                             />
                           </TableCell>
                           <TableCell className="text-right font-medium">
-                            {(() => {
-                              const discountBp = productDiscounts[index] ?? 0
-                              const netCost = calculateNetCost(product.unitPrice, discountBp)
-                              return formatRD(netCost * product.quantity)
-                            })()}
+                            <div>{formatRD(product.netCostCents * product.quantity)}</div>
+                            <div className="text-[10px] text-muted-foreground">
+                              Desc: {((productDiscounts[index] ?? 0) / 100).toFixed(2)}% · Compra ITBIS: {selectedSupplier ? (selectedSupplier.chargesItbis ? "Si" : "No") : "Si"} · Venta ITBIS: {product.matchedProductItbisRateBp > 0 ? "Si" : "No"}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground">
+                              NOTA: Si quieres que el producto se venda sin ITBIS debes modificar el perfil del producto y ponerlo como exento.
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            {product.isNewProduct && product.createNew && (
-                              <Input
-                                value={product.sellPrice}
-                                onChange={(e) =>
-                                  updateProduct(index, "sellPrice", e.target.value)
-                                }
-                                className="w-24 text-right"
-                                placeholder="0.00"
-                              />
-                            )}
+                            <Input
+                              type="text"
+                              inputMode="decimal"
+                              value={salePriceInputs[index] ?? (product.salePriceCents / 100).toFixed(2)}
+                              onChange={(e) => {
+                                const value = e.target.value
+                                setSalePriceInputs((prev) => ({ ...prev, [index]: value }))
+                                const salePriceCents = toCents(value)
+                                setReviewProducts((prev) =>
+                                  prev.map((p, i) => (i === index ? recalculateProduct(p, productDiscounts[index] ?? 0, { salePriceCents }) : p))
+                                )
+                              }}
+                              onBlur={(e) => {
+                                const salePriceCents = toCents(e.target.value)
+                                setSalePriceInputs((prev) => {
+                                  const newState = { ...prev }
+                                  delete newState[index]
+                                  return newState
+                                })
+                                setReviewProducts((prev) =>
+                                  prev.map((p, i) => (i === index ? recalculateProduct(p, productDiscounts[index] ?? 0, { salePriceCents }) : p))
+                                )
+                              }}
+                              onFocus={() => {
+                                setSalePriceInputs((prev) => ({ ...prev, [index]: (product.salePriceCents / 100).toFixed(2) }))
+                              }}
+                              className="w-24 text-right"
+                              placeholder="0.00"
+                            />
                           </TableCell>
                           <TableCell>
                             <Button
@@ -715,7 +894,7 @@ export function ScanInvoiceClient() {
 
                       {reviewProducts.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                          <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                             No se detectaron productos
                           </TableCell>
                         </TableRow>
@@ -738,7 +917,7 @@ export function ScanInvoiceClient() {
                       </div>
                     )}
                     <div className="flex items-center justify-between mb-2">
-                      <span>ITBIS (18%)</span>
+                      <span>ITBIS compra</span>
                       <span>{formatRD(totals.itbisCents)}</span>
                     </div>
                     <Separator className="my-2" />
@@ -754,20 +933,30 @@ export function ScanInvoiceClient() {
 
               {/* Opciones y guardar */}
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    id="update-cost"
-                    checked={updateCost}
-                    onCheckedChange={setUpdateCost}
-                  />
-                  <Label htmlFor="update-cost">Actualizar costo de productos existentes</Label>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="update-cost"
+                      checked={updateCost}
+                      onCheckedChange={setUpdateCost}
+                    />
+                    <Label htmlFor="update-cost">Actualizar costo de productos existentes</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      id="update-price"
+                      checked={updatePrice}
+                      onCheckedChange={setUpdatePrice}
+                    />
+                    <Label htmlFor="update-price">Actualizar precio de venta de productos existentes</Label>
+                  </div>
                 </div>
 
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => router.push("/purchases")}>
                     Cancelar
                   </Button>
-                  <Button onClick={savePurchase} disabled={isSaving}>
+                  <Button onClick={savePurchase} disabled={isSaving || !supplierId}>
                     {isSaving ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -786,13 +975,3 @@ export function ScanInvoiceClient() {
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-

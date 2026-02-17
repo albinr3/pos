@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { INITIAL_STOCK_REASON } from "@/lib/inventory"
+import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
 
 // Tipos para los datos extraídos del OCR
 export type ExtractedProduct = {
@@ -18,6 +19,7 @@ export type ExtractedProduct = {
   // Datos de coincidencia con productos existentes
   matchedProductId: string | null
   matchedProductName: string | null
+  matchedProductItbisRateBp: number
   isNewProduct: boolean
   included: boolean // Para la revisión manual
 }
@@ -134,7 +136,7 @@ export async function processInvoiceImage(base64Image: string): Promise<Extracte
               isActive: true,
               sku: { equals: p.sku, mode: "insensitive" },
             },
-            select: { id: true, name: true },
+            select: { id: true, name: true, itbisRateBp: true },
           })
         }
 
@@ -146,7 +148,7 @@ export async function processInvoiceImage(base64Image: string): Promise<Extracte
               isActive: true,
               reference: { equals: p.reference, mode: "insensitive" },
             },
-            select: { id: true, name: true },
+            select: { id: true, name: true, itbisRateBp: true },
           })
         }
 
@@ -161,6 +163,7 @@ export async function processInvoiceImage(base64Image: string): Promise<Extracte
           unitPrice: unitPriceCents,
           matchedProductId: matchedProduct?.id || null,
           matchedProductName: matchedProduct?.name || null,
+          matchedProductItbisRateBp: matchedProduct?.itbisRateBp ?? 0,
           isNewProduct: !matchedProduct,
           included: true, // Por defecto incluido
         }
@@ -203,11 +206,13 @@ export async function createPurchaseFromOCR(input: {
     unitCostCents: number
     discountPercentBp?: number
     netCostCents?: number
+    saleMarginBp?: number
     // Para productos nuevos
     createNew: boolean
     sellPriceCents?: number // Precio de venta para productos nuevos
   }>
   updateProductCost?: boolean
+  updateProductPrice?: boolean
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
@@ -224,37 +229,73 @@ export async function createPurchaseFromOCR(input: {
       })
     }
 
-    // Calcular costo neto: (costo - descuento) * 1.18 (ITBIS)
-    function calculateNetCost(unitCostCents: number, discountPercentBp: number): number {
-      const discountRate = discountPercentBp / 10000
-      const costAfterDiscount = unitCostCents * (1 - discountRate)
-      const itbisRate = 0.18
-      const netCost = costAfterDiscount * (1 + itbisRate)
-      return Math.round(netCost)
-    }
+    const settings = await tx.companySettings.findFirst({
+      where: { accountId: currentUser.accountId },
+      select: { itbisRateBp: true, defaultProfitMarginBp: true },
+    })
+
+    const purchaseItbisRateBp = settings?.itbisRateBp ?? 1800
+    const defaultProfitMarginBp = settings?.defaultProfitMarginBp ?? 3000
+    const purchaseIncludesItbis = supplier ? (supplier.chargesItbis ?? false) : true
+    const updateProductPrice = input.updateProductPrice !== false
 
     // Crear productos nuevos primero
-    const productIds: string[] = []
-    const items: { productId: string; qty: number; unitCostCents: number; discountPercentBp: number; netCostCents: number }[] = []
+    const existingProductIds = input.products
+      .map((p) => p.productId)
+      .filter((id): id is string => typeof id === "string" && id.length > 0)
+
+    const existingProducts = await tx.product.findMany({
+      where: {
+        accountId: currentUser.accountId,
+        id: { in: existingProductIds },
+      },
+      select: { id: true, itbisRateBp: true },
+    })
+    const existingProductById = new Map(existingProducts.map((p) => [p.id, p]))
+
+    const items: {
+      productId: string
+      qty: number
+      unitCostCents: number
+      discountPercentBp: number
+      netCostCents: number
+      salePriceCents: number
+      saleMarginBp: number
+      purchaseIncludesItbis: boolean
+      appliedItbisRateBp: number
+    }[] = []
 
     for (const p of input.products) {
       let productId = p.productId
       const discountBp = p.discountPercentBp ?? (supplier as typeof supplier & { discountPercentBp?: number })?.discountPercentBp ?? 0
-      const netCostCents = p.netCostCents ?? calculateNetCost(p.unitCostCents, discountBp)
+      let productItbisRateBp = purchaseIncludesItbis ? purchaseItbisRateBp : 0
 
       // Verificar que el producto existente pertenece al account
       if (productId) {
-        const existingProduct = await tx.product.findFirst({
-          where: { accountId: currentUser.accountId, id: productId },
-          select: { id: true },
-        })
+        const existingProduct = existingProductById.get(productId)
         if (!existingProduct) {
           productId = null // Ignorar si no pertenece al account
+        } else {
+          productItbisRateBp = existingProduct.itbisRateBp
         }
       }
 
+      const pricing = resolvePurchaseSalePricing({
+        unitCostCents: p.unitCostCents,
+        discountPercentBp: discountBp,
+        purchaseIncludesItbis,
+        purchaseItbisRateBp,
+        productItbisRateBp,
+        defaultSaleMarginBp: defaultProfitMarginBp,
+        saleMarginBp: p.saleMarginBp,
+        salePriceCents: p.sellPriceCents,
+      })
+
       // Si es producto nuevo y se debe crear
       if (!productId && p.createNew) {
+        const newProductItbisRateBp = supplier
+          ? (supplier.chargesItbis ? purchaseItbisRateBp : 0)
+          : purchaseItbisRateBp
         // Obtener el siguiente productId de la secuencia
         const seq = await tx.productSequence.upsert({
           where: { accountId: currentUser.accountId },
@@ -269,8 +310,9 @@ export async function createPurchaseFromOCR(input: {
             name: p.description,
             sku: p.sku || null,
             reference: p.reference || null,
-            priceCents: p.sellPriceCents || Math.round(netCostCents * 1.3), // Margen del 30% por defecto
-            costCents: netCostCents, // Usar costo neto
+            priceCents: pricing.salePriceCents,
+            costCents: pricing.netCostCents,
+            itbisRateBp: newProductItbisRateBp,
             stock: 0, // Se actualizará con la compra
           },
           select: { id: true, createdAt: true },
@@ -298,13 +340,16 @@ export async function createPurchaseFromOCR(input: {
       }
 
       if (productId) {
-        productIds.push(productId)
         items.push({
           productId,
           qty: p.quantity,
           unitCostCents: p.unitCostCents,
           discountPercentBp: discountBp,
-          netCostCents: netCostCents,
+          netCostCents: pricing.netCostCents,
+          salePriceCents: pricing.salePriceCents,
+          saleMarginBp: pricing.saleMarginBp,
+          purchaseIncludesItbis: pricing.purchaseIncludesItbis,
+          appliedItbisRateBp: pricing.appliedItbisRateBp,
         })
       }
     }
@@ -328,6 +373,10 @@ export async function createPurchaseFromOCR(input: {
             unitCostCents: i.unitCostCents,
             discountPercentBp: i.discountPercentBp,
             netCostCents: i.netCostCents,
+            salePriceCents: i.salePriceCents,
+            saleMarginBp: i.saleMarginBp,
+            purchaseIncludesItbis: i.purchaseIncludesItbis,
+            appliedItbisRateBp: i.appliedItbisRateBp,
             lineTotalCents: i.qty * i.netCostCents,
           })),
         },
@@ -342,6 +391,7 @@ export async function createPurchaseFromOCR(input: {
         data: {
           stock: { increment: item.qty },
           ...(input.updateProductCost ? { costCents: item.netCostCents } : {}),
+          ...(updateProductPrice ? { priceCents: item.salePriceCents } : {}),
         },
       })
     }
@@ -374,9 +424,6 @@ export async function findProductByCode(code: string) {
     select: { id: true, name: true, sku: true, reference: true, costCents: true },
   })
 }
-
-
-
 
 
 

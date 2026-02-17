@@ -285,6 +285,7 @@ model CompanySettings {
 
   allowNegativeStock Boolean @default(false)
   itbisRateBp        Int     @default(1800)
+  defaultProfitMarginBp Int  @default(3000)
   showItbisOnReceipts Boolean @default(true)
 
   barcodeLabelSize  String @default("4x2")
@@ -758,6 +759,10 @@ model PurchaseItem {
   unitCostCents     Int
   discountPercentBp Int     @default(0)
   netCostCents      Int     @default(0)
+  salePriceCents    Int?
+  saleMarginBp      Int?
+  purchaseIncludesItbis Boolean?
+  appliedItbisRateBp Int?
   lineTotalCents    Int
 }
 

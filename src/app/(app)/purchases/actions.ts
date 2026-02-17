@@ -2,21 +2,12 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
+import { Prisma } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
-
-// Calcular costo neto: (costo - descuento) * (1 + ITBIS)
-function calculateNetCost(unitCostCents: number, discountPercentBp: number, chargesItbis: boolean): number {
-  // discountPercentBp está en basis points (1000 = 10%)
-  const discountRate = discountPercentBp / 10000
-  const costAfterDiscount = unitCostCents * (1 - discountRate)
-  // Si chargesItbis es true, aplicar 18%; si no, 0%
-  const itbisRate = chargesItbis ? 0.18 : 0
-  const netCost = costAfterDiscount * (1 + itbisRate)
-  return Math.round(netCost)
-}
+import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
 
 function toNumber(value: Decimal | number) {
   return value instanceof Decimal ? value.toNumber() : Number(value)
@@ -39,6 +30,74 @@ function normalizePurchase<T extends { items: { qty: Decimal | number; product?:
         : item.product,
     })),
   } as T
+}
+
+type PurchaseItemInput = {
+  productId: string
+  qty: number
+  unitCostCents: number
+  discountPercentBp?: number
+  salePriceCents?: number
+  saleMarginBp?: number
+  purchaseIncludesItbis?: boolean
+}
+
+async function buildPurchaseItems(params: {
+  tx: Prisma.TransactionClient
+  accountId: string
+  supplier: { discountPercentBp?: number; chargesItbis?: boolean } | null
+  items: PurchaseItemInput[]
+}) {
+  const settings = await params.tx.companySettings.findFirst({
+    where: { accountId: params.accountId },
+    select: { itbisRateBp: true, defaultProfitMarginBp: true },
+  })
+
+  const purchaseItbisRateBp = settings?.itbisRateBp ?? 1800
+  const defaultProfitMarginBp = settings?.defaultProfitMarginBp ?? 3000
+
+  const products = await params.tx.product.findMany({
+    where: { accountId: params.accountId, id: { in: params.items.map((i) => i.productId) } },
+    select: { id: true, itbisRateBp: true },
+  })
+  if (products.length !== params.items.length) {
+    throw new Error("Algunos productos no existen o no pertenecen a esta cuenta")
+  }
+
+  const productById = new Map(products.map((p: { id: string; itbisRateBp: number }) => [p.id, p]))
+
+  return params.items.map((item) => {
+    const product = productById.get(item.productId)
+    if (!product) {
+      throw new Error("Producto no encontrado")
+    }
+
+    const discountPercentBp = item.discountPercentBp ?? params.supplier?.discountPercentBp ?? 0
+    const purchaseIncludesItbis = params.supplier
+      ? (params.supplier.chargesItbis ?? false)
+      : (item.purchaseIncludesItbis ?? true)
+    const pricing = resolvePurchaseSalePricing({
+      unitCostCents: item.unitCostCents,
+      discountPercentBp,
+      purchaseIncludesItbis,
+      purchaseItbisRateBp,
+      productItbisRateBp: product.itbisRateBp,
+      defaultSaleMarginBp: defaultProfitMarginBp,
+      saleMarginBp: item.saleMarginBp,
+      salePriceCents: item.salePriceCents,
+    })
+
+    return {
+      ...item,
+      discountPercentBp: pricing.discountPercentBp,
+      netCostCents: pricing.netCostCents,
+      lineTotalCents: Math.round(pricing.netCostCents * item.qty),
+      salePriceCents: pricing.salePriceCents,
+      saleMarginBp: pricing.saleMarginBp,
+      purchaseIncludesItbis: pricing.purchaseIncludesItbis,
+      appliedItbisRateBp: pricing.appliedItbisRateBp,
+    }
+  })
 }
 
 export async function listPurchases() {
@@ -76,8 +135,9 @@ export async function createPurchase(input: {
   supplierId?: string | null
   supplierName?: string | null
   notes?: string | null
-  items: { productId: string; qty: number; unitCostCents: number; discountPercentBp?: number }[]
+  items: PurchaseItemInput[]
   updateProductCost?: boolean
+  updateProductPrice?: boolean
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
@@ -94,37 +154,15 @@ export async function createPurchase(input: {
       })
     }
 
-    // Verificar que todos los productos pertenecen al account
-    const products = await tx.product.findMany({
-      where: { accountId: currentUser.accountId, id: { in: input.items.map(i => i.productId) } },
-      select: { id: true },
-    })
-    if (products.length !== input.items.length) {
-      throw new Error("Algunos productos no existen o no pertenecen a esta cuenta")
-    }
-
-    // Calcular items con descuento e ITBIS
-    const itemsWithNetCost = input.items.map((item) => {
-      // Usar descuento del item o del proveedor
-      const discountBp = item.discountPercentBp ?? supplier?.discountPercentBp ?? 0
-      // Usar configuración de ITBIS del proveedor. Si no hay proveedor, se asume sin ITBIS o por defecto?
-      // El usuario pidió "si el proveedor tiene casilla marcada suma itbis".
-      // Si no hay proveedor, asumiremos QUE SI SUMA (comportamiento anterior) o QUE NO?
-      // "en compras SIEMPRE suma el itbis". Comportamiento legacy = true.
-      // Pero si quiero desmarcarlo, necesito un proveedor.
-      // ASUMIREMOS: Si hay supplier, usar supplier.chargesItbis. Si no hay supplier, usar TRUE (legacy logic).
-      const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
-
-      const netCostCents = calculateNetCost(item.unitCostCents, discountBp, chargesItbis)
-      return {
-        ...item,
-        discountPercentBp: discountBp,
-        netCostCents,
-        lineTotalCents: netCostCents * item.qty,
-      }
+    const itemsWithNetCost = await buildPurchaseItems({
+      tx,
+      accountId: currentUser.accountId,
+      supplier,
+      items: input.items,
     })
 
     const totalCents = itemsWithNetCost.reduce((s, i) => s + i.lineTotalCents, 0)
+    const updateProductPrice = input.updateProductPrice !== false
 
     const supplierName = input.supplierName?.trim() || supplier?.name || null
     const purchase = await tx.purchase.create({
@@ -141,6 +179,10 @@ export async function createPurchase(input: {
             unitCostCents: i.unitCostCents,
             discountPercentBp: i.discountPercentBp,
             netCostCents: i.netCostCents,
+            salePriceCents: i.salePriceCents,
+            saleMarginBp: i.saleMarginBp,
+            purchaseIncludesItbis: i.purchaseIncludesItbis,
+            appliedItbisRateBp: i.appliedItbisRateBp,
             lineTotalCents: i.lineTotalCents,
           })),
         },
@@ -161,6 +203,7 @@ export async function createPurchase(input: {
         totalCents,
         itemsCount: itemsWithNetCost.length,
         updateProductCost: input.updateProductCost === true,
+        updateProductPrice,
       },
     }, tx)
 
@@ -171,6 +214,7 @@ export async function createPurchase(input: {
           stock: { increment: item.qty },
           // Actualizar con el costo neto (después de descuento e ITBIS)
           ...(input.updateProductCost ? { costCents: item.netCostCents } : {}),
+          ...(updateProductPrice ? { priceCents: item.salePriceCents } : {}),
         },
       })
       if (updated.count === 0) throw new Error("Producto no encontrado")
@@ -201,7 +245,7 @@ export async function searchProductsForPurchase(query: string) {
         { reference: { contains: q, mode: "insensitive" } },
       ],
     },
-    select: { id: true, name: true, sku: true, reference: true, costCents: true, stock: true, purchaseUnit: true, saleUnit: true },
+    select: { id: true, name: true, sku: true, reference: true, costCents: true, priceCents: true, itbisRateBp: true, stock: true, purchaseUnit: true, saleUnit: true },
     orderBy: { name: "asc" },
     take: 20,
   })
@@ -223,7 +267,7 @@ export async function getPurchaseById(id: string) {
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, reference: true, costCents: true, stock: true, minStock: true, purchaseUnit: true, saleUnit: true },
+            select: { id: true, name: true, sku: true, reference: true, costCents: true, priceCents: true, itbisRateBp: true, stock: true, minStock: true, purchaseUnit: true, saleUnit: true },
           },
         },
       },
@@ -312,8 +356,9 @@ export async function updatePurchase(input: {
   supplierId?: string | null
   supplierName?: string | null
   notes?: string | null
-  items: { productId: string; qty: number; unitCostCents: number; discountPercentBp?: number }[]
+  items: PurchaseItemInput[]
   updateProductCost?: boolean
+  updateProductPrice?: boolean
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
@@ -337,15 +382,6 @@ export async function updatePurchase(input: {
       })
     }
 
-    // Verificar que todos los productos pertenecen al account
-    const products = await tx.product.findMany({
-      where: { accountId: currentUser.accountId, id: { in: input.items.map(i => i.productId) } },
-      select: { id: true },
-    })
-    if (products.length !== input.items.length) {
-      throw new Error("Algunos productos no existen o no pertenecen a esta cuenta")
-    }
-
     // Revertir el stock de los items anteriores
     for (const oldItem of existingPurchase.items) {
       const updated = await tx.product.updateMany({
@@ -365,21 +401,16 @@ export async function updatePurchase(input: {
       },
     })
 
-    // Calcular items con descuento e ITBIS
-    const itemsWithNetCost = input.items.map((item) => {
-      const discountBp = item.discountPercentBp ?? supplier?.discountPercentBp ?? 0
-      const chargesItbis = supplier ? (supplier.chargesItbis ?? false) : true
-      const netCostCents = calculateNetCost(item.unitCostCents, discountBp, chargesItbis)
-      return {
-        ...item,
-        discountPercentBp: discountBp,
-        netCostCents,
-        lineTotalCents: netCostCents * item.qty,
-      }
+    const itemsWithNetCost = await buildPurchaseItems({
+      tx,
+      accountId: currentUser.accountId,
+      supplier,
+      items: input.items,
     })
 
     // Calcular nuevo total
     const totalCents = itemsWithNetCost.reduce((s, i) => s + i.lineTotalCents, 0)
+    const updateProductPrice = input.updateProductPrice !== false
 
     // Actualizar la compra
     const supplierName = input.supplierName?.trim() || supplier?.name || null
@@ -401,6 +432,10 @@ export async function updatePurchase(input: {
         unitCostCents: i.unitCostCents,
         discountPercentBp: i.discountPercentBp,
         netCostCents: i.netCostCents,
+        salePriceCents: i.salePriceCents,
+        saleMarginBp: i.saleMarginBp,
+        purchaseIncludesItbis: i.purchaseIncludesItbis,
+        appliedItbisRateBp: i.appliedItbisRateBp,
         lineTotalCents: i.lineTotalCents,
       })),
     })
@@ -413,6 +448,7 @@ export async function updatePurchase(input: {
           stock: { increment: item.qty },
           // Actualizar con el costo neto (después de descuento e ITBIS)
           ...(input.updateProductCost ? { costCents: item.netCostCents } : {}),
+          ...(updateProductPrice ? { priceCents: item.salePriceCents } : {}),
         },
       })
       if (updated.count === 0) throw new Error("Producto no encontrado")
@@ -431,6 +467,7 @@ export async function updatePurchase(input: {
         totalCents,
         itemsCount: itemsWithNetCost.length,
         updateProductCost: input.updateProductCost === true,
+        updateProductPrice,
       },
     }, tx)
 
