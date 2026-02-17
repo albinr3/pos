@@ -435,6 +435,9 @@ export function AppShell({ children, billingState }: AppShellProps) {
                       <div className="hidden md:flex flex-col items-start">
                         <span className="text-sm font-medium">{user.name}</span>
                         <span className="text-xs text-muted-foreground">@{user.username}</span>
+                        {user.email ? (
+                          <span className="max-w-[220px] truncate text-[11px] text-muted-foreground">{user.email}</span>
+                        ) : null}
                       </div>
                     </Button>
                   </DropdownMenuTrigger>
@@ -443,6 +446,9 @@ export function AppShell({ children, billingState }: AppShellProps) {
                       <div className="flex flex-col gap-1">
                         <span>{user.name}</span>
                         <span className="text-xs font-normal text-muted-foreground">@{user.username}</span>
+                        {user.email ? (
+                          <span className="text-xs font-normal text-muted-foreground">{user.email}</span>
+                        ) : null}
                         {getRoleBadge(user.role, user.isOwner)}
                       </div>
                     </DropdownMenuLabel>
