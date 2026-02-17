@@ -25,6 +25,13 @@ type SaleCreateBody = {
   customerId?: string | null
 }
 
+type CartItemInput = {
+  productId: string
+  qty: number
+  unitPriceCents: number
+  wasPriceOverridden: boolean
+}
+
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message
   return fallback
@@ -98,12 +105,19 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as SaleCreateBody
 
     // Convertir items del formato móvil al formato esperado
-    const items = (body.items || []).map((item) => ({
-      productId: item.productId,
-      qty: item.quantity || item.qty,
+    const items: CartItemInput[] = (body.items || []).map((item) => ({
+      productId: String(item.productId || ""),
+      qty: Number(item.quantity ?? item.qty ?? 0),
       unitPriceCents: item.unitPriceCents || Math.round((item.price || 0) * 100),
       wasPriceOverridden: item.wasPriceOverridden || false,
     }))
+
+    if (!items.length) {
+      return NextResponse.json({ error: "La venta no tiene productos." }, { status: 400 })
+    }
+    if (items.some((item) => !item.productId || item.qty <= 0 || item.unitPriceCents <= 0)) {
+      return NextResponse.json({ error: "Hay items inválidos en la venta." }, { status: 400 })
+    }
 
     // Convertir shipping de pesos a centavos si viene como número decimal
     const shippingCents = body.shippingCents ?? (body.shipping ? Math.round(body.shipping * 100) : 0)
