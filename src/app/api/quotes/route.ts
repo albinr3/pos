@@ -19,6 +19,78 @@ function quoteCode(number: number) {
   return `COT-${number.toString().padStart(5, "0")}`
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
+function decimalToNumber(value: unknown): number {
+  if (typeof value === "number") return value
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toNumber" in value &&
+    typeof (value as { toNumber: () => number }).toNumber === "function"
+  ) {
+    return Number((value as { toNumber: () => number }).toNumber())
+  }
+  return Number(value || 0)
+}
+
+// GET /api/quotes - Listar cotizaciones
+export async function GET(request: NextRequest) {
+  try {
+    const user = await getCurrentUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+
+    const searchParams = request.nextUrl.searchParams
+    const query = (searchParams.get("query") || "").trim()
+
+    const quotes = await prisma.quote.findMany({
+      where: {
+        accountId: user.accountId,
+        ...(query
+          ? {
+              OR: [
+                { quoteCode: { contains: query, mode: "insensitive" } },
+                { customer: { name: { contains: query, mode: "insensitive" } } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { quotedAt: "desc" },
+      include: {
+        customer: { select: { id: true, name: true } },
+        items: { select: { id: true, qty: true } },
+      },
+      take: 300,
+    })
+
+    return NextResponse.json({
+      data: quotes.map((quote) => ({
+        id: quote.id,
+        quoteCode: quote.quoteCode,
+        quotedAt: quote.quotedAt.toISOString(),
+        validUntil: quote.validUntil ? quote.validUntil.toISOString() : null,
+        customerId: quote.customerId,
+        customerName: quote.customer?.name || null,
+        subtotalCents: quote.subtotalCents,
+        itbisCents: quote.itbisCents,
+        shippingCents: quote.shippingCents,
+        totalCents: quote.totalCents,
+        notes: quote.notes || null,
+        itemsCount: quote.items.length,
+        qtyTotal: quote.items.reduce((sum, item) => sum + decimalToNumber(item.qty), 0),
+      })),
+    })
+  } catch (error: unknown) {
+    console.error("Error en GET /api/quotes:", error)
+    return NextResponse.json({ error: getErrorMessage(error, "Error al listar cotizaciones") }, { status: 500 })
+  }
+}
+
 // POST /api/quotes - Crear cotización
 export async function POST(request: NextRequest) {
   try {
@@ -27,10 +99,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
 
-    const body = await request.json()
+    const body = await request.json() as {
+      items?: Array<{
+        productId?: string
+        qty?: number
+        quantity?: number
+        unitPriceCents?: number
+        price?: number
+        wasPriceOverridden?: boolean
+      }>
+      shippingCents?: number
+      shipping?: number
+      customerId?: string | null
+      validUntil?: string | null
+      notes?: string | null
+    }
 
-    const items: QuoteItemInput[] = (body.items || []).map((item: any) => ({
-      productId: item.productId,
+    const items: QuoteItemInput[] = (body.items || []).map((item) => ({
+      productId: String(item.productId || ""),
       qty: Number(item.qty ?? item.quantity ?? 0),
       unitPriceCents: Number(item.unitPriceCents ?? Math.round((item.price || 0) * 100)),
       wasPriceOverridden: Boolean(item.wasPriceOverridden || false),
@@ -136,9 +222,9 @@ export async function POST(request: NextRequest) {
       },
       { status: 201 }
     )
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en POST /api/quotes:", error)
-    return NextResponse.json({ error: error.message || "Error al crear cotización" }, { status: 500 })
+    return NextResponse.json({ error: getErrorMessage(error, "Error al crear cotización") }, { status: 500 })
   }
 }
 

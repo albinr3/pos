@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
-import { FileText, Trash2, Search } from "lucide-react"
+import { FileText, Trash2, Search, Pencil } from "lucide-react"
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
@@ -137,6 +137,11 @@ export function QuotesListClient() {
                       <TableCell className="text-right">{formatRD(quote.totalCents)}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          <Button asChild className="bg-amber-500 hover:bg-amber-600 text-white" size="sm" title="Editar">
+                            <Link href={`/quotes?edit=${quote.id}`}>
+                              <Pencil className="mr-2 h-4 w-4" /> Editar
+                            </Link>
+                          </Button>
                           <Button asChild className="bg-blue-500 hover:bg-blue-600 text-white" size="sm" title="Ver PDF">
                             <Link href={`/quotes/${quote.quoteCode}`} target="_blank">
                               <FileText className="mr-2 h-4 w-4" /> Ver PDF

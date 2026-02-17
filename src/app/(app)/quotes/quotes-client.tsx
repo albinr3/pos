@@ -1,8 +1,8 @@
 "use client"
 
 import { useEffect, useMemo, useState, useTransition } from "react"
-import { Plus, Search, Trash2, FileText, Grid3x3, List } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { Plus, Search, Trash2, Grid3x3, List } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
@@ -17,7 +17,7 @@ import { toast } from "@/hooks/use-toast"
 
 import { getCurrentUserStub } from "@/lib/auth-stub"
 
-import { createQuote, listCustomers, searchProducts } from "./actions"
+import { createQuote, getQuoteById, listCustomers, searchProducts, updateQuote } from "./actions"
 import { listAllProductsForSale } from "../sales/actions"
 
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
@@ -37,10 +37,16 @@ type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
 
 export function QuotesClient() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const editQuoteId = searchParams.get("edit")
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<ProductResult[]>([])
   const [isSearching, startSearch] = useTransition()
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list")
+  const [viewMode, setViewMode] = useState<"list" | "grid">(() => {
+    if (typeof window === "undefined") return "list"
+    const saved = localStorage.getItem("quotesViewMode")
+    return saved === "grid" ? "grid" : "list"
+  })
   const [allProducts, setAllProducts] = useState<ProductResult[]>([])
   const [isLoadingProducts, startLoadingProducts] = useTransition()
 
@@ -53,15 +59,59 @@ export function QuotesClient() {
   const [notes, setNotes] = useState("")
   const user = useMemo(() => getCurrentUserStub(), [])
   const [isSaving, startSave] = useTransition()
+  const [isLoadingQuote, startLoadingQuote] = useTransition()
+  const [editingQuoteCode, setEditingQuoteCode] = useState<string | null>(null)
+
+  function resetForm() {
+    setCustomerId("generic")
+    setCart([])
+    setShippingInput("")
+    setValidUntilInput("")
+    setNotes("")
+    setQuery("")
+    setResults([])
+  }
 
   useEffect(() => {
     listCustomers().then(setCustomers).catch(() => {})
-    // Cargar preferencia de vista desde localStorage
-    const savedViewMode = localStorage.getItem("quotesViewMode") as "list" | "grid" | null
-    if (savedViewMode) {
-      setViewMode(savedViewMode)
-    }
   }, [])
+
+  useEffect(() => {
+    if (!editQuoteId) return
+
+    startLoadingQuote(async () => {
+      try {
+        const quote = await getQuoteById(editQuoteId)
+        if (!quote) {
+          toast({ title: "Cotización no encontrada", description: "No se pudo cargar la cotización para editar" })
+          router.replace("/quotes")
+          return
+        }
+
+        setCustomerId(quote.customerId ?? "generic")
+        setCart(
+          quote.items.map((item) => ({
+            productId: item.productId,
+            name: item.product?.name ?? "Producto",
+            sku: item.product?.sku ?? null,
+            reference: item.product?.reference ?? null,
+            stock: item.product?.stock ?? 0,
+            qty: item.qty,
+            unitPriceCents: item.unitPriceCents,
+            wasPriceOverridden: item.wasPriceOverridden,
+          }))
+        )
+        setShippingInput(quote.shippingCents > 0 ? (quote.shippingCents / 100).toFixed(2) : "")
+        setValidUntilInput(quote.validUntil ? new Date(quote.validUntil).toISOString().slice(0, 10) : "")
+        setNotes(quote.notes ?? "")
+        setQuery("")
+        setResults([])
+        setEditingQuoteCode(quote.quoteCode)
+      } catch {
+        toast({ title: "Error", description: "No se pudo cargar la cotización para editar" })
+      }
+    })
+  }, [editQuoteId, router])
 
   useEffect(() => {
     // Cargar todos los productos cuando se cambia a vista de grid
@@ -144,6 +194,34 @@ export function QuotesClient() {
       try {
         const validUntil = validUntilInput ? new Date(validUntilInput) : null
 
+        if (editQuoteId) {
+          await updateQuote({
+            id: editQuoteId,
+            customerId: customerId === "generic" ? null : customerId,
+            items: cart.map((c) => ({
+              productId: c.productId,
+              qty: c.qty,
+              unitPriceCents: c.unitPriceCents,
+              wasPriceOverridden: c.wasPriceOverridden,
+            })),
+            shippingCents: shippingCents > 0 ? shippingCents : undefined,
+            validUntil,
+            notes: notes || undefined,
+          })
+
+          toast({
+            title: "Cotización actualizada",
+            description: editingQuoteCode ? `Cotización ${editingQuoteCode}` : "Cambios guardados",
+          })
+
+          if (editingQuoteCode) {
+            router.push(`/quotes/${editingQuoteCode}`)
+          } else {
+            router.push("/quotes/list")
+          }
+          return
+        }
+
         const quote = await createQuote({
           customerId: customerId === "generic" ? null : customerId,
           items: cart.map((c) => ({
@@ -153,19 +231,12 @@ export function QuotesClient() {
             wasPriceOverridden: c.wasPriceOverridden,
           })),
           shippingCents: shippingCents > 0 ? shippingCents : undefined,
-          validUntil: validUntil,
+          validUntil,
           notes: notes || undefined,
         })
 
         toast({ title: "Cotización guardada", description: `Cotización ${quote.quoteCode}` })
-        setCart([])
-        setShippingInput("")
-        setValidUntilInput("")
-        setNotes("")
-        setQuery("")
-        setResults([])
-
-        // Redirigir a la página de visualización/PDF
+        resetForm()
         router.push(`/quotes/${quote.quoteCode}`)
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Error guardando cotización"
@@ -185,8 +256,24 @@ export function QuotesClient() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle>Nueva Cotización</CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle>{editQuoteId ? `Editando ${editingQuoteCode ?? "cotización"}` : "Nueva Cotización"}</CardTitle>
+                {isLoadingQuote && <span className="text-sm text-muted-foreground">Cargando…</span>}
+              </div>
               <div className="flex items-center gap-3">
+                {editQuoteId && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      resetForm()
+                      setEditingQuoteCode(null)
+                      router.push("/quotes")
+                    }}
+                  >
+                    Cancelar edición
+                  </Button>
+                )}
                 <div className="flex items-center gap-2">
                   <List className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">Lista</span>
@@ -600,10 +687,10 @@ export function QuotesClient() {
               type="button"
               className="w-full"
               size="lg"
-              disabled={isSaving || cart.length === 0}
+              disabled={isSaving || isLoadingQuote || cart.length === 0}
               onClick={onSave}
             >
-              {isSaving ? "Guardando…" : "Guardar y generar PDF"}
+              {isSaving ? "Guardando…" : editQuoteId ? "Guardar cambios" : "Guardar y generar PDF"}
             </Button>
             <div className="text-xs text-muted-foreground">
               Precios incluyen ITBIS. Se generará un PDF para compartir.
