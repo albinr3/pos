@@ -215,7 +215,7 @@ export function QuotesClient() {
           })
 
           if (editingQuoteCode) {
-            router.push(`/quotes/${editingQuoteCode}`)
+            router.replace(`/quotes/${editingQuoteCode}`)
           } else {
             router.push("/quotes/list")
           }
