@@ -23,7 +23,7 @@ export function useOnlineStatus() {
     let pingInFlight = false
     // Ping al health-check para detectar conectividad real.
     const HEALTH_CHECK_URL = "/api/health-check"
-    const PING_INTERVAL_MS = 3000
+    const PING_INTERVAL_MS = 30000
     const PING_TIMEOUT_MS = 2000
 
     const hasOfflineParam = () => {
