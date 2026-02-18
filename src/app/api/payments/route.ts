@@ -2,9 +2,107 @@ import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { addPayment } from "@/app/(app)/ar/actions"
 import { PaymentMethod } from "@prisma/client"
+import { prisma } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Error inesperado"
+}
+
+// GET /api/payments - Listar recibos de pago
+export async function GET(request: NextRequest) {
+  try {
+    const user = await getCurrentUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+
+    const searchParams = request.nextUrl.searchParams
+    const query = (searchParams.get("query") || "").trim()
+    const take = searchParams.get("take") ? Math.min(500, Math.max(1, parseInt(searchParams.get("take")!, 10))) : 200
+
+    const payments = await prisma.payment.findMany({
+      where: {
+        ar: {
+          sale: {
+            accountId: user.accountId,
+          },
+        },
+        ...(query
+          ? {
+              OR: [
+                { receiptCode: { contains: query, mode: "insensitive" } },
+                { note: { contains: query, mode: "insensitive" } },
+                { ar: { customer: { name: { contains: query, mode: "insensitive" } } } },
+                { ar: { sale: { invoiceCode: { contains: query, mode: "insensitive" } } } },
+              ],
+            }
+          : {}),
+      },
+      orderBy: { paidAt: "desc" },
+      include: {
+        ar: {
+          include: {
+            customer: { select: { id: true, name: true, phone: true } },
+            sale: { select: { id: true, invoiceCode: true, cancelledAt: true } },
+          },
+        },
+        user: { select: { id: true, username: true, name: true } },
+        cancelledUser: { select: { id: true, username: true, name: true } },
+      },
+      take,
+    })
+
+    return NextResponse.json({
+      data: payments.map((p) => ({
+        id: p.id,
+        arId: p.arId,
+        receiptNumber: p.receiptNumber,
+        receiptCode: p.receiptCode,
+        amountCents: p.amountCents,
+        method: p.method,
+        note: p.note,
+        paidAt: p.paidAt.toISOString(),
+        createdAt: p.createdAt.toISOString(),
+        cancelledAt: p.cancelledAt ? p.cancelledAt.toISOString() : null,
+        cancelledBy: p.cancelledBy || null,
+        customer: p.ar?.customer
+          ? {
+              id: p.ar.customer.id,
+              name: p.ar.customer.name,
+              phone: p.ar.customer.phone,
+            }
+          : null,
+        sale: p.ar?.sale
+          ? {
+              id: p.ar.sale.id,
+              invoiceCode: p.ar.sale.invoiceCode,
+              cancelledAt: p.ar.sale.cancelledAt ? p.ar.sale.cancelledAt.toISOString() : null,
+            }
+          : null,
+        user: p.user
+          ? {
+              id: p.user.id,
+              username: p.user.username,
+              name: p.user.name,
+            }
+          : null,
+        cancelledUser: p.cancelledUser
+          ? {
+              id: p.cancelledUser.id,
+              username: p.cancelledUser.username,
+              name: p.cancelledUser.name,
+            }
+          : null,
+      })),
+    })
+  } catch (error: unknown) {
+    console.error("Error en GET /api/payments:", error)
+    return NextResponse.json({ error: getErrorMessage(error) || "Error al obtener pagos" }, { status: 500 })
+  }
+}
 
 // POST /api/payments - Registrar pago
 export async function POST(request: NextRequest) {
@@ -86,10 +184,10 @@ export async function POST(request: NextRequest) {
       appliedCents: paymentResult.appliedCents,
       newBalanceCents: paymentResult.newBalanceCents,
     }, { status: 201 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en POST /api/payments:", error)
     return NextResponse.json(
-      { error: error.message || "Error al registrar pago" },
+      { error: getErrorMessage(error) || "Error al registrar pago" },
       { status: 500 }
     )
   }
