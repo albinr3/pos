@@ -73,13 +73,23 @@ export function PurchasesListClient() {
 
   const selectedSupplier = supplierId ? suppliers.find((s) => s.id === supplierId) ?? null : null
 
-  function recalcCartItem(item: CartItem, overrides?: Partial<CartItem> & { salePriceCents?: number; saleMarginBp?: number }): CartItem {
+  function getPurchaseItbisRateBp(supplier: Supplier | null) {
+    if (supplier?.chargesItbis) return supplier.itbisRateBp ?? itbisRateBp
+    return itbisRateBp
+  }
+
+  function recalcCartItem(
+    item: CartItem,
+    overrides?: Partial<CartItem> & { salePriceCents?: number; saleMarginBp?: number },
+    purchaseItbisRateOverride?: number
+  ): CartItem {
     const nextItem = { ...item, ...overrides }
+    const purchaseItbisRateBp = purchaseItbisRateOverride ?? getPurchaseItbisRateBp(selectedSupplier)
     const pricing = resolvePurchaseSalePricing({
       unitCostCents: nextItem.unitCostCents,
       discountPercentBp: nextItem.discountPercentBp,
       purchaseIncludesItbis: nextItem.purchaseIncludesItbis,
-      purchaseItbisRateBp: itbisRateBp,
+      purchaseItbisRateBp,
       productItbisRateBp: nextItem.productItbisRateBp,
       defaultSaleMarginBp: defaultProfitMarginBp,
       saleMarginBp: overrides && "salePriceCents" in overrides ? undefined : nextItem.saleMarginBp,
@@ -151,12 +161,13 @@ export function PurchasesListClient() {
     if (!supplier) return
 
     setSupplierName(supplier.name)
+    const purchaseItbisForSupplier = getPurchaseItbisRateBp(supplier)
     setCart((prev) =>
       prev.map((item) =>
         recalcCartItem(item, {
           discountPercentBp: supplier.discountPercentBp,
           purchaseIncludesItbis: supplier.chargesItbis ?? false,
-        })
+        }, purchaseItbisForSupplier)
       )
     )
   }
@@ -174,11 +185,12 @@ export function PurchasesListClient() {
       )
 
       const mappedCart: CartItem[] = purchase.items.map((item) => {
+        const purchaseItbisForSupplier = getPurchaseItbisRateBp(matchedSupplier ?? null)
         const pricing = resolvePurchaseSalePricing({
           unitCostCents: item.unitCostCents,
           discountPercentBp: item.discountPercentBp,
           purchaseIncludesItbis: item.purchaseIncludesItbis ?? true,
-          purchaseItbisRateBp: itbisRateBp,
+          purchaseItbisRateBp: purchaseItbisForSupplier,
           productItbisRateBp: item.product.itbisRateBp,
           defaultSaleMarginBp: defaultProfitMarginBp,
           saleMarginBp: item.saleMarginBp ?? undefined,
@@ -227,11 +239,12 @@ export function PurchasesListClient() {
 
       const discountPercentBp = selectedSupplier?.discountPercentBp ?? 0
       const purchaseIncludesItbis = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : true
+      const purchaseItbisRateBp = getPurchaseItbisRateBp(selectedSupplier)
       const pricing = resolvePurchaseSalePricing({
         unitCostCents: p.costCents ?? 0,
         discountPercentBp,
         purchaseIncludesItbis,
-        purchaseItbisRateBp: itbisRateBp,
+        purchaseItbisRateBp,
         productItbisRateBp: p.itbisRateBp ?? 0,
         defaultSaleMarginBp: defaultProfitMarginBp,
       })

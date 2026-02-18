@@ -32,6 +32,7 @@ export function SuppliersClient() {
   const [notes, setNotes] = useState("")
   const [discountPercent, setDiscountPercent] = useState("")
   const [chargesItbis, setChargesItbis] = useState(false)
+  const [itbisPercent, setItbisPercent] = useState("")
   const [isSaving, startSaving] = useTransition()
 
   function refresh(q?: string) {
@@ -66,6 +67,7 @@ export function SuppliersClient() {
     setNotes(x?.notes ?? "")
     setDiscountPercent(x?.discountPercentBp ? (x.discountPercentBp / 100).toFixed(2) : "")
     setChargesItbis(x?.chargesItbis ?? false)
+    setItbisPercent(x?.itbisRateBp ? (x.itbisRateBp / 100).toFixed(2) : "18.00")
   }
 
   const title = useMemo(() => (editing ? "Editar proveedor" : "Nuevo proveedor"), [editing])
@@ -79,6 +81,15 @@ export function SuppliersClient() {
     startSaving(async () => {
       try {
         const discountBp = discountPercent ? Math.round(parseFloat(discountPercent) * 100) : 0
+        const parsedItbisPercent = itbisPercent ? parseFloat(itbisPercent) : NaN
+        if (chargesItbis && (!Number.isFinite(parsedItbisPercent) || parsedItbisPercent < 0 || parsedItbisPercent > 100)) {
+          toast({
+            title: "ITBIS inválido",
+            description: "Ingresa un porcentaje de ITBIS entre 0 y 100.",
+            variant: "destructive",
+          })
+          return
+        }
         await upsertSupplier({
           id: editing?.id,
           name,
@@ -89,6 +100,7 @@ export function SuppliersClient() {
           notes: notes || null,
           discountPercentBp: discountBp,
           chargesItbis,
+          itbisRateBp: chargesItbis ? Math.round(parsedItbisPercent * 100) : null,
         })
         toast({ title: "Guardado", description: "Proveedor actualizado" })
         setOpen(false)
@@ -178,15 +190,35 @@ export function SuppliersClient() {
                     type="checkbox"
                     id="charges-itbis"
                     checked={chargesItbis}
-                    onChange={(e) => setChargesItbis(e.target.checked)}
+                    onChange={(e) => {
+                      const checked = e.target.checked
+                      setChargesItbis(checked)
+                      if (checked && !itbisPercent) {
+                        setItbisPercent("18.00")
+                      }
+                    }}
                     className="h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                   />
                   <Label htmlFor="charges-itbis" className="cursor-pointer">
                     Sumar ITBIS en compras
                   </Label>
                 </div>
-                <div className="text-xs text-muted-foreground -mt-3 ml-6">
-                  Si se marca, se sumará el 18% de ITBIS al costo de los productos de este proveedor.
+                {chargesItbis && (
+                  <div className="grid gap-2 ml-6">
+                    <Label>ITBIS del proveedor (%)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={itbisPercent}
+                      onChange={(e) => setItbisPercent(e.target.value)}
+                      placeholder="Ej: 18"
+                    />
+                  </div>
+                )}
+                <div className="text-xs text-muted-foreground -mt-2 ml-6">
+                  Si se marca, el cálculo de compras usará el porcentaje ITBIS definido para este proveedor.
                 </div>
 
                 <div className="grid gap-2">
@@ -217,6 +249,7 @@ export function SuppliersClient() {
                   <TableHead>Teléfono</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Descuento</TableHead>
+                  <TableHead>ITBIS compras</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -228,6 +261,7 @@ export function SuppliersClient() {
                     <TableCell>{s.phone ?? "—"}</TableCell>
                     <TableCell>{s.email ?? "—"}</TableCell>
                     <TableCell>{s.discountPercentBp ? `${(s.discountPercentBp / 100).toFixed(2)}%` : "—"}</TableCell>
+                    <TableCell>{s.chargesItbis ? `${((s.itbisRateBp ?? 1800) / 100).toFixed(2)}%` : "No"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button
@@ -258,7 +292,7 @@ export function SuppliersClient() {
 
                 {!isLoading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-12">
+                    <TableCell colSpan={7} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
                           src="/lupa.png"
@@ -283,7 +317,6 @@ export function SuppliersClient() {
     </div>
   )
 }
-
 
 
 

@@ -50,6 +50,7 @@ export async function upsertSupplier(input: {
   notes?: string | null
   discountPercentBp?: number
   chargesItbis?: boolean
+  itbisRateBp?: number | null
 }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -61,6 +62,10 @@ export async function upsertSupplier(input: {
   const email = input.email ? sanitizeString(input.email) : null
   const address = input.address ? sanitizeString(input.address) : null
   const notes = input.notes ? sanitizeString(input.notes) : null
+  const chargesItbis = Boolean(input.chargesItbis)
+  const normalizedItbisRateBp = chargesItbis
+    ? Math.min(10000, Math.max(0, Math.round(input.itbisRateBp ?? 1800)))
+    : null
 
   if (input.id) {
     const existing = await prisma.supplier.findFirst({
@@ -78,7 +83,8 @@ export async function upsertSupplier(input: {
         address,
         notes,
         discountPercentBp: input.discountPercentBp ?? 0,
-        chargesItbis: input.chargesItbis ?? false,
+        chargesItbis,
+        itbisRateBp: normalizedItbisRateBp,
       },
     })
     if (updated.count === 0) throw new Error("Proveedor no encontrado")
@@ -98,7 +104,8 @@ export async function upsertSupplier(input: {
         email,
         address,
         discountPercentBp: input.discountPercentBp ?? 0,
-        chargesItbis: input.chargesItbis ?? false,
+        chargesItbis,
+        itbisRateBp: normalizedItbisRateBp,
       },
     })
   } else {
@@ -112,7 +119,8 @@ export async function upsertSupplier(input: {
         address,
         notes,
         discountPercentBp: input.discountPercentBp ?? 0,
-        chargesItbis: input.chargesItbis ?? false,
+        chargesItbis,
+        itbisRateBp: normalizedItbisRateBp,
       },
     })
 
@@ -131,7 +139,8 @@ export async function upsertSupplier(input: {
         email,
         address,
         discountPercentBp: input.discountPercentBp ?? 0,
-        chargesItbis: input.chargesItbis ?? false,
+        chargesItbis,
+        itbisRateBp: normalizedItbisRateBp,
       },
     })
   }

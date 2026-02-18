@@ -102,16 +102,23 @@ export function PurchasesClient() {
 
   const selectedSupplier = supplierId ? suppliers.find((s) => s.id === supplierId) ?? null : null
 
+  function getPurchaseItbisRateBp(supplier: Supplier | null) {
+    if (supplier?.chargesItbis) return supplier.itbisRateBp ?? itbisRateBp
+    return itbisRateBp
+  }
+
   function recalcCartItem(
     item: CartItem,
-    overrides?: Partial<CartItem> & { salePriceCents?: number; saleMarginBp?: number }
+    overrides?: Partial<CartItem> & { salePriceCents?: number; saleMarginBp?: number },
+    purchaseItbisRateOverride?: number
   ): CartItem {
     const nextItem = { ...item, ...overrides }
+    const purchaseItbisRateBp = purchaseItbisRateOverride ?? getPurchaseItbisRateBp(selectedSupplier)
     const pricing = calculatePricing({
       unitCostCents: nextItem.unitCostCents,
       discountPercentBp: nextItem.discountPercentBp,
       purchaseIncludesItbis: nextItem.purchaseIncludesItbis,
-      purchaseItbisRateBp: itbisRateBp,
+      purchaseItbisRateBp,
       productItbisRateBp: nextItem.productItbisRateBp,
       defaultMarginBp: defaultProfitMarginBp,
       saleMarginBp: overrides && "salePriceCents" in overrides ? undefined : nextItem.saleMarginBp,
@@ -145,12 +152,13 @@ export function PurchasesClient() {
 
     if (!nextSupplierId) {
       setSupplierName("")
+      const purchaseItbisForSupplier = itbisRateBp
       setCart((prev) =>
         prev.map((item) =>
           recalcCartItem(item, {
             discountPercentBp: 0,
             purchaseIncludesItbis: true,
-          })
+          }, purchaseItbisForSupplier)
         )
       )
       return
@@ -160,12 +168,13 @@ export function PurchasesClient() {
     if (!supplier) return
 
     setSupplierName(supplier.name)
+    const purchaseItbisForSupplier = getPurchaseItbisRateBp(supplier)
     setCart((prev) =>
       prev.map((item) =>
         recalcCartItem(item, {
           discountPercentBp: supplier.discountPercentBp,
           purchaseIncludesItbis: supplier.chargesItbis ?? false,
-        })
+        }, purchaseItbisForSupplier)
       )
     )
   }
@@ -200,11 +209,12 @@ export function PurchasesClient() {
       const discountBp = selectedSupplier?.discountPercentBp ?? 0
       const unitCostCents = p.costCents ?? 0
       const purchaseIncludes = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : true
+      const purchaseItbisRateBp = getPurchaseItbisRateBp(selectedSupplier)
       const pricing = calculatePricing({
         unitCostCents,
         discountPercentBp: discountBp,
         purchaseIncludesItbis: purchaseIncludes,
-        purchaseItbisRateBp: itbisRateBp,
+        purchaseItbisRateBp,
         productItbisRateBp: p.itbisRateBp ?? 0,
         defaultMarginBp: defaultProfitMarginBp,
       })
@@ -227,6 +237,52 @@ export function PurchasesClient() {
           appliedItbisRateBp: pricing.appliedItbisRateBp,
         },
       ]
+    })
+  }
+
+  function normalizeCode(value: string) {
+    return value.trim().toLowerCase()
+  }
+
+  function findExactSkuMatch(items: ProductResult[], value: string) {
+    const normalized = normalizeCode(value)
+    return items.find((item) => {
+      const sku = item.sku ? normalizeCode(item.sku) : null
+      return sku === normalized
+    })
+  }
+
+  function handleSearchSubmit() {
+    const q = query.trim()
+    if (!q) return
+
+    startSearch(async () => {
+      try {
+        const r = await searchProductsForPurchase(q)
+        setResults(r)
+
+        const selected = findExactSkuMatch(r, q)
+
+        if (selected) {
+          add(selected)
+          setQuery("")
+          setResults([])
+          toast({ title: "Producto agregado", description: selected.name })
+          return
+        }
+
+        if (r.length === 0) {
+          toast({ title: "Producto no encontrado", description: `No hay coincidencias para: ${q}` })
+          return
+        }
+
+        toast({
+          title: "SKU no coincide exactamente",
+          description: "El autoagregado con escáner solo funciona con SKU exacto.",
+        })
+      } catch {
+        toast({ title: "Error", description: "No se pudo buscar el producto." })
+      }
     })
   }
 
@@ -350,7 +406,18 @@ export function PurchasesClient() {
               <Label>Buscar producto (descripción / código / referencia)</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
-                <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Ej: alfombra / 12345 / REF-01" />
+                <Input
+                  className="pl-10"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      handleSearchSubmit()
+                    }
+                  }}
+                  placeholder="Ej: alfombra / 12345 / REF-01"
+                />
               </div>
               {query.trim() && (
                 <div className="rounded-md border">

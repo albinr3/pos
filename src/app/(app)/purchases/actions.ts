@@ -45,7 +45,7 @@ type PurchaseItemInput = {
 async function buildPurchaseItems(params: {
   tx: Prisma.TransactionClient
   accountId: string
-  supplier: { discountPercentBp?: number; chargesItbis?: boolean } | null
+  supplier: { discountPercentBp?: number; chargesItbis?: boolean; itbisRateBp?: number | null } | null
   items: PurchaseItemInput[]
 }) {
   const settings = await params.tx.companySettings.findFirst({
@@ -55,6 +55,9 @@ async function buildPurchaseItems(params: {
 
   const purchaseItbisRateBp = settings?.itbisRateBp ?? 1800
   const defaultProfitMarginBp = settings?.defaultProfitMarginBp ?? 3000
+  const supplierPurchaseItbisRateBp = params.supplier?.chargesItbis
+    ? (params.supplier.itbisRateBp ?? purchaseItbisRateBp)
+    : purchaseItbisRateBp
 
   const products = await params.tx.product.findMany({
     where: { accountId: params.accountId, id: { in: params.items.map((i) => i.productId) } },
@@ -80,7 +83,7 @@ async function buildPurchaseItems(params: {
       unitCostCents: item.unitCostCents,
       discountPercentBp,
       purchaseIncludesItbis,
-      purchaseItbisRateBp,
+      purchaseItbisRateBp: supplierPurchaseItbisRateBp,
       productItbisRateBp: product.itbisRateBp,
       defaultSaleMarginBp: defaultProfitMarginBp,
       saleMarginBp: item.saleMarginBp,

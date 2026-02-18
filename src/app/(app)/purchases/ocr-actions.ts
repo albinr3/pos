@@ -237,6 +237,9 @@ export async function createPurchaseFromOCR(input: {
     const purchaseItbisRateBp = settings?.itbisRateBp ?? 1800
     const defaultProfitMarginBp = settings?.defaultProfitMarginBp ?? 3000
     const purchaseIncludesItbis = supplier ? (supplier.chargesItbis ?? false) : true
+    const supplierPurchaseItbisRateBp = supplier?.chargesItbis
+      ? (supplier.itbisRateBp ?? purchaseItbisRateBp)
+      : purchaseItbisRateBp
     const updateProductPrice = input.updateProductPrice !== false
 
     // Crear productos nuevos primero
@@ -268,7 +271,7 @@ export async function createPurchaseFromOCR(input: {
     for (const p of input.products) {
       let productId = p.productId
       const discountBp = p.discountPercentBp ?? (supplier as typeof supplier & { discountPercentBp?: number })?.discountPercentBp ?? 0
-      let productItbisRateBp = purchaseIncludesItbis ? purchaseItbisRateBp : 0
+      let productItbisRateBp = purchaseIncludesItbis ? supplierPurchaseItbisRateBp : 0
 
       // Verificar que el producto existente pertenece al account
       if (productId) {
@@ -284,7 +287,7 @@ export async function createPurchaseFromOCR(input: {
         unitCostCents: p.unitCostCents,
         discountPercentBp: discountBp,
         purchaseIncludesItbis,
-        purchaseItbisRateBp,
+        purchaseItbisRateBp: supplierPurchaseItbisRateBp,
         productItbisRateBp,
         defaultSaleMarginBp: defaultProfitMarginBp,
         saleMarginBp: p.saleMarginBp,
@@ -294,7 +297,7 @@ export async function createPurchaseFromOCR(input: {
       // Si es producto nuevo y se debe crear
       if (!productId && p.createNew) {
         const newProductItbisRateBp = supplier
-          ? (supplier.chargesItbis ? purchaseItbisRateBp : 0)
+          ? (supplier.chargesItbis ? supplierPurchaseItbisRateBp : 0)
           : purchaseItbisRateBp
         // Obtener el siguiente productId de la secuencia
         const seq = await tx.productSequence.upsert({

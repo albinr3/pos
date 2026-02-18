@@ -59,6 +59,11 @@ export function ScanInvoiceClient() {
   const [step, setStep] = useState<"capture" | "review">("capture")
   const selectedSupplier = supplierId ? suppliers.find((s) => s.id === supplierId) ?? null : null
 
+  function getPurchaseItbisRateBp() {
+    if (selectedSupplier?.chargesItbis) return selectedSupplier.itbisRateBp ?? itbisRateBp
+    return itbisRateBp
+  }
+
   // Cargar proveedores al montar
   useEffect(() => {
     Promise.all([getAllSuppliers(), getSettings()])
@@ -72,17 +77,18 @@ export function ScanInvoiceClient() {
 
   function resolveLinePricing(product: ReviewProduct, discountBp: number, overrides?: { saleMarginBp?: number; salePriceCents?: number }) {
     const purchaseIncludesItbis = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : true
+    const purchaseItbisRateBp = getPurchaseItbisRateBp()
     const saleItbisRateBp = product.matchedProductItbisRateBp > 0
       ? product.matchedProductItbisRateBp
       : (product.isNewProduct
-        ? (selectedSupplier ? (selectedSupplier.chargesItbis ? itbisRateBp : 0) : itbisRateBp)
+        ? (selectedSupplier ? (selectedSupplier.chargesItbis ? purchaseItbisRateBp : 0) : purchaseItbisRateBp)
         : 0)
 
     return resolvePurchaseSalePricing({
       unitCostCents: product.unitPrice,
       discountPercentBp: discountBp,
       purchaseIncludesItbis,
-      purchaseItbisRateBp: itbisRateBp,
+      purchaseItbisRateBp,
       productItbisRateBp: saleItbisRateBp,
       defaultSaleMarginBp: defaultProfitMarginBp,
       saleMarginBp: overrides && "salePriceCents" in overrides ? undefined : (overrides?.saleMarginBp ?? product.saleMarginBp),

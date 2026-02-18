@@ -24,7 +24,7 @@ function toNumber(value: unknown): number {
 async function buildPurchaseItems(params: {
   tx: Prisma.TransactionClient
   accountId: string
-  supplier: { discountPercentBp?: number; chargesItbis?: boolean } | null
+  supplier: { discountPercentBp?: number; chargesItbis?: boolean; itbisRateBp?: number | null } | null
   items: Array<{
     productId: string
     qty: number
@@ -42,6 +42,9 @@ async function buildPurchaseItems(params: {
 
   const purchaseItbisRateBp = settings?.itbisRateBp ?? 1800
   const defaultProfitMarginBp = settings?.defaultProfitMarginBp ?? 3000
+  const supplierPurchaseItbisRateBp = params.supplier?.chargesItbis
+    ? (params.supplier.itbisRateBp ?? purchaseItbisRateBp)
+    : purchaseItbisRateBp
 
   const products = await params.tx.product.findMany({
     where: { accountId: params.accountId, id: { in: params.items.map((i) => i.productId) } },
@@ -65,7 +68,7 @@ async function buildPurchaseItems(params: {
       unitCostCents: item.unitCostCents,
       discountPercentBp,
       purchaseIncludesItbis,
-      purchaseItbisRateBp,
+      purchaseItbisRateBp: supplierPurchaseItbisRateBp,
       productItbisRateBp: product.itbisRateBp,
       defaultSaleMarginBp: defaultProfitMarginBp,
       saleMarginBp: item.saleMarginBp,
@@ -182,11 +185,11 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await prisma.$transaction(async (tx) => {
-      let supplier: { name: string; discountPercentBp: number; chargesItbis: boolean } | null = null
+      let supplier: { name: string; discountPercentBp: number; chargesItbis: boolean; itbisRateBp: number | null } | null = null
       if (body?.supplierId) {
         supplier = await tx.supplier.findFirst({
           where: { accountId: user.accountId, id: String(body.supplierId) },
-          select: { name: true, discountPercentBp: true, chargesItbis: true },
+          select: { name: true, discountPercentBp: true, chargesItbis: true, itbisRateBp: true },
         })
       }
 

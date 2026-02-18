@@ -6,6 +6,10 @@ import { sanitizePhone, sanitizeString } from "@/lib/sanitize"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Error inesperado"
+}
+
 // GET /api/suppliers/:id - Obtener proveedor
 export async function GET(
   request: NextRequest,
@@ -40,13 +44,14 @@ export async function GET(
       notes: supplier.notes,
       discountPercentBp: supplier.discountPercentBp,
       chargesItbis: supplier.chargesItbis,
+      itbisRateBp: supplier.itbisRateBp,
       createdAt: supplier.createdAt.toISOString(),
       updatedAt: supplier.updatedAt.toISOString(),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en GET /api/suppliers/[id]:", error)
     return NextResponse.json(
-      { error: error.message || "Error al obtener proveedor" },
+      { error: getErrorMessage(error) || "Error al obtener proveedor" },
       { status: 500 }
     )
   }
@@ -90,6 +95,9 @@ export async function PUT(
       ? Number(body.discountPercentBp)
       : 0
     const chargesItbis = Boolean(body?.chargesItbis)
+    const itbisRateBp = chargesItbis
+      ? Math.min(10000, Math.max(0, Math.round(Number(body?.itbisRateBp ?? 1800))))
+      : null
 
     if (!name) {
       return NextResponse.json({ error: "El nombre es requerido" }, { status: 400 })
@@ -130,6 +138,7 @@ export async function PUT(
         notes,
         discountPercentBp,
         chargesItbis,
+        itbisRateBp,
       },
     })
 
@@ -143,15 +152,15 @@ export async function PUT(
       notes: updated.notes,
       discountPercentBp: updated.discountPercentBp,
       chargesItbis: updated.chargesItbis,
+      itbisRateBp: updated.itbisRateBp,
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en PUT /api/suppliers/[id]:", error)
     return NextResponse.json(
-      { error: error.message || "Error al editar proveedor" },
+      { error: getErrorMessage(error) || "Error al editar proveedor" },
       { status: 500 }
     )
   }
 }
-

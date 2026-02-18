@@ -6,6 +6,10 @@ import { sanitizePhone, sanitizeString } from "@/lib/sanitize"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Error inesperado"
+}
+
 // GET /api/suppliers - Listar proveedores activos
 export async function GET(request: NextRequest) {
   try {
@@ -43,14 +47,15 @@ export async function GET(request: NextRequest) {
         phone: s.phone,
         discountPercentBp: s.discountPercentBp,
         chargesItbis: s.chargesItbis,
+        itbisRateBp: s.itbisRateBp,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
       })),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en GET /api/suppliers:", error)
     return NextResponse.json(
-      { error: error.message || "Error al obtener proveedores" },
+      { error: getErrorMessage(error) || "Error al obtener proveedores" },
       { status: 500 }
     )
   }
@@ -90,6 +95,9 @@ export async function POST(request: NextRequest) {
       ? Number(body.discountPercentBp)
       : 0
     const chargesItbis = Boolean(body?.chargesItbis)
+    const itbisRateBp = chargesItbis
+      ? Math.min(10000, Math.max(0, Math.round(Number(body?.itbisRateBp ?? 1800))))
+      : null
 
     if (!name) {
       return NextResponse.json(
@@ -125,6 +133,7 @@ export async function POST(request: NextRequest) {
         notes,
         discountPercentBp,
         chargesItbis,
+        itbisRateBp,
       },
     })
 
@@ -139,15 +148,16 @@ export async function POST(request: NextRequest) {
         notes: created.notes,
         discountPercentBp: created.discountPercentBp,
         chargesItbis: created.chargesItbis,
+        itbisRateBp: created.itbisRateBp,
         createdAt: created.createdAt.toISOString(),
         updatedAt: created.updatedAt.toISOString(),
       },
       { status: 201 }
     )
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en POST /api/suppliers:", error)
     return NextResponse.json(
-      { error: error.message || "Error al crear proveedor" },
+      { error: getErrorMessage(error) || "Error al crear proveedor" },
       { status: 500 }
     )
   }

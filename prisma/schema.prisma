@@ -430,6 +430,7 @@ model Supplier {
 
   discountPercentBp Int @default(0)
   chargesItbis      Boolean @default(false)
+  itbisRateBp       Int?
 
   isActive Boolean @default(true)
 
