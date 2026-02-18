@@ -41,14 +41,14 @@ export async function GET(request: NextRequest) {
     const query = (searchParams.get("query") || "").trim()
     const fromDate = normalizeDateInput(searchParams.get("from"))
     const toDate = normalizeDateInput(searchParams.get("to"))
-
-    const from = startOfDay(fromDate ?? new Date())
-    const to = endOfDay(toDate ?? fromDate ?? new Date())
+    const hasDateFilter = Boolean(fromDate || toDate)
+    const from = hasDateFilter ? startOfDay(fromDate ?? toDate ?? new Date()) : null
+    const to = hasDateFilter ? endOfDay(toDate ?? fromDate ?? new Date()) : null
 
     const items = await prisma.operatingExpense.findMany({
       where: {
         accountId: user.accountId,
-        expenseDate: { gte: from, lte: to },
+        ...(hasDateFilter && from && to ? { expenseDate: { gte: from, lte: to } } : {}),
         ...(query
           ? {
               OR: [
@@ -167,4 +167,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
