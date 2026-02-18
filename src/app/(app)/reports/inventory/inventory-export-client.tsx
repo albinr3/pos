@@ -36,8 +36,8 @@ export function InventoryExportClient({
         SKU: product.sku || "-",
         Proveedor: product.supplier?.name || "-",
         Stock: product.stock,
-        "Costo Unitario": product.costCents / 100,
-        "Costo Total": totalCostCents / 100,
+        "Costo Unitario (Registrado)": product.costCents / 100,
+        "Costo Total (Registrado)": totalCostCents / 100,
       }
     })
 
@@ -47,8 +47,8 @@ export function InventoryExportClient({
       SKU: "-",
       Proveedor: "-",
       Stock: products.reduce((sum, p) => sum + Number(p.stock), 0),
-      "Costo Unitario": 0,
-      "Costo Total": totalInventoryCostCents / 100,
+      "Costo Unitario (Registrado)": 0,
+      "Costo Total (Registrado)": totalInventoryCostCents / 100,
     })
 
     // Crear workbook y worksheet
@@ -61,8 +61,8 @@ export function InventoryExportClient({
       { wch: 15 }, // SKU
       { wch: 20 }, // Proveedor
       { wch: 10 }, // Stock
-      { wch: 15 }, // Costo Unitario
-      { wch: 15 }, // Costo Total
+      { wch: 24 }, // Costo Unitario (Registrado)
+      { wch: 24 }, // Costo Total (Registrado)
     ]
 
     // Agregar worksheet al workbook
@@ -109,7 +109,7 @@ export function InventoryExportClient({
     autoTable(doc, {
       startY: 35,
       margin: { left: 14, right: 14 },
-      head: [["Producto", "SKU", "Proveedor", "Stock", "Costo Unitario", "Costo Total"]],
+      head: [["Producto", "SKU", "Proveedor", "Stock", "Costo Unitario (Registrado)", "Costo Total (Registrado)"]],
       body: tableData,
       styles: { fontSize: 8 },
       headStyles: { fillColor: [0, 0, 0], textColor: [255, 255, 255], fontStyle: "bold" },
@@ -125,7 +125,8 @@ export function InventoryExportClient({
     })
 
     // Agregar total al final
-    const finalY = (doc as any).lastAutoTable?.finalY || 35
+    const docWithTable = doc as jsPDF & { lastAutoTable?: { finalY?: number } }
+    const finalY = docWithTable.lastAutoTable?.finalY || 35
     doc.setFontSize(12)
     doc.setFont("helvetica", "bold")
     doc.text(
@@ -155,4 +156,3 @@ export function InventoryExportClient({
     </div>
   )
 }
-

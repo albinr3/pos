@@ -20,7 +20,9 @@ export default async function InventoryReportPage() {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Reporte de inventario</h1>
-          <p className="text-sm text-muted-foreground">Listado de productos con su costo y total de inventario.</p>
+          <p className="text-sm text-muted-foreground">
+            Listado de productos con su costo registrado y total de inventario.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <DownloadPdfButton />
@@ -39,6 +41,11 @@ export default async function InventoryReportPage() {
               ? `Total de inventario en costo: ${formatRD(data.totalInventoryCostCents)} (${data.count} productos)`
               : `Inventario: ${data.count} productos`}
           </CardTitle>
+          {canViewCosts && (
+            <div className="text-xs text-muted-foreground">
+              El costo mostrado es el costo registrado del producto y puede incluir ITBIS segun la configuracion de compras/proveedor.
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           <div className="rounded-md border overflow-x-auto">
@@ -48,13 +55,13 @@ export default async function InventoryReportPage() {
                   <TableHead>Producto</TableHead>
                   <TableHead>SKU</TableHead>
                   <TableHead>Proveedor</TableHead>
-                  <TableHead className="text-right">Stock</TableHead>
-                  {canViewCosts && (
-                    <>
-                      <TableHead className="text-right">Costo unitario</TableHead>
-                      <TableHead className="text-right">Costo total</TableHead>
-                    </>
-                  )}
+                      <TableHead className="text-right">Stock</TableHead>
+                      {canViewCosts && (
+                        <>
+                          <TableHead className="text-right">Costo unitario (registrado)</TableHead>
+                          <TableHead className="text-right">Costo total (registrado)</TableHead>
+                        </>
+                      )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -91,4 +98,3 @@ export default async function InventoryReportPage() {
     </div>
   )
 }
-

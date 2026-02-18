@@ -150,7 +150,12 @@ export default async function ProfitReportPage({
           <div className="grid gap-3">
             <div className="text-base font-semibold">Impuestos</div>
             <div className="flex items-center justify-between pl-4">
-              <div className="text-sm text-muted-foreground">Impuestos sobre la renta</div>
+              <div>
+                <div className="text-sm text-muted-foreground">ITBIS neto (ventas - compras)</div>
+                <div className="text-xs text-muted-foreground">
+                  ITBIS en ventas: {formatRD(data.salesItbisCents)} · ITBIS en compras: {formatRD(data.purchasesItbisCents)}
+                </div>
+              </div>
               <div className="text-base font-medium">{formatRD(data.taxesCents)}</div>
             </div>
           </div>
@@ -187,4 +192,3 @@ export default async function ProfitReportPage({
     </div>
   )
 }
-

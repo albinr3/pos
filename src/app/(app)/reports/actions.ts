@@ -5,6 +5,43 @@ import { getCurrentUser } from "@/lib/auth"
 import { endOfDay, parseDateParam, startOfDay } from "@/lib/dates"
 import { Decimal } from "@prisma/client/runtime/library"
 
+function toQty(value: Decimal | number) {
+  return value instanceof Decimal ? value.toNumber() : Number(value)
+}
+
+function discountedUnitCostCents(unitCostCents: number, discountPercentBp: number) {
+  const discountRate = (discountPercentBp ?? 0) / 10000
+  return Math.round(unitCostCents * (1 - discountRate))
+}
+
+function findHistoricalUnitCostCents(
+  costsByProductId: Map<string, Array<{ purchasedAt: Date; netCostCents: number }>>,
+  productId: string,
+  soldAt: Date,
+  fallbackCostCents: number
+) {
+  const history = costsByProductId.get(productId)
+  if (!history || history.length === 0) return fallbackCostCents
+
+  let left = 0
+  let right = history.length - 1
+  let found: number | null = null
+  const soldAtTime = soldAt.getTime()
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2)
+    const purchasedAtTime = history[mid].purchasedAt.getTime()
+    if (purchasedAtTime <= soldAtTime) {
+      found = mid
+      left = mid + 1
+    } else {
+      right = mid - 1
+    }
+  }
+
+  return found === null ? fallbackCostCents : history[found].netCostCents
+}
+
 export async function getSalesReport(input: { from?: string; to?: string }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -132,11 +169,59 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
       },
     },
   })
-  
-  // Calcular el costo de ventas: suma de (costo del producto * cantidad vendida) para cada item
+
+  const maxSoldAt = allSales.reduce<Date | null>((latest, sale) => {
+    if (!latest) return sale.soldAt
+    return sale.soldAt > latest ? sale.soldAt : latest
+  }, null)
+  const soldProductIds = Array.from(
+    new Set(allSales.flatMap((sale) => sale.items.map((item) => item.productId)))
+  )
+
+  const purchaseCostHistory = maxSoldAt && soldProductIds.length > 0
+    ? await prisma.purchaseItem.findMany({
+      where: {
+        productId: { in: soldProductIds },
+        purchase: {
+          accountId: user.accountId,
+          cancelledAt: null,
+          purchasedAt: { lte: maxSoldAt },
+        },
+      },
+      select: {
+        productId: true,
+        netCostCents: true,
+        purchase: {
+          select: { purchasedAt: true },
+        },
+      },
+      orderBy: [
+        { productId: "asc" },
+        { purchase: { purchasedAt: "asc" } },
+      ],
+    })
+    : []
+
+  const costsByProductId = new Map<string, Array<{ purchasedAt: Date; netCostCents: number }>>()
+  for (const item of purchaseCostHistory) {
+    const list = costsByProductId.get(item.productId) ?? []
+    list.push({
+      purchasedAt: item.purchase.purchasedAt,
+      netCostCents: item.netCostCents,
+    })
+    costsByProductId.set(item.productId, list)
+  }
+
+  // Calcular costo de ventas usando costo historico (ultima compra disponible antes de la venta).
   const costOfSalesCents = allSales.reduce((total, sale) => {
     const saleCost = sale.items.reduce((itemTotal, item) => {
-      return itemTotal + (item.product.costCents * Number(item.qty))
+      const historicalUnitCostCents = findHistoricalUnitCostCents(
+        costsByProductId,
+        item.productId,
+        sale.soldAt,
+        item.product.costCents
+      )
+      return itemTotal + (historicalUnitCostCents * toQty(item.qty))
     }, 0)
     return total + saleCost
   }, 0)
@@ -162,8 +247,38 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   // 6. OTROS INGRESOS Y GASTOS: 0 (por ahora)
   const otherIncomeExpensesCents = 0
 
-  // 7. IMPUESTOS: 0 (por ahora)
-  const taxesCents = 0
+  // 7. IMPUESTOS (ITBIS neto): ITBIS cobrado en ventas - ITBIS pagado en compras
+  const salesItbisCents = allSales.reduce((sum, sale) => sum + sale.itbisCents, 0)
+  const purchases = await prisma.purchase.findMany({
+    where: {
+      accountId: user.accountId,
+      purchasedAt: { gte: from, lte: to },
+      cancelledAt: null,
+    },
+    select: {
+      items: {
+        select: {
+          qty: true,
+          unitCostCents: true,
+          discountPercentBp: true,
+          netCostCents: true,
+          purchaseIncludesItbis: true,
+        },
+      },
+    },
+  })
+
+  const purchasesItbisCents = purchases.reduce((sum, purchase) => {
+    const purchaseItbis = purchase.items.reduce((itemSum, item) => {
+      const discountedUnitCents = discountedUnitCostCents(item.unitCostCents, item.discountPercentBp)
+      const unitItbisCents = Math.max(0, item.netCostCents - discountedUnitCents)
+      if (item.purchaseIncludesItbis === false || unitItbisCents === 0) return itemSum
+      return itemSum + Math.round(unitItbisCents * toQty(item.qty))
+    }, 0)
+    return sum + purchaseItbis
+  }, 0)
+
+  const taxesCents = salesItbisCents - purchasesItbisCents
 
   // 8. UTILIDAD NETA: Utilidad operativa - Otros ingresos/gastos - Impuestos
   const netProfitCents = operatingProfitCents - otherIncomeExpensesCents - taxesCents
@@ -201,6 +316,8 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     // Otros ingresos y gastos
     otherIncomeExpensesCents,
     // Impuestos
+    salesItbisCents,
+    purchasesItbisCents,
     taxesCents,
     // Utilidad neta
     netProfitCents,

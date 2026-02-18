@@ -9,12 +9,13 @@ import { Input } from "@/components/ui/input"
 export function ReportDateRangeFilter({ basePath, defaultLastDays }: { basePath: string; defaultLastDays?: number }) {
   const router = useRouter()
   const sp = useSearchParams()
+  const hasDefaultRange = defaultLastDays !== undefined
 
   const getDefaultDates = () => {
-    if (defaultLastDays) {
+    if (hasDefaultRange) {
       const to = new Date()
       const from = new Date()
-      from.setDate(from.getDate() - defaultLastDays)
+      from.setDate(from.getDate() - (defaultLastDays ?? 0))
       return {
         from: from.toISOString().split("T")[0],
         to: to.toISOString().split("T")[0],
@@ -31,15 +32,15 @@ export function ReportDateRangeFilter({ basePath, defaultLastDays }: { basePath:
 
   // Si no hay parámetros y hay un defaultLastDays, establecer los valores por defecto
   useEffect(() => {
-    if (defaultLastDays && !sp.get("from") && !sp.get("to")) {
+    if (hasDefaultRange && !sp.get("from") && !sp.get("to")) {
       const to = new Date()
       const from = new Date()
-      from.setDate(from.getDate() - defaultLastDays)
+      from.setDate(from.getDate() - (defaultLastDays ?? 0))
       const fromStr = from.toISOString().split("T")[0]
       const toStr = to.toISOString().split("T")[0]
       router.replace(`${basePath}?from=${fromStr}&to=${toStr}`)
     }
-  }, [defaultLastDays, basePath, router, sp])
+  }, [hasDefaultRange, defaultLastDays, basePath, router, sp])
 
   return (
     <div className="flex flex-wrap items-end gap-3">

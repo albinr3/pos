@@ -29,7 +29,7 @@ export default async function SalesReportPage({
         </div>
         <div className="flex items-center gap-2">
           <DownloadPdfButton />
-          <ReportDateRangeFilter basePath="/reports/sales" />
+          <ReportDateRangeFilter basePath="/reports/sales" defaultLastDays={0} />
         </div>
       </div>
 
