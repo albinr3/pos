@@ -137,7 +137,7 @@ export function SuppliersClient() {
                 <Plus className="mr-2 h-4 w-4" /> Nuevo
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-[620px]">
+            <DialogContent className="sm:max-w-[520px] max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{title}</DialogTitle>
               </DialogHeader>
@@ -317,7 +317,6 @@ export function SuppliersClient() {
     </div>
   )
 }
-
 
 
 
