@@ -26,6 +26,8 @@ type UpdateSaleBody = {
   type?: string
   customerId?: string | null
   paymentMethod?: string
+  soldAt?: string | number | null
+  createdAt?: string | number | null
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -62,6 +64,32 @@ function parseSaleType(value: unknown, fallback: SaleType): SaleType {
   return fallback
 }
 
+function parseOptionalSaleDate(value: unknown): Date | undefined {
+  if (value === undefined || value === null || value === "") return undefined
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) throw new Error("Fecha de venta inválida")
+    return value
+  }
+
+  if (typeof value === "number") {
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) throw new Error("Fecha de venta inválida")
+    return parsed
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (!trimmed) return undefined
+
+    const parsed = /^\d+$/.test(trimmed) ? new Date(Number(trimmed)) : new Date(trimmed)
+    if (Number.isNaN(parsed.getTime())) throw new Error("Fecha de venta inválida")
+    return parsed
+  }
+
+  throw new Error("Fecha de venta inválida")
+}
+
 // GET /api/sales/:id - Obtener venta/factura
 export async function GET(
   request: NextRequest,
@@ -94,6 +122,7 @@ export async function GET(
       id: sale.id,
       invoiceCode: sale.invoiceCode,
       soldAt: sale.soldAt.toISOString(),
+      createdAt: sale.soldAt.toISOString(),
       type: sale.type,
       paymentMethod: sale.paymentMethod,
       customerId: sale.customerId,
@@ -150,6 +179,8 @@ export async function PUT(
       return NextResponse.json({ success: true })
     }
 
+    const soldAt = parseOptionalSaleDate(body.soldAt ?? body.createdAt)
+
     const existingSale = await prisma.sale.findFirst({
       where: { id, accountId: user.accountId },
       include: {
@@ -202,6 +233,7 @@ export async function PUT(
       type,
       paymentMethod,
       items,
+      soldAt,
       username: user.username || user.name || "api",
       user,
     })
@@ -221,6 +253,8 @@ export async function PUT(
       customerId: updatedSale?.customerId,
       customerName: updatedSale?.customer?.name || null,
       totalCents: updatedSale?.totalCents,
+      soldAt: updatedSale?.soldAt ? updatedSale.soldAt.toISOString() : null,
+      createdAt: updatedSale?.soldAt ? updatedSale.soldAt.toISOString() : null,
       cancelledAt: updatedSale?.cancelledAt ? updatedSale.cancelledAt.toISOString() : null,
     })
   } catch (error: unknown) {

@@ -54,6 +54,7 @@ export async function syncPendingData() {
           paymentSplits: sale.paymentSplits,
           items: sale.items,
           shippingCents: sale.shippingCents || 0,
+          soldAt: sale.createdAt,
           username: sale.username,
         })
 

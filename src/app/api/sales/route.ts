@@ -23,6 +23,8 @@ type SaleCreateBody = {
   type?: string
   paymentMethod?: string
   customerId?: string | null
+  soldAt?: string | number | null
+  createdAt?: string | number | null
 }
 
 type CartItemInput = {
@@ -35,6 +37,32 @@ type CartItemInput = {
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message
   return fallback
+}
+
+function parseOptionalSaleDate(value: unknown): Date | undefined {
+  if (value === undefined || value === null || value === "") return undefined
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) throw new Error("Fecha de venta inválida")
+    return value
+  }
+
+  if (typeof value === "number") {
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) throw new Error("Fecha de venta inválida")
+    return parsed
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (!trimmed) return undefined
+
+    const parsed = /^\d+$/.test(trimmed) ? new Date(Number(trimmed)) : new Date(trimmed)
+    if (Number.isNaN(parsed.getTime())) throw new Error("Fecha de venta inválida")
+    return parsed
+  }
+
+  throw new Error("Fecha de venta inválida")
 }
 
 // GET /api/sales - Listar ventas/facturas
@@ -73,6 +101,7 @@ export async function GET(request: NextRequest) {
         id: sale.id,
         invoiceCode: sale.invoiceCode,
         soldAt: sale.soldAt.toISOString(),
+        createdAt: sale.soldAt.toISOString(),
         type: sale.type,
         paymentMethod: sale.paymentMethod,
         customerId: sale.customerId,
@@ -103,6 +132,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json()) as SaleCreateBody
+    const soldAt = parseOptionalSaleDate(body.soldAt ?? body.createdAt)
 
     // Convertir items del formato móvil al formato esperado
     const items: CartItemInput[] = (body.items || []).map((item) => ({
@@ -145,6 +175,7 @@ export async function POST(request: NextRequest) {
       paymentMethod: saleType === SaleType.CONTADO ? paymentMethod : null,
       items,
       shippingCents,
+      soldAt,
       username: user.username,
       user,
     })
@@ -153,6 +184,8 @@ export async function POST(request: NextRequest) {
       id: sale.id,
       invoiceCode: sale.invoiceCode,
       type: sale.type,
+      soldAt: sale.soldAt.toISOString(),
+      createdAt: sale.soldAt.toISOString(),
     }, { status: 201 })
   } catch (error: unknown) {
     console.error("Error en POST /api/sales:", error)

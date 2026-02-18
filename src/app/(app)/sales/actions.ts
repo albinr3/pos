@@ -261,6 +261,32 @@ function validateCartItems(items: CartItemInput[]) {
   }
 }
 
+function parseOptionalDateInput(value: unknown): Date | undefined {
+  if (value === undefined || value === null || value === "") return undefined
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) throw new Error("Fecha de venta inválida.")
+    return value
+  }
+
+  if (typeof value === "number") {
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) throw new Error("Fecha de venta inválida.")
+    return parsed
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim()
+    if (!trimmed) return undefined
+
+    const parsed = /^\d+$/.test(trimmed) ? new Date(Number(trimmed)) : new Date(trimmed)
+    if (Number.isNaN(parsed.getTime())) throw new Error("Fecha de venta inválida.")
+    return parsed
+  }
+
+  throw new Error("Fecha de venta inválida.")
+}
+
 export async function createSale(input: {
   customerId: string | null
   type: SaleType
@@ -268,11 +294,13 @@ export async function createSale(input: {
   paymentSplits?: Array<{ method: PaymentMethod, amountCents: number }>
   items: CartItemInput[]
   shippingCents?: number
+  soldAt?: Date | string | number | null
   username: string
   user?: any
 }) {
   const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  const soldAt = parseOptionalDateInput(input.soldAt)
 
   try {
     validateCartItems(input.items)
@@ -432,6 +460,8 @@ export async function createSale(input: {
           invoiceSeries: "A",
           invoiceNumber: number,
           invoiceCode: code,
+          createdAt: soldAt,
+          soldAt,
           type: input.type,
           paymentMethod: input.type === SaleType.CONTADO && !input.paymentSplits ? input.paymentMethod : null,
           customerId: finalCustomerId,
@@ -456,7 +486,7 @@ export async function createSale(input: {
             })),
           } : undefined,
         },
-        select: { id: true, invoiceCode: true, type: true },
+        select: { id: true, invoiceCode: true, type: true, soldAt: true },
       })
 
       await logAuditEvent({
@@ -500,7 +530,7 @@ export async function createSale(input: {
         // Calcular fecha de vencimiento
         let dueDate: Date | null = null
         if (customer && customer.creditDays > 0) {
-          dueDate = new Date()
+          dueDate = new Date(soldAt ?? new Date())
           dueDate.setDate(dueDate.getDate() + customer.creditDays)
         }
 
@@ -680,11 +710,13 @@ export async function updateSale(input: {
   type: SaleType
   paymentMethod?: PaymentMethod | null
   items: CartItemInput[]
+  soldAt?: Date | string | number | null
   username?: string
   user?: any
 }) {
   const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  const soldAt = parseOptionalDateInput(input.soldAt)
 
   validateCartItems(input.items)
 
@@ -797,6 +829,7 @@ export async function updateSale(input: {
     const updatedSale = await tx.sale.updateMany({
       where: { id: input.id, accountId: user.accountId },
       data: {
+        soldAt,
         type: input.type,
         paymentMethod: input.type === SaleType.CONTADO ? input.paymentMethod : null,
         customerId: input.customerId || null,
@@ -858,7 +891,7 @@ export async function updateSale(input: {
         // Calcular fecha de vencimiento
         let dueDate: Date | null = null
         if (customer && customer.creditDays > 0) {
-          dueDate = new Date()
+          dueDate = new Date(soldAt ?? existingSale.soldAt ?? new Date())
           dueDate.setDate(dueDate.getDate() + customer.creditDays)
         }
 
@@ -886,7 +919,7 @@ export async function updateSale(input: {
         // Calcular fecha de vencimiento
         let dueDate: Date | null = null
         if (customer && customer.creditDays > 0) {
-          dueDate = new Date()
+          dueDate = new Date(soldAt ?? existingSale.soldAt ?? new Date())
           dueDate.setDate(dueDate.getDate() + customer.creditDays)
         }
 
