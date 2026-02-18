@@ -16,9 +16,33 @@ function toNumber(value: Decimal | number) {
   return value instanceof Decimal ? value.toNumber() : Number(value)
 }
 
-export async function listReturns(currentUserArg?: any) {
+type ReturnPolicy = {
+  canCreateReturn: boolean
+  blockedReason: string | null
+  maxReturnCents: number | null
+  currentBalanceCents: number | null
+}
+
+type ReturnUserLike = {
+  id: string
+  accountId: string
+  email?: string | null
+  username?: string | null
+  role?: string
+  canCancelReturns?: boolean
+}
+
+function assertReturnUserLike(user: unknown): asserts user is ReturnUserLike {
+  if (!user || typeof user !== "object") throw new Error("No autenticado")
+
+  const candidate = user as { id?: unknown; accountId?: unknown }
+  if (typeof candidate.id !== "string" || candidate.id.length === 0) throw new Error("No autenticado")
+  if (typeof candidate.accountId !== "string" || candidate.accountId.length === 0) throw new Error("No autenticado")
+}
+
+export async function listReturns(currentUserArg?: unknown) {
   const user = currentUserArg ?? await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+  assertReturnUserLike(user)
 
   const returnsList = await prisma.return.findMany({
     where: { accountId: user.accountId },
@@ -135,9 +159,9 @@ export async function getReturnById(id: string) {
   }
 }
 
-export async function getSaleForReturn(saleId: string, currentUserArg?: any) {
+export async function getSaleForReturn(saleId: string, currentUserArg?: unknown) {
   const user = currentUserArg ?? await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+  assertReturnUserLike(user)
 
   const sale = await prisma.sale.findFirst({
     where: { accountId: user.accountId, id: saleId },
@@ -163,6 +187,12 @@ export async function getSaleForReturn(saleId: string, currentUserArg?: any) {
         },
         include: {
           items: true,
+        },
+      },
+      ar: {
+        select: {
+          balanceCents: true,
+          status: true,
         },
       },
     },
@@ -192,9 +222,42 @@ export async function getSaleForReturn(saleId: string, currentUserArg?: any) {
     }
   })
 
+  let returnPolicy: ReturnPolicy = {
+    canCreateReturn: true,
+    blockedReason: null,
+    maxReturnCents: null,
+    currentBalanceCents: null,
+  }
+
+  if (sale.type === "CREDITO") {
+    if (!sale.ar) {
+      returnPolicy = {
+        canCreateReturn: false,
+        blockedReason: "Factura a crédito sin cuenta por cobrar asociada. Contacta al administrador.",
+        maxReturnCents: 0,
+        currentBalanceCents: null,
+      }
+    } else if (sale.ar.balanceCents <= 0 || sale.ar.status === "PAGADA") {
+      returnPolicy = {
+        canCreateReturn: false,
+        blockedReason: "Esta factura a crédito está pagada totalmente y no permite devoluciones.",
+        maxReturnCents: sale.ar.balanceCents,
+        currentBalanceCents: sale.ar.balanceCents,
+      }
+    } else {
+      returnPolicy = {
+        canCreateReturn: true,
+        blockedReason: null,
+        maxReturnCents: sale.ar.balanceCents,
+        currentBalanceCents: sale.ar.balanceCents,
+      }
+    }
+  }
+
   return {
     ...sale,
     items: itemsWithAvailable,
+    returnPolicy,
   }
 }
 
@@ -209,9 +272,9 @@ export async function createReturn(input: {
   saleId: string
   items: ReturnItemInput[]
   notes?: string | null
-}, currentUserArg?: any) {
+}, currentUserArg?: unknown) {
   const currentUser = currentUserArg ?? await getCurrentUser()
-  if (!currentUser) throw new Error("No autenticado")
+  assertReturnUserLike(currentUser)
 
   if (!input.items.length) throw new Error("La devolución no tiene productos.")
 
@@ -232,6 +295,14 @@ export async function createReturn(input: {
         returns: {
           where: { cancelledAt: null },
           include: { items: true },
+        },
+        ar: {
+          select: {
+            id: true,
+            totalCents: true,
+            balanceCents: true,
+            status: true,
+          },
         },
       },
     })
@@ -265,6 +336,26 @@ export async function createReturn(input: {
       }
     }
 
+    const totalCents = input.items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
+    let creditAr: { id: string; totalCents: number; balanceCents: number; status: string } | null = null
+
+    if (sale.type === "CREDITO") {
+      if (!sale.ar) {
+        throw new Error("Inconsistencia: la factura a crédito no tiene cuenta por cobrar asociada")
+      }
+
+      creditAr = sale.ar
+      if (creditAr.balanceCents <= 0 || creditAr.status === "PAGADA") {
+        throw new Error("Esta factura a crédito está pagada totalmente y no permite devoluciones")
+      }
+
+      if (totalCents > creditAr.balanceCents) {
+        throw new Error(
+          `El total de la devolución (${totalCents}) no puede exceder el balance pendiente (${creditAr.balanceCents})`
+        )
+      }
+    }
+
     // Secuencia de devolución por account
     const seq = await tx.returnSequence.upsert({
       where: { accountId: currentUser.accountId },
@@ -276,7 +367,6 @@ export async function createReturn(input: {
     const code = returnCode(number)
 
     // Calcular totales
-    const totalCents = input.items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
     const { subtotalCents, itbisCents } = calcItbisIncluded(totalCents, itbisRateBp)
 
     // Crear devolución
@@ -331,29 +421,21 @@ export async function createReturn(input: {
 
     // Si la venta era a crédito, reducir el balance de la cuenta por cobrar
     if (sale.type === "CREDITO") {
-      const ar = await tx.accountReceivable.findFirst({
-        where: {
-          saleId: sale.id,
-          sale: { accountId: currentUser.accountId },
-        },
-        include: { payments: { where: { cancelledAt: null } } },
-      })
-
-      if (ar) {
-        const totalPaid = ar.payments.reduce((sum, p) => sum + p.amountCents, 0)
-        const newBalance = Math.max(0, ar.totalCents - totalCents - totalPaid)
-        const newStatus =
-          newBalance === 0 ? "PAGADA" : newBalance < ar.totalCents ? "PARCIAL" : "PENDIENTE"
-
-        const updatedAr = await tx.accountReceivable.updateMany({
-          where: { id: ar.id, sale: { accountId: currentUser.accountId } },
-          data: {
-            balanceCents: newBalance,
-            status: newStatus,
-          },
-        })
-        if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
+      if (!creditAr) {
+        throw new Error("Inconsistencia: cuenta por cobrar no encontrada para factura a crédito")
       }
+
+      const newBalance = creditAr.balanceCents - totalCents
+      const newStatus = newBalance === 0 ? "PAGADA" : "PARCIAL"
+
+      const updatedAr = await tx.accountReceivable.updateMany({
+        where: { id: creditAr.id, sale: { accountId: currentUser.accountId } },
+        data: {
+          balanceCents: newBalance,
+          status: newStatus,
+        },
+      })
+      if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
     }
 
     revalidatePath("/returns")
@@ -362,6 +444,8 @@ export async function createReturn(input: {
     revalidatePath("/ar")
     revalidatePath("/dashboard")
     revalidatePath("/products")
+    revalidatePath("/daily-close")
+    revalidatePath("/reports/profit")
 
     return returnRecord
   }, TRANSACTION_OPTIONS)
@@ -407,30 +491,27 @@ export async function cancelReturn(id: string) {
     }
 
     // Si la venta era a crédito, restaurar el balance de la cuenta por cobrar
-    if (returnRecord.sale.type === "CREDITO" && returnRecord.sale.ar) {
+    if (returnRecord.sale.type === "CREDITO") {
       const ar = await tx.accountReceivable.findFirst({
         where: {
           saleId: returnRecord.sale.id,
           sale: { accountId: currentUser.accountId },
         },
-        include: { payments: { where: { cancelledAt: null } } },
       })
 
-      if (ar) {
-        const totalPaid = ar.payments.reduce((sum, p) => sum + p.amountCents, 0)
-        const newBalance = Math.min(ar.totalCents, ar.totalCents - totalPaid + returnRecord.totalCents)
-        const newStatus =
-          newBalance === 0 ? "PAGADA" : newBalance < ar.totalCents ? "PARCIAL" : "PENDIENTE"
+      if (!ar) throw new Error("Inconsistencia: cuenta por cobrar no encontrada para factura a crédito")
 
-        const updatedAr = await tx.accountReceivable.updateMany({
-          where: { id: ar.id, sale: { accountId: currentUser.accountId } },
-          data: {
-            balanceCents: newBalance,
-            status: newStatus,
-          },
-        })
-        if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
-      }
+      const newBalance = Math.min(ar.totalCents, ar.balanceCents + returnRecord.totalCents)
+      const newStatus = newBalance === 0 ? "PAGADA" : newBalance === ar.totalCents ? "PENDIENTE" : "PARCIAL"
+
+      const updatedAr = await tx.accountReceivable.updateMany({
+        where: { id: ar.id, sale: { accountId: currentUser.accountId } },
+        data: {
+          balanceCents: newBalance,
+          status: newStatus,
+        },
+      })
+      if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
     }
 
     // Marcar como cancelada
@@ -465,16 +546,18 @@ export async function cancelReturn(id: string) {
     revalidatePath("/ar")
     revalidatePath("/dashboard")
     revalidatePath("/products")
+    revalidatePath("/daily-close")
+    revalidatePath("/reports/profit")
   }, TRANSACTION_OPTIONS)
 }
 
 export async function searchSalesForReturn(
   query: string,
-  currentUserArg?: any,
+  currentUserArg?: unknown,
   options?: { customerId?: string | null }
 ) {
   const user = currentUserArg ?? await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+  assertReturnUserLike(user)
 
   const q = query.trim()
   const customerId = options?.customerId?.trim() || null

@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { Search, Plus, Minus, X } from "lucide-react"
-import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -41,7 +40,6 @@ export function ReturnsClient() {
   useEffect(() => {
     const q = saleSearchQuery.trim()
     if (!q) {
-      setSaleSearchResults([])
       return
     }
 
@@ -70,12 +68,26 @@ export function ReturnsClient() {
       setReturnItems([])
       setSaleSearchQuery("")
       setSaleSearchResults([])
+      if (!saleDetail.returnPolicy.canCreateReturn) {
+        toast({
+          title: "Devolución bloqueada",
+          description: saleDetail.returnPolicy.blockedReason ?? "Esta venta no permite devoluciones.",
+        })
+      }
     } catch (e) {
       toast({ title: "Error", description: e instanceof Error ? e.message : "Error cargando venta" })
     }
   }
 
   function addItem(item: SaleForReturn["items"][number]) {
+    if (selectedSale && !selectedSale.returnPolicy.canCreateReturn) {
+      toast({
+        title: "Devolución bloqueada",
+        description: selectedSale.returnPolicy.blockedReason ?? "Esta venta no permite devoluciones.",
+      })
+      return
+    }
+
     if (item.availableQty <= 0) {
       toast({ title: "No disponible", description: "No hay cantidad disponible para devolver de este producto" })
       return
@@ -125,11 +137,28 @@ export function ReturnsClient() {
   }
 
   const totalCents = returnItems.reduce((sum, item) => sum + item.unitPriceCents * item.qty, 0)
+  const maxReturnCents = selectedSale?.returnPolicy.maxReturnCents ?? null
+  const isReturnBlocked = selectedSale ? !selectedSale.returnPolicy.canCreateReturn : false
+  const exceedsCreditLimit = maxReturnCents !== null && totalCents > maxReturnCents
 
   async function handleSave() {
     if (!selectedSale) return
+    if (isReturnBlocked) {
+      toast({
+        title: "Devolución bloqueada",
+        description: selectedSale.returnPolicy.blockedReason ?? "Esta venta no permite devoluciones.",
+      })
+      return
+    }
     if (returnItems.length === 0) {
       toast({ title: "Error", description: "Debes agregar al menos un producto a devolver" })
+      return
+    }
+    if (exceedsCreditLimit && maxReturnCents !== null) {
+      toast({
+        title: "Monto excedido",
+        description: `La devolución no puede exceder el balance pendiente (${formatRD(maxReturnCents)})`,
+      })
       return
     }
 
@@ -170,7 +199,13 @@ export function ReturnsClient() {
               <Input
                 placeholder="Buscar por número de factura o cliente..."
                 value={saleSearchQuery}
-                onChange={(e) => setSaleSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setSaleSearchQuery(next)
+                  if (!next.trim()) {
+                    setSaleSearchResults([])
+                  }
+                }}
                 className="pl-8"
               />
             </div>
@@ -249,6 +284,17 @@ export function ReturnsClient() {
                 <div>
                   <span className="font-semibold">Total:</span> {formatRD(selectedSale.totalCents)}
                 </div>
+                {selectedSale.returnPolicy.currentBalanceCents !== null && (
+                  <div>
+                    <span className="font-semibold">Balance pendiente para devolución:</span>{" "}
+                    {formatRD(selectedSale.returnPolicy.currentBalanceCents)}
+                  </div>
+                )}
+                {!selectedSale.returnPolicy.canCreateReturn && (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-destructive">
+                    {selectedSale.returnPolicy.blockedReason ?? "Esta venta no permite devoluciones."}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -295,7 +341,7 @@ export function ReturnsClient() {
                         <TableCell className="text-right">{formatRD(item.unitPriceCents)}</TableCell>
                         <TableCell className="text-right">
                           {item.availableQty > 0 ? (
-                            <Button onClick={() => addItem(item)} size="sm" variant="outline">
+                            <Button onClick={() => addItem(item)} size="sm" variant="outline" disabled={isReturnBlocked}>
                               <Plus className="h-4 w-4" />
                             </Button>
                           ) : (
@@ -349,7 +395,7 @@ export function ReturnsClient() {
                                 size="icon"
                                 className="h-7 w-7"
                                 onClick={() => updateItemQty(item.saleItemId, item.qty - 1)}
-                                disabled={item.qty <= 1}
+                                disabled={item.qty <= 1 || isReturnBlocked}
                               >
                                 <Minus className="h-3 w-3" />
                               </Button>
@@ -360,13 +406,14 @@ export function ReturnsClient() {
                                 className="w-20 text-center"
                                 min={1}
                                 max={item.availableQty}
+                                disabled={isReturnBlocked}
                               />
                               <Button
                                 variant="outline"
                                 size="icon"
                                 className="h-7 w-7"
                                 onClick={() => updateItemQty(item.saleItemId, item.qty + 1)}
-                                disabled={item.qty >= item.availableQty}
+                                disabled={item.qty >= item.availableQty || isReturnBlocked}
                               >
                                 <Plus className="h-3 w-3" />
                               </Button>
@@ -377,7 +424,12 @@ export function ReturnsClient() {
                             {formatRD(item.unitPriceCents * item.qty)}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" onClick={() => removeItem(item.saleItemId)}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeItem(item.saleItemId)}
+                              disabled={isReturnBlocked}
+                            >
                               <X className="h-4 w-4" />
                             </Button>
                           </TableCell>
@@ -412,8 +464,15 @@ export function ReturnsClient() {
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Notas sobre la devolución..."
                   rows={3}
+                  disabled={isReturnBlocked}
                 />
               </div>
+              {exceedsCreditLimit && maxReturnCents !== null && (
+                <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">
+                  El total de la devolución ({formatRD(totalCents)}) excede el balance pendiente permitido (
+                  {formatRD(maxReturnCents)}).
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -421,7 +480,10 @@ export function ReturnsClient() {
             <Button variant="outline" onClick={() => setSelectedSale(null)} disabled={isSaving}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} disabled={isSaving || returnItems.length === 0}>
+            <Button
+              onClick={handleSave}
+              disabled={isSaving || returnItems.length === 0 || isReturnBlocked || exceedsCreditLimit}
+            >
               {isSaving ? "Guardando..." : "Guardar Devolución"}
             </Button>
           </div>

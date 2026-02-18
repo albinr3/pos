@@ -124,8 +124,8 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   const from = startOfDay(fromDate)
   const to = endOfDay(toDate)
 
-  // 1. INGRESOS/VENTAS: Ventas al contado + Pagos recibidos
-  const [cashSales, payments] = await Promise.all([
+  // 1. INGRESOS/VENTAS: Ventas al contado + pagos recibidos - devoluciones contado
+  const [cashSales, payments, cashReturns, allSales] = await Promise.all([
     prisma.sale.findMany({
       where: {
         accountId: user.accountId,
@@ -145,37 +145,76 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
         },
       },
     }),
-  ])
-  
-  const salesTotalCents = cashSales.reduce((s, x) => s + x.totalCents, 0)
-  const paymentsTotalCents = payments.reduce((s, p) => s + p.amountCents, 0)
-  const totalRevenueCents = salesTotalCents + paymentsTotalCents
-
-  // 2. COSTO DE VENTAS: Costo de los productos vendidos en el período
-  // Obtener todas las ventas del período (contado y crédito) con sus items
-  const allSales = await prisma.sale.findMany({
-    where: {
-      accountId: user.accountId,
-      soldAt: { gte: from, lte: to },
-      cancelledAt: null, // Excluir canceladas
-    },
-    include: {
-      items: {
-        include: {
-          product: {
-            select: { costCents: true },
+    prisma.return.findMany({
+      where: {
+        accountId: user.accountId,
+        returnedAt: { gte: from, lte: to },
+        cancelledAt: null,
+        sale: {
+          type: "CONTADO",
+          cancelledAt: null,
+        },
+      },
+      include: {
+        sale: {
+          select: {
+            soldAt: true,
+          },
+        },
+        items: {
+          include: {
+            saleItem: {
+              select: {
+                product: {
+                  select: {
+                    costCents: true,
+                  },
+                },
+              },
+            },
           },
         },
       },
-    },
-  })
+    }),
+    // 2. COSTO DE VENTAS: Costo de los productos vendidos en el período
+    // Obtener todas las ventas del período (contado y crédito) con sus items
+    prisma.sale.findMany({
+      where: {
+        accountId: user.accountId,
+        soldAt: { gte: from, lte: to },
+        cancelledAt: null, // Excluir canceladas
+      },
+      include: {
+        items: {
+          include: {
+            product: {
+              select: { costCents: true },
+            },
+          },
+        },
+      },
+    }),
+  ])
 
-  const maxSoldAt = allSales.reduce<Date | null>((latest, sale) => {
-    if (!latest) return sale.soldAt
-    return sale.soldAt > latest ? sale.soldAt : latest
-  }, null)
+  const grossCashSalesTotalCents = cashSales.reduce((sum, sale) => sum + sale.totalCents, 0)
+  const cashReturnsTotalCents = cashReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
+  const salesTotalCents = grossCashSalesTotalCents - cashReturnsTotalCents
+  const paymentsTotalCents = payments.reduce((sum, payment) => sum + payment.amountCents, 0)
+  const totalRevenueCents = salesTotalCents + paymentsTotalCents
+  const cashReturnsItbisCents = cashReturns.reduce((sum, ret) => sum + ret.itbisCents, 0)
+
+  const soldDatesForCost = [
+    ...allSales.map((sale) => sale.soldAt),
+    ...cashReturns.map((ret) => ret.sale.soldAt),
+  ]
+  const maxSoldAt = soldDatesForCost.length > 0
+    ? soldDatesForCost.reduce((latest, soldAt) => (soldAt > latest ? soldAt : latest))
+    : null
   const soldProductIds = Array.from(
-    new Set(allSales.flatMap((sale) => sale.items.map((item) => item.productId)))
+    new Set([
+      ...allSales.flatMap((sale) => sale.items.map((item) => item.productId)),
+      ...cashReturns.flatMap((ret) => ret.items.map((item) => item.productId)),
+    ])
   )
 
   const purchaseCostHistory = maxSoldAt && soldProductIds.length > 0
@@ -212,8 +251,8 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     costsByProductId.set(item.productId, list)
   }
 
-  // Calcular costo de ventas usando costo historico (ultima compra disponible antes de la venta).
-  const costOfSalesCents = allSales.reduce((total, sale) => {
+  // Calcular costo de ventas usando costo histórico (ultima compra antes de la venta).
+  const grossCostOfSalesCents = allSales.reduce((total, sale) => {
     const saleCost = sale.items.reduce((itemTotal, item) => {
       const historicalUnitCostCents = findHistoricalUnitCostCents(
         costsByProductId,
@@ -225,7 +264,22 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     }, 0)
     return total + saleCost
   }, 0)
-  
+
+  const cashReturnsCostCents = cashReturns.reduce((total, ret) => {
+    const returnCost = ret.items.reduce((itemTotal, item) => {
+      const fallbackCostCents = item.saleItem?.product.costCents ?? 0
+      const historicalUnitCostCents = findHistoricalUnitCostCents(
+        costsByProductId,
+        item.productId,
+        ret.sale.soldAt,
+        fallbackCostCents
+      )
+      return itemTotal + (historicalUnitCostCents * toQty(item.qty))
+    }, 0)
+    return total + returnCost
+  }, 0)
+
+  const costOfSalesCents = grossCostOfSalesCents - cashReturnsCostCents
   const purchasesCount = allSales.length
 
   // 3. UTILIDAD BRUTA: Ventas - Costo de ventas
@@ -239,7 +293,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
       // OperatingExpense no tiene campo de cancelación por ahora
     },
   })
-  const operatingExpensesCents = operatingExpenses.reduce((s, e) => s + e.amountCents, 0)
+  const operatingExpensesCents = operatingExpenses.reduce((sum, expense) => sum + expense.amountCents, 0)
 
   // 5. UTILIDAD OPERATIVA: Utilidad bruta - Gastos operativos
   const operatingProfitCents = grossProfitCents - operatingExpensesCents
@@ -248,7 +302,8 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   const otherIncomeExpensesCents = 0
 
   // 7. IMPUESTOS (ITBIS neto): ITBIS cobrado en ventas - ITBIS pagado en compras
-  const salesItbisCents = allSales.reduce((sum, sale) => sum + sale.itbisCents, 0)
+  const grossSalesItbisCents = allSales.reduce((sum, sale) => sum + sale.itbisCents, 0)
+  const salesItbisCents = grossSalesItbisCents - cashReturnsItbisCents
   const purchases = await prisma.purchase.findMany({
     where: {
       accountId: user.accountId,
@@ -292,7 +347,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
       },
     },
   })
-  const accountsReceivableTotalCents = accountsReceivable.reduce((s, ar) => s + ar.balanceCents, 0)
+  const accountsReceivableTotalCents = accountsReceivable.reduce((sum, ar) => sum + ar.balanceCents, 0)
 
   return {
     from,
@@ -300,11 +355,14 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     // Ingresos/Ventas
     salesTotalCents,
     salesCount: cashSales.length,
+    cashReturnsCount: cashReturns.length,
+    cashReturnsTotalCents,
     paymentsTotalCents,
     paymentsCount: payments.length,
     totalRevenueCents,
     // Costo de ventas
     costOfSalesCents,
+    cashReturnsCostCents,
     purchasesCount, // Número de ventas (no compras)
     // Utilidad bruta
     grossProfitCents,
@@ -317,6 +375,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     otherIncomeExpensesCents,
     // Impuestos
     salesItbisCents,
+    cashReturnsItbisCents,
     purchasesItbisCents,
     taxesCents,
     // Utilidad neta

@@ -32,8 +32,9 @@ export default async function DailyClosePage({
             <CardTitle className="text-sm text-muted-foreground">Vendido hoy</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">{formatRD(data.soldTotal)}</div>
+            <div className="text-2xl font-semibold">{formatRD(data.soldTotalNetCents)}</div>
             <div className="mt-1 text-xs text-muted-foreground">{data.salesCount} facturas</div>
+            <div className="mt-1 text-xs text-muted-foreground">Bruto: {formatRD(data.soldTotal)}</div>
           </CardContent>
         </Card>
 
@@ -42,7 +43,8 @@ export default async function DailyClosePage({
             <CardTitle className="text-sm text-muted-foreground">Vendido contado</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">{formatRD(data.soldCash)}</div>
+            <div className="text-2xl font-semibold">{formatRD(data.soldCashNetCents)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">Bruto: {formatRD(data.soldCash)}</div>
           </CardContent>
         </Card>
 
@@ -65,6 +67,18 @@ export default async function DailyClosePage({
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm text-muted-foreground">Devoluciones contado</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-semibold text-red-600">-{formatRD(data.cashReturnsTotalCents)}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Descontadas por fecha de devolución para el neto del período
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

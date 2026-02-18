@@ -72,6 +72,13 @@ export default async function ProfitReportPage({
                 </div>
                 <div className="text-base font-medium text-green-600">{formatRD(data.paymentsTotalCents)}</div>
               </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm">Devoluciones contado</div>
+                  <div className="text-xs text-muted-foreground">{data.cashReturnsCount} devoluciones</div>
+                </div>
+                <div className="text-base font-medium text-red-600">-{formatRD(data.cashReturnsTotalCents)}</div>
+              </div>
             </div>
             <div className="flex items-center justify-between border-t pt-2">
               <div className="font-semibold">Total Ingresos</div>
@@ -90,6 +97,13 @@ export default async function ProfitReportPage({
                 <div className="text-xs text-muted-foreground">Costo de productos vendidos</div>
               </div>
               <div className="text-base font-medium text-red-600">-{formatRD(data.costOfSalesCents)}</div>
+            </div>
+            <div className="flex items-center justify-between pl-4">
+              <div>
+                <div className="text-sm">Reverso costo por devoluciones</div>
+                <div className="text-xs text-muted-foreground">Ajuste de costo de ventas por devoluciones contado</div>
+              </div>
+              <div className="text-base font-medium text-green-600">{formatRD(data.cashReturnsCostCents)}</div>
             </div>
           </div>
 
@@ -153,7 +167,8 @@ export default async function ProfitReportPage({
               <div>
                 <div className="text-sm text-muted-foreground">ITBIS neto (ventas - compras)</div>
                 <div className="text-xs text-muted-foreground">
-                  ITBIS en ventas: {formatRD(data.salesItbisCents)} · ITBIS en compras: {formatRD(data.purchasesItbisCents)}
+                  ITBIS en ventas neto: {formatRD(data.salesItbisCents)} · Devoluciones contado: -
+                  {formatRD(data.cashReturnsItbisCents)} · ITBIS en compras: {formatRD(data.purchasesItbisCents)}
                 </div>
               </div>
               <div className="text-base font-medium">{formatRD(data.taxesCents)}</div>

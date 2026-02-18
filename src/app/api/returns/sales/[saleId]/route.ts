@@ -39,7 +39,8 @@ export async function GET(
             phone: sale.customer.phone || null,
           }
         : null,
-      items: sale.items.map((item: any) => ({
+      returnPolicy: sale.returnPolicy,
+      items: sale.items.map((item) => ({
         id: item.id,
         saleItemId: item.id,
         productId: item.productId,
@@ -58,10 +59,11 @@ export async function GET(
           : null,
       })),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en GET /api/returns/sales/[saleId]:", error)
+    const message = error instanceof Error ? error.message : "Error obteniendo venta para devolución"
     return NextResponse.json(
-      { error: error.message || "Error obteniendo venta para devolución" },
+      { error: message },
       { status: 500 }
     )
   }
