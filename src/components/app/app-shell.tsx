@@ -66,7 +66,7 @@ const nav = [
   { href: "/reports", label: "Reportes", icon: BarChart3 },
   { href: "/shipping-labels", label: "Etiquetas de envío", icon: Truck },
   { href: "/operating-expenses", label: "Gastos operativos", icon: DollarSign },
-  { href: "/billing", label: "Facturación", icon: CreditCard },
+  { href: "/billing", label: "Planes Y facturacion", icon: CreditCard },
   { href: "/settings", label: "Ajustes", icon: Settings },
   { href: "/backups", label: "Backups", icon: Database },
 ]
