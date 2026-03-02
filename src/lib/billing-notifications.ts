@@ -109,6 +109,11 @@ export async function sendBillingNotifications(): Promise<{
         include: {
           billingProfile: true,
           companySettings: true,
+          users: {
+            where: { isOwner: true },
+            select: { email: true },
+            take: 1,
+          },
         },
       },
     },
@@ -116,7 +121,8 @@ export async function sendBillingNotifications(): Promise<{
 
   for (const subscription of subscriptions) {
     const { account } = subscription
-    const email = account.billingProfile?.email || ""
+    const ownerEmail = account.users[0]?.email || ""
+    const email = account.billingProfile?.email || ownerEmail
     const accountName = account.companySettings?.name || account.name
 
     if (!email) continue
