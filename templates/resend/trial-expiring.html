@@ -31,29 +31,19 @@
     }
 
     .brand-row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      display: block;
     }
 
-    .logo {
-      width: 42px;
-      height: 42px;
-      border-radius: 10px;
-      object-fit: contain;
-      background: rgba(255, 255, 255, 0.15);
-      padding: 4px;
+    .brand-logo {
+      width: 170px;
+      max-width: 100%;
+      height: auto;
+      display: block;
     }
 
-    .brand-copy h1 {
-      margin: 0;
-      font-size: 28px;
-      letter-spacing: 0.01em;
-    }
-
-    .brand-copy .tagline {
+    .brand-row .tagline {
       opacity: 0.9;
-      margin: 4px 0 0;
+      margin: 10px 0 0;
       font-size: 14px;
     }
 
@@ -110,11 +100,8 @@
   <div class="card">
     <div class="header">
       <div class="brand-row">
-        <img class="logo" src="{{logoUrl}}" alt="Logo {{brandName}}" />
-        <div class="brand-copy">
-          <h1>{{brandName}}</h1>
-          <p class="tagline">{{brandTagline}}</p>
-        </div>
+        <img class="brand-logo" src="{{logoUrl}}" alt="{{brandName}}" />
+        <p class="tagline">{{brandTagline}}</p>
       </div>
       <p>Período de prueba</p>
     </div>

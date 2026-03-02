@@ -26,14 +26,23 @@
       background: linear-gradient(135deg, #991b1b, #7f1d1d);
       color: white;
     }
-    .header h1 {
-      margin: 0;
-      font-size: 28px;
-      letter-spacing: 0.01em;
+    .brand-row {
+      display: block;
+    }
+    .brand-logo {
+      width: 170px;
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+    .brand-row .tagline {
+      opacity: 0.9;
+      margin: 10px 0 0;
+      font-size: 14px;
     }
     .header p {
       opacity: 0.9;
-      margin: 8px 0 0;
+      margin: 12px 0 0;
       font-size: 16px;
     }
     .content {
@@ -95,7 +104,10 @@
 <body>
   <div class="card">
     <div class="header">
-      <h1>🔒 Cuenta bloqueada</h1>
+      <div class="brand-row">
+        <img class="brand-logo" src="{{logoUrl}}" alt="{{brandName}}" />
+        <p class="tagline">{{brandTagline}}</p>
+      </div>
       <p>Acceso restringido por falta de pago</p>
     </div>
     <div class="content">

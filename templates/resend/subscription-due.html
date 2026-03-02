@@ -30,15 +30,26 @@
       color: white;
     }
 
-    .header h1 {
-      margin: 0;
-      font-size: 28px;
-      letter-spacing: 0.01em;
+    .brand-row {
+      display: block;
+    }
+
+    .brand-logo {
+      width: 170px;
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .brand-row .tagline {
+      opacity: 0.9;
+      margin: 10px 0 0;
+      font-size: 14px;
     }
 
     .header p {
       opacity: 0.9;
-      margin: 8px 0 0;
+      margin: 12px 0 0;
     }
 
     .content {
@@ -96,7 +107,10 @@
 <body>
   <div class="card">
     <div class="header">
-      <h1>{{brandName}}</h1>
+      <div class="brand-row">
+        <img class="brand-logo" src="{{logoUrl}}" alt="{{brandName}}" />
+        <p class="tagline">{{brandTagline}}</p>
+      </div>
       <p>Recordatorio de pago</p>
     </div>
     <div class="content">

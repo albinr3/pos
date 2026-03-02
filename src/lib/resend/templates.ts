@@ -184,7 +184,9 @@ export async function renderSubscriptionDueEmail(
   const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
   const appUrl = rawAppUrl.replace(/\/+$/, "")
   const billingUrl = `${appUrl}/billing`
+  const logoUrl = `${appUrl}/movoLogo.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const brandTagline = "Sistema de inventario y facturacion"
   const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
 
   const message =
@@ -194,6 +196,8 @@ export async function renderSubscriptionDueEmail(
 
   const html = await renderTemplate("subscription-due.html", {
     brandName,
+    brandTagline,
+    logoUrl,
     accountName: data.accountName,
     message,
     billingUrl,
@@ -219,7 +223,9 @@ export async function renderGracePeriodEmail(data: GracePeriodTemplateData) {
   const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
   const appUrl = rawAppUrl.replace(/\/+$/, "")
   const billingUrl = `${appUrl}/billing`
+  const logoUrl = `${appUrl}/movoLogo.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const brandTagline = "Sistema de inventario y facturacion"
   const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
 
   const message =
@@ -229,6 +235,8 @@ export async function renderGracePeriodEmail(data: GracePeriodTemplateData) {
 
   const html = await renderTemplate("grace-period.html", {
     brandName,
+    brandTagline,
+    logoUrl,
     accountName: data.accountName,
     message,
     billingUrl,
@@ -255,11 +263,15 @@ export async function renderAccountBlockedEmail(
   const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
   const appUrl = rawAppUrl.replace(/\/+$/, "")
   const billingUrl = `${appUrl}/billing`
+  const logoUrl = `${appUrl}/movoLogo.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const brandTagline = "Sistema de inventario y facturacion"
   const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
 
   const html = await renderTemplate("account-blocked.html", {
     brandName,
+    brandTagline,
+    logoUrl,
     accountName: data.accountName,
     billingUrl,
     appUrl,
