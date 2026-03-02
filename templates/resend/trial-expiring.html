@@ -30,15 +30,36 @@
       color: white;
     }
 
-    .header h1 {
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      object-fit: contain;
+      background: rgba(255, 255, 255, 0.15);
+      padding: 4px;
+    }
+
+    .brand-copy h1 {
       margin: 0;
       font-size: 28px;
       letter-spacing: 0.01em;
     }
 
+    .brand-copy .tagline {
+      opacity: 0.9;
+      margin: 4px 0 0;
+      font-size: 14px;
+    }
+
     .header p {
       opacity: 0.9;
-      margin: 8px 0 0;
+      margin: 12px 0 0;
     }
 
     .content {
@@ -54,15 +75,6 @@
 
     .content p {
       margin: 16px 0;
-    }
-
-    .highlight {
-      display: inline-block;
-      padding: 4px 12px;
-      background: rgba(99, 102, 241, 0.2);
-      border-radius: 8px;
-      color: #a5b4fc;
-      font-weight: 600;
     }
 
     .button {
@@ -97,7 +109,13 @@
 <body>
   <div class="card">
     <div class="header">
-      <h1>{{brandName}}</h1>
+      <div class="brand-row">
+        <img class="logo" src="{{logoUrl}}" alt="Logo {{brandName}}" />
+        <div class="brand-copy">
+          <h1>{{brandName}}</h1>
+          <p class="tagline">{{brandTagline}}</p>
+        </div>
+      </div>
       <p>Período de prueba</p>
     </div>
     <div class="content">
