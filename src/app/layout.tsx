@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { esES } from "@clerk/localizations";
+import Script from "next/script";
 import { ServiceWorkerRegistrar } from "@/components/app/service-worker-registrar";
 import "./globals.css";
 
@@ -16,6 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 const siteUrl = "https://movopos.com";
+const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -147,6 +149,25 @@ export default function RootLayout({
   return (
     <ClerkProvider localization={clerkLocalization}>
       <html lang="es" suppressHydrationWarning>
+        <head>
+          {GA_MEASUREMENT_ID ? (
+            <>
+              <Script
+                async
+                src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+                strategy="afterInteractive"
+              />
+              <Script id="google-analytics" strategy="afterInteractive">
+                {`
+                  window.dataLayer = window.dataLayer || [];
+                  function gtag(){dataLayer.push(arguments);}
+                  gtag('js', new Date());
+                  gtag('config', '${GA_MEASUREMENT_ID}');
+                `}
+              </Script>
+            </>
+          ) : null}
+        </head>
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
           <ServiceWorkerRegistrar />
           {children}
