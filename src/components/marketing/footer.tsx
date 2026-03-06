@@ -2,8 +2,13 @@ import Link from "next/link"
 
 const footerLinks = {
   producto: [
+    { href: "/", label: "Sistema de facturación" },
+    { href: "/sistema-pos", label: "Sistema POS" },
+    { href: "/sistema-de-inventario", label: "Sistema de inventario" },
+    { href: "/facturacion-online", label: "Facturación online" },
+    { href: "/punto-de-venta-abarrotes", label: "Punto de venta abarrotes" },
     { href: "/pricing", label: "Precios" },
-    { href: "/about", label: "Características" },
+    { href: "/about", label: "Nosotros" },
   ],
   legal: [
     { href: "/privacy", label: "Privacidad" },

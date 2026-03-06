@@ -1,8 +1,9 @@
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Contáctanos | MOVOPos",
-  description: "¿Tienes preguntas, sugerencias o necesitas ayuda? Estamos aquí para ti. Envíanos un mensaje y te responderemos lo antes posible.",
+  title: "Contacto | Sistema de facturación MOVOPos",
+  description:
+    "Habla con el equipo de MOVOPos y conoce cómo implementar nuestro sistema de facturación, POS e inventario en República Dominicana.",
   alternates: {
     canonical: "/contact",
   },

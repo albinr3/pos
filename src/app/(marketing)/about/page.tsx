@@ -3,8 +3,9 @@ import Image from "next/image"
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Sobre Nosotros | MOVOPos",
-  description: "Conoce más sobre MOVOPos y nuestro equipo",
+  title: "Sobre MOVOPos | Sistema de facturación en República Dominicana",
+  description:
+    "Conoce la historia de MOVOPos, el sistema de facturación y punto de venta pensado para negocios en República Dominicana.",
   alternates: {
     canonical: "/about",
   },

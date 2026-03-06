@@ -15,14 +15,16 @@ export function Hero() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
           <div className="text-center lg:text-left">
             <h1 className="text-5xl font-bold tracking-tight text-white sm:text-7xl">
-              Software POS y sistema de facturación
+              Sistema de facturación
               <span className="block mt-3 text-white">
                 en República Dominicana
               </span>
             </h1>
             <p className="mt-8 text-xl leading-8 text-white/90 sm:text-2xl">
-              Sistema de facturación e inventario en la nube para negocios en República Dominicana: controla ventas, compras y cuentas por cobrar con facturación térmica.
-              Prueba gratis 15 días tu sistema de facturación y sistema POS República Dominicana.
+              Sistema de facturación en la nube para negocios en República Dominicana con un
+              software de facturacion, sistema de ventas e inventario, cuentas por cobrar y
+              facturación térmica. Prueba gratis 15 días y administra ventas en RD$ desde cualquier
+              dispositivo.
             </p>
             <div className="mt-10 flex items-center justify-center lg:justify-start gap-x-6">
               <Button asChild size="lg" className="bg-white text-gray-900 hover:bg-gray-100 font-semibold">
@@ -32,7 +34,7 @@ export function Hero() {
                 </Link>
               </Button>
             <Button asChild variant="outline" size="lg" className="border-2 border-white text-white bg-transparent hover:bg-white/10 hover:text-white">
-              <Link href="/pricing">Ver Precios</Link>
+              <Link href="/sistema-pos">Ver sistema POS</Link>
             </Button>
             </div>
           </div>

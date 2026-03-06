@@ -13,10 +13,11 @@ export function CTASection() {
       <div className="container">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            ¿Listo para comenzar?
+            ¿Listo para mejorar tu facturación?
           </h2>
           <p className="mt-6 text-xl leading-8 text-white/90">
-            Únete a cientos de negocios que ya están usando MOVOPos para gestionar sus ventas e inventario.
+            Únete a los negocios que ya usan MOVOPos para facturar en República Dominicana,
+            vender más rápido y mantener su inventario bajo control.
           </p>
           <p className="mt-4 text-xl leading-8 text-white/90 font-semibold">
             Comienza hoy con tu prueba de 15 días gratis.
@@ -29,7 +30,7 @@ export function CTASection() {
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg" className="border-2 border-white text-white bg-transparent hover:bg-white/10 hover:text-white">
-              <Link href="/app">Probar Ahora</Link>
+              <Link href="/facturacion-online">Ver facturación online</Link>
             </Button>
           </div>
         </div>

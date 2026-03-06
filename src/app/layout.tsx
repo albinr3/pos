@@ -20,15 +20,20 @@ const siteUrl = "https://movopos.com";
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "MOVOPos - Software POS en República Dominicana",
+    default: "MOVOPos - Sistema de facturación en República Dominicana",
     template: "%s | MOVOPos",
   },
   description:
-    "Software POS en la nube para República Dominicana: controla ventas, inventario, compras y cuentas por cobrar con facturación térmica y acceso desde cualquier dispositivo.",
+    "Sistema de facturación en República Dominicana con punto de venta, inventario, compras y cuentas por cobrar. Factura en RD$ desde cualquier dispositivo.",
   keywords: [
-    "software pos",
+    "sistema de facturación en república dominicana",
+    "sistema de facturación",
+    "sistema pos",
     "sistema punto de venta",
+    "facturación online",
     "inventario",
+    "sistema de inventario",
+    "punto de venta",
     "facturación térmica",
     "república dominicana",
     "control de ventas",
@@ -48,27 +53,27 @@ export const metadata: Metadata = {
     locale: "es_DO",
     url: siteUrl,
     siteName: "MOVOPos",
-    title: "MOVOPos - Software POS en República Dominicana",
+    title: "MOVOPos - Sistema de facturación en República Dominicana",
     description:
-      "Software POS en la nube para República Dominicana: controla ventas, inventario, compras y cuentas por cobrar con facturación térmica y acceso desde cualquier dispositivo.",
+      "Sistema de facturación en República Dominicana con punto de venta, inventario, compras y cuentas por cobrar para negocios locales.",
     images: [
       {
         url: "/hero-img.svg",
         width: 1200,
         height: 630,
-        alt: "Software POS en República Dominicana",
+        alt: "Sistema de facturación en República Dominicana",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "MOVOPos - Software POS en República Dominicana",
+    title: "MOVOPos - Sistema de facturación en República Dominicana",
     description:
-      "Software POS en la nube para República Dominicana: controla ventas, inventario, compras y cuentas por cobrar con facturación térmica y acceso desde cualquier dispositivo.",
+      "Sistema de facturación en República Dominicana con punto de venta, inventario, compras y cuentas por cobrar para negocios locales.",
     images: [
       {
         url: "/hero-img.svg",
-        alt: "Software POS en República Dominicana",
+        alt: "Sistema de facturación en República Dominicana",
       },
     ],
   },

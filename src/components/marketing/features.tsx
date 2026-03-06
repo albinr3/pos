@@ -61,10 +61,12 @@ export function Features() {
       <div className="container">
         <div className="mx-auto max-w-2xl text-center mb-8">
           <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Funciones clave de sistema POS y facturación en República Dominicana
+            Funciones clave de nuestro sistema de facturación en República Dominicana
           </h2>
           <p className="mt-6 text-xl text-muted-foreground">
-            Operaciones listas para facturar, controlar inventario y cobrar en RD$ desde un solo lugar.
+            Factura, vende y cobra en RD$ desde un solo software de inventario y sistema de control
+            de inventarios pensado para negocios dominicanos que también necesitan vender con más
+            orden.
           </p>
         </div>
 

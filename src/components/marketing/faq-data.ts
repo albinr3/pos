@@ -5,43 +5,43 @@ export type FAQItem = {
 
 export const faqItems: FAQItem[] = [
   {
-    question: "¿Qué es MOVOPos y para quién está diseñado?",
+    question: "¿Qué es MOVOPos y para quién está diseñado en República Dominicana?",
     answer:
-      "MOVOPos es un software POS en la nube para negocios en República Dominicana que necesitan controlar ventas, inventario, compras y cuentas por cobrar desde un solo lugar.",
+      "MOVOPos es un sistema de facturación en República Dominicana para colmados, tiendas, repuestos, salones y otros negocios que necesitan controlar ventas, inventario, compras y cuentas por cobrar desde un solo lugar.",
   },
   {
-    question: "¿Funciona con moneda local y facturación térmica?",
+    question: "¿Funciona con RD$ y facturación térmica?",
     answer:
-      "Sí. Puedes trabajar en RD$, imprimir en impresoras térmicas y registrar múltiples métodos de pago. La facturación electrónica se encuentra en nuestro roadmap.",
+      "Sí. Puedes trabajar en RD$, imprimir en impresoras térmicas y registrar múltiples métodos de pago para tu operación diaria.",
   },
   {
-    question: "¿Necesito instalar algo o hardware especial?",
+    question: "¿Puedo usarlo como facturación online sin instalar programas complejos?",
     answer:
-      "No. MOVOPos es 100% web: accedes con tu navegador desde laptop, tablet o móvil. Solo conecta tu impresora térmica y comienza a facturar.",
+      "Sí. MOVOPos funciona 100% web, así que puedes entrar desde laptop, tablet o móvil. Solo conectas tu impresora térmica y empiezas a facturar.",
   },
   {
-    question: "¿Puedo probar gratis y cuánto cuesta?",
+    question: "¿Incluye sistema POS y control de inventario?",
+    answer:
+      "Sí. Además de facturación, incluye sistema POS, control de inventario, compras, clientes, cuentas por cobrar, cotizaciones y devoluciones.",
+  },
+  {
+    question: "¿Puedo probarlo gratis y cuánto cuesta?",
     answer:
       "Tienes 15 días de prueba gratis. Luego pagas RD$1,300 al mes con todas las funcionalidades incluidas y sin comisiones por transacción.",
   },
   {
     question: "¿Puedo usarlo con varios usuarios y roles?",
     answer:
-      "Sí. Agrega múltiples usuarios con permisos por rol (cajero, administrador, inventario) para mantener el control de tu operación.",
+      "Sí. Agrega múltiples usuarios con permisos por rol como cajero, administrador o inventario para mantener el control de tu operación.",
   },
   {
     question: "¿Necesito internet todo el tiempo?",
     answer:
-      "Requiere conexión a internet para sincronizar ventas e inventario en tiempo real y que siempre tengas datos actualizados.",
+      "Necesitas conexión para sincronizar ventas e inventario en tiempo real y mantener tus datos siempre actualizados en la nube.",
   },
   {
-    question: "¿Cómo protegen mis datos?",
+    question: "¿Cómo protegen mis datos y qué soporte ofrecen?",
     answer:
-      "Utilizamos infraestructura en la nube con cifrado y respaldos automáticos. Solo accedes con credenciales seguras y control de permisos.",
-  },
-  {
-    question: "¿Tienen soporte para negocios en República Dominicana?",
-    answer:
-      "Sí. Ofrecemos soporte por email y acompañamiento para puesta en marcha con foco en necesidades de negocios dominicanos.",
+      "Usamos infraestructura en la nube con respaldos automáticos y control de permisos. Además, ofrecemos soporte y acompañamiento para negocios en República Dominicana.",
   },
 ]

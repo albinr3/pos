@@ -8,9 +8,12 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/pricing",
     "/about",
     "/contact",
+    "/sistema-pos",
+    "/sistema-de-inventario",
+    "/facturacion-online",
+    "/punto-de-venta-abarrotes",
     "/privacy",
     "/terms",
-    "/login",
   ]
 
   return pages.map((path) => ({

@@ -26,8 +26,9 @@ const plans: PricingPlan[] = [
 ]
 
 export const metadata: Metadata = {
-  title: "Precios | MOVOPos",
-  description: "Elige el plan perfecto para tu negocio. Precios transparentes y sin sorpresas.",
+  title: "Precios de sistema de facturación | MOVOPos",
+  description:
+    "Conoce el precio de nuestro sistema de facturación en República Dominicana. Un solo plan con POS, inventario y prueba gratis de 15 días.",
   alternates: {
     canonical: "/pricing",
   },
@@ -39,10 +40,11 @@ export default function PricingPage() {
       <div className="container">
         <div className="mx-auto max-w-2xl text-center mb-16">
           <h1 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Precio simple y transparente
+            Precio de nuestro sistema de facturación
           </h1>
           <p className="mt-6 text-lg leading-8 text-muted-foreground">
-            Un solo plan con todas las funcionalidades que necesitas. Puedes cancelar en cualquier momento.
+            Un solo plan para facturar, vender y controlar inventario en República Dominicana.
+            Puedes cancelar en cualquier momento.
           </p>
         </div>
 
@@ -55,7 +57,7 @@ export default function PricingPage() {
         <div className="mt-16 text-center">
           <p className="text-sm text-muted-foreground">
             Incluye prueba gratuita de 15 días. ¿Tienes preguntas?{" "}
-            <a href="/about" className="text-primary hover:underline">
+            <a href="/contact" className="text-primary hover:underline">
               Contáctanos
             </a>
           </p>

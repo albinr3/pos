@@ -11,22 +11,22 @@ import Link from "next/link"
 import { ArrowRight } from "lucide-react"
 
 export const metadata: Metadata = {
-  title: "Software POS en República Dominicana | MOVOPos",
+  title: "Sistema de facturación en República Dominicana | MOVOPos",
   description:
-    "Sistema de facturación e inventario POS en República Dominicana: punto de venta, cuentas por cobrar y facturación térmica con prueba gratis de 15 días.",
+    "Sistema de facturación en República Dominicana para negocios, colmados y tiendas: factura en RD$, controla inventario y usa tu punto de venta con prueba gratis de 15 días.",
   alternates: {
     canonical: "/",
   },
   openGraph: {
-    title: "Software POS en República Dominicana | MOVOPos",
+    title: "Sistema de facturación en República Dominicana | MOVOPos",
     description:
-      "Controla ventas, inventario y cuentas por cobrar con un sistema de facturación y POS en la nube para negocios en República Dominicana.",
+      "Factura en RD$, controla inventario y vende con un sistema de facturación y POS en la nube para negocios en República Dominicana.",
     url: "/",
   },
   twitter: {
-    title: "Software POS en República Dominicana | MOVOPos",
+    title: "Sistema de facturación en República Dominicana | MOVOPos",
     description:
-      "Controla ventas, inventario y cuentas por cobrar con un sistema de facturación y POS en la nube para negocios en República Dominicana.",
+      "Factura en RD$, controla inventario y vende con un sistema de facturación y POS en la nube para negocios en República Dominicana.",
   },
 };
 
@@ -42,10 +42,10 @@ const jsonLd = [
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    name: "Software POS en República Dominicana | MOVOPos",
+    name: "Sistema de facturación en República Dominicana | MOVOPos",
     url: "https://movopos.com/",
     description:
-      "Software POS en la nube para República Dominicana: controla ventas, inventario, compras y cuentas por cobrar con facturación térmica.",
+      "Sistema de facturación en República Dominicana con punto de venta, inventario, cuentas por cobrar y facturación térmica para negocios locales.",
   },
   {
     "@context": "https://schema.org",
@@ -65,7 +65,7 @@ const previewPlans = [
   {
     name: "Plan Mensual",
     price: "RD$ 1,300",
-    description: "Acceso completo a todas las funcionalidades",
+    description: "Sistema de facturación, POS e inventario con acceso completo",
     features: [
       "Productos ilimitados",
       "Ventas ilimitadas",
@@ -82,6 +82,33 @@ const previewPlans = [
   },
 ]
 
+const solutionPages = [
+  {
+    title: "Sistema POS",
+    description:
+      "Conoce cómo funciona un sistema punto de venta o programa punto de venta para facturar rápido y cobrar con más control.",
+    href: "/sistema-pos",
+  },
+  {
+    title: "Sistema de inventario",
+    description:
+      "Descubre una solución para controlar stock, compras y productos si estás evaluando un programa de inventario o software de inventario.",
+    href: "/sistema-de-inventario",
+  },
+  {
+    title: "Facturación online",
+    description:
+      "Ideal para negocios que buscan un programa para hacer facturas o un programa para facturar desde cualquier dispositivo.",
+    href: "/facturacion-online",
+  },
+  {
+    title: "Punto de venta para abarrotes",
+    description:
+      "Pensado para colmados, abarrotes y puntos de venta para negocios pequeños con alta rotación.",
+    href: "/punto-de-venta-abarrotes",
+  },
+]
+
 export default function LandingPage() {
   return (
     <>
@@ -93,15 +120,49 @@ export default function LandingPage() {
       <Features />
       <BusinessTypesSection />
       <POSDemoSection />
-      
+
+      <section className="py-12 sm:py-16 bg-slate-50">
+        <div className="container">
+          <div className="mx-auto max-w-3xl text-center mb-8">
+            <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+              Soluciones para cada tipo de búsqueda
+            </h2>
+            <p className="mt-6 text-xl text-muted-foreground">
+              Además de nuestro sistema de facturación en República Dominicana, aquí encontrarás
+              contenido útil si estás comparando un software de facturacion, un programa de
+              facturacion, un sistema de ventas o un sistema de ventas para negocio.
+            </p>
+          </div>
+
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+            {solutionPages.map((page) => (
+              <Link
+                key={page.href}
+                href={page.href}
+                className="rounded-2xl border bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
+              >
+                <h3 className="text-2xl font-semibold text-foreground">{page.title}</h3>
+                <p className="mt-3 text-base text-muted-foreground">{page.description}</p>
+                <span className="mt-6 inline-flex items-center text-sm font-semibold text-violet-700">
+                  Ver más
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section className="py-12 sm:py-16 bg-white">
         <div className="container">
           <div className="mx-auto max-w-2xl text-center mb-8">
             <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-              Precio simple y transparente
+              Precio simple para tu sistema de facturación
             </h2>
             <p className="mt-6 text-xl text-muted-foreground">
-              Un solo plan con todas las funcionalidades que necesitas en tu sistema de facturación e inventario. Prueba sistema de facturación gratis por 15 días y cancela cuando quieras.
+              Un solo plan con todas las funcionalidades que necesitas si buscas software
+              facturacion, software de ventas e inventario o un sistema de ventas e inventario para
+              operar mejor. Prueba gratis por 15 días y cancela cuando quieras.
             </p>
           </div>
 
