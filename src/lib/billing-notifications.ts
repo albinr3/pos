@@ -54,19 +54,22 @@ type NotificationChannel = "email" | "in_app"
 async function hasNotificationBeenSent(
   accountId: string,
   type: NotificationType,
-  channel: NotificationChannel
+  channel: NotificationChannel,
+  onlyToday = true
 ): Promise<boolean> {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const where: { accountId: string; type: NotificationType; channel: NotificationChannel; sentAt?: { gte: Date } } = {
+    accountId,
+    type,
+    channel,
+  }
 
-  const notification = await prisma.billingNotification.findFirst({
-    where: {
-      accountId,
-      type,
-      channel,
-      sentAt: { gte: today },
-    },
-  })
+  if (onlyToday) {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    where.sentAt = { gte: today }
+  }
+
+  const notification = await prisma.billingNotification.findFirst({ where })
 
   return !!notification
 }
@@ -211,7 +214,7 @@ export async function sendBillingNotifications(): Promise<{
 
       // Check blocked notification (send once when blocked)
       if (subscription.status === "BLOCKED") {
-        if (!(await hasNotificationBeenSent(account.id, "blocked", "email"))) {
+        if (!(await hasNotificationBeenSent(account.id, "blocked", "email", false))) {
           const { subject, html } = await renderAccountBlockedEmail({
             accountName,
           })
