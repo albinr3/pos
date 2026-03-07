@@ -8,8 +8,6 @@ import { Button } from "@/components/ui/button"
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 
 const navItems = [
-  { href: "/sistema-pos", label: "Sistema POS" },
-  { href: "/sistema-de-inventario", label: "Inventario" },
   { href: "/pricing", label: "Precios" },
   { href: "/about", label: "Acerca de nosotros" },
 ]
@@ -60,8 +58,8 @@ export function MarketingHeader() {
           </SignedOut>
           <SignedIn>
             <div className="flex items-center gap-3">
-              <Button asChild variant="ghost" className="text-white hover:bg-white/10">
-                <Link href="/dashboard">Ir a la App</Link>
+              <Button asChild className="bg-white text-[#6B46C1] hover:bg-white/90">
+                <Link href="/dashboard">IR A LA APP</Link>
               </Button>
               <UserButton 
                 afterSignOutUrl="/"
@@ -122,7 +120,7 @@ export function MarketingHeader() {
             <SignedIn>
               <Button asChild className="w-full bg-white text-[#6B46C1] hover:bg-white/90">
                 <Link href="/dashboard" onClick={() => setMobileMenuOpen(false)}>
-                  Ir a la App
+                  IR A LA APP
                 </Link>
               </Button>
               <div className="flex items-center justify-center pt-2">
