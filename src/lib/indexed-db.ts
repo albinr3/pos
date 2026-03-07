@@ -81,7 +81,8 @@ export async function savePendingSale(sale: {
   customerId: string | null
   type: "CONTADO" | "CREDITO"
   paymentMethod?: string | null
-  paymentSplits?: Array<{ method: string; amountCents: number }>
+  transferBankName?: string | null
+  paymentSplits?: Array<{ method: string; amountCents: number; transferBankName?: string | null }>
   items: Array<{
     productId: string
     qty: number
@@ -121,6 +122,7 @@ export async function savePendingPayment(payment: {
   arId: string
   amountCents: number
   method: string
+  transferBankName?: string | null
   note?: string | null
   username: string
   createdAt: number

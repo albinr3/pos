@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation"
-import { Decimal } from "@prisma/client/runtime/library"
 import { PaymentMethod } from "@prisma/client"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
+import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
 import { PrintButton } from "@/components/app/print-button"
 
@@ -66,24 +66,9 @@ export default async function SaleReceiptPage({
 
   const paymentMethod = sale.paymentMethod
   const saleWithPayments = sale as typeof sale & {
-    payments?: Array<{ id: string; method: PaymentMethod; amountCents: number }>
+    payments?: Array<{ id: string; method: PaymentMethod; amountCents: number; transferBankName?: string | null }>
   }
   const splitPayments = saleWithPayments.payments ?? []
-
-  function formatPaymentMethod(method: PaymentMethod) {
-    switch (method) {
-      case "EFECTIVO":
-        return "Efectivo"
-      case "TRANSFERENCIA":
-        return "Transferencia"
-      case "TARJETA":
-        return "Tarjeta"
-      case "OTRO":
-        return "Otro"
-      default:
-        return method
-    }
-  }
 
   function formatSaleType(type: string) {
     return type === "CREDITO" ? "Credito" : "Contado"
@@ -205,14 +190,14 @@ export default async function SaleReceiptPage({
               {splitPayments.map((p, idx) => (
                 <span key={p.id}>
                   {idx > 0 && " + "}
-                  {formatPaymentMethod(p.method)} {formatRD(p.amountCents)}
+                  {formatPaymentWithBank(p.method, p.transferBankName)} {formatRD(p.amountCents)}
                 </span>
               ))}
             </div>
           ) : paymentMethod ? (
             <div>
               <span className="font-semibold">Pago:</span>{" "}
-              {formatPaymentMethod(paymentMethod)}
+              {formatPaymentWithBank(paymentMethod, sale.transferBankName)}
             </div>
           ) : null}
         </div>

@@ -7,6 +7,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/",
     "/pricing",
     "/about",
+    "/como-usar-la-plataforma",
     "/contact",
     "/sistema-pos",
     "/sistema-de-inventario",

@@ -567,6 +567,7 @@ model Sale {
   type SaleType
 
   paymentMethod PaymentMethod?
+  transferBankName String?
 
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id])
@@ -627,6 +628,7 @@ model SalePayment {
   sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   method      PaymentMethod
+  transferBankName String?
   amountCents Int
 
   @@index([saleId])
@@ -675,6 +677,7 @@ model Payment {
   paidAt      DateTime      @default(now())
   amountCents Int
   method      PaymentMethod @default(EFECTIVO)
+  transferBankName String?
   note        String?
 
   cancelledAt   DateTime?

@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
+import { isDominicanBankName } from "@/lib/dominican-banks"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -244,6 +245,12 @@ type CartItemInput = {
   wasPriceOverridden: boolean
 }
 
+type PaymentSplitInput = {
+  method: PaymentMethod
+  amountCents: number
+  transferBankName?: string | null
+}
+
 const MAX_SALE_ITEMS = 100
 
 function validateCartItems(items: CartItemInput[]) {
@@ -258,6 +265,37 @@ function validateCartItems(items: CartItemInput[]) {
     if (!Number.isFinite(item.unitPriceCents) || item.unitPriceCents <= 0 || !Number.isInteger(item.unitPriceCents)) {
       throw new Error("El precio unitario debe ser un entero positivo en centavos.")
     }
+  }
+}
+
+function validateTransferBankName(method: PaymentMethod | null | undefined, transferBankName?: string | null) {
+  if (method !== PaymentMethod.TRANSFERENCIA) return
+
+  const trimmedBankName = transferBankName?.trim()
+  if (!trimmedBankName) {
+    throw new Error("Debes seleccionar el banco de la transferencia.")
+  }
+  if (!isDominicanBankName(trimmedBankName)) {
+    throw new Error("El banco de transferencia seleccionado no es valido.")
+  }
+}
+
+function validatePaymentSplits(paymentSplits: PaymentSplitInput[] | undefined, totalCents: number) {
+  if (!paymentSplits || paymentSplits.length === 0) return
+
+  const totalSplitCents = paymentSplits.reduce((sum, split) => sum + split.amountCents, 0)
+  if (totalSplitCents !== totalCents) {
+    throw new Error("La suma de los pagos divididos debe ser igual al total de la venta.")
+  }
+
+  for (const split of paymentSplits) {
+    if (!Number.isInteger(split.amountCents) || split.amountCents <= 0) {
+      throw new Error("Cada pago dividido debe tener un monto valido.")
+    }
+    if (split.method === PaymentMethod.DIVIDIR_PAGO) {
+      throw new Error("Dividir pago no es un metodo valido dentro del desglose.")
+    }
+    validateTransferBankName(split.method, split.transferBankName)
   }
 }
 
@@ -291,7 +329,8 @@ export async function createSale(input: {
   customerId: string | null
   type: SaleType
   paymentMethod?: PaymentMethod | null
-  paymentSplits?: Array<{ method: PaymentMethod, amountCents: number }>
+  transferBankName?: string | null
+  paymentSplits?: PaymentSplitInput[]
   items: CartItemInput[]
   shippingCents?: number
   soldAt?: Date | string | number | null
@@ -433,6 +472,10 @@ export async function createSale(input: {
       const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
       const shippingCents = input.shippingCents ?? 0
       const totalCents = itemsTotalCents + shippingCents
+      const hasPaymentSplits = Boolean(input.paymentSplits && input.paymentSplits.length > 0)
+
+      validateTransferBankName(input.paymentMethod, input.transferBankName)
+      validatePaymentSplits(input.paymentSplits, totalCents)
 
       // Validar y usar customerId, o usar el cliente genérico por defecto
       let finalCustomerId: string | null = null
@@ -463,7 +506,13 @@ export async function createSale(input: {
           createdAt: soldAt,
           soldAt,
           type: input.type,
-          paymentMethod: input.type === SaleType.CONTADO && !input.paymentSplits ? input.paymentMethod : null,
+          paymentMethod: input.type === SaleType.CONTADO && !hasPaymentSplits ? input.paymentMethod : null,
+          transferBankName:
+            input.type === SaleType.CONTADO &&
+            !hasPaymentSplits &&
+            input.paymentMethod === PaymentMethod.TRANSFERENCIA
+              ? input.transferBankName?.trim() ?? null
+              : null,
           customerId: finalCustomerId,
           userId: user.id,
           subtotalCents,
@@ -479,14 +528,15 @@ export async function createSale(input: {
               lineTotalCents: i.unitPriceCents * i.qty,
             })),
           },
-          payments: input.paymentSplits && input.paymentSplits.length > 0 ? {
+          payments: hasPaymentSplits ? {
             create: input.paymentSplits.map((split) => ({
               method: split.method,
+              transferBankName: split.method === PaymentMethod.TRANSFERENCIA ? split.transferBankName?.trim() ?? null : null,
               amountCents: split.amountCents,
             })),
           } : undefined,
         },
-        select: { id: true, invoiceCode: true, type: true, soldAt: true },
+        select: { id: true, invoiceCode: true, type: true, soldAt: true, transferBankName: true },
       })
 
       await logAuditEvent({

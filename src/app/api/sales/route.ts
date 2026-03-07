@@ -16,12 +16,21 @@ type SaleBodyItem = {
   wasPriceOverridden?: boolean
 }
 
+type SalePaymentSplitBody = {
+  method?: string
+  amountCents?: number
+  amount?: number
+  transferBankName?: string | null
+}
+
 type SaleCreateBody = {
   items?: SaleBodyItem[]
   shippingCents?: number
   shipping?: number
   type?: string
   paymentMethod?: string
+  transferBankName?: string | null
+  paymentSplits?: SalePaymentSplitBody[]
   customerId?: string | null
   soldAt?: string | number | null
   createdAt?: string | number | null
@@ -104,6 +113,7 @@ export async function GET(request: NextRequest) {
         createdAt: sale.soldAt.toISOString(),
         type: sale.type,
         paymentMethod: sale.paymentMethod,
+        transferBankName: sale.transferBankName,
         customerId: sale.customerId,
         customerName: sale.customer?.name || null,
         subtotalCents: sale.subtotalCents,
@@ -165,14 +175,27 @@ export async function POST(request: NextRequest) {
         TARJETA: PaymentMethod.TARJETA,
         TRANSFERENCIA: PaymentMethod.TRANSFERENCIA,
         OTRO: PaymentMethod.OTRO,
+        DIVIDIR_PAGO: PaymentMethod.DIVIDIR_PAGO,
       }
       paymentMethod = methodMap[body.paymentMethod] || null
     }
+
+    const paymentSplits = Array.isArray(body.paymentSplits)
+      ? body.paymentSplits.map((split) => ({
+        method: methodMap[String(split.method || "").toUpperCase()] || PaymentMethod.OTRO,
+        amountCents:
+          split.amountCents ??
+          (typeof split.amount === "number" ? Math.round(split.amount * 100) : 0),
+        transferBankName: split.transferBankName || null,
+      }))
+      : undefined
 
     const sale = await createSale({
       customerId: body.customerId || null,
       type: saleType,
       paymentMethod: saleType === SaleType.CONTADO ? paymentMethod : null,
+      transferBankName: body.transferBankName || null,
+      paymentSplits: paymentSplits && paymentSplits.length > 0 ? paymentSplits : undefined,
       items,
       shippingCents,
       soldAt,
@@ -186,6 +209,7 @@ export async function POST(request: NextRequest) {
       type: sale.type,
       soldAt: sale.soldAt.toISOString(),
       createdAt: sale.soldAt.toISOString(),
+      transferBankName: sale.transferBankName ?? null,
     }, { status: 201 })
   } catch (error: unknown) {
     console.error("Error en POST /api/sales:", error)

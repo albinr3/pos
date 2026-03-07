@@ -106,6 +106,14 @@ export async function GET(
       where: { id, accountId: user.accountId },
       include: {
         customer: { select: { id: true, name: true } },
+        payments: {
+          select: {
+            id: true,
+            method: true,
+            amountCents: true,
+            transferBankName: true,
+          },
+        },
         items: {
           include: {
             product: { select: { id: true, name: true, sku: true, reference: true } },
@@ -125,6 +133,13 @@ export async function GET(
       createdAt: sale.soldAt.toISOString(),
       type: sale.type,
       paymentMethod: sale.paymentMethod,
+      transferBankName: sale.transferBankName,
+      paymentSplits: sale.payments.map((payment) => ({
+        id: payment.id,
+        method: payment.method,
+        amountCents: payment.amountCents,
+        transferBankName: payment.transferBankName,
+      })),
       customerId: sale.customerId,
       customerName: sale.customer?.name || null,
       subtotalCents: sale.subtotalCents,
@@ -250,6 +265,7 @@ export async function PUT(
       invoiceCode: updatedSale?.invoiceCode,
       type: updatedSale?.type,
       paymentMethod: updatedSale?.paymentMethod,
+      transferBankName: updatedSale?.transferBankName ?? null,
       customerId: updatedSale?.customerId,
       customerName: updatedSale?.customer?.name || null,
       totalCents: updatedSale?.totalCents,

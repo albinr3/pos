@@ -13,8 +13,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
+import { formatPaymentWithBank, getPaymentMethodLabel } from "@/lib/payment-methods"
 import { toast } from "@/hooks/use-toast"
-import { formatRD, toCents } from "@/lib/money"
+import { formatRD } from "@/lib/money"
 import { PriceInput } from "@/components/app/price-input"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import {
@@ -30,16 +32,7 @@ import { addPayment, listOpenAR } from "./actions"
 type AR = Awaited<ReturnType<typeof listOpenAR>>[number]
 
 function methodLabel(m: PaymentMethod) {
-  switch (m) {
-    case PaymentMethod.EFECTIVO:
-      return "Efectivo"
-    case PaymentMethod.TRANSFERENCIA:
-      return "Transferencia"
-    case PaymentMethod.TARJETA:
-      return "Tarjeta"
-    default:
-      return "Otro"
-  }
+  return getPaymentMethodLabel(m)
 }
 
 export function ARClient() {
@@ -61,12 +54,19 @@ export function ARClient() {
   const [selected, setSelected] = useState<AR | null>(null)
   const [amountCents, setAmountCents] = useState(0)
   const [method, setMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
+  const [transferBankName, setTransferBankName] = useState("")
   const [note, setNote] = useState("")
   const [isSaving, startSaving] = useTransition()
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
 
   const [openReceipts, setOpenReceipts] = useState(false)
   const [selectedForReceipts, setSelectedForReceipts] = useState<AR | null>(null)
+  const paymentMethods = [
+    PaymentMethod.EFECTIVO,
+    PaymentMethod.TRANSFERENCIA,
+    PaymentMethod.TARJETA,
+    PaymentMethod.OTRO,
+  ]
 
   function isLikelyOfflineError(error: unknown) {
     if (typeof navigator !== "undefined" && !navigator.onLine) return true
@@ -186,6 +186,7 @@ export function ARClient() {
     setSelected(ar)
     setAmountCents(ar.balanceCents ?? 0)
     setMethod(PaymentMethod.EFECTIVO)
+    setTransferBankName("")
     setNote("")
     setOpen(true)
   }
@@ -212,6 +213,15 @@ export function ARClient() {
       return
     }
 
+    if (method === PaymentMethod.TRANSFERENCIA && !transferBankName) {
+      toast({
+        title: "Banco requerido",
+        description: "Debes seleccionar el banco de la transferencia",
+        variant: "destructive",
+      })
+      return
+    }
+
     const savePaymentOffline = async (finalAmount: number) => {
       const tempId = `temp_payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       await savePendingPayment({
@@ -219,6 +229,7 @@ export function ARClient() {
         arId: selected.id,
         amountCents: finalAmount,
         method: method as string,
+        transferBankName: method === PaymentMethod.TRANSFERENCIA ? transferBankName : null,
         note: note || null,
         username: "admin",
         createdAt: Date.now(),
@@ -259,6 +270,7 @@ export function ARClient() {
               arId: selected.id,
               amountCents: finalAmount,
               method,
+              transferBankName: method === PaymentMethod.TRANSFERENCIA ? transferBankName : null,
               note: note || null,
             })
             toast({ title: "Pago registrado", description: "Abono aplicado correctamente" })
@@ -274,6 +286,7 @@ export function ARClient() {
 
         setOpen(false)
         setSelected(null)
+        setTransferBankName("")
         refresh()
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo registrar el pago" })
@@ -442,13 +455,13 @@ export function ARClient() {
       </Card>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[520px]">
+        <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>Registrar abono</DialogTitle>
           </DialogHeader>
 
           {selected && (
-            <div className="grid gap-3">
+            <div className="grid gap-3 overflow-y-auto pr-1">
               <div className="rounded-md border p-3 text-sm">
                 <div className="flex items-center gap-2 font-semibold">
                   <CreditCard className="h-4 w-4" /> {selected.sale.invoiceCode}
@@ -511,15 +524,39 @@ export function ARClient() {
                 <select
                   className="h-10 rounded-md border bg-background px-3 text-sm"
                   value={method}
-                  onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+                  onChange={(e) => {
+                    const nextMethod = e.target.value as PaymentMethod
+                    setMethod(nextMethod)
+                    if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
+                      setTransferBankName("")
+                    }
+                  }}
                 >
-                  {Object.values(PaymentMethod).map((m) => (
+                  {paymentMethods.map((m) => (
                     <option key={m} value={m}>
                       {methodLabel(m)}
                     </option>
                   ))}
                 </select>
               </div>
+
+              {method === PaymentMethod.TRANSFERENCIA && (
+                <div className="grid gap-2">
+                  <Label>Banco de la transferencia</Label>
+                  <select
+                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                    value={transferBankName}
+                    onChange={(e) => setTransferBankName(e.target.value)}
+                  >
+                    <option value="">Selecciona un banco</option>
+                    {DOMINICAN_BANKS.map((bankName) => (
+                      <option key={bankName} value={bankName}>
+                        {bankName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="grid gap-2">
                 <Label>Nota (opcional)</Label>
@@ -629,7 +666,9 @@ export function ARClient() {
                                 minute: "2-digit",
                               })}
                             </div>
-                            <div className="text-xs text-muted-foreground">Método: {methodLabel(p.method)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Método: {formatPaymentWithBank(p.method, p.transferBankName)}
+                            </div>
                             {p.note && <div className="text-xs text-muted-foreground">Nota: {p.note}</div>}
                           </div>
                           <Button asChild size="sm" variant="secondary">

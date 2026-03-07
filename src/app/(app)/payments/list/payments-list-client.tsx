@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatRD } from "@/lib/money"
+import { formatPaymentWithBank } from "@/lib/payment-methods"
 import type { CurrentUser } from "@/lib/auth"
 
 import { cancelPayment, listAllPayments } from "../../ar/actions"
@@ -17,16 +18,7 @@ import { cancelPayment, listAllPayments } from "../../ar/actions"
 type Payment = Awaited<ReturnType<typeof listAllPayments>>[number]
 
 function methodLabel(method: string) {
-  switch (method) {
-    case "EFECTIVO":
-      return "Efectivo"
-    case "TRANSFERENCIA":
-      return "Transferencia"
-    case "TARJETA":
-      return "Tarjeta"
-    default:
-      return "Otro"
-  }
+  return formatPaymentWithBank(method, null)
 }
 
 export function PaymentsListClient() {
@@ -82,7 +74,8 @@ export function PaymentsListClient() {
       p.receiptCode.toLowerCase().includes(q) ||
       p.ar.sale.invoiceCode.toLowerCase().includes(q) ||
       p.ar.customer.name.toLowerCase().includes(q) ||
-      methodLabel(p.method).toLowerCase().includes(q)
+      methodLabel(p.method).toLowerCase().includes(q) ||
+      (p.transferBankName || "").toLowerCase().includes(q)
     )
   })
 
@@ -109,6 +102,7 @@ export function PaymentsListClient() {
                   <TableHead>Factura</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Método</TableHead>
+                  <TableHead>Banco</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
@@ -125,7 +119,8 @@ export function PaymentsListClient() {
                     </TableCell>
                     <TableCell className="font-medium">{p.ar.sale.invoiceCode}</TableCell>
                     <TableCell>{p.ar.customer.name}</TableCell>
-                    <TableCell>{methodLabel(p.method)}</TableCell>
+                    <TableCell>{formatPaymentWithBank(p.method, p.transferBankName)}</TableCell>
+                    <TableCell>{p.transferBankName || "-"}</TableCell>
                     <TableCell className="text-right font-medium">{formatRD(p.amountCents)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
@@ -156,7 +151,7 @@ export function PaymentsListClient() {
 
                 {!isLoading && filteredPayments.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-12">
+                    <TableCell colSpan={8} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
                           src="/lupa.png"

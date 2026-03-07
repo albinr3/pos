@@ -1,9 +1,9 @@
 /* eslint-disable @next/next/no-img-element */
 import { notFound } from "next/navigation"
-import { Decimal } from "@prisma/client/runtime/library"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
+import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { DownloadInvoicePdfButton } from "@/components/app/download-invoice-pdf-button"
 import { PaymentMethod } from "@prisma/client"
 
@@ -69,23 +69,10 @@ export default async function InvoicePrintPage({
   const logoUrl = company?.logoUrl
   const paymentMethod = sale.paymentMethod
   // Asegurarse de que payments esté disponible
-  const saleWithPayments = sale as typeof sale & { payments?: Array<{ id: string; method: PaymentMethod; amountCents: number }> }
-  const splitPayments = saleWithPayments.payments ?? []
-
-  function formatPaymentMethod(method: PaymentMethod) {
-    switch (method) {
-      case "EFECTIVO":
-        return "Efectivo"
-      case "TRANSFERENCIA":
-        return "Transferencia"
-      case "TARJETA":
-        return "Tarjeta"
-      case "OTRO":
-        return "Otro"
-      default:
-        return method
-    }
+  const saleWithPayments = sale as typeof sale & {
+    payments?: Array<{ id: string; method: PaymentMethod; amountCents: number; transferBankName?: string | null }>
   }
+  const splitPayments = saleWithPayments.payments ?? []
 
   function formatSaleType(type: string) {
     return type === "CREDITO" ? "Credito" : "Contado"
@@ -162,7 +149,7 @@ export default async function InvoicePrintPage({
                 <ul className="ml-4 mt-1 list-disc space-y-0.5">
                   {splitPayments.map((p) => (
                     <li key={p.id}>
-                      {formatPaymentMethod(p.method)} — {formatRD(p.amountCents)}
+                      {formatPaymentWithBank(p.method, p.transferBankName)} — {formatRD(p.amountCents)}
                     </li>
                   ))}
                 </ul>
@@ -170,7 +157,7 @@ export default async function InvoicePrintPage({
             ) : paymentMethod ? (
               <div>
                 <span className="font-semibold">Método de pago:</span>{" "}
-                {formatPaymentMethod(paymentMethod)}
+                {formatPaymentWithBank(paymentMethod, sale.transferBankName)}
               </div>
             ) : null}
           </div>

@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { formatRD } from "@/lib/money"
+import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -31,6 +32,7 @@ interface Payment {
   paidAt: Date
   amountCents: number
   method: string
+  transferBankName?: string | null
   note: string | null
   cancelledAt: Date | null
   ar: {
@@ -74,7 +76,6 @@ export function ReceiptsReportClient({
   initialFilters: ReceiptFilters
 }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const [isExporting, setIsExporting] = useState(false)
   const [isExportingPDF, setIsExportingPDF] = useState(false)
 
@@ -187,7 +188,7 @@ export function ReceiptsReportClient({
         p.ar.customer.name.substring(0, 25),
         p.ar.sale.invoiceCode,
         formatRD(p.amountCents),
-        p.method,
+        formatPaymentWithBank(p.method, p.transferBankName),
         p.user.name.substring(0, 15),
         p.cancelledAt ? "CANCELADO" : "ACTIVO",
       ])
@@ -473,7 +474,7 @@ export function ReceiptsReportClient({
                         <div className="text-xs text-neutral-500">{payment.note}</div>
                       )}
                     </td>
-                    <td className="p-3 text-sm">{payment.method}</td>
+                    <td className="p-3 text-sm">{formatPaymentWithBank(payment.method, payment.transferBankName)}</td>
                     <td className="p-3 text-sm">{payment.user.name}</td>
                     <td className="p-3">
                       {payment.cancelledAt ? (

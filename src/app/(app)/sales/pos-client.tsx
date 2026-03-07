@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
 import { formatRD, calcItbisIncluded, toCents } from "@/lib/money"
+import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
 import { formatQty, formatQtyNumber, parseQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { toast } from "@/hooks/use-toast"
 import { useOnlineStatus } from "@/hooks/use-online-status"
@@ -49,6 +50,12 @@ type CartItem = {
 }
 
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
+
+type PaymentSplit = {
+  method: PaymentMethod
+  amountCents: number
+  transferBankName?: string | null
+}
 
 const USER_CACHE_KEY = "tejada-pos-user"
 
@@ -92,6 +99,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   const [customerId, setCustomerId] = useState<string | null>("generic")
   const [saleType, setSaleType] = useState<SaleType>(SaleType.CONTADO)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
+  const [transferBankName, setTransferBankName] = useState<string>("")
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
 
   const [cart, setCart] = useState<CartItem[]>([])
@@ -103,7 +111,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   const [showChangeDialog, setShowChangeDialog] = useState(false)
   const [amountPaidInput, setAmountPaidInput] = useState("")
   const [showSplitPaymentDialog, setShowSplitPaymentDialog] = useState(false)
-  const [paymentSplits, setPaymentSplits] = useState<Array<{ method: PaymentMethod, amountCents: number }>>([])
+  const [paymentSplits, setPaymentSplits] = useState<PaymentSplit[]>([])
   const [editingPaymentAmounts, setEditingPaymentAmounts] = useState<Record<number, string>>({})
   // Estado temporal para valores de cantidad en edición (productId -> string)
   const [editingQuantities, setEditingQuantities] = useState<Record<string, string>>({})
@@ -231,7 +239,17 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             setCustomerId(validCustomerId)
             setSaleType(state.saleType)
             setPaymentMethod(state.paymentMethod)
+            setTransferBankName(state.transferBankName || "")
             setShippingInput(state.shippingInput || "")
+            setPaymentSplits(
+              Array.isArray(state.paymentSplits)
+                ? state.paymentSplits.map((split: any) => ({
+                  method: split.method as PaymentMethod,
+                  amountCents: typeof split.amountCents === "number" ? split.amountCents : Number(split.amountCents) || 0,
+                  transferBankName: split.transferBankName ? String(split.transferBankName) : null,
+                }))
+                : []
+            )
 
             // Validar y limpiar el carrito antes de restaurarlo
             // Asegurarse de que todos los valores sean serializables (números, strings, etc.)
@@ -353,6 +371,8 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           customerId,
           saleType,
           paymentMethod,
+          transferBankName,
+          paymentSplits,
           shippingInput,
           timestamp: Date.now(),
         }
@@ -366,7 +386,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
       // Si el carrito está vacío, limpiar el estado guardado
       localStorage.removeItem("posCartState")
     }
-  }, [cart, customerId, saleType, paymentMethod, shippingInput, isInitialized])
+  }, [cart, customerId, saleType, paymentMethod, transferBankName, paymentSplits, shippingInput, isInitialized])
 
   // Interceptar navegación cuando hay productos en el carrito
   useEffect(() => {
@@ -414,6 +434,8 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             customerId,
             saleType,
             paymentMethod,
+            transferBankName,
+            paymentSplits,
             shippingInput,
             timestamp: Date.now(),
           }
@@ -433,7 +455,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
       document.removeEventListener("click", handleClick, true)
       window.removeEventListener("beforeunload", handleBeforeUnload)
     }
-  }, [cart, customerId, saleType, paymentMethod, shippingInput, pathname])
+  }, [cart, customerId, saleType, paymentMethod, transferBankName, paymentSplits, shippingInput, pathname])
 
   useEffect(() => {
     const q = query.trim()
@@ -616,9 +638,13 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
       return
     }
 
+    if (saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && !transferBankName) {
+      toast({ title: "Banco", description: "Debes seleccionar el banco de la transferencia." })
+      return
+    }
+
     // Si es dividir pago, mostrar diálogo de división
     if (saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.DIVIDIR_PAGO) {
-      setPaymentSplits([])
       setEditingPaymentAmounts({})
       setShowSplitPaymentDialog(true)
       return
@@ -648,6 +674,10 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
         customerId: customerId === "generic" ? null : customerId,
         type: saleType,
         paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
+          transferBankName:
+            saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
+              ? transferBankName
+              : null,
         paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
         items: cart.map((c) => ({
           productId: c.productId,
@@ -679,6 +709,10 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
               customerId: customerId === "generic" ? "generic" : customerId,
               type: saleType,
               paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
+              transferBankName:
+                saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
+                  ? transferBankName
+                  : null,
               paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
               items: cart.map((c) => ({
                 productId: c.productId,
@@ -711,6 +745,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
         setShowSplitPaymentDialog(false)
         setAmountPaidInput("")
         setPaymentSplits([])
+        setTransferBankName("")
         setEditingPaymentAmounts({})
         // Limpiar el estado guardado al completar la venta
         localStorage.removeItem("posCartState")
@@ -814,12 +849,36 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                 <select
                   className="h-10 rounded-md border bg-background px-3 text-sm"
                   value={paymentMethod ?? ""}
-                  onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                  onChange={(e) => {
+                    const nextMethod = e.target.value as PaymentMethod
+                    setPaymentMethod(nextMethod)
+                    if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
+                      setTransferBankName("")
+                    }
+                  }}
                 >
                   <option value={PaymentMethod.EFECTIVO}>Efectivo</option>
                   <option value={PaymentMethod.TRANSFERENCIA}>Transferencia</option>
                   <option value={PaymentMethod.TARJETA}>Tarjeta</option>
                   <option value={PaymentMethod.DIVIDIR_PAGO}>Dividir pago</option>
+                </select>
+              </div>
+            )}
+
+            {saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && (
+              <div className="grid gap-2">
+                <Label>Banco de la transferencia</Label>
+                <select
+                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  value={transferBankName}
+                  onChange={(e) => setTransferBankName(e.target.value)}
+                >
+                  <option value="">Selecciona un banco</option>
+                  {DOMINICAN_BANKS.map((bankName) => (
+                    <option key={bankName} value={bankName}>
+                      {bankName}
+                    </option>
+                  ))}
                 </select>
               </div>
             )}
@@ -1518,7 +1577,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    setPaymentSplits([...paymentSplits, { method: PaymentMethod.EFECTIVO, amountCents: 0 }])
+                    setPaymentSplits([...paymentSplits, { method: PaymentMethod.EFECTIVO, amountCents: 0, transferBankName: null }])
                   }}
                 >
                   <Plus className="h-4 w-4 mr-1" />
@@ -1534,7 +1593,6 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                 <div className="space-y-3">
                   {paymentSplits.map((split, index) => {
                     const amountInput = editingPaymentAmounts[index] ?? (split.amountCents > 0 ? (split.amountCents / 100).toFixed(2) : "")
-                    const remainingCents = totalCents - paymentSplits.reduce((sum, s, i) => i !== index ? sum + s.amountCents : sum, 0)
 
                     return (
                       <div key={index} className="flex items-start gap-3 p-3 border rounded-md">
@@ -1546,6 +1604,9 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                             onChange={(e) => {
                               const newSplits = [...paymentSplits]
                               newSplits[index].method = e.target.value as PaymentMethod
+                              if (newSplits[index].method !== PaymentMethod.TRANSFERENCIA) {
+                                newSplits[index].transferBankName = null
+                              }
                               setPaymentSplits(newSplits)
                             }}
                           >
@@ -1555,6 +1616,27 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                             <option value={PaymentMethod.OTRO}>Otro</option>
                           </select>
                         </div>
+                        {split.method === PaymentMethod.TRANSFERENCIA && (
+                          <div className="flex-1 grid gap-2">
+                            <Label>Banco</Label>
+                            <select
+                              className="h-10 rounded-md border bg-background px-3 text-sm"
+                              value={split.transferBankName ?? ""}
+                              onChange={(e) => {
+                                const newSplits = [...paymentSplits]
+                                newSplits[index].transferBankName = e.target.value || null
+                                setPaymentSplits(newSplits)
+                              }}
+                            >
+                              <option value="">Selecciona un banco</option>
+                              {DOMINICAN_BANKS.map((bankName) => (
+                                <option key={bankName} value={bankName}>
+                                  {bankName}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                         <div className="flex-1 grid gap-2">
                           <Label>Monto (RD$)</Label>
                           <Input
@@ -1653,7 +1735,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                 isSaving ||
                 paymentSplits.length === 0 ||
                 paymentSplits.reduce((sum, s) => sum + s.amountCents, 0) !== totalCents ||
-                paymentSplits.some(s => s.amountCents <= 0)
+                paymentSplits.some((s) => s.amountCents <= 0 || (s.method === PaymentMethod.TRANSFERENCIA && !s.transferBankName))
               }
             >
               {isSaving ? "Guardando…" : "Confirmar"}
@@ -1727,6 +1809,8 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                       customerId,
                       saleType,
                       paymentMethod,
+                      transferBankName,
+                      paymentSplits,
                       shippingInput,
                       timestamp: Date.now(),
                     }

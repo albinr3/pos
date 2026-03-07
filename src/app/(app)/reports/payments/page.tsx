@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatRD } from "@/lib/money"
+import { formatPaymentWithBank } from "@/lib/payment-methods"
 
 import { ReportDateRangeFilter } from "../filter-client"
 import { getPaymentsReport } from "../actions"
@@ -45,6 +46,7 @@ export default async function PaymentsReportPage({
                   <TableHead>Factura</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Método</TableHead>
+                  <TableHead>Banco</TableHead>
                   <TableHead className="text-right">Monto</TableHead>
                   <TableHead className="text-right">Reimprimir</TableHead>
                 </TableRow>
@@ -54,7 +56,8 @@ export default async function PaymentsReportPage({
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.ar.sale.invoiceCode}</TableCell>
                     <TableCell>{p.ar.customer.name}</TableCell>
-                    <TableCell>{p.method}</TableCell>
+                    <TableCell>{formatPaymentWithBank(p.method, p.transferBankName)}</TableCell>
+                    <TableCell>{p.transferBankName || "-"}</TableCell>
                     <TableCell className="text-right">{formatRD(p.amountCents)}</TableCell>
                     <TableCell className="text-right">
                       <Button asChild size="sm" variant="secondary">
@@ -66,7 +69,7 @@ export default async function PaymentsReportPage({
 
                 {data.payments.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                       Sin cobros en el rango.
                     </TableCell>
                   </TableRow>

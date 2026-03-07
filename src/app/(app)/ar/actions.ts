@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { PaymentMethod } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
+import { isDominicanBankName } from "@/lib/dominican-banks"
 
 type AuthActor = {
   id: string
@@ -180,12 +181,25 @@ export async function addPayment(input: {
   arId: string
   amountCents: number
   method: PaymentMethod
+  transferBankName?: string | null
   note?: string | null
 }, actor?: AuthActor) {
   const currentUser = actor ?? await getCurrentUser()
   assertAuthActor(currentUser)
 
   if (input.amountCents <= 0) throw new Error("El abono debe ser mayor a 0")
+  if (input.method === PaymentMethod.DIVIDIR_PAGO) {
+    throw new Error("Dividir pago no es un metodo valido para registrar un cobro.")
+  }
+  if (input.method === PaymentMethod.TRANSFERENCIA) {
+    const trimmedBankName = input.transferBankName?.trim()
+    if (!trimmedBankName) {
+      throw new Error("Debes seleccionar el banco de la transferencia.")
+    }
+    if (!isDominicanBankName(trimmedBankName)) {
+      throw new Error("El banco de transferencia seleccionado no es valido.")
+    }
+  }
 
   return prisma.$transaction(async (tx) => {
     // Verificar que la cuenta por cobrar pertenece al account del usuario
@@ -220,6 +234,7 @@ export async function addPayment(input: {
         receiptCode,
         amountCents: amount,
         method: input.method,
+        transferBankName: input.method === PaymentMethod.TRANSFERENCIA ? input.transferBankName?.trim() ?? null : null,
         note: input.note || null,
       },
       select: { id: true, receiptCode: true },
@@ -247,6 +262,7 @@ export async function addPayment(input: {
       details: {
         amountCents: amount,
         method: input.method,
+        transferBankName: input.method === PaymentMethod.TRANSFERENCIA ? input.transferBankName?.trim() ?? null : null,
         arId: ar.id,
         receiptCode: payment.receiptCode,
       },

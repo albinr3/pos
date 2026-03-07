@@ -51,6 +51,7 @@ export async function syncPendingData() {
           customerId: sale.customerId,
           type: sale.type,
           paymentMethod: sale.paymentMethod || undefined,
+          transferBankName: sale.transferBankName || undefined,
           paymentSplits: sale.paymentSplits,
           items: sale.items,
           shippingCents: sale.shippingCents || 0,
@@ -79,6 +80,7 @@ export async function syncPendingData() {
           arId: payment.arId,
           amountCents: payment.amountCents,
           method: payment.method as any,
+          transferBankName: payment.transferBankName || undefined,
           note: payment.note || undefined,
         })
 

@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
               OR: [
                 { receiptCode: { contains: query, mode: "insensitive" } },
                 { note: { contains: query, mode: "insensitive" } },
+                { transferBankName: { contains: query, mode: "insensitive" } },
                 { ar: { customer: { name: { contains: query, mode: "insensitive" } } } },
                 { ar: { sale: { invoiceCode: { contains: query, mode: "insensitive" } } } },
               ],
@@ -63,6 +64,7 @@ export async function GET(request: NextRequest) {
         receiptCode: p.receiptCode,
         amountCents: p.amountCents,
         method: p.method,
+        transferBankName: p.transferBankName,
         note: p.note,
         paidAt: p.paidAt.toISOString(),
         createdAt: p.createdAt.toISOString(),
@@ -160,6 +162,7 @@ export async function POST(request: NextRequest) {
       arId,
       amountCents,
       method,
+      transferBankName: body.transferBankName || null,
       note: body.note || null,
     }, user)
 
@@ -180,6 +183,7 @@ export async function POST(request: NextRequest) {
       receiptCode: payment.receiptCode,
       amountCents: payment.amountCents,
       method: payment.method,
+      transferBankName: payment.transferBankName,
       paidAt: payment.paidAt.toISOString(),
       appliedCents: paymentResult.appliedCents,
       newBalanceCents: paymentResult.newBalanceCents,

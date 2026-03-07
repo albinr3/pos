@@ -12,6 +12,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks(.*)", // Webhooks de Lemon Squeezy
   "/api/cron(.*)", // Cron jobs
   "/about",
+  "/como-usar-la-plataforma",
   "/contact",
   "/pricing",
   "/privacy",

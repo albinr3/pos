@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
+import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
 import { PrintButton } from "@/components/app/print-button"
 
@@ -135,7 +136,7 @@ export default async function PaymentReceiptPage({
         </div>
         <div className="flex justify-between">
           <span>Método</span>
-          <span className="font-semibold">{payment.method}</span>
+          <span className="font-semibold">{formatPaymentWithBank(payment.method, payment.transferBankName)}</span>
         </div>
         <div className="flex justify-between">
           <span>Pendiente</span>

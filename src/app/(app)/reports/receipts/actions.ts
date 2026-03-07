@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
+import { formatPaymentWithBank } from "@/lib/payment-methods"
 
 export interface ReceiptFilters {
   startDate?: string
@@ -176,6 +177,7 @@ export async function exportReceiptsToCSV(filters: ReceiptFilters = {}) {
     "Factura",
     "Monto",
     "Método",
+    "Banco",
     "Cajero",
     "Estado",
     "Nota",
@@ -188,7 +190,8 @@ export async function exportReceiptsToCSV(filters: ReceiptFilters = {}) {
     p.ar.customer.phone || "",
     p.ar.sale.invoiceCode,
     (p.amountCents / 100).toFixed(2),
-    p.method,
+    formatPaymentWithBank(p.method, p.transferBankName),
+    p.transferBankName || "",
     p.user.name,
     p.cancelledAt ? "CANCELADO" : "ACTIVO",
     p.note || "",

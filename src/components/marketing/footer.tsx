@@ -3,6 +3,7 @@ import Link from "next/link"
 const footerLinks = {
   producto: [
     { href: "/", label: "Sistema de facturación" },
+    { href: "/como-usar-la-plataforma", label: "Tutoriales" },
     { href: "/sistema-pos", label: "Sistema POS" },
     { href: "/sistema-de-inventario", label: "Sistema de inventario" },
     { href: "/facturacion-online", label: "Facturación online" },
