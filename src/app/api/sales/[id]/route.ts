@@ -19,6 +19,13 @@ type EditableSaleItem = {
   wasPriceOverridden?: boolean
 }
 
+type UpdateSalePaymentSplitBody = {
+  method?: string
+  amountCents?: number
+  amount?: number
+  transferBankName?: string | null
+}
+
 type UpdateSaleBody = {
   status?: string
   cancel?: boolean
@@ -26,6 +33,8 @@ type UpdateSaleBody = {
   type?: string
   customerId?: string | null
   paymentMethod?: string
+  transferBankName?: string | null
+  paymentSplits?: UpdateSalePaymentSplitBody[]
   soldAt?: string | number | null
   createdAt?: string | number | null
 }
@@ -54,6 +63,7 @@ function parsePaymentMethod(value: unknown): PaymentMethod | null {
   if (raw === "TARJETA") return PaymentMethod.TARJETA
   if (raw === "TRANSFERENCIA") return PaymentMethod.TRANSFERENCIA
   if (raw === "OTRO") return PaymentMethod.OTRO
+  if (raw === "DIVIDIR_PAGO") return PaymentMethod.DIVIDIR_PAGO
   return null
 }
 
@@ -241,12 +251,23 @@ export async function PUT(
     const paymentMethodRaw =
       body?.paymentMethod === undefined ? existingSale.paymentMethod : parsePaymentMethod(body.paymentMethod)
     const paymentMethod = type === SaleType.CREDITO ? null : paymentMethodRaw
+    const paymentSplits = Array.isArray(body?.paymentSplits)
+      ? body.paymentSplits.map((split) => ({
+          method: parsePaymentMethod(split.method) || PaymentMethod.OTRO,
+          amountCents:
+            split.amountCents ??
+            (typeof split.amount === "number" ? Math.round(split.amount * 100) : 0),
+          transferBankName: split.transferBankName || null,
+        }))
+      : undefined
 
     await updateSale({
       id,
       customerId,
       type,
       paymentMethod,
+      transferBankName: body?.transferBankName || null,
+      paymentSplits,
       items,
       soldAt,
       username: user.username || user.name || "api",

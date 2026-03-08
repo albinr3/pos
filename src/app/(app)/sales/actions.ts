@@ -760,6 +760,8 @@ export async function updateSale(input: {
   customerId: string | null
   type: SaleType
   paymentMethod?: PaymentMethod | null
+  transferBankName?: string | null
+  paymentSplits?: PaymentSplitInput[]
   items: CartItemInput[]
   soldAt?: Date | string | number | null
   username?: string
@@ -788,6 +790,7 @@ export async function updateSale(input: {
       where: { id: input.id, accountId: user.accountId },
       include: {
         items: true,
+        payments: true,
         ar: true,
       },
     })
@@ -875,6 +878,14 @@ export async function updateSale(input: {
     // Calcular nuevos totales
     const totalCents = input.items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
     const { subtotalCents, itbisCents } = calcItbisIncluded(totalCents, itbisRateBp)
+    const hasPaymentSplits = Boolean(input.paymentSplits && input.paymentSplits.length > 0)
+
+    validateTransferBankName(input.paymentMethod, input.transferBankName)
+    validatePaymentSplits(input.paymentSplits, totalCents)
+
+    await tx.salePayment.deleteMany({
+      where: { saleId: input.id },
+    })
 
     // Actualizar la venta
     const updatedSale = await tx.sale.updateMany({
@@ -882,7 +893,13 @@ export async function updateSale(input: {
       data: {
         soldAt,
         type: input.type,
-        paymentMethod: input.type === SaleType.CONTADO ? input.paymentMethod : null,
+        paymentMethod: input.type === SaleType.CONTADO && !hasPaymentSplits ? input.paymentMethod : null,
+        transferBankName:
+          input.type === SaleType.CONTADO &&
+          !hasPaymentSplits &&
+          input.paymentMethod === PaymentMethod.TRANSFERENCIA
+            ? input.transferBankName?.trim() ?? null
+            : null,
         customerId: input.customerId || null,
         subtotalCents,
         itbisCents,
@@ -915,6 +932,17 @@ export async function updateSale(input: {
         lineTotalCents: i.unitPriceCents * i.qty,
       })),
     })
+
+    if (hasPaymentSplits) {
+      await tx.salePayment.createMany({
+        data: input.paymentSplits!.map((split) => ({
+          saleId: input.id,
+          method: split.method,
+          amountCents: split.amountCents,
+          transferBankName: split.method === PaymentMethod.TRANSFERENCIA ? split.transferBankName?.trim() ?? null : null,
+        })),
+      })
+    }
 
     // Aplicar nuevo stock
     for (const item of input.items) {
