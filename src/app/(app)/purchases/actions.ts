@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { Prisma } from "@prisma/client"
+import { Prisma, ProductKind } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
@@ -61,10 +61,15 @@ async function buildPurchaseItems(params: {
 
   const products = await params.tx.product.findMany({
     where: { accountId: params.accountId, id: { in: params.items.map((i) => i.productId) } },
-    select: { id: true, itbisRateBp: true },
+    select: { id: true, itbisRateBp: true, productKind: true, name: true },
   })
   if (products.length !== params.items.length) {
     throw new Error("Algunos productos no existen o no pertenecen a esta cuenta")
+  }
+
+  const recipeProduct = products.find((p) => p.productKind === ProductKind.RECIPE)
+  if (recipeProduct) {
+    throw new Error(`No puedes registrar compras de "${recipeProduct.name}" porque es un producto por receta. Compra sus insumos en su lugar.`)
   }
 
   const productById = new Map(products.map((p: { id: string; itbisRateBp: number }) => [p.id, p]))
@@ -242,6 +247,7 @@ export async function searchProductsForPurchase(query: string) {
     where: {
       accountId: user.accountId,
       isActive: true,
+      productKind: { not: ProductKind.RECIPE },
       OR: [
         { name: { contains: q, mode: "insensitive" } },
         { sku: { contains: q, mode: "insensitive" } },

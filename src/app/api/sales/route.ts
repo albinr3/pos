@@ -14,6 +14,7 @@ type SaleBodyItem = {
   unitPriceCents?: number
   price?: number
   wasPriceOverridden?: boolean
+  selectedModifierIds?: string[]
 }
 
 type SalePaymentSplitBody = {
@@ -49,6 +50,7 @@ type CartItemInput = {
   qty: number
   unitPriceCents: number
   wasPriceOverridden: boolean
+  selectedModifierIds?: string[]
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -158,6 +160,9 @@ export async function POST(request: NextRequest) {
       qty: Number(item.quantity ?? item.qty ?? 0),
       unitPriceCents: item.unitPriceCents || Math.round((item.price || 0) * 100),
       wasPriceOverridden: item.wasPriceOverridden || false,
+      selectedModifierIds: Array.isArray(item.selectedModifierIds)
+        ? item.selectedModifierIds.map((modifierId: string) => String(modifierId))
+        : [],
     }))
 
     if (!items.length) {

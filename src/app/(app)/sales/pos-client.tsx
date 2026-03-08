@@ -28,7 +28,6 @@ import {
   getPendingCounts,
   findProductByBarcodeCache,
 } from "@/lib/indexed-db"
-import { syncPendingData } from "@/lib/sync-manager"
 
 import type { CurrentUser } from "@/lib/auth"
 
@@ -36,7 +35,13 @@ import { createSale, listCustomers, searchProducts, listAllProductsForSale, find
 
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 
+type RecipeModifierOption = {
+  id: string
+  name: string
+}
+
 type CartItem = {
+  lineId: string
   productId: string
   name: string
   sku: string | null
@@ -47,6 +52,10 @@ type CartItem = {
   wasPriceOverridden: boolean
   unit: UnitType
   itbisRateBp: number
+  productKind: "BASIC" | "MEASURED" | "RECIPE"
+  selectedModifierIds: string[]
+  selectedModifierNames: string[]
+  recipeModifiers: RecipeModifierOption[]
 }
 
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
@@ -58,6 +67,31 @@ type PaymentSplit = {
 }
 
 const USER_CACHE_KEY = "tejada-pos-user"
+
+function buildCartLineId(productId: string, selectedModifierIds: string[]) {
+  const modifiersKey = [...selectedModifierIds].sort().join(",")
+  return modifiersKey ? `${productId}::${modifiersKey}` : productId
+}
+
+function serializeCartItem(item: CartItem) {
+  return {
+    lineId: String(item.lineId),
+    productId: String(item.productId),
+    name: String(item.name),
+    sku: item.sku ? String(item.sku) : null,
+    reference: item.reference ? String(item.reference) : null,
+    stock: Number(item.stock),
+    qty: Number(item.qty),
+    unitPriceCents: Number(item.unitPriceCents),
+    wasPriceOverridden: Boolean(item.wasPriceOverridden),
+    unit: String(item.unit),
+    itbisRateBp: Number(item.itbisRateBp ?? 1800),
+    productKind: item.productKind,
+    selectedModifierIds: item.selectedModifierIds,
+    selectedModifierNames: item.selectedModifierNames,
+    recipeModifiers: item.recipeModifiers,
+  }
+}
 
 function cacheUser(user: CurrentUser) {
   if (typeof window === "undefined") return
@@ -115,6 +149,8 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   const [editingPaymentAmounts, setEditingPaymentAmounts] = useState<Record<number, string>>({})
   // Estado temporal para valores de cantidad en edición (productId -> string)
   const [editingQuantities, setEditingQuantities] = useState<Record<string, string>>({})
+  const [modifierDialogProduct, setModifierDialogProduct] = useState<ProductResult | null>(null)
+  const [modifierDraftIds, setModifierDraftIds] = useState<string[]>([])
   const [showNavigationDialog, setShowNavigationDialog] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
 
@@ -254,6 +290,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             // Validar y limpiar el carrito antes de restaurarlo
             // Asegurarse de que todos los valores sean serializables (números, strings, etc.)
             const cleanedCart = state.cart.map((item: any) => ({
+              lineId: String(item.lineId || buildCartLineId(String(item.productId || ""), Array.isArray(item.selectedModifierIds) ? item.selectedModifierIds : [])),
               productId: String(item.productId || ""),
               name: String(item.name || ""),
               sku: item.sku ? String(item.sku) : null,
@@ -264,6 +301,15 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
               wasPriceOverridden: Boolean(item.wasPriceOverridden),
               unit: item.unit || "UNIDAD",
               itbisRateBp: typeof item.itbisRateBp === "number" ? item.itbisRateBp : Number(item.itbisRateBp) || 1800,
+              productKind: item.productKind === "RECIPE" ? "RECIPE" : item.productKind === "MEASURED" ? "MEASURED" : "BASIC",
+              selectedModifierIds: Array.isArray(item.selectedModifierIds) ? item.selectedModifierIds.map((id: any) => String(id)) : [],
+              selectedModifierNames: Array.isArray(item.selectedModifierNames) ? item.selectedModifierNames.map((name: any) => String(name)) : [],
+              recipeModifiers: Array.isArray(item.recipeModifiers)
+                ? item.recipeModifiers.map((modifier: any) => ({
+                    id: String(modifier.id || ""),
+                    name: String(modifier.name || ""),
+                  }))
+                : [],
             })).filter((item: any) => item.productId && item.name) // Filtrar items inválidos
 
             if (cleanedCart.length > 0) {
@@ -353,18 +399,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
     if (cart.length > 0) {
       try {
         // Asegurarse de que todos los valores sean serializables
-        const serializableCart = cart.map((item) => ({
-          productId: String(item.productId),
-          name: String(item.name),
-          sku: item.sku ? String(item.sku) : null,
-          reference: item.reference ? String(item.reference) : null,
-          stock: Number(item.stock),
-          qty: Number(item.qty),
-          unitPriceCents: Number(item.unitPriceCents),
-          wasPriceOverridden: Boolean(item.wasPriceOverridden),
-          unit: String(item.unit),
-          itbisRateBp: Number(item.itbisRateBp ?? 1800),
-        }))
+        const serializableCart = cart.map(serializeCartItem)
 
         const state = {
           cart: serializableCart,
@@ -416,18 +451,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
       if (cart.length > 0) {
         try {
           // Asegurarse de que todos los valores sean serializables
-          const serializableCart = cart.map((item) => ({
-            productId: String(item.productId),
-            name: String(item.name),
-            sku: item.sku ? String(item.sku) : null,
-            reference: item.reference ? String(item.reference) : null,
-            stock: Number(item.stock),
-            qty: Number(item.qty),
-            unitPriceCents: Number(item.unitPriceCents),
-            wasPriceOverridden: Boolean(item.wasPriceOverridden),
-            unit: String(item.unit),
-            itbisRateBp: Number(item.itbisRateBp ?? 1800),
-          }))
+          const serializableCart = cart.map(serializeCartItem)
 
           const state = {
             cart: serializableCart,
@@ -554,20 +578,27 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   const shippingCents = useMemo(() => toCents(shippingInput), [shippingInput])
   const totalCents = useMemo(() => itemsTotalCents + shippingCents, [itemsTotalCents, shippingCents])
 
-  function addToCart(p: ProductResult) {
+  function addToCart(p: ProductResult, selectedModifierIds: string[] = []) {
     const productUnit = (p.saleUnit as UnitType) ?? "UNIDAD"
     const stockNum = decimalToNumber(p.stock)
+    const normalizedModifierIds = [...selectedModifierIds].sort()
+    const recipeModifiers = Array.isArray(p.recipeModifiers) ? p.recipeModifiers : []
+    const selectedModifierNames = recipeModifiers
+      .filter((modifier) => normalizedModifierIds.includes(modifier.id))
+      .map((modifier) => modifier.name)
+    const lineId = buildCartLineId(p.id, normalizedModifierIds)
 
     setCart((prev) => {
-      const existing = prev.find((x) => x.productId === p.id)
+      const existing = prev.find((x) => x.lineId === lineId)
       if (existing) {
         // Para productos con medidas, incrementar en 0.5; para unidades, incrementar en 1
         const increment = unitAllowsDecimals(productUnit) ? 0.5 : 1
-        return prev.map((x) => (x.productId === p.id ? { ...x, qty: x.qty + increment } : x))
+        return prev.map((x) => (x.lineId === lineId ? { ...x, qty: x.qty + increment } : x))
       }
       return [
         ...prev,
         {
+          lineId,
           productId: p.id,
           name: p.name,
           sku: p.sku ?? null,
@@ -578,9 +609,23 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           wasPriceOverridden: false,
           unit: productUnit,
           itbisRateBp: p.itbisRateBp ?? 1800,
+          productKind: p.productKind === "RECIPE" ? "RECIPE" : p.productKind === "MEASURED" ? "MEASURED" : "BASIC",
+          selectedModifierIds: normalizedModifierIds,
+          selectedModifierNames,
+          recipeModifiers,
         },
       ]
     })
+  }
+
+  function handleProductSelection(p: ProductResult) {
+    if (p.productKind === "RECIPE" && Array.isArray(p.recipeModifiers) && p.recipeModifiers.length > 0) {
+      setModifierDialogProduct(p)
+      setModifierDraftIds([])
+      return
+    }
+
+    addToCart(p)
   }
 
   async function handleBarcodeScan(code: string) {
@@ -605,7 +650,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           priceCents: product.priceCents ?? product.unitPriceCents ?? 0,
           itbisRateBp: product.itbisRateBp ?? 1800,
         }
-        addToCart(normalized as any)
+        handleProductSelection(normalized as any)
         setQuery("")
         toast({ title: "Producto agregado", description: product.name })
       } else {
@@ -684,6 +729,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           qty: c.qty,
           unitPriceCents: c.unitPriceCents,
           wasPriceOverridden: c.wasPriceOverridden,
+          selectedModifierIds: c.selectedModifierIds,
         })),
         shippingCents: shippingCents > 0 ? shippingCents : undefined,
         username: user.username,
@@ -719,6 +765,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                 qty: c.qty,
                 unitPriceCents: c.unitPriceCents,
                 wasPriceOverridden: c.wasPriceOverridden,
+                selectedModifierIds: c.selectedModifierIds,
               })),
               shippingCents: shippingCents > 0 ? shippingCents : undefined,
               username: user.username,
@@ -958,13 +1005,16 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                         <button
                           type="button"
                           key={p.id}
-                          onClick={() => addToCart(p)}
+                          onClick={() => handleProductSelection(p)}
                           className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-muted"
                         >
                           <div className="min-w-0">
                             <div className="truncate font-medium">{p.name}</div>
                             <div className="truncate text-xs text-muted-foreground">
-                              Código: {p.sku ?? "—"} · Ref: {p.reference ?? "—"} · Existencia: {formatQty(decimalToNumber(p.stock), (p.saleUnit as UnitType) ?? "UNIDAD")}
+                              Código: {p.sku ?? "—"} · Ref: {p.reference ?? "—"} · {" "}
+                              {p.productKind === "RECIPE"
+                                ? "Disponibilidad por insumos"
+                                : `Existencia: ${formatQty(decimalToNumber(p.stock), (p.saleUnit as UnitType) ?? "UNIDAD")}`}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -992,7 +1042,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                         <button
                           type="button"
                           key={p.id}
-                          onClick={() => addToCart(p)}
+                          onClick={() => handleProductSelection(p)}
                           className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
                         >
                           <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
@@ -1026,7 +1076,9 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                             <div className="font-medium text-sm truncate">{p.name}</div>
                             <div className="text-sm font-semibold text-purple-primary">{formatRD(p.priceCents)}</div>
                             <div className="text-xs text-muted-foreground">
-                              {p.stock} disponible{p.stock !== 1 ? "s" : ""}
+                              {p.productKind === "RECIPE"
+                                ? "Por receta"
+                                : `${p.stock} disponible${p.stock !== 1 ? "s" : ""}`}
                             </div>
                           </div>
                         </button>
@@ -1055,7 +1107,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                           <button
                             type="button"
                             key={p.id}
-                            onClick={() => addToCart(p)}
+                            onClick={() => handleProductSelection(p)}
                             className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
                           >
                             <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
@@ -1089,7 +1141,9 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                               <div className="font-medium text-sm truncate">{p.name}</div>
                               <div className="text-sm font-semibold text-purple-primary">{formatRD(p.priceCents)}</div>
                               <div className="text-xs text-muted-foreground">
-                                {formatQty(decimalToNumber(p.stock), (p.saleUnit as UnitType) ?? "UNIDAD")} disponible
+                                {p.productKind === "RECIPE"
+                                  ? "Disponibilidad por insumos"
+                                  : `${formatQty(decimalToNumber(p.stock), (p.saleUnit as UnitType) ?? "UNIDAD")} disponible`}
                               </div>
                             </div>
                           </button>
@@ -1118,15 +1172,19 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                     const increment = allowsDecimals ? 0.5 : 1
                     const minQty = allowsDecimals ? 0.5 : 1
                     const unitInfo = getUnitInfo(c.unit)
-
                     return (
-                      <div key={c.productId} className="flex items-start justify-between gap-3 rounded-md border p-3">
+                      <div key={c.lineId} className="flex items-start justify-between gap-3 rounded-md border p-3">
                         <div className="min-w-0">
                           <div className="truncate font-medium">{c.name}</div>
                           <div className="truncate text-xs text-muted-foreground">
                             Código: {c.sku ?? "—"} · Ref: {c.reference ?? "—"}
                             {c.unit !== "UNIDAD" && <span className="ml-2 text-purple-primary">({unitInfo.abbr})</span>}
                           </div>
+                          {c.selectedModifierNames.length > 0 && (
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Modificadores: {c.selectedModifierNames.join(", ")}
+                            </div>
+                          )}
                           <div className="mt-2 flex items-center gap-2">
                             <Button
                               type="button"
@@ -1136,12 +1194,12 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                 // Limpiar estado de edición antes de decrementar
                                 setEditingQuantities((prev) => {
                                   const next = { ...prev }
-                                  delete next[c.productId]
+                                  delete next[c.lineId]
                                   return next
                                 })
                                 setCart((p) =>
                                   p.map((x) =>
-                                    x.productId === c.productId ? { ...x, qty: Math.max(minQty, x.qty - increment) } : x
+                                    x.lineId === c.lineId ? { ...x, qty: Math.max(minQty, x.qty - increment) } : x
                                   )
                                 )
                               }}
@@ -1152,7 +1210,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                               type="text"
                               inputMode={allowsDecimals ? "decimal" : "numeric"}
                               className="w-16 text-center text-sm font-semibold h-9"
-                              value={editingQuantities[c.productId] ?? formatQtyNumber(c.qty, c.unit)}
+                              value={editingQuantities[c.lineId] ?? formatQtyNumber(c.qty, c.unit)}
                               onChange={(e) => {
                                 // Solo actualizar el estado temporal mientras el usuario escribe
                                 let rawValue = e.target.value
@@ -1168,7 +1226,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                   rawValue = rawValue.replace(/[^\d]/g, "")
                                 }
 
-                                setEditingQuantities((prev) => ({ ...prev, [c.productId]: rawValue }))
+                                setEditingQuantities((prev) => ({ ...prev, [c.lineId]: rawValue }))
                               }}
                               onBlur={(e) => {
                                 // Parsear y validar el valor al perder el foco
@@ -1178,14 +1236,14 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
 
                                 setCart((p) =>
                                   p.map((x) =>
-                                    x.productId === c.productId ? { ...x, qty: finalQty } : x
+                                    x.lineId === c.lineId ? { ...x, qty: finalQty } : x
                                   )
                                 )
 
                                 // Limpiar el estado de edición
                                 setEditingQuantities((prev) => {
                                   const next = { ...prev }
-                                  delete next[c.productId]
+                                  delete next[c.lineId]
                                   return next
                                 })
                               }}
@@ -1204,10 +1262,10 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                 // Limpiar estado de edición antes de incrementar
                                 setEditingQuantities((prev) => {
                                   const next = { ...prev }
-                                  delete next[c.productId]
+                                  delete next[c.lineId]
                                   return next
                                 })
-                                setCart((p) => p.map((x) => (x.productId === c.productId ? { ...x, qty: x.qty + increment } : x)))
+                                setCart((p) => p.map((x) => (x.lineId === c.lineId ? { ...x, qty: x.qty + increment } : x)))
                               }}
                             >
                               +
@@ -1223,7 +1281,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                     const originalPriceCents = product?.priceCents || c.unitPriceCents
                                     setCart((p) =>
                                       p.map((x) =>
-                                        x.productId === c.productId
+                                        x.lineId === c.lineId
                                           ? {
                                             ...x,
                                             unitPriceCents,
@@ -1239,11 +1297,13 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                               <div className="text-sm text-muted-foreground">{formatRD(c.unitPriceCents)}</div>
                             )}
                           </div>
-                          {!allowNegativeStock && c.qty > c.stock && (
+                          {c.productKind === "RECIPE" ? (
+                            <div className="mt-2 text-xs text-muted-foreground">Disponibilidad validada por insumos al guardar la venta.</div>
+                          ) : !allowNegativeStock && c.qty > c.stock ? (
                             <div className="mt-2 text-xs font-medium text-destructive">
-                              Existencia insuficiente (Existencia: {formatQty(c.stock, c.unit)}). Ajustes → "Permitir vender sin existencia".
+                              Existencia insuficiente (Existencia: {formatQty(c.stock, c.unit)}). Ajustes → &quot;Permitir vender sin existencia&quot;.
                             </div>
-                          )}
+                          ) : null}
                         </div>
                         <div className="flex flex-col items-end gap-2">
                           <div className="text-sm font-semibold">{formatRD(c.unitPriceCents * c.qty)}</div>
@@ -1251,7 +1311,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                             type="button"
                             variant="ghost"
                             size="icon"
-                            onClick={() => setCart((p) => p.filter((x) => x.productId !== c.productId))}
+                            onClick={() => setCart((p) => p.filter((x) => x.lineId !== c.lineId))}
                             aria-label="Quitar"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -1294,7 +1354,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                     const unitInfo = getUnitInfo(c.unit)
 
                     return (
-                      <div key={c.productId} className="space-y-2">
+                      <div key={c.lineId} className="space-y-2">
                         <div className="flex items-start gap-3">
                           <div className="relative w-12 h-12 rounded-md overflow-hidden bg-muted flex-shrink-0">
                             {(() => {
@@ -1320,8 +1380,15 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-sm">{c.name}</div>
                             <div className="text-xs text-destructive">
-                              {formatQty(c.stock, c.unit)} Disponible{c.stock !== 1 ? "s" : ""}
+                              {c.productKind === "RECIPE"
+                                ? "Disponibilidad por insumos"
+                                : `${formatQty(c.stock, c.unit)} Disponible${c.stock !== 1 ? "s" : ""}`}
                             </div>
+                            {c.selectedModifierNames.length > 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                Modificadores: {c.selectedModifierNames.join(", ")}
+                              </div>
+                            )}
                             <div className="flex items-center gap-2 mt-2">
                               <Button
                                 type="button"
@@ -1331,7 +1398,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                 onClick={() =>
                                   setCart((p) =>
                                     p.map((x) =>
-                                      x.productId === c.productId ? { ...x, qty: Math.max(minQty, x.qty - increment) } : x
+                                      x.lineId === c.lineId ? { ...x, qty: Math.max(minQty, x.qty - increment) } : x
                                     )
                                   )
                                 }
@@ -1345,7 +1412,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                 size="sm"
                                 className="h-8 w-8 p-0"
                                 onClick={() =>
-                                  setCart((p) => p.map((x) => (x.productId === c.productId ? { ...x, qty: x.qty + increment } : x)))
+                                  setCart((p) => p.map((x) => (x.lineId === c.lineId ? { ...x, qty: x.qty + increment } : x)))
                                 }
                               >
                                 +
@@ -1360,7 +1427,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                       const originalPriceCents = product?.priceCents || c.unitPriceCents
                                       setCart((p) =>
                                         p.map((x) =>
-                                          x.productId === c.productId
+                                          x.lineId === c.lineId
                                             ? {
                                               ...x,
                                               unitPriceCents,
@@ -1380,7 +1447,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 text-destructive hover:text-destructive"
-                                onClick={() => setCart((p) => p.filter((x) => x.productId !== c.productId))}
+                                onClick={() => setCart((p) => p.filter((x) => x.lineId !== c.lineId))}
                                 aria-label="Quitar"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -1587,7 +1654,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
 
               {paymentSplits.length === 0 ? (
                 <div className="text-sm text-muted-foreground text-center py-4 border rounded-md">
-                  No hay métodos de pago agregados. Haz clic en "Agregar método" para comenzar.
+                  No hay métodos de pago agregados. Haz clic en &quot;Agregar método&quot; para comenzar.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1744,6 +1811,76 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={!!modifierDialogProduct}
+        onOpenChange={(open) => {
+          if (!open) {
+            setModifierDialogProduct(null)
+            setModifierDraftIds([])
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Selecciona modificadores</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="text-sm text-muted-foreground">
+              {modifierDialogProduct?.name} puede venderse con modificadores que ajustan sus insumos, sin cambiar el precio.
+            </div>
+            <div className="space-y-2">
+              {(modifierDialogProduct?.recipeModifiers ?? []).map((modifier) => {
+                const checked = modifierDraftIds.includes(modifier.id)
+                return (
+                  <label
+                    key={modifier.id}
+                    className="flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer"
+                  >
+                    <span>{modifier.name}</span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        setModifierDraftIds((prev) =>
+                          e.target.checked
+                            ? [...prev, modifier.id]
+                            : prev.filter((modifierId) => modifierId !== modifier.id)
+                        )
+                      }}
+                    />
+                  </label>
+                )
+              })}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (modifierDialogProduct) {
+                  addToCart(modifierDialogProduct, [])
+                }
+                setModifierDialogProduct(null)
+                setModifierDraftIds([])
+              }}
+            >
+              Sin modificadores
+            </Button>
+            <Button
+              onClick={() => {
+                if (modifierDialogProduct) {
+                  addToCart(modifierDialogProduct, modifierDraftIds)
+                }
+                setModifierDialogProduct(null)
+                setModifierDraftIds([])
+              }}
+            >
+              Agregar al carrito
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showNavigationDialog} onOpenChange={setShowNavigationDialog}>
         <DialogContent>
           <DialogHeader>
@@ -1791,18 +1928,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                 if (pendingNavigation) {
                   try {
                     // Guardar estado antes de navegar - asegurarse de que todos los valores sean serializables
-                    const serializableCart = cart.map((item) => ({
-                      productId: String(item.productId),
-                      name: String(item.name),
-                      sku: item.sku ? String(item.sku) : null,
-                      reference: item.reference ? String(item.reference) : null,
-                      stock: Number(item.stock),
-                      qty: Number(item.qty),
-                      unitPriceCents: Number(item.unitPriceCents),
-                      wasPriceOverridden: Boolean(item.wasPriceOverridden),
-                      unit: String(item.unit),
-                      itbisRateBp: Number(item.itbisRateBp ?? 1800),
-                    }))
+                    const serializableCart = cart.map(serializeCartItem)
 
                     const state = {
                       cart: serializableCart,

@@ -1,7 +1,6 @@
 "use server"
 
 import { prisma } from "@/lib/db"
-import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 
 function decimalToNumber(decimal: unknown): number {
@@ -33,6 +32,15 @@ export async function syncProductsToIndexedDB() {
       itbisRateBp: true,
       saleUnit: true,
       imageUrls: true,
+      productKind: true,
+      recipeModifiers: {
+        where: { isActive: true },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          name: true,
+        },
+      },
       supplier: {
         select: {
           id: true,
@@ -62,6 +70,8 @@ export async function syncProductsToIndexedDB() {
     itbisRateBp: p.itbisRateBp ?? 1800, // Valor por defecto si no existe
     saleUnit: p.saleUnit,
     imageUrls: p.imageUrls,
+    productKind: p.productKind,
+    recipeModifiers: p.recipeModifiers,
     supplier: p.supplier
       ? {
           id: p.supplier.id,

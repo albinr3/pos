@@ -16,6 +16,26 @@ function toNumber(value: Decimal | number) {
   return value instanceof Decimal ? value.toNumber() : Number(value)
 }
 
+function roundQty(value: number) {
+  return Math.round(value * 1000) / 1000
+}
+
+function aggregateConsumptions(consumptions: Array<{ ingredientId: string; qty: number }>) {
+  const byIngredientId = new Map<string, number>()
+
+  for (const consumption of consumptions) {
+    byIngredientId.set(
+      consumption.ingredientId,
+      roundQty((byIngredientId.get(consumption.ingredientId) ?? 0) + consumption.qty)
+    )
+  }
+
+  return Array.from(byIngredientId.entries()).map(([ingredientId, qty]) => ({
+    ingredientId,
+    qty,
+  }))
+}
+
 type ReturnPolicy = {
   canCreateReturn: boolean
   blockedReason: string | null
@@ -291,7 +311,11 @@ export async function createReturn(input: {
     const sale = await tx.sale.findFirst({
       where: { accountId: currentUser.accountId, id: input.saleId },
       include: {
-        items: true,
+        items: {
+          include: {
+            consumptions: true,
+          },
+        },
         returns: {
           where: { cancelledAt: null },
           include: { items: true },
@@ -410,11 +434,23 @@ export async function createReturn(input: {
       },
     }, tx)
 
-    // Incrementar stock
-    for (const item of input.items) {
+    const returnConsumptions = aggregateConsumptions(
+      input.items.flatMap((item) => {
+        const saleItem = saleItemsById.get(item.saleItemId)
+        if (!saleItem) return []
+
+        const soldQty = toNumber(saleItem.qty)
+        return saleItem.consumptions.map((consumption) => ({
+          ingredientId: consumption.ingredientId,
+          qty: roundQty((toNumber(consumption.qty) / soldQty) * item.qty),
+        }))
+      })
+    )
+
+    for (const consumption of returnConsumptions) {
       const updated = await tx.product.updateMany({
-        where: { id: item.productId, accountId: currentUser.accountId },
-        data: { stock: { increment: item.qty } },
+        where: { id: consumption.ingredientId, accountId: currentUser.accountId },
+        data: { stock: { increment: new Decimal(consumption.qty) } },
       })
       if (updated.count === 0) throw new Error("Producto no encontrado")
     }
@@ -469,7 +505,15 @@ export async function cancelReturn(id: string) {
     const returnRecord = await tx.return.findFirst({
       where: { accountId: currentUser.accountId, id },
       include: {
-        items: true,
+        items: {
+          include: {
+            saleItem: {
+              include: {
+                consumptions: true,
+              },
+            },
+          },
+        },
         sale: {
           include: {
             ar: true,
@@ -481,11 +525,20 @@ export async function cancelReturn(id: string) {
     if (!returnRecord) throw new Error("Devolución no encontrada")
     if (returnRecord.cancelledAt) throw new Error("Esta devolución ya está cancelada")
 
-    // Revertir el stock que se incrementó
-    for (const item of returnRecord.items) {
+    const returnConsumptions = aggregateConsumptions(
+      returnRecord.items.flatMap((item) => {
+        const soldQty = toNumber(item.saleItem.qty)
+        return item.saleItem.consumptions.map((consumption) => ({
+          ingredientId: consumption.ingredientId,
+          qty: roundQty((toNumber(consumption.qty) / soldQty) * toNumber(item.qty)),
+        }))
+      })
+    )
+
+    for (const consumption of returnConsumptions) {
       const updated = await tx.product.updateMany({
-        where: { id: item.productId, accountId: currentUser.accountId },
-        data: { stock: { decrement: item.qty } },
+        where: { id: consumption.ingredientId, accountId: currentUser.accountId },
+        data: { stock: { decrement: new Decimal(consumption.qty) } },
       })
       if (updated.count === 0) throw new Error("Producto no encontrado")
     }

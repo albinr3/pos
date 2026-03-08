@@ -88,6 +88,7 @@ export async function savePendingSale(sale: {
     qty: number
     unitPriceCents: number
     wasPriceOverridden: boolean
+    selectedModifierIds?: string[]
   }>
   shippingCents?: number
   username: string

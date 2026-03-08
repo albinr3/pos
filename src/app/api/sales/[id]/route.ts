@@ -17,6 +17,7 @@ type EditableSaleItem = {
   priceCents?: number
   price?: number
   wasPriceOverridden?: boolean
+  selectedModifierIds?: string[]
 }
 
 type UpdateSalePaymentSplitBody = {
@@ -215,6 +216,11 @@ export async function PUT(
             qty: true,
             unitPriceCents: true,
             wasPriceOverridden: true,
+            selectedRecipeModifiers: {
+              select: {
+                modifierId: true,
+              },
+            },
           },
         },
       },
@@ -229,6 +235,7 @@ export async function PUT(
       quantity: decimalToNumber(item.qty),
       unitPriceCents: item.unitPriceCents,
       wasPriceOverridden: item.wasPriceOverridden,
+      selectedModifierIds: item.selectedRecipeModifiers.flatMap((modifier) => (modifier.modifierId ? [modifier.modifierId] : [])),
     }))
 
     const requestItems = Array.isArray(body?.items) && body.items.length > 0 ? body.items : baseItems
@@ -237,6 +244,7 @@ export async function PUT(
       qty: Number(item.qty ?? item.quantity ?? 0),
       unitPriceCents: Number(item.unitPriceCents ?? item.priceCents ?? Math.round((item.price || 0) * 100)),
       wasPriceOverridden: Boolean(item.wasPriceOverridden || false),
+      selectedModifierIds: Array.isArray(item.selectedModifierIds) ? item.selectedModifierIds.map((modifierId) => String(modifierId)) : [],
     }))
 
     if (items.length === 0) {

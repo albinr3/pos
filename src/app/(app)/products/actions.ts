@@ -3,7 +3,7 @@
 import { randomUUID } from "crypto"
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { UnitType, type Prisma } from "@prisma/client"
+import { ProductKind, UnitType, type Prisma } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser, type CurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizeCode } from "@/lib/sanitize"
@@ -39,6 +39,278 @@ function safeRevalidate(path: string) {
   }
 }
 
+type RecipeItemInput = {
+  ingredientId: string
+  qty: number
+}
+
+type RecipeModifierItemInput = {
+  ingredientId: string
+  qtyDelta: number
+}
+
+type RecipeModifierInput = {
+  name: string
+  items: RecipeModifierItemInput[]
+}
+
+function roundRecipeQty(value: number) {
+  return Math.round(value * 1000) / 1000
+}
+
+function serializeProductRecord(product: any) {
+  return {
+    ...product,
+    stock: product.stock instanceof Decimal ? product.stock.toNumber() : Number(product.stock),
+    minStock: product.minStock instanceof Decimal ? product.minStock.toNumber() : Number(product.minStock),
+    createdAt: product.createdAt instanceof Date ? product.createdAt.toISOString() : product.createdAt,
+    updatedAt: product.updatedAt instanceof Date ? product.updatedAt.toISOString() : product.updatedAt,
+    supplier: product.supplier
+      ? {
+          ...product.supplier,
+          createdAt:
+            product.supplier.createdAt instanceof Date
+              ? product.supplier.createdAt.toISOString()
+              : product.supplier.createdAt,
+          updatedAt:
+            product.supplier.updatedAt instanceof Date
+              ? product.supplier.updatedAt.toISOString()
+              : product.supplier.updatedAt,
+        }
+      : null,
+    category: product.category
+      ? {
+          ...product.category,
+          createdAt:
+            product.category.createdAt instanceof Date
+              ? product.category.createdAt.toISOString()
+              : product.category.createdAt,
+          updatedAt:
+            product.category.updatedAt instanceof Date
+              ? product.category.updatedAt.toISOString()
+              : product.category.updatedAt,
+        }
+      : null,
+    recipeItems: (product.recipeItems ?? []).map((item: any) => ({
+      ...item,
+      qty: item.qty instanceof Decimal ? item.qty.toNumber() : Number(item.qty),
+      createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+      ingredient: item.ingredient
+        ? {
+            ...item.ingredient,
+            stock: item.ingredient.stock instanceof Decimal ? item.ingredient.stock.toNumber() : Number(item.ingredient.stock),
+            minStock:
+              item.ingredient.minStock instanceof Decimal ? item.ingredient.minStock.toNumber() : Number(item.ingredient.minStock),
+          }
+        : null,
+    })),
+    recipeModifiers: (product.recipeModifiers ?? []).map((modifier: any) => ({
+      ...modifier,
+      createdAt: modifier.createdAt instanceof Date ? modifier.createdAt.toISOString() : modifier.createdAt,
+      updatedAt: modifier.updatedAt instanceof Date ? modifier.updatedAt.toISOString() : modifier.updatedAt,
+      items: (modifier.items ?? []).map((item: any) => ({
+        ...item,
+        qtyDelta: item.qtyDelta instanceof Decimal ? item.qtyDelta.toNumber() : Number(item.qtyDelta),
+        createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+        ingredient: item.ingredient
+          ? {
+              ...item.ingredient,
+              stock: item.ingredient.stock instanceof Decimal ? item.ingredient.stock.toNumber() : Number(item.ingredient.stock),
+              minStock:
+                item.ingredient.minStock instanceof Decimal ? item.ingredient.minStock.toNumber() : Number(item.ingredient.minStock),
+            }
+          : null,
+      })),
+    })),
+  }
+}
+
+function normalizeRecipeItems(items: RecipeItemInput[]) {
+  const normalized = items
+    .map((item) => ({
+      ingredientId: String(item.ingredientId ?? "").trim(),
+      qty: roundRecipeQty(Number(item.qty ?? 0)),
+    }))
+    .filter((item) => item.ingredientId)
+
+  const repeated = normalized.find((item, index) => normalized.findIndex((candidate) => candidate.ingredientId === item.ingredientId) !== index)
+  if (repeated) {
+    throw new Error("No puedes repetir un insumo en la receta base.")
+  }
+  for (const item of normalized) {
+    if (!Number.isFinite(item.qty) || item.qty <= 0) {
+      throw new Error("Cada insumo de la receta debe tener una cantidad mayor a 0.")
+    }
+  }
+  return normalized
+}
+
+function normalizeRecipeModifiers(modifiers: RecipeModifierInput[]) {
+  const normalized = modifiers
+    .map((modifier, index) => ({
+      name: sanitizeString(modifier.name ?? ""),
+      sortOrder: index,
+      items: (modifier.items ?? [])
+        .map((item) => ({
+          ingredientId: String(item.ingredientId ?? "").trim(),
+          qtyDelta: roundRecipeQty(Number(item.qtyDelta ?? 0)),
+        }))
+        .filter((item) => item.ingredientId),
+    }))
+    .filter((modifier) => modifier.name || modifier.items.length > 0)
+
+  const repeatedModifier = normalized.find(
+    (modifier, index) => normalized.findIndex((candidate) => candidate.name.toLowerCase() === modifier.name.toLowerCase()) !== index
+  )
+  if (repeatedModifier) {
+    throw new Error("No puedes repetir nombres de modificadores en la misma receta.")
+  }
+
+  for (const modifier of normalized) {
+    if (!modifier.name) {
+      throw new Error("Cada modificador debe tener un nombre.")
+    }
+    if (modifier.items.length === 0) {
+      throw new Error(`El modificador "${modifier.name}" debe ajustar al menos un insumo.`)
+    }
+    const repeatedIngredient = modifier.items.find(
+      (item, index) => modifier.items.findIndex((candidate) => candidate.ingredientId === item.ingredientId) !== index
+    )
+    if (repeatedIngredient) {
+      throw new Error(`El modificador "${modifier.name}" tiene insumos repetidos.`)
+    }
+    for (const item of modifier.items) {
+      if (!Number.isFinite(item.qtyDelta) || item.qtyDelta === 0) {
+        throw new Error(`El modificador "${modifier.name}" debe tener ajustes distintos de 0.`)
+      }
+    }
+  }
+
+  return normalized
+}
+
+async function validateRecipeDefinition(
+  client: Prisma.TransactionClient,
+  input: {
+    accountId: string
+    productId?: string
+    recipeItems: ReturnType<typeof normalizeRecipeItems>
+    modifiers: ReturnType<typeof normalizeRecipeModifiers>
+  }
+) {
+  if (input.recipeItems.length === 0) {
+    throw new Error("Debes agregar al menos un insumo a la receta.")
+  }
+
+  const ingredientIds = Array.from(
+    new Set([
+      ...input.recipeItems.map((item) => item.ingredientId),
+      ...input.modifiers.flatMap((modifier) => modifier.items.map((item) => item.ingredientId)),
+    ])
+  )
+
+  if (input.productId && ingredientIds.includes(input.productId)) {
+    throw new Error("Un producto no puede usar su propia receta como insumo.")
+  }
+
+  const ingredients = await client.product.findMany({
+    where: {
+      id: { in: ingredientIds },
+      accountId: input.accountId,
+      isActive: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      productKind: true,
+    },
+  })
+
+  if (ingredients.length !== ingredientIds.length) {
+    throw new Error("Hay insumos inválidos o inactivos en la receta.")
+  }
+
+  const recipeIngredient = ingredients.find((ingredient) => ingredient.productKind === ProductKind.RECIPE)
+  if (recipeIngredient) {
+    throw new Error(`No puedes usar "${recipeIngredient.name}" como insumo porque también es un producto por receta.`)
+  }
+}
+
+async function syncRecipeDefinition(
+  client: Prisma.TransactionClient,
+  productId: string,
+  productKind: ProductKind,
+  recipeItems: ReturnType<typeof normalizeRecipeItems>,
+  modifiers: ReturnType<typeof normalizeRecipeModifiers>
+) {
+  await client.productRecipeModifier.deleteMany({
+    where: { productId },
+  })
+  await client.productRecipeItem.deleteMany({
+    where: { productId },
+  })
+
+  if (productKind !== ProductKind.RECIPE) return
+
+  if (recipeItems.length > 0) {
+    await client.productRecipeItem.createMany({
+      data: recipeItems.map((item) => ({
+        productId,
+        ingredientId: item.ingredientId,
+        qty: new Decimal(item.qty),
+      })),
+    })
+  }
+
+  for (const modifier of modifiers) {
+    await client.productRecipeModifier.create({
+      data: {
+        productId,
+        name: modifier.name,
+        sortOrder: modifier.sortOrder,
+        items: {
+          create: modifier.items.map((item) => ({
+            ingredientId: item.ingredientId,
+            qtyDelta: new Decimal(item.qtyDelta),
+          })),
+        },
+      },
+    })
+  }
+}
+
+export async function listRecipeIngredientOptions(options?: { user?: any }) {
+  const user = options?.user ?? (await getCurrentUser())
+  if (!user) throw new Error("No autenticado")
+
+  const products = await prisma.product.findMany({
+    where: {
+      accountId: user.accountId,
+      isActive: true,
+      productKind: { not: ProductKind.RECIPE },
+    },
+    orderBy: { name: "asc" },
+    take: 500,
+    select: {
+      id: true,
+      productId: true,
+      name: true,
+      sku: true,
+      reference: true,
+      stock: true,
+      purchaseUnit: true,
+      saleUnit: true,
+      costCents: true,
+      productKind: true,
+    },
+  })
+
+  return products.map((product) => ({
+    ...product,
+    stock: product.stock instanceof Decimal ? product.stock.toNumber() : Number(product.stock),
+  }))
+}
+
 export async function listProducts(options?: { query?: string; cursor?: string | null; take?: number; user?: any }) {
   const user = options?.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -60,7 +332,53 @@ export async function listProducts(options?: { query?: string; cursor?: string |
           }
         : {}),
     },
-    include: { supplier: true, category: true },
+    include: {
+      supplier: true,
+      category: true,
+      recipeItems: {
+        include: {
+          ingredient: {
+            select: {
+              id: true,
+              productId: true,
+              name: true,
+              sku: true,
+              reference: true,
+              stock: true,
+              minStock: true,
+              purchaseUnit: true,
+              saleUnit: true,
+              productKind: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      },
+      recipeModifiers: {
+        include: {
+          items: {
+            include: {
+              ingredient: {
+                select: {
+                  id: true,
+                  productId: true,
+                  name: true,
+                  sku: true,
+                  reference: true,
+                  stock: true,
+                  minStock: true,
+                  purchaseUnit: true,
+                  saleUnit: true,
+                  productKind: true,
+                },
+              },
+            },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          },
+        },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      },
+    },
     orderBy: [{ productId: "asc" }, { id: "asc" }],
     cursor: options?.cursor ? { id: options.cursor } : undefined,
     skip: options?.cursor ? 1 : 0,
@@ -73,23 +391,7 @@ export async function listProducts(options?: { query?: string; cursor?: string |
 
   // Convertir Decimal a número y Date a string para serialización
   return {
-    items: pageItems.map((p) => ({
-      ...p,
-      stock: p.stock instanceof Decimal ? p.stock.toNumber() : Number(p.stock),
-      minStock: p.minStock instanceof Decimal ? p.minStock.toNumber() : Number(p.minStock),
-      createdAt: p.createdAt instanceof Date ? p.createdAt.toISOString() : p.createdAt,
-      updatedAt: p.updatedAt instanceof Date ? p.updatedAt.toISOString() : p.updatedAt,
-      supplier: p.supplier ? {
-        ...p.supplier,
-        createdAt: p.supplier.createdAt instanceof Date ? p.supplier.createdAt.toISOString() : p.supplier.createdAt,
-        updatedAt: p.supplier.updatedAt instanceof Date ? p.supplier.updatedAt.toISOString() : p.supplier.updatedAt,
-      } : null,
-      category: p.category ? {
-        ...p.category,
-        createdAt: p.category.createdAt instanceof Date ? p.category.createdAt.toISOString() : p.category.createdAt,
-        updatedAt: p.category.updatedAt instanceof Date ? p.category.updatedAt.toISOString() : p.category.updatedAt,
-      } : null,
-    })),
+    items: pageItems.map(serializeProductRecord),
     nextCursor,
   }
 }
@@ -108,6 +410,9 @@ export async function upsertProduct(input: {
   stock: number
   minStock: number
   imageUrls?: string[]
+  productKind: ProductKind
+  recipeItems?: RecipeItemInput[]
+  modifiers?: RecipeModifierInput[]
   purchaseUnit: UnitType
   saleUnit: UnitType
   user?: any
@@ -117,131 +422,177 @@ export async function upsertProduct(input: {
 
   try {
     const name = sanitizeString(input.name)
-  if (!name) throw new Error("El nombre del producto es requerido")
-  if (!input.priceCents || input.priceCents <= 0) throw new Error("El precio de venta es requerido")
-  if (!input.costCents || input.costCents < 0) throw new Error("El costo es requerido")
-  if (!input.saleUnit) throw new Error("La unidad de venta es requerida")
-  if (!input.purchaseUnit) throw new Error("La unidad de compra es requerida")
+    if (!name) throw new Error("El nombre del producto es requerido")
+    if (!input.priceCents || input.priceCents <= 0) throw new Error("El precio de venta es requerido")
+    if (!input.costCents || input.costCents < 0) throw new Error("El costo es requerido")
+    if (!input.saleUnit) throw new Error("La unidad de venta es requerida")
+    if (!input.purchaseUnit) throw new Error("La unidad de compra es requerida")
 
-  const sanitizedSku = input.sku ? sanitizeCode(input.sku) : ""
-  const sanitizedReference = input.reference ? sanitizeCode(input.reference) : ""
-  const sku = sanitizedSku || null
-  const reference = sanitizedReference || null
-  const imageUrls = input.imageUrls || []
+    const productKind = input.productKind ?? ProductKind.BASIC
+    const sanitizedSku = input.sku ? sanitizeCode(input.sku) : ""
+    const sanitizedReference = input.reference ? sanitizeCode(input.reference) : ""
+    const sku = sanitizedSku || null
+    const reference = sanitizedReference || null
+    const imageUrls = input.imageUrls || []
+    const recipeItems = normalizeRecipeItems(input.recipeItems ?? [])
+    const modifiers = normalizeRecipeModifiers(input.modifiers ?? [])
 
-  if (input.id) {
-    // Verificar permiso para editar productos
-    if (!user.canEditProducts && user.role !== "ADMIN") {
-      throw new Error("No tienes permiso para editar productos")
-    }
+    const finalPurchaseUnit = productKind === ProductKind.RECIPE ? UnitType.UNIDAD : input.purchaseUnit
+    const finalSaleUnit = productKind === ProductKind.RECIPE ? UnitType.UNIDAD : input.saleUnit
+    const finalStock = productKind === ProductKind.RECIPE ? 0 : input.stock
+    const finalMinStock = productKind === ProductKind.RECIPE ? 0 : input.minStock
 
-    // Verificar que el producto pertenece al account
-    const existing = await prisma.product.findFirst({
-      where: { id: input.id, accountId: user.accountId },
-    })
-    if (!existing) throw new Error("Producto no encontrado")
-
-    // Verificar permiso para modificar precio si es diferente al original
-    const originalPriceCents = Number(existing.priceCents)
-    if (input.priceCents !== originalPriceCents) {
-      if (!user.canOverridePrice && user.role !== "ADMIN") {
-        throw new Error("No tienes permiso para modificar el precio del producto")
+    await prisma.$transaction(async (tx) => {
+      if (productKind === ProductKind.RECIPE) {
+        await validateRecipeDefinition(tx, {
+          accountId: user.accountId,
+          productId: input.id,
+          recipeItems,
+          modifiers,
+        })
       }
-    }
 
-    const updated = await prisma.product.updateMany({
-      where: { id: input.id, accountId: user.accountId },
-      data: {
-        name,
-        sku,
-        reference,
-        supplierId: input.supplierId || null,
-        categoryId: input.categoryId || null,
-        priceCents: input.priceCents,
-        costCents: input.costCents,
-        itbisRateBp: input.itbisRateBp ?? 1800,
-        minStock: input.minStock,
-        imageUrls,
-        purchaseUnit: input.purchaseUnit,
-        saleUnit: input.saleUnit,
-      },
+      if (input.id) {
+        if (!user.canEditProducts && user.role !== "ADMIN") {
+          throw new Error("No tienes permiso para editar productos")
+        }
+
+        const existing = await tx.product.findFirst({
+          where: { id: input.id, accountId: user.accountId },
+          select: {
+            id: true,
+            priceCents: true,
+            stock: true,
+            productKind: true,
+          },
+        })
+        if (!existing) throw new Error("Producto no encontrado")
+
+        const originalPriceCents = Number(existing.priceCents)
+        if (input.priceCents !== originalPriceCents && !user.canOverridePrice && user.role !== "ADMIN") {
+          throw new Error("No tienes permiso para modificar el precio del producto")
+        }
+
+        if (
+          productKind === ProductKind.RECIPE &&
+          existing.productKind !== ProductKind.RECIPE &&
+          decimalToNumber(existing.stock) > 0
+        ) {
+          throw new Error("No puedes convertir un producto con existencia disponible a producto por receta sin vaciar su stock primero.")
+        }
+
+        await tx.product.update({
+          where: { id: input.id },
+          data: {
+            name,
+            sku,
+            reference,
+            supplierId: input.supplierId || null,
+            categoryId: input.categoryId || null,
+            priceCents: input.priceCents,
+            costCents: input.costCents,
+            itbisRateBp: input.itbisRateBp ?? 1800,
+            stock: finalStock,
+            minStock: finalMinStock,
+            imageUrls,
+            productKind,
+            purchaseUnit: finalPurchaseUnit,
+            saleUnit: finalSaleUnit,
+          },
+        })
+
+        await syncRecipeDefinition(tx, input.id, productKind, recipeItems, modifiers)
+
+        await logAuditEvent(
+          {
+            accountId: user.accountId,
+            userId: user.id,
+            action: "PRODUCT_EDITED",
+            resourceType: "Product",
+            resourceId: input.id,
+            details: {
+              name,
+              sku,
+              reference,
+              productKind,
+            },
+          },
+          tx
+        )
+      } else {
+        const seq = await tx.productSequence.upsert({
+          where: { accountId: user.accountId },
+          update: { lastNumber: { increment: 1 } },
+          create: { accountId: user.accountId, lastNumber: 1 },
+        })
+
+        const productId = seq.lastNumber
+
+        const created = await tx.product.create({
+          data: {
+            accountId: user.accountId,
+            productId,
+            name,
+            sku,
+            reference,
+            supplierId: input.supplierId || null,
+            categoryId: input.categoryId || null,
+            priceCents: input.priceCents,
+            costCents: input.costCents,
+            itbisRateBp: input.itbisRateBp ?? 1800,
+            stock: finalStock,
+            minStock: finalMinStock,
+            imageUrls,
+            productKind,
+            purchaseUnit: finalPurchaseUnit,
+            saleUnit: finalSaleUnit,
+          },
+        })
+
+        await syncRecipeDefinition(tx, created.id, productKind, recipeItems, modifiers)
+
+        if (productKind !== ProductKind.RECIPE) {
+          const initialAllowsDecimals = unitAllowsDecimals(finalSaleUnit)
+          const initialRaw = Number(finalStock)
+          const initialStock = Number.isFinite(initialRaw)
+            ? initialAllowsDecimals
+              ? Math.round(initialRaw * 100) / 100
+              : Math.trunc(initialRaw)
+            : 0
+
+          await safeCreateInventoryAdjustment(tx, {
+            accountId: user.accountId,
+            productId: created.id,
+            userId: user.id,
+            qtyDelta: new Decimal(initialStock),
+            reason: INITIAL_STOCK_REASON,
+            note: null,
+            batchId: null,
+            createdAt: created.createdAt,
+          })
+        }
+
+        await logAuditEvent(
+          {
+            accountId: user.accountId,
+            userId: user.id,
+            action: "PRODUCT_CREATED",
+            resourceType: "Product",
+            resourceId: created.id,
+            details: {
+              name,
+              sku,
+              reference,
+              productId,
+              productKind,
+            },
+          },
+          tx
+        )
+      }
     })
-    if (updated.count === 0) throw new Error("Producto no encontrado")
 
-    await logAuditEvent({
-      accountId: user.accountId,
-      userId: user.id,
-      action: "PRODUCT_EDITED",
-      resourceType: "Product",
-      resourceId: input.id,
-      details: {
-        name,
-        sku,
-        reference,
-      },
-    })
-  } else {
-    // Obtener el siguiente productId de la secuencia
-    const seq = await prisma.productSequence.upsert({
-      where: { accountId: user.accountId },
-      update: { lastNumber: { increment: 1 } },
-      create: { accountId: user.accountId, lastNumber: 1 },
-    })
-
-    const productId = seq.lastNumber
-
-    const created = await prisma.product.create({
-      data: {
-        accountId: user.accountId,
-        productId,
-        name,
-        sku,
-        reference,
-        supplierId: input.supplierId || null,
-        categoryId: input.categoryId || null,
-        priceCents: input.priceCents,
-        costCents: input.costCents,
-        itbisRateBp: input.itbisRateBp ?? 1800,
-        stock: input.stock,
-        minStock: input.minStock,
-        imageUrls,
-        purchaseUnit: input.purchaseUnit,
-        saleUnit: input.saleUnit,
-      },
-    })
-
-    const initialAllowsDecimals = unitAllowsDecimals(input.saleUnit)
-    const initialRaw = Number(input.stock)
-    const initialStock = Number.isFinite(initialRaw)
-      ? (initialAllowsDecimals ? Math.round(initialRaw * 100) / 100 : Math.trunc(initialRaw))
-      : 0
-    await safeCreateInventoryAdjustment(prisma, {
-      accountId: user.accountId,
-      productId: created.id,
-      userId: user.id,
-      qtyDelta: new Decimal(initialStock),
-      reason: INITIAL_STOCK_REASON,
-      note: null,
-      batchId: null,
-      createdAt: created.createdAt,
-    })
-
-    await logAuditEvent({
-      accountId: user.accountId,
-      userId: user.id,
-      action: "PRODUCT_CREATED",
-      resourceType: "Product",
-      resourceId: created.id,
-      details: {
-        name,
-        sku,
-        reference,
-        productId,
-      },
-    })
-  }
-
-  safeRevalidate("/products")
+    safeRevalidate("/products")
   } catch (error) {
     await logError(error as Error, {
       code: ErrorCodes.INVENTORY_UPDATE_ERROR,
@@ -268,6 +619,36 @@ export async function deactivateProduct(productId: string) {
     where: { id: productId, accountId: user.accountId },
   })
   if (!existing) throw new Error("Producto no encontrado")
+
+  // Verificar que el producto no se usa como insumo en recetas activas
+  const usedInRecipes = await prisma.productRecipeItem.findMany({
+    where: {
+      ingredientId: productId,
+      product: { isActive: true, accountId: user.accountId },
+    },
+    select: { product: { select: { name: true } } },
+    take: 5,
+  })
+
+  const usedInModifiers = await prisma.productRecipeModifierItem.findMany({
+    where: {
+      ingredientId: productId,
+      modifier: { product: { isActive: true, accountId: user.accountId } },
+    },
+    select: { modifier: { select: { product: { select: { name: true } } } } },
+    take: 5,
+  })
+
+  const recipeNames = Array.from(new Set([
+    ...usedInRecipes.map((r) => r.product.name),
+    ...usedInModifiers.map((m) => m.modifier.product.name),
+  ]))
+
+  if (recipeNames.length > 0) {
+    throw new Error(
+      `No puedes desactivar este producto porque es insumo de: ${recipeNames.join(", ")}. Primero quita este insumo de esas recetas.`
+    )
+  }
 
   const updated = await prisma.product.updateMany({
     where: { id: productId, accountId: user.accountId },
@@ -1059,13 +1440,19 @@ export async function listProductMovements(input: {
   const [saleItems, purchaseItems, returnItems, adjustments, initialAdjustment] = await Promise.all([
     prisma.saleItem.findMany({
       where: {
-        productId: input.productId,
+        OR: [
+          { productId: input.productId },
+          { consumptions: { some: { ingredientId: input.productId } } },
+        ],
         sale: {
           accountId: user.accountId,
           ...(dateFilter ? { OR: [{ soldAt: dateFilter }, { cancelledAt: dateFilter }] } : {}),
         },
       },
       include: {
+        consumptions: {
+          where: { ingredientId: input.productId },
+        },
         sale: {
           select: {
             soldAt: true,
@@ -1102,13 +1489,28 @@ export async function listProductMovements(input: {
     }),
     prisma.returnItem.findMany({
       where: {
-        productId: input.productId,
+        OR: [
+          { productId: input.productId },
+          { saleItem: { consumptions: { some: { ingredientId: input.productId } } } },
+        ],
         return: {
           accountId: user.accountId,
           ...(dateFilter ? { OR: [{ returnedAt: dateFilter }, { cancelledAt: dateFilter }] } : {}),
         },
       },
       include: {
+        saleItem: {
+          select: {
+            qty: true,
+            consumptions: {
+              where: { ingredientId: input.productId },
+              select: {
+                ingredientId: true,
+                qty: true,
+              },
+            },
+          },
+        },
         return: {
           select: {
             returnCode: true,
@@ -1157,7 +1559,9 @@ export async function listProductMovements(input: {
   }[] = []
 
   for (const item of saleItems) {
-    const qty = decimalToNumber(item.qty)
+    const qty = item.consumptions.length
+      ? item.consumptions.reduce((total, consumption) => total + decimalToNumber(consumption.qty), 0)
+      : decimalToNumber(item.qty)
     const sale = item.sale
     if (sale.soldAt) {
       movements.push({
@@ -1211,7 +1615,11 @@ export async function listProductMovements(input: {
   }
 
   for (const item of returnItems) {
-    const qty = decimalToNumber(item.qty)
+    const soldQty = decimalToNumber(item.saleItem.qty)
+    const consumedQty = item.saleItem.consumptions.reduce((total, consumption) => total + decimalToNumber(consumption.qty), 0)
+    const qty = consumedQty > 0 && soldQty > 0
+      ? roundRecipeQty((consumedQty / soldQty) * decimalToNumber(item.qty))
+      : decimalToNumber(item.qty)
     const ret = item.return
     if (ret.returnedAt) {
       movements.push({

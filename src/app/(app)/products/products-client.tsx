@@ -26,6 +26,7 @@ import {
   adjustManyStock,
   deactivateProduct,
   importProductsChunk,
+  listRecipeIngredientOptions,
   listProductMovements,
   listProducts,
   type BulkProductImportRow,
@@ -38,6 +39,27 @@ import { getSettings } from "../settings/actions"
 
 type Product = Awaited<ReturnType<typeof listProducts>>["items"][number]
 type ProductMovement = Awaited<ReturnType<typeof listProductMovements>>[number]
+type RecipeIngredientOption = Awaited<ReturnType<typeof listRecipeIngredientOptions>>[number]
+
+type ProductFormType = "basic" | "measured" | "recipe"
+
+type RecipeItemFormRow = {
+  id: string
+  ingredientId: string
+  qty: string
+}
+
+type RecipeModifierItemFormRow = {
+  id: string
+  ingredientId: string
+  qtyDelta: string
+}
+
+type RecipeModifierFormRow = {
+  id: string
+  name: string
+  items: RecipeModifierItemFormRow[]
+}
 
 const PAGE_SIZE = 50
 const INVENTORY_IMPORT_MAX_ROWS = 5000
@@ -80,6 +102,48 @@ function toInt(v: string) {
 function toDecimal(v: string) {
   const n = Number(v || 0)
   return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0
+}
+
+function createLocalRowId() {
+  return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2)
+}
+
+function createRecipeItemRow(): RecipeItemFormRow {
+  return {
+    id: createLocalRowId(),
+    ingredientId: "",
+    qty: "1",
+  }
+}
+
+function createRecipeModifierItemRow(): RecipeModifierItemFormRow {
+  return {
+    id: createLocalRowId(),
+    ingredientId: "",
+    qtyDelta: "1",
+  }
+}
+
+function createRecipeModifierRow(): RecipeModifierFormRow {
+  return {
+    id: createLocalRowId(),
+    name: "",
+    items: [createRecipeModifierItemRow()],
+  }
+}
+
+function getProductFormType(product?: Product | null): ProductFormType {
+  if (!product) return "basic"
+  if (product.productKind === "RECIPE") return "recipe"
+  return product.purchaseUnit === "UNIDAD" && product.saleUnit === "UNIDAD" ? "basic" : "measured"
+}
+
+function getProductTypeLabel(productType: ProductFormType) {
+  if (productType === "recipe") return "Por receta"
+  if (productType === "measured") return "Con medidas"
+  return "Básico"
 }
 
 function formatMovementDate(value: string) {
@@ -343,15 +407,18 @@ export function ProductsClient() {
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [suppliers, setSuppliers] = useState<Awaited<ReturnType<typeof getAllSuppliers>>>([])
   const [categories, setCategories] = useState<Awaited<ReturnType<typeof getAllCategories>>>([])
+  const [ingredientOptions, setIngredientOptions] = useState<RecipeIngredientOption[]>([])
   const [categoryId, setCategoryId] = useState("")
   const [isSaving, startSaving] = useTransition()
   const [user, setUser] = useState<CurrentUser | null>(null)
   
   // Estado para producto básico o con medidas
-  const [productType, setProductType] = useState<"basic" | "measured">("basic")
+  const [productType, setProductType] = useState<ProductFormType>("basic")
   // Unidades de compra y venta
   const [purchaseUnit, setPurchaseUnit] = useState<UnitType>("KG")
   const [saleUnit, setSaleUnit] = useState<UnitType>("KG")
+  const [recipeItems, setRecipeItems] = useState<RecipeItemFormRow[]>([createRecipeItemRow()])
+  const [recipeModifiers, setRecipeModifiers] = useState<RecipeModifierFormRow[]>([])
 
   const selectAllOnFocus = (event: FocusEvent<HTMLInputElement>) => {
     event.target.select()
@@ -388,6 +455,7 @@ export function ProductsClient() {
     refresh("")
     getAllSuppliers().then(setSuppliers).catch(() => setSuppliers([]))
     getAllCategories().then(setCategories).catch(() => setCategories([]))
+    listRecipeIngredientOptions().then(setIngredientOptions).catch(() => setIngredientOptions([]))
     getSettings().then((s) => setBarcodeLabelSize(s.barcodeLabelSize)).catch(() => {})
   }, [])
 
@@ -427,23 +495,118 @@ export function ProductsClient() {
     setStock(String(stockNum))
     setMinStock(String(minStockNum))
     setImageUrls(x?.imageUrls ?? [])
-    
-    // Determinar si es producto básico (ambas unidades son UNIDAD) o con medidas
+
+    const nextType = getProductFormType(x)
+    setProductType(nextType)
+
     const purchaseU = (x?.purchaseUnit as UnitType) ?? "UNIDAD"
     const saleU = (x?.saleUnit as UnitType) ?? "UNIDAD"
-    if (purchaseU === "UNIDAD" && saleU === "UNIDAD") {
-      setProductType("basic")
-      setPurchaseUnit("KG") // Default para cuando cambie a medidas
-      setSaleUnit("KG")
+    if (nextType === "measured") {
+      setPurchaseUnit(purchaseU === "UNIDAD" ? "KG" : purchaseU)
+      setSaleUnit(saleU === "UNIDAD" ? "KG" : saleU)
     } else {
-      setProductType("measured")
-      setPurchaseUnit(purchaseU)
-      setSaleUnit(saleU)
+      setPurchaseUnit("KG")
+      setSaleUnit("KG")
     }
+
+    setRecipeItems(
+      x?.recipeItems?.length
+        ? x.recipeItems.map((item: Product["recipeItems"][number]) => ({
+            id: item.id,
+            ingredientId: item.ingredientId,
+            qty: String(decimalToNumber(item.qty)),
+          }))
+        : [createRecipeItemRow()]
+    )
+    setRecipeModifiers(
+      x?.recipeModifiers?.length
+        ? x.recipeModifiers.map((modifier: Product["recipeModifiers"][number]) => ({
+            id: modifier.id,
+            name: modifier.name,
+            items: modifier.items.length
+              ? modifier.items.map((item: Product["recipeModifiers"][number]["items"][number]) => ({
+                  id: item.id,
+                  ingredientId: item.ingredientId,
+                  qtyDelta: String(decimalToNumber(item.qtyDelta)),
+                }))
+              : [createRecipeModifierItemRow()],
+          }))
+        : []
+    )
   }
 
   const title = useMemo(() => (editing ? "Editar producto" : "Nuevo producto"), [editing])
   const bulkParsed = useMemo(() => parseBulkLines(bulkLines), [bulkLines])
+  const availableIngredients = useMemo(
+    () => ingredientOptions.filter((option) => option.id !== editing?.id),
+    [editing?.id, ingredientOptions]
+  )
+
+  function updateRecipeItem(rowId: string, field: "ingredientId" | "qty", value: string) {
+    setRecipeItems((prev) => prev.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)))
+  }
+
+  function addRecipeItem() {
+    setRecipeItems((prev) => [...prev, createRecipeItemRow()])
+  }
+
+  function removeRecipeItem(rowId: string) {
+    setRecipeItems((prev) => {
+      const next = prev.filter((row) => row.id !== rowId)
+      return next.length ? next : [createRecipeItemRow()]
+    })
+  }
+
+  function updateRecipeModifier(modifierId: string, name: string) {
+    setRecipeModifiers((prev) => prev.map((modifier) => (modifier.id === modifierId ? { ...modifier, name } : modifier)))
+  }
+
+  function addRecipeModifier() {
+    setRecipeModifiers((prev) => [...prev, createRecipeModifierRow()])
+  }
+
+  function removeRecipeModifier(modifierId: string) {
+    setRecipeModifiers((prev) => prev.filter((modifier) => modifier.id !== modifierId))
+  }
+
+  function updateRecipeModifierItem(
+    modifierId: string,
+    itemId: string,
+    field: "ingredientId" | "qtyDelta",
+    value: string
+  ) {
+    setRecipeModifiers((prev) =>
+      prev.map((modifier) =>
+        modifier.id === modifierId
+          ? {
+              ...modifier,
+              items: modifier.items.map((item) => (item.id === itemId ? { ...item, [field]: value } : item)),
+            }
+          : modifier
+      )
+    )
+  }
+
+  function addRecipeModifierItem(modifierId: string) {
+    setRecipeModifiers((prev) =>
+      prev.map((modifier) =>
+        modifier.id === modifierId ? { ...modifier, items: [...modifier.items, createRecipeModifierItemRow()] } : modifier
+      )
+    )
+  }
+
+  function removeRecipeModifierItem(modifierId: string, itemId: string) {
+    setRecipeModifiers((prev) =>
+      prev.map((modifier) => {
+        if (modifier.id !== modifierId) return modifier
+        const nextItems = modifier.items.filter((item) => item.id !== itemId)
+        return {
+          ...modifier,
+          items: nextItems.length ? nextItems : [createRecipeModifierItemRow()],
+        }
+      })
+    )
+  }
 
   async function onSave() {
     const trimmedName = name.trim()
@@ -459,15 +622,38 @@ export function ProductsClient() {
     }
     startSaving(async () => {
       try {
-        // Determinar unidades según el tipo de producto
-        const finalPurchaseUnit: UnitType = productType === "basic" ? "UNIDAD" : purchaseUnit
-        const finalSaleUnit: UnitType = productType === "basic" ? "UNIDAD" : saleUnit
-        
-        // Determinar si usar decimales según la unidad de venta
+        const productKind = productType === "recipe" ? "RECIPE" : productType === "measured" ? "MEASURED" : "BASIC"
+        const finalPurchaseUnit: UnitType =
+          productType === "basic" || productType === "recipe" ? "UNIDAD" : purchaseUnit
+        const finalSaleUnit: UnitType =
+          productType === "basic" || productType === "recipe" ? "UNIDAD" : saleUnit
         const allowsDecimals = unitAllowsDecimals(finalSaleUnit)
-        const stockValue = allowsDecimals ? toDecimal(stock) : toInt(stock)
-        const minStockValue = allowsDecimals ? toDecimal(minStock) : toInt(minStock)
-        
+        const stockValue = productType === "recipe" ? 0 : allowsDecimals ? toDecimal(stock) : toInt(stock)
+        const minStockValue = productType === "recipe" ? 0 : allowsDecimals ? toDecimal(minStock) : toInt(minStock)
+        const normalizedRecipeItems =
+          productType === "recipe"
+            ? recipeItems
+                .map((item) => ({
+                  ingredientId: item.ingredientId,
+                  qty: Number(item.qty),
+                }))
+                .filter((item) => item.ingredientId)
+            : []
+        const normalizedModifiers =
+          productType === "recipe"
+            ? recipeModifiers
+                .map((modifier) => ({
+                  name: modifier.name,
+                  items: modifier.items
+                    .map((item) => ({
+                      ingredientId: item.ingredientId,
+                      qtyDelta: Number(item.qtyDelta),
+                    }))
+                    .filter((item) => item.ingredientId),
+                }))
+                .filter((modifier) => modifier.name.trim() || modifier.items.length > 0)
+            : []
+
         await upsertProduct({
           id: editing?.id,
           name,
@@ -481,6 +667,9 @@ export function ProductsClient() {
           stock: stockValue,
           minStock: minStockValue,
           imageUrls,
+          productKind,
+          recipeItems: normalizedRecipeItems,
+          modifiers: normalizedModifiers,
           purchaseUnit: finalPurchaseUnit,
           saleUnit: finalSaleUnit,
         })
@@ -488,6 +677,7 @@ export function ProductsClient() {
         setOpen(false)
         resetForm(null)
         refresh(query)
+        listRecipeIngredientOptions().then(setIngredientOptions).catch(() => setIngredientOptions([]))
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
       }
@@ -1014,10 +1204,11 @@ export function ProductsClient() {
                 <DialogTitle>{title}</DialogTitle>
               </DialogHeader>
 
-              <Tabs value={productType} onValueChange={(v) => setProductType(v as "basic" | "measured")} className="flex-1 flex flex-col min-h-0">
-                <TabsList className="grid w-full grid-cols-2">
+              <Tabs value={productType} onValueChange={(v) => setProductType(v as ProductFormType)} className="flex-1 flex flex-col min-h-0">
+                <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="basic">Producto básico</TabsTrigger>
                   <TabsTrigger value="measured">Producto con medidas</TabsTrigger>
+                  <TabsTrigger value="recipe">Productos por receta</TabsTrigger>
                 </TabsList>
 
                 <div className="flex-1 overflow-y-auto pr-2 mt-4">
@@ -1243,6 +1434,181 @@ export function ProductsClient() {
                       </div>
                     </TabsContent>
 
+                    <TabsContent value="recipe" className="mt-0 space-y-4">
+                      <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                        Los productos por receta no manejan existencia propia. Al venderlos, el sistema descuenta sus materias primas del inventario.
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="grid gap-2">
+                          <Label>
+                            Precio de venta por unidad (RD$, ITBIS incluido) <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            value={price}
+                            onChange={(e) => setPrice(e.target.value)}
+                            inputMode="decimal"
+                            required
+                            disabled={editing ? (!user || (!user.canOverridePrice && user.role !== "ADMIN")) : false}
+                            onFocus={selectAllOnFocus}
+                          />
+                        </div>
+                        {(user?.canViewProductCosts || user?.role === "ADMIN") && (
+                          <div className="grid gap-2">
+                            <Label>
+                              Costo de referencia por unidad (RD$) <span className="text-red-500">*</span>
+                            </Label>
+                            <Input
+                              value={cost}
+                              onChange={(e) => setCost(e.target.value)}
+                              inputMode="decimal"
+                              required
+                              onFocus={selectAllOnFocus}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid gap-2 rounded-md border p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <Label>Receta base</Label>
+                            <div className="text-xs text-muted-foreground">
+                              Define los insumos que se consumirán por cada unidad vendida.
+                            </div>
+                          </div>
+                          <Button type="button" variant="secondary" size="sm" onClick={addRecipeItem}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Agregar insumo
+                          </Button>
+                        </div>
+                        <div className="grid gap-3">
+                          {recipeItems.map((item, index) => (
+                            <div key={item.id} className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-[minmax(0,1fr)_140px_44px]">
+                              <div className="grid gap-2">
+                                <Label>Insumo #{index + 1}</Label>
+                                <select
+                                  value={item.ingredientId}
+                                  onChange={(e) => updateRecipeItem(item.id, "ingredientId", e.target.value)}
+                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                >
+                                  <option value="">Selecciona un insumo</option>
+                                  {availableIngredients.map((option) => (
+                                    <option key={option.id} value={option.id}>
+                                      {option.productId} - {option.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="grid gap-2">
+                                <Label>Cantidad</Label>
+                                <Input
+                                  value={item.qty}
+                                  onChange={(e) => updateRecipeItem(item.id, "qty", e.target.value)}
+                                  inputMode="decimal"
+                                  placeholder="Ej: 2"
+                                />
+                              </div>
+                              <div className="flex items-end">
+                                <Button type="button" variant="outline" size="icon" onClick={() => removeRecipeItem(item.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3 rounded-md border p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <Label>Modificadores</Label>
+                            <div className="text-xs text-muted-foreground">
+                              Ajustan cantidades de insumos sin cambiar el precio. Ejemplo: sin tomate, extra queso.
+                            </div>
+                          </div>
+                          <Button type="button" variant="secondary" size="sm" onClick={addRecipeModifier}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Agregar modificador
+                          </Button>
+                        </div>
+
+                        {recipeModifiers.length === 0 && (
+                          <div className="text-sm text-muted-foreground">
+                            Aún no has agregado modificadores. Puedes dejar esta sección vacía si solo usarás la receta base.
+                          </div>
+                        )}
+
+                        {recipeModifiers.map((modifier, modifierIndex) => (
+                          <div key={modifier.id} className="grid gap-3 rounded-md border p-3">
+                            <div className="flex items-center gap-2">
+                              <div className="grid flex-1 gap-2">
+                                <Label>Modificador #{modifierIndex + 1}</Label>
+                                <Input
+                                  value={modifier.name}
+                                  onChange={(e) => updateRecipeModifier(modifier.id, e.target.value)}
+                                  placeholder="Ej: Sin tomate"
+                                />
+                              </div>
+                              <Button type="button" variant="outline" size="icon" onClick={() => removeRecipeModifier(modifier.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+
+                            <div className="grid gap-3">
+                              {modifier.items.map((item, itemIndex) => (
+                                <div
+                                  key={item.id}
+                                  className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-[minmax(0,1fr)_160px_44px]"
+                                >
+                                  <div className="grid gap-2">
+                                    <Label>Ajuste #{itemIndex + 1}</Label>
+                                    <select
+                                      value={item.ingredientId}
+                                      onChange={(e) => updateRecipeModifierItem(modifier.id, item.id, "ingredientId", e.target.value)}
+                                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                    >
+                                      <option value="">Selecciona un insumo</option>
+                                      {availableIngredients.map((option) => (
+                                        <option key={option.id} value={option.id}>
+                                          {option.productId} - {option.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>Ajuste de cantidad</Label>
+                                    <Input
+                                      value={item.qtyDelta}
+                                      onChange={(e) => updateRecipeModifierItem(modifier.id, item.id, "qtyDelta", e.target.value)}
+                                      inputMode="decimal"
+                                      placeholder="Ej: -1 o 0.5"
+                                    />
+                                  </div>
+                                  <div className="flex items-end">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="icon"
+                                      onClick={() => removeRecipeModifierItem(modifier.id, item.id)}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            <div>
+                              <Button type="button" variant="outline" size="sm" onClick={() => addRecipeModifierItem(modifier.id)}>
+                                <Plus className="mr-2 h-4 w-4" />
+                                Agregar ajuste
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </TabsContent>
+
                     <Separator />
 
                     <div className="grid gap-2">
@@ -1306,13 +1672,20 @@ export function ProductsClient() {
                 {items.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell className="font-medium">{p.productId}</TableCell>
-                    <TableCell className="font-medium">{p.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        <span>{p.name}</span>
+                        <Badge variant="secondary">{getProductTypeLabel(getProductFormType(p))}</Badge>
+                      </div>
+                    </TableCell>
                     <TableCell>{p.supplier?.name ?? "—"}</TableCell>
                     <TableCell>{p.sku ?? "—"}</TableCell>
                     <TableCell>{p.reference ?? "—"}</TableCell>
                     <TableCell className="text-right">{formatRD(p.priceCents)}</TableCell>
                     <TableCell className="text-right">
-                      {formatQty(decimalToNumber(p.stock), (p.saleUnit as UnitType) ?? "UNIDAD")}
+                      {p.productKind === "RECIPE"
+                        ? "Por insumos"
+                        : formatQty(decimalToNumber(p.stock), (p.saleUnit as UnitType) ?? "UNIDAD")}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcItbisIncluded, invoiceCode } from "@/lib/money"
-import { SaleType, PaymentMethod } from "@prisma/client"
+import { Decimal } from "@prisma/client/runtime/library"
+import { ProductKind, SaleType, PaymentMethod, type Prisma } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
@@ -49,6 +50,15 @@ export async function searchProducts(query: string) {
       stock: true,
       imageUrls: true,
       saleUnit: true,
+      productKind: true,
+      recipeModifiers: {
+        where: { isActive: true },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          name: true,
+        },
+      },
     },
   })
 
@@ -78,6 +88,15 @@ export async function listAllProductsForSale() {
       stock: true,
       imageUrls: true,
       saleUnit: true,
+      productKind: true,
+      recipeModifiers: {
+        where: { isActive: true },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          name: true,
+        },
+      },
     },
     take: 500,
   })
@@ -114,6 +133,15 @@ export async function findProductByBarcode(code: string) {
       stock: true,
       imageUrls: true,
       saleUnit: true,
+      productKind: true,
+      recipeModifiers: {
+        where: { isActive: true },
+        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          name: true,
+        },
+      },
     },
   })
 
@@ -243,6 +271,7 @@ type CartItemInput = {
   qty: number
   unitPriceCents: number
   wasPriceOverridden: boolean
+  selectedModifierIds?: string[]
 }
 
 type PaymentSplitInput = {
@@ -323,6 +352,284 @@ function parseOptionalDateInput(value: unknown): Date | undefined {
   }
 
   throw new Error("Fecha de venta inválida.")
+}
+
+type ResolvedConsumption = {
+  ingredientId: string
+  qty: number
+}
+
+type ResolvedSaleLine = {
+  item: CartItemInput
+  product: {
+    id: string
+    name: string
+    priceCents: number
+    stock: number
+    isActive: boolean
+    productKind: ProductKind
+  }
+  selectedModifiers: Array<{ id: string; name: string }>
+  consumptions: ResolvedConsumption[]
+}
+
+function roundQty(value: number) {
+  return Math.round(value * 1000) / 1000
+}
+
+function normalizeModifierIds(modifierIds: string[] | undefined) {
+  const normalized = Array.from(
+    new Set(
+      (modifierIds ?? [])
+        .map((modifierId) => String(modifierId ?? "").trim())
+        .filter(Boolean)
+    )
+  )
+
+  return normalized
+}
+
+async function loadProductsForSaleResolution(
+  tx: Prisma.TransactionClient,
+  accountId: string,
+  productIds: string[]
+) {
+  const products = await tx.product.findMany({
+    where: {
+      id: { in: productIds },
+      accountId,
+    },
+    select: {
+      id: true,
+      name: true,
+      priceCents: true,
+      stock: true,
+      isActive: true,
+      productKind: true,
+      recipeItems: {
+        select: {
+          ingredientId: true,
+          qty: true,
+        },
+      },
+      recipeModifiers: {
+        where: { isActive: true },
+        select: {
+          id: true,
+          name: true,
+          items: {
+            select: {
+              ingredientId: true,
+              qtyDelta: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  return new Map(
+    products.map((product) => [
+      product.id,
+      {
+        ...product,
+        stock: decimalToNumber(product.stock),
+        recipeItems: product.recipeItems.map((item) => ({
+          ingredientId: item.ingredientId,
+          qty: decimalToNumber(item.qty),
+        })),
+        recipeModifiers: product.recipeModifiers.map((modifier) => ({
+          ...modifier,
+          items: modifier.items.map((item) => ({
+            ingredientId: item.ingredientId,
+            qtyDelta: decimalToNumber(item.qtyDelta),
+          })),
+        })),
+      },
+    ])
+  )
+}
+
+function aggregateConsumptions(consumptions: ResolvedConsumption[]) {
+  const byIngredientId = new Map<string, number>()
+
+  for (const consumption of consumptions) {
+    byIngredientId.set(
+      consumption.ingredientId,
+      roundQty((byIngredientId.get(consumption.ingredientId) ?? 0) + consumption.qty)
+    )
+  }
+
+  return Array.from(byIngredientId.entries()).map(([ingredientId, qty]) => ({
+    ingredientId,
+    qty,
+  }))
+}
+
+async function resolveSaleLines(
+  tx: Prisma.TransactionClient,
+  accountId: string,
+  items: CartItemInput[]
+) {
+  const productsById = await loadProductsForSaleResolution(
+    tx,
+    accountId,
+    Array.from(new Set(items.map((item) => item.productId)))
+  )
+
+  const resolvedLines: ResolvedSaleLine[] = []
+
+  for (const item of items) {
+    const product = productsById.get(item.productId)
+    if (!product || !product.isActive) {
+      throw new Error("Hay un producto inválido o inactivo en el carrito.")
+    }
+
+    if (product.productKind !== ProductKind.RECIPE) {
+      resolvedLines.push({
+        item: {
+          ...item,
+          selectedModifierIds: [],
+        },
+        product: {
+          id: product.id,
+          name: product.name,
+          priceCents: product.priceCents,
+          stock: product.stock,
+          isActive: product.isActive,
+          productKind: product.productKind,
+        },
+        selectedModifiers: [],
+        consumptions: [
+          {
+            ingredientId: product.id,
+            qty: roundQty(item.qty),
+          },
+        ],
+      })
+      continue
+    }
+
+    if (product.recipeItems.length === 0) {
+      throw new Error(`El producto "${product.name}" no tiene una receta configurada.`)
+    }
+
+    const selectedModifierIds = normalizeModifierIds(item.selectedModifierIds)
+    const modifiersById = new Map(product.recipeModifiers.map((modifier) => [modifier.id, modifier]))
+    const selectedModifiers = selectedModifierIds.map((modifierId) => {
+      const modifier = modifiersById.get(modifierId)
+      if (!modifier) {
+        throw new Error(`El modificador seleccionado ya no existe para "${product.name}".`)
+      }
+      return modifier
+    })
+
+    const ingredientMap = new Map<string, number>()
+    for (const recipeItem of product.recipeItems) {
+      ingredientMap.set(recipeItem.ingredientId, roundQty(recipeItem.qty * item.qty))
+    }
+
+    for (const modifier of selectedModifiers) {
+      for (const modifierItem of modifier.items) {
+        ingredientMap.set(
+          modifierItem.ingredientId,
+          roundQty((ingredientMap.get(modifierItem.ingredientId) ?? 0) + modifierItem.qtyDelta * item.qty)
+        )
+      }
+    }
+
+    const consumptions: ResolvedConsumption[] = []
+    for (const [ingredientId, qty] of ingredientMap.entries()) {
+      if (qty < 0) {
+        throw new Error(`Los modificadores seleccionados dejan un consumo negativo en "${product.name}".`)
+      }
+      if (qty === 0) continue
+      consumptions.push({ ingredientId, qty })
+    }
+
+    if (consumptions.length === 0) {
+      throw new Error(`Los modificadores seleccionados dejan "${product.name}" sin insumos que descontar.`)
+    }
+
+    resolvedLines.push({
+      item: {
+        ...item,
+        selectedModifierIds,
+      },
+      product: {
+        id: product.id,
+        name: product.name,
+        priceCents: product.priceCents,
+        stock: product.stock,
+        isActive: product.isActive,
+        productKind: product.productKind,
+      },
+      selectedModifiers: selectedModifiers.map((modifier) => ({
+        id: modifier.id,
+        name: modifier.name,
+      })),
+      consumptions: aggregateConsumptions(consumptions),
+    })
+  }
+
+  return resolvedLines
+}
+
+async function validateConsumptionsStock(
+  tx: Prisma.TransactionClient,
+  accountId: string,
+  consumptions: ResolvedConsumption[],
+  allowNegativeStock: boolean
+) {
+  if (allowNegativeStock || consumptions.length === 0) return
+
+  const aggregatedConsumptions = aggregateConsumptions(consumptions)
+  const products = await tx.product.findMany({
+    where: {
+      id: { in: aggregatedConsumptions.map((consumption) => consumption.ingredientId) },
+      accountId,
+    },
+    select: {
+      id: true,
+      name: true,
+      stock: true,
+      isActive: true,
+    },
+  })
+
+  const byId = new Map(products.map((product) => [product.id, product]))
+
+  for (const consumption of aggregatedConsumptions) {
+    const product = byId.get(consumption.ingredientId)
+    if (!product || !product.isActive) {
+      throw new Error("Hay un insumo inválido o inactivo en la receta.")
+    }
+    if (decimalToNumber(product.stock) < consumption.qty) {
+      throw new Error(`Stock insuficiente para el insumo "${product.name}".`)
+    }
+  }
+}
+
+async function applyConsumptions(
+  tx: Prisma.TransactionClient,
+  accountId: string,
+  consumptions: ResolvedConsumption[],
+  direction: "increment" | "decrement"
+) {
+  for (const consumption of aggregateConsumptions(consumptions)) {
+    const updated = await tx.product.updateMany({
+      where: { id: consumption.ingredientId, accountId },
+      data: {
+        stock: {
+          [direction]: new Decimal(consumption.qty),
+        },
+      },
+    })
+
+    if (updated.count === 0) {
+      throw new Error("Producto no encontrado al actualizar inventario.")
+    }
+  }
 }
 
 export async function createSale(input: {
@@ -410,20 +717,11 @@ export async function createSale(input: {
       const number = seq.lastNumber
       const code = invoiceCode("A", number)
 
-      // Load products to validate stock and prices
-      const products = await tx.product.findMany({
-        where: { id: { in: input.items.map((i) => i.productId) }, accountId: user.accountId },
-        select: { id: true, priceCents: true, stock: true, isActive: true },
-      })
-      const byId = new Map(products.map((p) => [p.id, p]))
+      const resolvedLines = await resolveSaleLines(tx, user.accountId, input.items)
 
-      for (const item of input.items) {
-        const p = byId.get(item.productId)
-        if (!p || !p.isActive) throw new Error("Hay un producto inválido o inactivo en el carrito.")
-
-        // Validar permiso para modificar precio - SIEMPRE verificar si el precio es diferente al original
-        const originalPriceCents = Number(p.priceCents)
-        const priceDiffers = item.unitPriceCents !== originalPriceCents
+      for (const line of resolvedLines) {
+        const originalPriceCents = Number(line.product.priceCents)
+        const priceDiffers = line.item.unitPriceCents !== originalPriceCents
 
         if (priceDiffers) {
           if (!user.canOverridePrice && user.role !== "ADMIN") {
@@ -436,18 +734,21 @@ export async function createSale(input: {
             userUsername: user.username ?? null,
             action: "PRICE_OVERRIDE",
             resourceType: "Product",
-            resourceId: p.id,
+            resourceId: line.product.id,
             details: {
-              oldPriceCents: Number(p.priceCents),
-              newPriceCents: item.unitPriceCents,
+              oldPriceCents: originalPriceCents,
+              newPriceCents: line.item.unitPriceCents,
             },
           }, tx)
         }
-
-        if (!allowNegativeStock && Number(p.stock) < item.qty) {
-          throw new Error("Stock insuficiente para completar la venta.")
-        }
       }
+
+      await validateConsumptionsStock(
+        tx,
+        user.accountId,
+        resolvedLines.flatMap((line) => line.consumptions),
+        allowNegativeStock
+      )
 
       // Asegurar que el cliente genérico existe
       let genericCustomer = await tx.customer.findFirst({
@@ -521,12 +822,26 @@ export async function createSale(input: {
           shippingCents,
           totalCents,
           items: {
-            create: input.items.map((i) => ({
-              productId: i.productId,
-              qty: i.qty,
-              unitPriceCents: i.unitPriceCents,
-              wasPriceOverridden: i.wasPriceOverridden,
-              lineTotalCents: i.unitPriceCents * i.qty,
+            create: resolvedLines.map((line) => ({
+              productId: line.item.productId,
+              qty: line.item.qty,
+              unitPriceCents: line.item.unitPriceCents,
+              wasPriceOverridden: line.item.wasPriceOverridden,
+              lineTotalCents: line.item.unitPriceCents * line.item.qty,
+              selectedRecipeModifiers: line.selectedModifiers.length
+                ? {
+                    create: line.selectedModifiers.map((modifier) => ({
+                      modifierId: modifier.id,
+                      modifierName: modifier.name,
+                    })),
+                  }
+                : undefined,
+              consumptions: {
+                create: line.consumptions.map((consumption) => ({
+                  ingredientId: consumption.ingredientId,
+                  qty: new Decimal(consumption.qty),
+                })),
+              },
             })),
           },
           payments: hasPaymentSplits ? {
@@ -555,14 +870,12 @@ export async function createSale(input: {
         },
       }, tx)
 
-      // Update stock
-      for (const item of input.items) {
-        const updated = await tx.product.updateMany({
-          where: { id: item.productId, accountId: user.accountId },
-          data: { stock: { decrement: item.qty } },
-        })
-        if (updated.count === 0) throw new Error("Producto no encontrado")
-      }
+      await applyConsumptions(
+        tx,
+        user.accountId,
+        resolvedLines.flatMap((line) => line.consumptions),
+        "decrement"
+      )
 
       // If credit: create AR
       if (input.type === SaleType.CREDITO) {
@@ -630,8 +943,27 @@ export async function getSaleById(id: string) {
     include: {
       items: {
         include: {
+          selectedRecipeModifiers: true,
+          consumptions: true,
           product: {
-            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true, saleUnit: true },
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              reference: true,
+              priceCents: true,
+              stock: true,
+              saleUnit: true,
+              productKind: true,
+              recipeModifiers: {
+                where: { isActive: true },
+                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
           },
         },
       },
@@ -650,6 +982,11 @@ export async function getSaleById(id: string) {
     items: sale.items.map((item) => ({
       ...item,
       qty: decimalToNumber(item.qty),
+      selectedRecipeModifiers: item.selectedRecipeModifiers,
+      consumptions: item.consumptions.map((consumption) => ({
+        ...consumption,
+        qty: decimalToNumber(consumption.qty),
+      })),
       product: {
         ...item.product,
         stock: decimalToNumber(item.product.stock),
@@ -667,7 +1004,11 @@ export async function cancelSale(id: string, username: string, currentUserArg?: 
       const sale = await tx.sale.findFirst({
         where: { id, accountId: user.accountId },
         include: {
-          items: true,
+          items: {
+            include: {
+              consumptions: true,
+            },
+          },
           ar: true,
         },
       })
@@ -698,16 +1039,17 @@ export async function cancelSale(id: string, username: string, currentUserArg?: 
         }
       }
 
-      // Revertir el stock que se descontó
-      for (const item of sale.items) {
-        const updated = await tx.product.updateMany({
-          where: { id: item.productId, accountId: user.accountId },
-          data: {
-            stock: { increment: item.qty },
-          },
-        })
-        if (updated.count === 0) return { success: false, error: "Producto no encontrado al revertir stock" }
-      }
+      await applyConsumptions(
+        tx,
+        user.accountId,
+        sale.items.flatMap((item) =>
+          item.consumptions.map((consumption) => ({
+            ingredientId: consumption.ingredientId,
+            qty: decimalToNumber(consumption.qty),
+          }))
+        ),
+        "increment"
+      )
 
       // Marcar como cancelada
       const cancelled = await tx.sale.updateMany({
@@ -789,7 +1131,12 @@ export async function updateSale(input: {
     const existingSale = await tx.sale.findFirst({
       where: { id: input.id, accountId: user.accountId },
       include: {
-        items: true,
+        items: {
+          include: {
+            consumptions: true,
+            selectedRecipeModifiers: true,
+          },
+        },
         payments: true,
         ar: true,
       },
@@ -823,30 +1170,22 @@ export async function updateSale(input: {
       }
     }
 
-    // Revertir el stock de los items anteriores
-    for (const oldItem of existingSale.items) {
-      const updated = await tx.product.updateMany({
-        where: { id: oldItem.productId, accountId: user.accountId },
-        data: {
-          stock: { increment: oldItem.qty },
-        },
-      })
-      if (updated.count === 0) throw new Error("Producto no encontrado")
-    }
+    await applyConsumptions(
+      tx,
+      user.accountId,
+      existingSale.items.flatMap((item) =>
+        item.consumptions.map((consumption) => ({
+          ingredientId: consumption.ingredientId,
+          qty: decimalToNumber(consumption.qty),
+        }))
+      ),
+      "increment"
+    )
 
-    // Validar productos nuevos
-    const products = await tx.product.findMany({
-      where: { id: { in: input.items.map((i) => i.productId) }, accountId: user.accountId },
-      select: { id: true, priceCents: true, stock: true, isActive: true },
-    })
-    const byId = new Map(products.map((p) => [p.id, p]))
+    const resolvedLines = await resolveSaleLines(tx, user.accountId, input.items)
 
-    for (const item of input.items) {
-      const p = byId.get(item.productId)
-      if (!p || !p.isActive) throw new Error("Hay un producto inválido o inactivo en el carrito.")
-
-      // Validar permiso para modificar precio - SIEMPRE verificar si el precio es diferente al original
-      if (item.unitPriceCents !== p.priceCents) {
+    for (const line of resolvedLines) {
+      if (line.item.unitPriceCents !== line.product.priceCents) {
         if (!user.canOverridePrice && user.role !== "ADMIN") {
           throw new Error("No tienes permiso para modificar precios. El precio fue cambiado sin autorización.")
         }
@@ -857,18 +1196,21 @@ export async function updateSale(input: {
           userUsername: user.username ?? null,
           action: "PRICE_OVERRIDE",
           resourceType: "Product",
-          resourceId: p.id,
+          resourceId: line.product.id,
           details: {
-            oldPriceCents: Number(p.priceCents),
-            newPriceCents: item.unitPriceCents,
+            oldPriceCents: Number(line.product.priceCents),
+            newPriceCents: line.item.unitPriceCents,
           },
         }, tx)
       }
-
-      if (!allowNegativeStock && Number(p.stock) < item.qty) {
-        throw new Error("Stock insuficiente para completar la venta.")
-      }
     }
+
+    await validateConsumptionsStock(
+      tx,
+      user.accountId,
+      resolvedLines.flatMap((line) => line.consumptions),
+      allowNegativeStock
+    )
 
     // Eliminar items anteriores
     await tx.saleItem.deleteMany({
@@ -922,16 +1264,32 @@ export async function updateSale(input: {
       },
     }, tx)
 
-    await tx.saleItem.createMany({
-      data: input.items.map((i) => ({
-        saleId: input.id,
-        productId: i.productId,
-        qty: i.qty,
-        unitPriceCents: i.unitPriceCents,
-        wasPriceOverridden: i.wasPriceOverridden,
-        lineTotalCents: i.unitPriceCents * i.qty,
-      })),
-    })
+    for (const line of resolvedLines) {
+      await tx.saleItem.create({
+        data: {
+          saleId: input.id,
+          productId: line.item.productId,
+          qty: line.item.qty,
+          unitPriceCents: line.item.unitPriceCents,
+          wasPriceOverridden: line.item.wasPriceOverridden,
+          lineTotalCents: line.item.unitPriceCents * line.item.qty,
+          selectedRecipeModifiers: line.selectedModifiers.length
+            ? {
+                create: line.selectedModifiers.map((modifier) => ({
+                  modifierId: modifier.id,
+                  modifierName: modifier.name,
+                })),
+              }
+            : undefined,
+          consumptions: {
+            create: line.consumptions.map((consumption) => ({
+              ingredientId: consumption.ingredientId,
+              qty: new Decimal(consumption.qty),
+            })),
+          },
+        },
+      })
+    }
 
     if (hasPaymentSplits) {
       await tx.salePayment.createMany({
@@ -944,16 +1302,12 @@ export async function updateSale(input: {
       })
     }
 
-    // Aplicar nuevo stock
-    for (const item of input.items) {
-      const updated = await tx.product.updateMany({
-        where: { id: item.productId, accountId: user.accountId },
-        data: {
-          stock: { decrement: item.qty },
-        },
-      })
-      if (updated.count === 0) throw new Error("Producto no encontrado")
-    }
+    await applyConsumptions(
+      tx,
+      user.accountId,
+      resolvedLines.flatMap((line) => line.consumptions),
+      "decrement"
+    )
 
     // Actualizar o crear cuenta por cobrar si es crédito
     if (input.type === SaleType.CREDITO) {

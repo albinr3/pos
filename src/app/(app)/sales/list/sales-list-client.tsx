@@ -5,6 +5,7 @@ import { Edit, Receipt, Trash2, Search, Printer, Plus } from "lucide-react"
 import Link from "next/link"
 import { SaleType, PaymentMethod } from "@prisma/client"
 
+
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -26,6 +27,7 @@ type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
 
 type CartItem = {
+  lineId: string
   productId: string
   name: string
   sku: string | null
@@ -34,6 +36,14 @@ type CartItem = {
   qty: number
   unitPriceCents: number
   wasPriceOverridden: boolean
+  itbisRateBp: number
+  selectedModifierIds: string[]
+  selectedModifierNames: string[]
+}
+
+function buildCartLineId(productId: string, selectedModifierIds: string[]) {
+  const modifiersKey = [...selectedModifierIds].sort().join(",")
+  return modifiersKey ? `${productId}::${modifiersKey}` : productId
 }
 
 const PAGE_SIZE = 50
@@ -56,11 +66,13 @@ export function SalesListClient() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
   const [cart, setCart] = useState<CartItem[]>([])
   const [isSaving, startSaving] = useTransition()
+  const [modifierDialogProduct, setModifierDialogProduct] = useState<ProductResult | null>(null)
+  const [modifierDraftIds, setModifierDraftIds] = useState<string[]>([])
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<ProductResult[]>([])
-  const [isSearching, startSearch] = useTransition()
+  const [, startSearch] = useTransition()
   const [user, setUser] = useState<CurrentUser | null>(null)
 
   useEffect(() => {
@@ -118,7 +130,6 @@ export function SalesListClient() {
   useEffect(() => {
     const q = searchQuery.trim()
     if (!q) {
-      setSearchResults([])
       return
     }
 
@@ -149,6 +160,10 @@ export function SalesListClient() {
       setPaymentMethod(sale.paymentMethod || PaymentMethod.EFECTIVO)
       setCart(
         sale.items.map((item) => ({
+          lineId: buildCartLineId(
+            item.productId,
+            (item.selectedRecipeModifiers ?? []).flatMap((modifier) => (modifier.modifierId ? [modifier.modifierId] : []))
+          ),
           productId: item.productId,
           name: item.product.name,
           sku: item.product.sku,
@@ -157,6 +172,11 @@ export function SalesListClient() {
           qty: item.qty,
           unitPriceCents: item.unitPriceCents,
           wasPriceOverridden: item.wasPriceOverridden,
+          itbisRateBp: (item.product as any).itbisRateBp ?? 1800,
+          selectedModifierIds: (item.selectedRecipeModifiers ?? []).flatMap((modifier) =>
+            modifier.modifierId ? [modifier.modifierId] : []
+          ),
+          selectedModifierNames: (item.selectedRecipeModifiers ?? []).map((modifier) => modifier.modifierName),
         }))
       )
       setOpenEdit(true)
@@ -165,13 +185,21 @@ export function SalesListClient() {
     }
   }
 
-  function addProduct(p: ProductResult) {
+  function addProductToCart(p: ProductResult, selectedModifierIds: string[] = []) {
+    const normalizedModifierIds = [...selectedModifierIds].sort()
+    const recipeModifiers = Array.isArray(p.recipeModifiers) ? p.recipeModifiers : []
+    const selectedModifierNames = recipeModifiers
+      .filter((modifier) => normalizedModifierIds.includes(modifier.id))
+      .map((modifier) => modifier.name)
+    const lineId = buildCartLineId(p.id, normalizedModifierIds)
+
     setCart((prev) => {
-      const existing = prev.find((x) => x.productId === p.id)
-      if (existing) return prev.map((x) => (x.productId === p.id ? { ...x, qty: x.qty + 1 } : x))
+      const existing = prev.find((x) => x.lineId === lineId)
+      if (existing) return prev.map((x) => (x.lineId === lineId ? { ...x, qty: x.qty + 1 } : x))
       return [
         ...prev,
         {
+          lineId,
           productId: p.id,
           name: p.name,
           sku: p.sku,
@@ -180,9 +208,21 @@ export function SalesListClient() {
           qty: 1,
           unitPriceCents: p.priceCents,
           wasPriceOverridden: false,
+          itbisRateBp: p.itbisRateBp ?? 1800,
+          selectedModifierIds: normalizedModifierIds,
+          selectedModifierNames,
         },
       ]
     })
+  }
+
+  function handleProductSelection(p: ProductResult) {
+    if (p.productKind === "RECIPE" && Array.isArray(p.recipeModifiers) && p.recipeModifiers.length > 0) {
+      setModifierDialogProduct(p)
+      setModifierDraftIds([])
+      return
+    }
+    addProductToCart(p)
   }
 
   async function handleSave() {
@@ -210,6 +250,7 @@ export function SalesListClient() {
             qty: c.qty,
             unitPriceCents: c.unitPriceCents,
             wasPriceOverridden: c.wasPriceOverridden,
+            selectedModifierIds: c.selectedModifierIds,
           })),
         })
         toast({ title: "Guardado", description: "Venta actualizada" })
@@ -238,7 +279,17 @@ export function SalesListClient() {
   }
 
   const totalCents = cart.reduce((s, i) => s + i.unitPriceCents * i.qty, 0)
-  const { subtotalCents, itbisCents } = useMemo(() => calcItbisIncluded(totalCents, 1800), [totalCents])
+  const { subtotalCents, itbisCents } = useMemo(() => {
+    let totalSubtotal = 0
+    let totalItbis = 0
+    for (const item of cart) {
+      const lineTotal = item.unitPriceCents * item.qty
+      const { subtotalCents: lineSub, itbisCents: lineItbis } = calcItbisIncluded(lineTotal, item.itbisRateBp)
+      totalSubtotal += lineSub
+      totalItbis += lineItbis
+    }
+    return { subtotalCents: totalSubtotal, itbisCents: totalItbis }
+  }, [cart])
 
   return (
     <div className="grid gap-6">
@@ -440,7 +491,7 @@ export function SalesListClient() {
                 {searchQuery && searchResults.length > 0 && (
                   <div className="border rounded-md max-h-40 overflow-y-auto">
                     {searchResults.map((p) => (
-                      <button key={p.id} onClick={() => addProduct(p)} className="w-full text-left px-4 py-2 hover:bg-gray-100 border-b last:border-b-0">
+                      <button key={p.id} onClick={() => handleProductSelection(p)} className="w-full text-left px-4 py-2 hover:bg-gray-100 border-b last:border-b-0">
                         <div className="font-medium">{p.name}</div>
                         <div className="text-sm text-muted-foreground">Código: {p.sku ?? "—"} · Precio: {formatRD(p.priceCents)}</div>
                       </button>
@@ -456,20 +507,23 @@ export function SalesListClient() {
                     <div className="text-sm text-muted-foreground p-2">No hay productos</div>
                   ) : (
                     cart.map((c) => (
-                      <div key={c.productId} className="border rounded p-2">
+                      <div key={c.lineId} className="border rounded p-2">
                         <div className="flex items-start justify-between">
                           <div>
                             <div className="font-medium">{c.name}</div>
                             <div className="text-xs text-muted-foreground">Código: {c.sku ?? "—"} · Stock: {c.stock}</div>
+                            {c.selectedModifierNames.length > 0 && (
+                              <div className="text-xs text-muted-foreground">Modificadores: {c.selectedModifierNames.join(", ")}</div>
+                            )}
                           </div>
-                          <Button variant="ghost" size="icon" onClick={() => setCart((p) => p.filter((x) => x.productId !== c.productId))}>
+                          <Button variant="ghost" size="icon" onClick={() => setCart((p) => p.filter((x) => x.lineId !== c.lineId))}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mt-2">
                           <div>
                             <Label className="text-xs">Cantidad</Label>
-                            <Input value={String(c.qty)} onChange={(e) => setCart((p) => p.map((x) => (x.productId === c.productId ? { ...x, qty: Math.max(1, toInt(e.target.value)) } : x)))} inputMode="numeric" />
+                            <Input value={String(c.qty)} onChange={(e) => setCart((p) => p.map((x) => (x.lineId === c.lineId ? { ...x, qty: Math.max(1, toInt(e.target.value)) } : x)))} inputMode="numeric" />
                           </div>
                           <div>
                             <Label className="text-xs">Precio unitario</Label>
@@ -480,7 +534,7 @@ export function SalesListClient() {
                                   // Obtener el precio original del producto
                                   const product = searchResults.find((p) => p.id === c.productId) || editingSale?.items.find((item) => item.productId === c.productId)?.product
                                   const originalPriceCents = product?.priceCents || c.unitPriceCents
-                                  setCart((p) => p.map((x) => (x.productId === c.productId ? { ...x, unitPriceCents: cents, wasPriceOverridden: cents !== originalPriceCents } : x)))
+                                  setCart((p) => p.map((x) => (x.lineId === c.lineId ? { ...x, unitPriceCents: cents, wasPriceOverridden: cents !== originalPriceCents } : x)))
                                 }}
                               />
                             ) : (
@@ -521,6 +575,53 @@ export function SalesListClient() {
             </Button>
             <Button onClick={handleSave} disabled={isSaving || cart.length === 0}>
               {isSaving ? "Guardando…" : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modifier Dialog for RECIPE products */}
+      <Dialog open={!!modifierDialogProduct} onOpenChange={(open) => { if (!open) setModifierDialogProduct(null) }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Modificadores — {modifierDialogProduct?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 py-2">
+            {modifierDialogProduct?.recipeModifiers?.map((modifier) => (
+              <label key={modifier.id} className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-gray-300"
+                  checked={modifierDraftIds.includes(modifier.id)}
+                  onChange={(e) => {
+                    const checked = e.target.checked
+                    setModifierDraftIds((prev) =>
+                      checked
+                        ? [...prev, modifier.id]
+                        : prev.filter((id) => id !== modifier.id)
+                    )
+                  }}
+                />
+                <span className="text-sm">{modifier.name}</span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setModifierDialogProduct(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (modifierDialogProduct) {
+                  addProductToCart(modifierDialogProduct, modifierDraftIds)
+                  setModifierDialogProduct(null)
+                  setModifierDraftIds([])
+                  setSearchQuery("")
+                  setSearchResults([])
+                }
+              }}
+            >
+              Agregar
             </Button>
           </DialogFooter>
         </DialogContent>

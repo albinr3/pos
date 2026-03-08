@@ -142,6 +142,12 @@ enum UnitType {
   PIE // Pies
 }
 
+enum ProductKind {
+  BASIC
+  MEASURED
+  RECIPE
+}
+
 // ==========================================
 // ACCOUNT (Tenant/Cuenta Principal)
 // ==========================================
@@ -155,26 +161,26 @@ model Account {
   clerkUserId String @unique // ID del usuario Clerk que es dueño
 
   // Relaciones - todos los datos del tenant
-  users              User[]
-  companySettings    CompanySettings?
-  customers          Customer[]
-  suppliers          Supplier[]
-  categories         Category[]
-  products           Product[]
-  sales              Sale[]
-  purchases          Purchase[]
-  operatingExpenses  OperatingExpense[]
-  returns            Return[]
-  quotes             Quote[]
-  auditLogs          AuditLog[]
+  users                User[]
+  companySettings      CompanySettings?
+  customers            Customer[]
+  suppliers            Supplier[]
+  categories           Category[]
+  products             Product[]
+  sales                Sale[]
+  purchases            Purchase[]
+  operatingExpenses    OperatingExpense[]
+  returns              Return[]
+  quotes               Quote[]
+  auditLogs            AuditLog[]
   inventoryAdjustments InventoryAdjustment[]
-  invoiceSequences   InvoiceSequence[]
-  returnSequence     ReturnSequence?
-  quoteSequence      QuoteSequence?
-  productSequence    ProductSequence?
-  categorySequence   CategorySequence?
-  paymentSequence    PaymentSequence?
-  subUserLoginTokens SubUserLoginToken[]
+  invoiceSequences     InvoiceSequence[]
+  returnSequence       ReturnSequence?
+  quoteSequence        QuoteSequence?
+  productSequence      ProductSequence?
+  categorySequence     CategorySequence?
+  paymentSequence      PaymentSequence?
+  subUserLoginTokens   SubUserLoginToken[]
 
   // Billing
   billingSubscription  BillingSubscription?
@@ -227,18 +233,18 @@ model User {
   subUserLoginTokens SubUserLoginToken[]
 
   // Relaciones
-  sales              Sale[]
-  payments           Payment[]
-  cancelledPayments  Payment[]          @relation("CancelledPayments")
-  purchases          Purchase[]
-  cancelledPurchases Purchase[]         @relation("CancelledPurchases")
-  operatingExpenses  OperatingExpense[]
-  cancelledSales     Sale[]             @relation("CancelledSales")
-  returns            Return[]
-  cancelledReturns   Return[]           @relation("CancelledReturns")
-  quotes             Quote[]
-  whatsappOtps       WhatsappOtp[]
-  auditLogs          AuditLog[]
+  sales                Sale[]
+  payments             Payment[]
+  cancelledPayments    Payment[]             @relation("CancelledPayments")
+  purchases            Purchase[]
+  cancelledPurchases   Purchase[]            @relation("CancelledPurchases")
+  operatingExpenses    OperatingExpense[]
+  cancelledSales       Sale[]                @relation("CancelledSales")
+  returns              Return[]
+  cancelledReturns     Return[]              @relation("CancelledReturns")
+  quotes               Quote[]
+  whatsappOtps         WhatsappOtp[]
+  auditLogs            AuditLog[]
   inventoryAdjustments InventoryAdjustment[]
 
   // Username único dentro del mismo account
@@ -283,10 +289,10 @@ model CompanySettings {
 
   logoUrl String?
 
-  allowNegativeStock Boolean @default(false)
-  itbisRateBp        Int     @default(1800)
-  defaultProfitMarginBp Int  @default(3000)
-  showItbisOnReceipts Boolean @default(true)
+  allowNegativeStock    Boolean @default(false)
+  itbisRateBp           Int     @default(1800)
+  defaultProfitMarginBp Int     @default(3000)
+  showItbisOnReceipts   Boolean @default(true)
 
   barcodeLabelSize  String @default("4x2")
   shippingLabelSize String @default("4x6")
@@ -428,7 +434,7 @@ model Supplier {
   address     String?
   notes       String?
 
-  discountPercentBp Int @default(0)
+  discountPercentBp Int     @default(0)
   chargesItbis      Boolean @default(false)
   itbisRateBp       Int?
 
@@ -448,8 +454,8 @@ model Category {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  accountId String
-  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId  String
+  account    Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   categoryId Int
 
   name        String
@@ -496,20 +502,26 @@ model Product {
 
   itbisRateBp Int @default(1800)
 
-  purchaseUnit UnitType @default(UNIDAD)
-  saleUnit     UnitType @default(UNIDAD)
-  stock        Decimal  @default(0) @db.Decimal(10, 3)
-  minStock     Decimal  @default(0) @db.Decimal(10, 3)
+  productKind  ProductKind @default(BASIC)
+  purchaseUnit UnitType    @default(UNIDAD)
+  saleUnit     UnitType    @default(UNIDAD)
+  stock        Decimal     @default(0) @db.Decimal(10, 3)
+  minStock     Decimal     @default(0) @db.Decimal(10, 3)
 
   isActive Boolean @default(true)
 
   imageUrls String[] @default([])
 
-  saleItems     SaleItem[]
-  purchaseItems PurchaseItem[]
-  returnItems   ReturnItem[]
-  quoteItems    QuoteItem[]
-  inventoryAdjustments InventoryAdjustment[]
+  recipeItems                ProductRecipeItem[]         @relation("RecipeProduct")
+  usedAsIngredientInRecipes  ProductRecipeItem[]         @relation("RecipeIngredient")
+  recipeModifiers            ProductRecipeModifier[]
+  usedAsModifierIngredientIn ProductRecipeModifierItem[] @relation("ModifierIngredient")
+  usedInSaleConsumptions     SaleItemConsumption[]       @relation("SaleConsumptionIngredient")
+  saleItems                  SaleItem[]
+  purchaseItems              PurchaseItem[]
+  returnItems                ReturnItem[]
+  quoteItems                 QuoteItem[]
+  inventoryAdjustments       InventoryAdjustment[]
 
   // productId único dentro del account
   @@unique([accountId, productId])
@@ -518,9 +530,61 @@ model Product {
   @@index([accountId])
   @@index([accountId, name])
   @@index([accountId, reference])
+  @@index([accountId, productKind])
   @@index([supplierId])
   @@index([categoryId])
   @@index([accountId, stock])
+}
+
+model ProductRecipeItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  productId String
+  product   Product @relation("RecipeProduct", fields: [productId], references: [id], onDelete: Cascade)
+
+  ingredientId String
+  ingredient   Product @relation("RecipeIngredient", fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  qty Decimal @db.Decimal(10, 3)
+
+  @@unique([productId, ingredientId])
+  @@index([productId])
+  @@index([ingredientId])
+}
+
+model ProductRecipeModifier {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  name      String
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  items             ProductRecipeModifierItem[]
+  saleItemModifiers SaleItemRecipeModifier[]
+
+  @@index([productId, sortOrder])
+}
+
+model ProductRecipeModifierItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  modifierId String
+  modifier   ProductRecipeModifier @relation(fields: [modifierId], references: [id], onDelete: Cascade)
+
+  ingredientId String
+  ingredient   Product @relation("ModifierIngredient", fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  qtyDelta Decimal @db.Decimal(10, 3)
+
+  @@index([modifierId])
+  @@index([ingredientId])
 }
 
 model InventoryAdjustment {
@@ -566,7 +630,7 @@ model Sale {
 
   type SaleType
 
-  paymentMethod PaymentMethod?
+  paymentMethod    PaymentMethod?
   transferBankName String?
 
   customerId String?
@@ -617,7 +681,40 @@ model SaleItem {
 
   lineTotalCents Int
 
-  returnItems ReturnItem[]
+  selectedRecipeModifiers SaleItemRecipeModifier[]
+  consumptions            SaleItemConsumption[]
+  returnItems             ReturnItem[]
+}
+
+model SaleItemRecipeModifier {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  saleItemId String
+  saleItem   SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+
+  modifierId   String?
+  modifier     ProductRecipeModifier? @relation(fields: [modifierId], references: [id], onDelete: SetNull)
+  modifierName String
+
+  @@unique([saleItemId, modifierName])
+  @@index([modifierId])
+}
+
+model SaleItemConsumption {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  saleItemId String
+  saleItem   SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+
+  ingredientId String
+  ingredient   Product @relation("SaleConsumptionIngredient", fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  qty Decimal @db.Decimal(10, 3)
+
+  @@index([saleItemId])
+  @@index([ingredientId])
 }
 
 model SalePayment {
@@ -627,9 +724,9 @@ model SalePayment {
   saleId String
   sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
-  method      PaymentMethod
+  method           PaymentMethod
   transferBankName String?
-  amountCents Int
+  amountCents      Int
 
   @@index([saleId])
 }
@@ -651,7 +748,7 @@ model AccountReceivable {
   totalCents   Int
   balanceCents Int
   status       AROpenStatus @default(PENDIENTE)
-  
+
   dueDate DateTime?
 
   payments Payment[]
@@ -674,11 +771,11 @@ model Payment {
   receiptNumber Int
   receiptCode   String // e.g. R-000001
 
-  paidAt      DateTime      @default(now())
-  amountCents Int
-  method      PaymentMethod @default(EFECTIVO)
+  paidAt           DateTime      @default(now())
+  amountCents      Int
+  method           PaymentMethod @default(EFECTIVO)
   transferBankName String?
-  note        String?
+  note             String?
 
   cancelledAt   DateTime?
   cancelledBy   String?
@@ -759,15 +856,15 @@ model PurchaseItem {
   productId String
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
-  qty               Decimal @db.Decimal(10, 3)
-  unitCostCents     Int
-  discountPercentBp Int     @default(0)
-  netCostCents      Int     @default(0)
-  salePriceCents    Int?
-  saleMarginBp      Int?
+  qty                   Decimal  @db.Decimal(10, 3)
+  unitCostCents         Int
+  discountPercentBp     Int      @default(0)
+  netCostCents          Int      @default(0)
+  salePriceCents        Int?
+  saleMarginBp          Int?
   purchaseIncludesItbis Boolean?
-  appliedItbisRateBp Int?
-  lineTotalCents    Int
+  appliedItbisRateBp    Int?
+  lineTotalCents        Int
 }
 
 // ==========================================
@@ -924,7 +1021,7 @@ model BillingPlan {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  name        String  // "Plan Estándar", "Plan Promocional", "Plan VIP"
+  name        String // "Plan Estándar", "Plan Promocional", "Plan VIP"
   description String?
 
   // Precios en centavos
@@ -1222,9 +1319,9 @@ model SuperAdminAuditLog {
 // ERROR LOG (Sistema de monitoreo de errores)
 // ==========================================
 enum ErrorSeverity {
-  LOW      // Errores menores, no afectan funcionalidad
-  MEDIUM   // Errores que afectan parcialmente
-  HIGH     // Errores críticos que bloquean funcionalidad
+  LOW // Errores menores, no afectan funcionalidad
+  MEDIUM // Errores que afectan parcialmente
+  HIGH // Errores críticos que bloquean funcionalidad
   CRITICAL // Errores que afectan todo el sistema
 }
 
@@ -1233,31 +1330,31 @@ model ErrorLog {
   createdAt DateTime @default(now())
 
   // Información del error
-  message     String
-  stack       String?  @db.Text
-  code        String?  // Código de error personalizado (ej: "PAYMENT_FAILED", "DB_CONNECTION")
-  severity    ErrorSeverity @default(MEDIUM)
-  
+  message  String
+  stack    String?       @db.Text
+  code     String? // Código de error personalizado (ej: "PAYMENT_FAILED", "DB_CONNECTION")
+  severity ErrorSeverity @default(MEDIUM)
+
   // Contexto
-  accountId   String?  // Cuenta afectada (si aplica)
-  userId      String?  // Usuario que causó el error (si aplica)
-  endpoint    String?  // Ruta/endpoint donde ocurrió
-  method      String?  // GET, POST, etc.
-  
+  accountId String? // Cuenta afectada (si aplica)
+  userId    String? // Usuario que causó el error (si aplica)
+  endpoint  String? // Ruta/endpoint donde ocurrió
+  method    String? // GET, POST, etc.
+
   // Request info
-  requestBody Json?    // Body del request (sanitizado)
-  queryParams Json?    // Query parameters
+  requestBody Json? // Body del request (sanitizado)
+  queryParams Json? // Query parameters
   ipAddress   String?
   userAgent   String?
-  
+
   // Metadatos adicionales
-  metadata    Json?    // Cualquier dato adicional relevante
-  
+  metadata Json? // Cualquier dato adicional relevante
+
   // Resolución
-  resolved    Boolean  @default(false)
-  resolvedAt  DateTime?
-  resolvedBy  String?  // ID del super admin que lo resolvió
-  resolution  String?  // Notas de resolución
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime?
+  resolvedBy String? // ID del super admin que lo resolvió
+  resolution String? // Notas de resolución
 
   @@index([createdAt])
   @@index([severity])
