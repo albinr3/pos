@@ -97,6 +97,50 @@ export default async function DailyClosePage({
           )}
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Ventas al contado por método</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <details className="group rounded-md border">
+            <summary className="cursor-pointer list-none rounded-md px-4 py-3 font-medium transition hover:bg-muted/50">
+              <div className="flex items-center justify-between gap-4">
+                <span>Resumen de ventas por método de pago</span>
+                <span className="text-sm text-muted-foreground">
+                  {formatRD(data.cashSalesSummary.totalCents)} · {data.cashSalesSummary.salesCount} ventas
+                </span>
+              </div>
+            </summary>
+
+            <div className="grid gap-3 border-t p-4 text-sm">
+              {data.cashSalesSummary.byMethod.length === 0 ? (
+                <div className="text-muted-foreground">No hay ventas al contado en el rango seleccionado.</div>
+              ) : (
+                data.cashSalesSummary.byMethod.map((item) => (
+                  <div key={item.method} className="rounded-md border p-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <span className="font-medium">{item.label}</span>
+                      <span className="font-semibold">{formatRD(item.totalCents)}</span>
+                    </div>
+
+                    {item.method === "TRANSFERENCIA" && item.banks.length > 0 ? (
+                      <div className="mt-3 grid gap-2 border-t pt-3">
+                        {item.banks.map((bank) => (
+                          <div key={bank.bankName} className="flex items-center justify-between gap-4 text-muted-foreground">
+                            <span>{bank.bankName}</span>
+                            <span className="font-medium text-foreground">{formatRD(bank.totalCents)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+          </details>
+        </CardContent>
+      </Card>
     </div>
   )
 }
