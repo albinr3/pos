@@ -219,25 +219,3 @@ export const tutorialVideos: TutorialVideo[] = [
   },
 ]
 
-export const tutorialFaqs = [
-  {
-    question: "Como agrego mis videos cuando ya esten grabados?",
-    answer:
-      "Solo tendras que reemplazar el valor `youtubeId` de cada tutorial por el ID real del video en YouTube. La interfaz ya quedara preparada para mostrar el embed automaticamente.",
-  },
-  {
-    question: "Puedo cambiar el orden de los tutoriales?",
-    answer:
-      "Si. El orden actual depende del arreglo `tutorialVideos`, asi que puedes reorganizarlo facilmente segun el flujo que quieras enseñar a tus usuarios.",
-  },
-  {
-    question: "La pagina funciona bien en celular?",
-    answer:
-      "Si. La composicion esta pensada para mobile first, con un reproductor destacado responsive, tabs desplazables y tarjetas que se adaptan a una sola columna en pantallas pequenas.",
-  },
-  {
-    question: "Que pasa si un video aun no esta disponible?",
-    answer:
-      "La pagina muestra un estado visual de proximo tutorial para evitar espacios rotos o embeds vacios, manteniendo una experiencia limpia mientras completas la biblioteca.",
-  },
-]

@@ -4,12 +4,11 @@ import Link from "next/link"
 import { useState } from "react"
 import {
   ArrowRight,
-  BookOpenCheck,
   Clock3,
   LifeBuoy,
+  Mail,
   MessageCircle,
   PlayCircle,
-  Sparkles,
   Youtube,
 } from "lucide-react"
 
@@ -29,14 +28,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs"
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion"
-import {
   tutorialCategories,
-  tutorialFaqs,
   tutorialVideos,
   type TutorialCategory,
   type TutorialVideo,
@@ -174,7 +166,7 @@ function VideoCard({
 
 export function TutorialVideoHub() {
   const defaultVideo = tutorialVideos.find((video) => video.featured) ?? tutorialVideos[0]
-  const [selectedTab, setSelectedTab] = useState<TabValue>("todos")
+  const [selectedTab, setSelectedTab] = useState<TabValue>("primeros-pasos")
   const [selectedSlug, setSelectedSlug] = useState(defaultVideo.slug)
 
   const selectedVideo =
@@ -211,7 +203,7 @@ export function TutorialVideoHub() {
                   size="lg"
                   className="bg-white text-[#6B46C1] hover:bg-white/90"
                 >
-                  <Link href="#tutorial-destacado">Ver tutorial destacado</Link>
+                  <Link href="#biblioteca">Ver biblioteca de tutoriales</Link>
                 </Button>
                 <Button
                   asChild
@@ -250,75 +242,6 @@ export function TutorialVideoHub() {
             <div className="rounded-[2rem] border border-white/10 bg-white/10 p-4 shadow-2xl backdrop-blur md:p-6">
               <VideoPreview video={selectedVideo} />
             </div>
-          </div>
-        </div>
-      </section>
-
-      <section id="tutorial-destacado" className="bg-white py-14 sm:py-20">
-        <div className="container">
-          <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr] lg:items-start">
-            <div className="space-y-5">
-              <div className="flex flex-wrap items-center gap-3">
-                <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">
-                  Tutorial destacado
-                </Badge>
-                <Badge variant="outline">{selectedVideo.categoryLabel}</Badge>
-                <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock3 className="h-4 w-4" />
-                  {selectedVideo.duration}
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                <h2 className="text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
-                  {selectedVideo.title}
-                </h2>
-                <p className="max-w-3xl text-base leading-7 text-muted-foreground sm:text-lg">
-                  {selectedVideo.description}
-                </p>
-              </div>
-            </div>
-
-            <Card className="border-purple-100 bg-gradient-to-br from-purple-50 via-white to-white">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-xl">
-                  <BookOpenCheck className="h-5 w-5 text-purple-700" />
-                  Lo que aprendera el usuario
-                </CardTitle>
-                <CardDescription>
-                  Cada tutorial esta pensado para resolver una tarea concreta dentro de MOVOPos.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {selectedVideo.outcomes.map((outcome) => (
-                  <div key={outcome} className="flex items-start gap-3">
-                    <div className="mt-1 h-2.5 w-2.5 rounded-full bg-purple-600" />
-                    <p className="text-sm leading-6 text-muted-foreground">{outcome}</p>
-                  </div>
-                ))}
-
-                <div className="flex flex-col gap-3 pt-2 sm:flex-row">
-                  {selectedVideo.youtubeId ? (
-                    <Button asChild>
-                      <Link
-                        href={getYoutubeWatchUrl(selectedVideo.youtubeId)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Abrir en YouTube
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button asChild>
-                      <Link href="#biblioteca">Ver biblioteca completa</Link>
-                    </Button>
-                  )}
-                  <Button asChild variant="outline">
-                    <Link href="/contact">Solicitar ayuda personalizada</Link>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </section>
@@ -386,93 +309,6 @@ export function TutorialVideoHub() {
             })}
           </Tabs>
 
-          <div className="mt-10 rounded-[2rem] border bg-white p-6 shadow-sm sm:p-8">
-            <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
-              <div className="space-y-3">
-                <Badge variant="outline" className="border-purple-200 text-purple-700">
-                  Pensado para excelente UX
-                </Badge>
-                <h3 className="text-2xl font-bold text-foreground sm:text-3xl">
-                  Un solo reproductor principal para evitar una pagina lenta y saturada
-                </h3>
-              </div>
-              <p className="text-base leading-7 text-muted-foreground">
-                En lugar de cargar 10 iframes pesados al mismo tiempo, la experiencia prioriza un
-                video principal y usa tarjetas como playlist visual. Asi la pagina se siente mas
-                rapida, mas clara y mucho mas agradable en desktop y movil.
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white py-14 sm:py-20">
-        <div className="container">
-          <div className="grid gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-start">
-            <Card className="border-0 bg-[linear-gradient(135deg,_rgba(30,27,75,1)_0%,_rgba(88,28,135,1)_100%)] text-white shadow-2xl">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-2xl">
-                  <LifeBuoy className="h-6 w-6" />
-                  Si un tutorial no resuelve tu duda
-                </CardTitle>
-                <CardDescription className="text-white/75">
-                  Complementa la biblioteca con canales de soporte directos para no perder
-                  conversiones ni tiempo operativo.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-                  <p className="text-sm text-white/75">Escalada rapida</p>
-                  <p className="mt-1 text-lg font-semibold">Contacta al equipo de soporte</p>
-                </div>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <Button asChild size="lg" className="bg-white text-[#6B46C1] hover:bg-white/90">
-                    <Link href="/contact">Ir a contacto</Link>
-                  </Button>
-                  <Button
-                    asChild
-                    size="lg"
-                    variant="outline"
-                    className="border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
-                  >
-                    <a href="mailto:soporte@movopos.com">
-                      <MessageCircle className="h-4 w-4" />
-                      Escribir por email
-                    </a>
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader className="space-y-3">
-                <Badge className="w-fit bg-purple-100 text-purple-800 hover:bg-purple-100">
-                  Preguntas frecuentes
-                </Badge>
-                <CardTitle className="text-3xl font-bold tracking-tight">
-                  Todo queda listo para que escales tu centro de ayuda en video
-                </CardTitle>
-                <CardDescription className="text-base leading-7">
-                  Esta primera version deja la base visual, la estructura de soporte y el flujo de
-                  reproduccion preparados para cuando empieces a publicar tus videos en YouTube.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Accordion type="single" collapsible className="w-full">
-                  {tutorialFaqs.map((faq) => (
-                    <AccordionItem key={faq.question} value={faq.question}>
-                      <AccordionTrigger className="text-left text-base">
-                        {faq.question}
-                      </AccordionTrigger>
-                      <AccordionContent className="text-sm leading-7 text-muted-foreground">
-                        {faq.answer}
-                      </AccordionContent>
-                    </AccordionItem>
-                  ))}
-                </Accordion>
-              </CardContent>
-            </Card>
-          </div>
         </div>
       </section>
 
@@ -482,20 +318,23 @@ export function TutorialVideoHub() {
             <CardContent className="grid gap-8 p-8 sm:p-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
               <div className="space-y-4">
                 <Badge className="border-white/10 bg-white/10 text-white hover:bg-white/10">
-                  <Sparkles className="mr-1 h-3.5 w-3.5" />
-                  Base lista para crecer
+                  <LifeBuoy className="mr-1 h-3.5 w-3.5" />
+                  Soporte disponible
                 </Badge>
                 <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                  Convierte esta pagina en tu centro de soporte visual para clientes
+                  Si no encontraste como realizar algo o tienes un problema, contactanos
                 </h2>
                 <p className="max-w-2xl text-base leading-7 text-white/80 sm:text-lg">
-                  Solo faltara conectar los IDs reales de YouTube para que cada tutorial se publique
-                  sin rehacer el diseño, la navegacion ni la experiencia general.
+                  Nuestro equipo puede ayudarte cuando un tutorial no sea suficiente, tengas una
+                  duda puntual o necesites resolver un problema dentro de la plataforma.
                 </p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row lg:justify-end">
                 <Button asChild size="lg" className="bg-white text-[#6B46C1] hover:bg-white/90">
-                  <Link href="#biblioteca">Explorar tutoriales</Link>
+                  <Link href="/contact">
+                    <MessageCircle className="h-4 w-4" />
+                    Ir a contacto
+                  </Link>
                 </Button>
                 <Button
                   asChild
@@ -503,7 +342,10 @@ export function TutorialVideoHub() {
                   variant="outline"
                   className="border-white/20 bg-transparent text-white hover:bg-white/10 hover:text-white"
                 >
-                  <Link href="/pricing">Ver la plataforma</Link>
+                  <Link href="mailto:soporte@movopos.com">
+                    <Mail className="h-4 w-4" />
+                    Escribir por email
+                  </Link>
                 </Button>
               </div>
             </CardContent>

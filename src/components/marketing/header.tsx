@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 
 const navItems = [
-  { href: "/como-usar-la-plataforma", label: "Tutoriales" },
   { href: "/pricing", label: "Precios" },
   { href: "/about", label: "Acerca de nosotros" },
 ]
