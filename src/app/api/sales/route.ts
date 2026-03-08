@@ -36,6 +36,14 @@ type SaleCreateBody = {
   createdAt?: string | number | null
 }
 
+const methodMap: Record<string, PaymentMethod> = {
+  EFECTIVO: PaymentMethod.EFECTIVO,
+  TARJETA: PaymentMethod.TARJETA,
+  TRANSFERENCIA: PaymentMethod.TRANSFERENCIA,
+  OTRO: PaymentMethod.OTRO,
+  DIVIDIR_PAGO: PaymentMethod.DIVIDIR_PAGO,
+}
+
 type CartItemInput = {
   productId: string
   qty: number
@@ -170,13 +178,6 @@ export async function POST(request: NextRequest) {
     // Convertir paymentMethod al enum
     let paymentMethod: PaymentMethod | null = null
     if (body.paymentMethod && body.paymentMethod !== "CREDITO") {
-      const methodMap: Record<string, PaymentMethod> = {
-        EFECTIVO: PaymentMethod.EFECTIVO,
-        TARJETA: PaymentMethod.TARJETA,
-        TRANSFERENCIA: PaymentMethod.TRANSFERENCIA,
-        OTRO: PaymentMethod.OTRO,
-        DIVIDIR_PAGO: PaymentMethod.DIVIDIR_PAGO,
-      }
       paymentMethod = methodMap[body.paymentMethod] || null
     }
 

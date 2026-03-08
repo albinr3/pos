@@ -472,10 +472,11 @@ export async function createSale(input: {
       const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
       const shippingCents = input.shippingCents ?? 0
       const totalCents = itemsTotalCents + shippingCents
-      const hasPaymentSplits = Boolean(input.paymentSplits && input.paymentSplits.length > 0)
+      const paymentSplits = input.paymentSplits ?? []
+      const hasPaymentSplits = paymentSplits.length > 0
 
       validateTransferBankName(input.paymentMethod, input.transferBankName)
-      validatePaymentSplits(input.paymentSplits, totalCents)
+      validatePaymentSplits(paymentSplits, totalCents)
 
       // Validar y usar customerId, o usar el cliente genérico por defecto
       let finalCustomerId: string | null = null
@@ -529,7 +530,7 @@ export async function createSale(input: {
             })),
           },
           payments: hasPaymentSplits ? {
-            create: input.paymentSplits.map((split) => ({
+            create: paymentSplits.map((split) => ({
               method: split.method,
               transferBankName: split.method === PaymentMethod.TRANSFERENCIA ? split.transferBankName?.trim() ?? null : null,
               amountCents: split.amountCents,
