@@ -1469,7 +1469,7 @@ export function ProductsClient() {
                     <Separator />
 
                     <div className="grid gap-2">
-                      <Label>ITBIS aplicable</Label>
+                      <Label>ITBIS aplicable para venta</Label>
                       <select
                         value={itbisRateBp}
                         onChange={(e) => setItbisRateBp(Number(e.target.value))}
@@ -1492,7 +1492,10 @@ export function ProductsClient() {
                     </div>
 
                     <Separator />
-                    <div className="text-xs text-muted-foreground">Tip: el precio es el precio final al público (incluye ITBIS).</div>
+                    <div className="text-xs text-muted-foreground">
+                      Tip: el precio es el precio final al público (incluye ITBIS).
+                      {itbisRateBp === 0 ? " En este caso, estará excento." : ""}
+                    </div>
                   </div>
                 </div>
               </Tabs>
