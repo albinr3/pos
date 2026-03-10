@@ -17,8 +17,7 @@ import { toast } from "@/hooks/use-toast"
 
 import { getCurrentUserStub } from "@/lib/auth-stub"
 
-import { createQuote, getQuoteById, listCustomers, searchProducts, updateQuote } from "./actions"
-import { listAllProductsForSale } from "../sales/actions"
+import { createQuote, getQuoteById, listAllProductsForQuotes, listCustomers, searchProducts, updateQuote } from "./actions"
 
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 
@@ -118,7 +117,7 @@ export function QuotesClient() {
     if (viewMode === "grid") {
       startLoadingProducts(async () => {
         try {
-          const products = await listAllProductsForSale()
+          const products = await listAllProductsForQuotes()
           setAllProducts(products)
         } catch {
           setAllProducts([])
@@ -147,7 +146,7 @@ export function QuotesClient() {
         if (viewMode === "grid") {
           startLoadingProducts(async () => {
             try {
-              const products = await listAllProductsForSale()
+              const products = await listAllProductsForQuotes()
               setAllProducts(products)
             } catch {
               setAllProducts([])

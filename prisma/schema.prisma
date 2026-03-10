@@ -513,6 +513,7 @@ model Product {
   minStock    Decimal     @default(0) @db.Decimal(10, 3)
 
   isActive Boolean @default(true)
+  isAvailableForSale Boolean @default(true)
 
   imageUrls String[] @default([])
 
@@ -537,6 +538,7 @@ model Product {
   @@index([supplierId])
   @@index([categoryId])
   @@index([accountId, stock])
+  @@index([accountId, isAvailableForSale])
 }
 
 model ProductRecipeItem {

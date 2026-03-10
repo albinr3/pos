@@ -81,6 +81,36 @@ export async function searchProducts(query: string) {
   }))
 }
 
+export async function listAllProductsForQuotes() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const products = await prisma.product.findMany({
+    where: {
+      accountId: user.accountId,
+      isActive: true,
+    },
+    orderBy: { name: "asc" },
+    take: 500,
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      reference: true,
+      priceCents: true,
+      stock: true,
+      unit: true,
+      imageUrls: true,
+      itbisRateBp: true,
+    },
+  })
+
+  return products.map((p) => ({
+    ...p,
+    stock: decimalToNumber(p.stock),
+  }))
+}
+
 export async function listCustomers() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")

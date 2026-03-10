@@ -283,6 +283,7 @@ export async function upsertProduct(input: {
   priceCents: number
   costCents: number
   itbisRateBp?: number
+  isAvailableForSale?: boolean
   stock: number
   minStock: number
   imageUrls?: string[]
@@ -340,6 +341,7 @@ export async function upsertProduct(input: {
             priceCents: true,
             stock: true,
             productKind: true,
+            isAvailableForSale: true,
           },
         })
         if (!existing) throw new Error("Producto no encontrado")
@@ -356,6 +358,7 @@ export async function upsertProduct(input: {
         ) {
           throw new Error("No puedes convertir un producto con existencia disponible a producto por receta sin vaciar su stock primero.")
         }
+        const finalIsAvailableForSale = input.isAvailableForSale ?? existing.isAvailableForSale
 
         await tx.product.update({
           where: { id: input.id },
@@ -373,6 +376,7 @@ export async function upsertProduct(input: {
             imageUrls,
             productKind,
             unit: finalUnit,
+            isAvailableForSale: finalIsAvailableForSale,
           },
         })
 
@@ -390,6 +394,7 @@ export async function upsertProduct(input: {
               sku,
               reference,
               productKind,
+              isAvailableForSale: finalIsAvailableForSale,
             },
           },
           tx
@@ -420,6 +425,7 @@ export async function upsertProduct(input: {
             imageUrls,
             productKind,
             unit: finalUnit,
+            isAvailableForSale: input.isAvailableForSale ?? true,
           },
         })
 
@@ -459,6 +465,7 @@ export async function upsertProduct(input: {
               reference,
               productId,
               productKind,
+              isAvailableForSale: input.isAvailableForSale ?? true,
             },
           },
           tx
@@ -526,6 +533,47 @@ export async function deactivateProduct(productId: string) {
     resourceId: productId,
   })
   safeRevalidate("/products")
+}
+
+export async function setProductSaleAvailability(
+  productId: string,
+  isAvailableForSale: boolean,
+  options?: { user?: CurrentUser | null }
+) {
+  const user = options?.user ?? (await getCurrentUser())
+  if (!user) throw new Error("No autenticado")
+
+  if (!user.canEditProducts && user.role !== "ADMIN") {
+    throw new Error("No tienes permiso para editar productos")
+  }
+
+  const existing = await prisma.product.findFirst({
+    where: { id: productId, accountId: user.accountId, isActive: true },
+    select: { id: true, isAvailableForSale: true },
+  })
+  if (!existing) throw new Error("Producto no encontrado")
+
+  const updated = await prisma.product.updateMany({
+    where: { id: productId, accountId: user.accountId, isActive: true },
+    data: { isAvailableForSale },
+  })
+  if (updated.count === 0) throw new Error("Producto no encontrado")
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    action: "PRODUCT_EDITED",
+    resourceType: "Product",
+    resourceId: productId,
+    details: {
+      previousIsAvailableForSale: existing.isAvailableForSale,
+      isAvailableForSale,
+    },
+  })
+
+  safeRevalidate("/products")
+  safeRevalidate("/sales")
+  safeRevalidate("/sales/list")
 }
 
 type BulkStockAdjustmentItem = {

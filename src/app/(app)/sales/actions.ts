@@ -32,6 +32,7 @@ export async function searchProducts(query: string) {
     where: {
       accountId: user.accountId,
       isActive: true,
+      isAvailableForSale: true,
       OR: [
         { name: { contains: q, mode: "insensitive" } },
         { sku: { contains: q, mode: "insensitive" } },
@@ -87,6 +88,7 @@ export async function listAllProductsForSale() {
     where: {
       accountId: user.accountId,
       isActive: true,
+      isAvailableForSale: true,
     },
     orderBy: { name: "asc" },
     select: {
@@ -140,6 +142,7 @@ export async function findProductByBarcode(code: string) {
     where: {
       accountId: user.accountId,
       isActive: true,
+      isAvailableForSale: true,
       OR: [
         { sku: { equals: q, mode: "insensitive" } },
         { reference: { equals: q, mode: "insensitive" } },
@@ -403,6 +406,7 @@ type ResolvedSaleLine = {
     priceCents: number
     stock: number
     isActive: boolean
+    isAvailableForSale: boolean
     productKind: ProductKind
   }
   recipeAdjustments: Array<{
@@ -465,6 +469,7 @@ async function loadProductsForSaleResolution(
       priceCents: true,
       stock: true,
       isActive: true,
+      isAvailableForSale: true,
       productKind: true,
       recipeItems: {
         select: {
@@ -515,7 +520,10 @@ function aggregateConsumptions(consumptions: ResolvedConsumption[]) {
 async function resolveSaleLines(
   tx: Prisma.TransactionClient,
   accountId: string,
-  items: CartItemInput[]
+  items: CartItemInput[],
+  options?: {
+    allowUnavailableProductIds?: Set<string>
+  }
 ) {
   const productsById = await loadProductsForSaleResolution(
     tx,
@@ -530,6 +538,10 @@ async function resolveSaleLines(
     if (!product || !product.isActive) {
       throw new Error("Hay un producto inválido o inactivo en el carrito.")
     }
+    const canUseUnavailableProduct = options?.allowUnavailableProductIds?.has(product.id) ?? false
+    if (!product.isAvailableForSale && !canUseUnavailableProduct) {
+      throw new Error(`El producto "${product.name}" no está disponible para la venta.`)
+    }
 
     if (product.productKind !== ProductKind.RECIPE) {
       resolvedLines.push({
@@ -543,6 +555,7 @@ async function resolveSaleLines(
           priceCents: product.priceCents,
           stock: product.stock,
           isActive: product.isActive,
+          isAvailableForSale: product.isAvailableForSale,
           productKind: product.productKind,
         },
         recipeAdjustments: [],
@@ -611,6 +624,7 @@ async function resolveSaleLines(
         priceCents: product.priceCents,
         stock: product.stock,
         isActive: product.isActive,
+        isAvailableForSale: product.isAvailableForSale,
         productKind: product.productKind,
       },
       recipeAdjustments: normalizedAdjustments.map((adjustment) => ({
@@ -1244,7 +1258,10 @@ export async function updateSale(input: {
       "increment"
     )
 
-    const resolvedLines = await resolveSaleLines(tx, user.accountId, input.items)
+    const allowUnavailableProductIds = new Set(existingSale.items.map((item) => item.productId))
+    const resolvedLines = await resolveSaleLines(tx, user.accountId, input.items, {
+      allowUnavailableProductIds,
+    })
 
     for (const line of resolvedLines) {
       if (line.item.unitPriceCents !== line.product.priceCents) {

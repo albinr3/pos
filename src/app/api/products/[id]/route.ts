@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
-import { upsertProduct } from "@/app/(app)/products/actions"
+import { setProductSaleAvailability, upsertProduct } from "@/app/(app)/products/actions"
 import { Decimal } from "@prisma/client/runtime/library"
 import { prisma } from "@/lib/db"
 
@@ -67,6 +67,8 @@ export async function PUT(
       priceCents: priceCents!,
       costCents: costCents ?? 0,
       itbisRateBp: body.itbisRateBp ?? 1800,
+      isAvailableForSale:
+        typeof body.isAvailableForSale === "boolean" ? body.isAvailableForSale : undefined,
       stock: body.stock ?? 0,
       minStock: body.minStock ?? 0,
       imageUrls: body.imageUrls || [],
@@ -106,6 +108,7 @@ export async function PUT(
       stock: product.stock instanceof Decimal ? product.stock.toNumber() : Number(product.stock),
       minStock: product.minStock instanceof Decimal ? product.minStock.toNumber() : Number(product.minStock),
       itbisRateBp: product.itbisRateBp,
+      isAvailableForSale: product.isAvailableForSale,
       imageUrls: product.imageUrls,
       productKind: product.productKind,
       unit: product.unit,
@@ -116,6 +119,52 @@ export async function PUT(
     console.error("Error en PUT /api/products/:id:", error)
     return NextResponse.json(
       { error: error.message || "Error al actualizar producto" },
+      { status: 500 }
+    )
+  }
+}
+
+// PATCH /api/products/:id - Cambiar disponibilidad para venta
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getCurrentUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+
+    const { id } = await params
+    const body = await request.json()
+    if (typeof body?.isAvailableForSale !== "boolean") {
+      return NextResponse.json({ error: "isAvailableForSale debe ser booleano" }, { status: 400 })
+    }
+
+    await setProductSaleAvailability(id, body.isAvailableForSale, { user })
+
+    const product = await prisma.product.findFirst({
+      where: { id, accountId: user.accountId },
+      select: {
+        id: true,
+        productId: true,
+        isAvailableForSale: true,
+      },
+    })
+
+    if (!product) {
+      return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 })
+    }
+
+    return NextResponse.json({
+      id: product.id,
+      productId: product.productId,
+      isAvailableForSale: product.isAvailableForSale,
+    })
+  } catch (error: any) {
+    console.error("Error en PATCH /api/products/:id:", error)
+    return NextResponse.json(
+      { error: error.message || "Error al actualizar disponibilidad de venta" },
       { status: 500 }
     )
   }

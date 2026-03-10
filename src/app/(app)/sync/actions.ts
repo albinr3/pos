@@ -17,7 +17,7 @@ export async function syncProductsToIndexedDB() {
   if (!user) throw new Error("No autenticado")
 
   const products = await prisma.product.findMany({
-    where: { accountId: user.accountId, isActive: true },
+    where: { accountId: user.accountId, isActive: true, isAvailableForSale: true },
     orderBy: { productId: "asc" },
     take: 1000, // Límite razonable para cache
     select: {
@@ -33,6 +33,7 @@ export async function syncProductsToIndexedDB() {
       unit: true,
       imageUrls: true,
       productKind: true,
+      isAvailableForSale: true,
       recipeItems: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
@@ -76,6 +77,7 @@ export async function syncProductsToIndexedDB() {
     unit: p.unit,
     imageUrls: p.imageUrls,
     productKind: p.productKind,
+    isAvailableForSale: p.isAvailableForSale,
     recipeItems: p.recipeItems.map((item) => ({
       ingredientId: item.ingredientId,
       qty: decimalToNumber(item.qty),

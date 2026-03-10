@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -377,6 +378,7 @@ export function ProductsClient() {
   const [price, setPrice] = useState("0")
   const [cost, setCost] = useState("0")
   const [itbisRateBp, setItbisRateBp] = useState(1800) // 18% por defecto
+  const [isAvailableForSale, setIsAvailableForSale] = useState(true)
   const [stock, setStock] = useState("0")
   const [minStock, setMinStock] = useState("0")
   const [imageUrls, setImageUrls] = useState<string[]>([])
@@ -477,6 +479,7 @@ export function ProductsClient() {
     setPrice(((x?.priceCents ?? 0) / 100).toFixed(2))
     setCost(((x?.costCents ?? 0) / 100).toFixed(2))
     setItbisRateBp(x?.itbisRateBp ?? 1800)
+    setIsAvailableForSale(x?.isAvailableForSale ?? true)
     const stockNum = x ? decimalToNumber(x.stock) : 0
     const minStockNum = x ? decimalToNumber(x.minStock) : 0
     setStock(String(stockNum))
@@ -594,6 +597,7 @@ export function ProductsClient() {
           priceCents,
           costCents,
           itbisRateBp,
+          isAvailableForSale,
           stock: stockValue,
           minStock: minStockValue,
           imageUrls,
@@ -1487,6 +1491,23 @@ export function ProductsClient() {
                     <Separator />
 
                     <div className="grid gap-2">
+                      <Label htmlFor="sale-availability">Disponible para venta</Label>
+                      <div className="flex items-center justify-between rounded-md border p-3">
+                        <div className="text-xs text-muted-foreground pr-3">
+                          Si se desactiva, no aparecerá en ventas, pero podrá seguir usándose como insumo en recetas.
+                        </div>
+                        <Switch
+                          id="sale-availability"
+                          checked={isAvailableForSale}
+                          onCheckedChange={setIsAvailableForSale}
+                          className="data-[state=checked]:bg-purple-primary"
+                        />
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="grid gap-2">
                       <Label>Imágenes del producto</Label>
                       <ProductImageUpload images={imageUrls} onChange={setImageUrls} maxImages={3} />
                     </div>
@@ -1536,6 +1557,11 @@ export function ProductsClient() {
                       <div className="flex items-center gap-2">
                         <span>{p.name}</span>
                         <Badge variant="secondary">{getProductTypeLabel(getProductFormType(p))}</Badge>
+                        {!p.isAvailableForSale && (
+                          <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-700">
+                            No vendible
+                          </Badge>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell>{p.supplier?.name ?? "—"}</TableCell>
