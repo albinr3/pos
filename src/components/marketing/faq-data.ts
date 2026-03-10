@@ -10,14 +10,24 @@ export const faqItems: FAQItem[] = [
       "MOVOPos es un sistema de facturación en República Dominicana para colmados, tiendas, repuestos, salones y otros negocios que necesitan controlar ventas, inventario, compras y cuentas por cobrar desde un solo lugar.",
   },
   {
-    question: "¿Funciona con RD$ y facturación térmica?",
+    question: "¿Funciona con pesos RD$?",
     answer:
-      "Sí. Puedes trabajar en RD$, imprimir en impresoras térmicas y registrar múltiples métodos de pago para tu operación diaria.",
+      "Sí. Puedes trabajar en RD$ y registrar múltiples métodos de pago para tu operación diaria.",
   },
   {
     question: "¿Puedo usarlo como facturación online sin instalar programas complejos?",
     answer:
-      "Sí. MOVOPos funciona 100% web, así que puedes entrar desde laptop, tablet o móvil. Solo conectas tu impresora térmica y empiezas a facturar.",
+      "Sí. MOVOPos funciona 100% web, así que puedes entrar desde laptop, tablet o móvil. Solo conectas tu impresora  y empiezas a facturar.",
+  },
+  {
+    question: "¿Qué métodos de pago aceptamos?",
+    answer:
+      "Aceptamos tarjetas de crédito y transferencias bancarias.",
+  },
+  {
+    question: "¿Tienen aplicación móvil?",
+    answer:
+      "Sí, tenemos aplicación móvil, pero actualmente solo está disponible para celulares Android.",
   },
   {
     question: "¿Incluye sistema POS y control de inventario?",
@@ -37,7 +47,7 @@ export const faqItems: FAQItem[] = [
   {
     question: "¿Necesito internet todo el tiempo?",
     answer:
-      "Necesitas conexión para sincronizar ventas e inventario en tiempo real y mantener tus datos siempre actualizados en la nube.",
+      "No necesariamente, Necesitas conexión para sincronizar ventas e inventario en tiempo real y mantener tus datos siempre actualizados en la nube. pero si se te corta el internet, puedes seguir facturando y cobrando y cuando te conectes a internet se sincroniza.",
   },
   {
     question: "¿Cómo protegen mis datos y qué soporte ofrecen?",

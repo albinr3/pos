@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent, 
 import { Edit, History, Loader2, Plus, Printer, Search, Trash2, Upload } from "lucide-react"
 import { UnitType } from "@prisma/client"
 import * as XLSX from "xlsx"
+import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -53,6 +54,8 @@ const PAGE_SIZE = 50
 const INVENTORY_IMPORT_MAX_ROWS = 5000
 const INVENTORY_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024
 const INVENTORY_IMPORT_CHUNK_SIZE = 50
+const CREATE_SUPPLIER_OPTION = "__create_supplier__"
+const CREATE_CATEGORY_OPTION = "__create_category__"
 
 const INVENTORY_TEMPLATE_HEADERS = [
   "nombre",
@@ -334,6 +337,7 @@ function mapExcelRowsToImportRows(rows: Record<string, unknown>[]) {
 }
 
 export function ProductsClient() {
+  const router = useRouter()
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Product[]>([])
   const [isLoading, startLoading] = useTransition()
@@ -517,6 +521,26 @@ export function ProductsClient() {
       const next = prev.filter((row) => row.id !== rowId)
       return next.length ? next : [createRecipeItemRow()]
     })
+  }
+
+  function handleSupplierChange(value: string) {
+    if (value === CREATE_SUPPLIER_OPTION) {
+      setSupplierId("")
+      setOpen(false)
+      router.push("/suppliers")
+      return
+    }
+    setSupplierId(value)
+  }
+
+  function handleCategoryChange(value: string) {
+    if (value === CREATE_CATEGORY_OPTION) {
+      setCategoryId("")
+      setOpen(false)
+      router.push("/categories")
+      return
+    }
+    setCategoryId(value)
   }
 
   async function onSave() {
@@ -1123,45 +1147,53 @@ export function ProductsClient() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="grid gap-2">
-                        <Label>Proveedor (opcional)</Label>
-                        <select
-                          value={supplierId}
-                          onChange={(e) => setSupplierId(e.target.value)}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="">Sin proveedor</option>
-                          {suppliers.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Categoría (opcional)</Label>
-                        <select
-                          value={categoryId}
-                          onChange={(e) => setCategoryId(e.target.value)}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="">Sin categoría</option>
-                          {categories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="grid gap-2">
                         <Label>Código de proveedor (SKU)</Label>
                         <Input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Ej: 12345" />
                       </div>
                       <div className="grid gap-2">
                         <Label>Referencia</Label>
                         <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ej: REF-01" />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid gap-2">
+                        <Label>Proveedor (opcional)</Label>
+                        <select
+                          value={supplierId}
+                          onChange={(e) => handleSupplierChange(e.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Sin proveedor</option>
+                          {suppliers.length === 0 ? (
+                            <option value={CREATE_SUPPLIER_OPTION}>Crear proveedor</option>
+                          ) : (
+                            suppliers.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                              </option>
+                            ))
+                          )}
+                        </select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Categoría (opcional)</Label>
+                        <select
+                          value={categoryId}
+                          onChange={(e) => handleCategoryChange(e.target.value)}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">Sin categoría</option>
+                          {categories.length === 0 ? (
+                            <option value={CREATE_CATEGORY_OPTION}>Crear categoría</option>
+                          ) : (
+                            categories.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.name}
+                              </option>
+                            ))
+                          )}
+                        </select>
                       </div>
                     </div>
 
