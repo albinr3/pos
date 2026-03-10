@@ -1978,7 +1978,8 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="text-sm text-muted-foreground">
-              Selecciona el modo y marca los ingredientes que quieras ajustar.
+              Selecciona el modo y marca los ingredientes que quieras ajustar. Los ajustes ya aplicados se mantienen
+              al cambiar de modo.
             </div>
             <div className="flex gap-2">
               <Button
@@ -2022,7 +2023,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             <div className="space-y-2 max-h-72 overflow-y-auto">
               {(recipeDialogCartItem?.recipeItems ?? []).map((item) => {
                 const current = recipeDraftByIngredient[item.ingredientId]
-                const checked = recipeDialogMode ? current === recipeDialogMode : Boolean(current)
+                const checked = Boolean(current)
                 return (
                   <label
                     key={item.ingredientId}

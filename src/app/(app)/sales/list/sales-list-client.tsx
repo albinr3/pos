@@ -681,7 +681,8 @@ export function SalesListClient() {
           </DialogHeader>
           <div className="grid gap-3 py-2">
             <div className="text-sm text-muted-foreground">
-              Selecciona el modo y luego marca los ingredientes que quieras ajustar.
+              Selecciona el modo y marca los ingredientes que quieras ajustar. Los ajustes ya aplicados se mantienen
+              al cambiar de modo.
             </div>
             <div className="flex gap-2">
               <Button
@@ -725,7 +726,7 @@ export function SalesListClient() {
             <div className="space-y-2 max-h-72 overflow-y-auto">
               {(recipeDialogCartItem?.recipeItems ?? []).map((item) => {
                 const current = recipeDraftByIngredient[item.ingredientId]
-                const checked = recipeDialogMode ? current === recipeDialogMode : Boolean(current)
+                const checked = Boolean(current)
 
                 return (
                   <label key={item.ingredientId} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 cursor-pointer">
