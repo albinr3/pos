@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
@@ -54,6 +55,8 @@ const PAGE_SIZE = 50
 const INVENTORY_IMPORT_MAX_ROWS = 5000
 const INVENTORY_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024
 const INVENTORY_IMPORT_CHUNK_SIZE = 50
+const NONE_SUPPLIER_OPTION = "__none_supplier__"
+const NONE_CATEGORY_OPTION = "__none_category__"
 const CREATE_SUPPLIER_OPTION = "__create_supplier__"
 const CREATE_CATEGORY_OPTION = "__create_category__"
 
@@ -524,6 +527,10 @@ export function ProductsClient() {
   }
 
   function handleSupplierChange(value: string) {
+    if (value === NONE_SUPPLIER_OPTION) {
+      setSupplierId("")
+      return
+    }
     if (value === CREATE_SUPPLIER_OPTION) {
       setSupplierId("")
       setOpen(false)
@@ -534,6 +541,10 @@ export function ProductsClient() {
   }
 
   function handleCategoryChange(value: string) {
+    if (value === NONE_CATEGORY_OPTION) {
+      setCategoryId("")
+      return
+    }
     if (value === CREATE_CATEGORY_OPTION) {
       setCategoryId("")
       setOpen(false)
@@ -1159,41 +1170,59 @@ export function ProductsClient() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="grid gap-2">
                         <Label>Proveedor (opcional)</Label>
-                        <select
-                          value={supplierId}
-                          onChange={(e) => handleSupplierChange(e.target.value)}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="">Sin proveedor</option>
-                          {suppliers.length === 0 ? (
-                            <option value={CREATE_SUPPLIER_OPTION}>Crear proveedor</option>
-                          ) : (
-                            suppliers.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                {s.name}
-                              </option>
-                            ))
-                          )}
-                        </select>
+                        <Select value={supplierId || NONE_SUPPLIER_OPTION} onValueChange={handleSupplierChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sin proveedor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_SUPPLIER_OPTION}>Sin proveedor</SelectItem>
+                            {suppliers.length === 0 ? (
+                              <>
+                                <SelectSeparator />
+                                <SelectItem value={CREATE_SUPPLIER_OPTION}>
+                                  <span className="inline-flex items-center gap-2">
+                                    <Plus className="h-4 w-4" />
+                                    Crear proveedor
+                                  </span>
+                                </SelectItem>
+                              </>
+                            ) : (
+                              suppliers.map((s) => (
+                                <SelectItem key={s.id} value={s.id}>
+                                  {s.name}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="grid gap-2">
                         <Label>Categoría (opcional)</Label>
-                        <select
-                          value={categoryId}
-                          onChange={(e) => handleCategoryChange(e.target.value)}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <option value="">Sin categoría</option>
-                          {categories.length === 0 ? (
-                            <option value={CREATE_CATEGORY_OPTION}>Crear categoría</option>
-                          ) : (
-                            categories.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {c.name}
-                              </option>
-                            ))
-                          )}
-                        </select>
+                        <Select value={categoryId || NONE_CATEGORY_OPTION} onValueChange={handleCategoryChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Sin categoría" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE_CATEGORY_OPTION}>Sin categoría</SelectItem>
+                            {categories.length === 0 ? (
+                              <>
+                                <SelectSeparator />
+                                <SelectItem value={CREATE_CATEGORY_OPTION}>
+                                  <span className="inline-flex items-center gap-2">
+                                    <Plus className="h-4 w-4" />
+                                    Crear categoría
+                                  </span>
+                                </SelectItem>
+                              </>
+                            ) : (
+                              categories.map((c) => (
+                                <SelectItem key={c.id} value={c.id}>
+                                  {c.name}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
 
