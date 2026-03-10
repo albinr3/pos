@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { SaleType, PaymentMethod, UnitType } from "@prisma/client"
-import { Plus, Search, Trash2, Grid3x3, List, AlertCircle, X, WifiOff } from "lucide-react"
+import { Plus, Search, Trash2, Grid3x3, List, AlertCircle, X, WifiOff, ChevronDown, ChevronUp } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { PriceInput } from "@/components/app/price-input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -17,6 +18,7 @@ import { Switch } from "@/components/ui/switch"
 import { formatRD, calcItbisIncluded, toCents } from "@/lib/money"
 import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
 import { formatQty, formatQtyNumber, parseQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
+import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { toast } from "@/hooks/use-toast"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { syncCacheData } from "@/lib/auto-sync"
@@ -35,10 +37,13 @@ import { createSale, listCustomers, searchProducts, listAllProductsForSale, find
 
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 
-type RecipeModifierOption = {
-  id: string
-  name: string
+type RecipeAdjustment = {
+  ingredientId: string
+  ingredientName: string
+  adjustmentType: "SIN" | "EXTRA"
 }
+
+type RecipeItem = NonNullable<ProductResult["recipeItems"]>[number]
 
 type CartItem = {
   lineId: string
@@ -53,9 +58,8 @@ type CartItem = {
   unit: UnitType
   itbisRateBp: number
   productKind: "BASIC" | "MEASURED" | "RECIPE"
-  selectedModifierIds: string[]
-  selectedModifierNames: string[]
-  recipeModifiers: RecipeModifierOption[]
+  recipeItems: RecipeItem[]
+  recipeAdjustments: RecipeAdjustment[]
 }
 
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
@@ -68,9 +72,21 @@ type PaymentSplit = {
 
 const USER_CACHE_KEY = "tejada-pos-user"
 
-function buildCartLineId(productId: string, selectedModifierIds: string[]) {
-  const modifiersKey = [...selectedModifierIds].sort().join(",")
-  return modifiersKey ? `${productId}::${modifiersKey}` : productId
+function buildCartLineId(productId: string, recipeAdjustments: RecipeAdjustment[]) {
+  const adjustmentsKey = recipeAdjustments
+    .map((adjustment) => `${adjustment.ingredientId}:${adjustment.adjustmentType}`)
+    .sort()
+    .join(",")
+  return adjustmentsKey ? `${productId}::${adjustmentsKey}` : productId
+}
+
+function formatAdjustmentLabel(adjustment: RecipeAdjustment) {
+  return `${adjustment.adjustmentType === "SIN" ? "Sin" : "Extra"} ${adjustment.ingredientName}`
+}
+
+function getRecipeVariantLabels(recipeAdjustments: RecipeAdjustment[]) {
+  if (recipeAdjustments.length === 0) return ["Normal"]
+  return recipeAdjustments.map(formatAdjustmentLabel)
 }
 
 function serializeCartItem(item: CartItem) {
@@ -87,9 +103,8 @@ function serializeCartItem(item: CartItem) {
     unit: String(item.unit),
     itbisRateBp: Number(item.itbisRateBp ?? 1800),
     productKind: item.productKind,
-    selectedModifierIds: item.selectedModifierIds,
-    selectedModifierNames: item.selectedModifierNames,
-    recipeModifiers: item.recipeModifiers,
+    recipeItems: item.recipeItems,
+    recipeAdjustments: item.recipeAdjustments,
   }
 }
 
@@ -126,6 +141,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   const [results, setResults] = useState<ProductResult[]>([])
   const [isSearching, startSearch] = useTransition()
   const [viewMode, setViewMode] = useState<"list" | "grid">(defaultViewMode as "list" | "grid")
+  const [isSaleConfigCollapsed, setIsSaleConfigCollapsed] = useState(true)
   const [allProducts, setAllProducts] = useState<ProductResult[]>([])
   const [isLoadingProducts, startLoadingProducts] = useTransition()
 
@@ -149,10 +165,16 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   const [editingPaymentAmounts, setEditingPaymentAmounts] = useState<Record<number, string>>({})
   // Estado temporal para valores de cantidad en edición (productId -> string)
   const [editingQuantities, setEditingQuantities] = useState<Record<string, string>>({})
-  const [modifierDialogProduct, setModifierDialogProduct] = useState<ProductResult | null>(null)
-  const [modifierDraftIds, setModifierDraftIds] = useState<string[]>([])
+  const [recipeDialogLineId, setRecipeDialogLineId] = useState<string | null>(null)
+  const [recipeDialogMode, setRecipeDialogMode] = useState<"SIN" | "EXTRA" | null>(null)
+  const [recipeApplyScope, setRecipeApplyScope] = useState<RecipeApplyScope>("ONE")
+  const [recipeDraftByIngredient, setRecipeDraftByIngredient] = useState<Record<string, "SIN" | "EXTRA">>({})
   const [showNavigationDialog, setShowNavigationDialog] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
+  const recipeDialogCartItem = useMemo(
+    () => cart.find((item) => item.lineId === recipeDialogLineId) ?? null,
+    [cart, recipeDialogLineId]
+  )
 
   // Ref para rastrear el tiempo de la primera y última tecla (para detectar escaneo de código de barras)
   const firstKeyPressTime = useRef<number>(0)
@@ -290,7 +312,21 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             // Validar y limpiar el carrito antes de restaurarlo
             // Asegurarse de que todos los valores sean serializables (números, strings, etc.)
             const cleanedCart = state.cart.map((item: any) => ({
-              lineId: String(item.lineId || buildCartLineId(String(item.productId || ""), Array.isArray(item.selectedModifierIds) ? item.selectedModifierIds : [])),
+              lineId: String(
+                item.lineId ||
+                buildCartLineId(
+                  String(item.productId || ""),
+                  Array.isArray(item.recipeAdjustments)
+                    ? item.recipeAdjustments
+                        .map((adjustment: any) => ({
+                          ingredientId: String(adjustment.ingredientId || ""),
+                          ingredientName: String(adjustment.ingredientName || ""),
+                          adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
+                        }))
+                        .filter((adjustment: RecipeAdjustment) => adjustment.ingredientId && adjustment.ingredientName && (adjustment.adjustmentType === "SIN" || adjustment.adjustmentType === "EXTRA"))
+                    : []
+                )
+              ),
               productId: String(item.productId || ""),
               name: String(item.name || ""),
               sku: item.sku ? String(item.sku) : null,
@@ -302,13 +338,24 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
               unit: item.unit || "UNIDAD",
               itbisRateBp: typeof item.itbisRateBp === "number" ? item.itbisRateBp : Number(item.itbisRateBp) || 1800,
               productKind: item.productKind === "RECIPE" ? "RECIPE" : item.productKind === "MEASURED" ? "MEASURED" : "BASIC",
-              selectedModifierIds: Array.isArray(item.selectedModifierIds) ? item.selectedModifierIds.map((id: any) => String(id)) : [],
-              selectedModifierNames: Array.isArray(item.selectedModifierNames) ? item.selectedModifierNames.map((name: any) => String(name)) : [],
-              recipeModifiers: Array.isArray(item.recipeModifiers)
-                ? item.recipeModifiers.map((modifier: any) => ({
-                    id: String(modifier.id || ""),
-                    name: String(modifier.name || ""),
-                  }))
+              recipeItems: Array.isArray(item.recipeItems)
+                ? item.recipeItems
+                    .map((recipeItem: any) => ({
+                      ingredientId: String(recipeItem.ingredientId || ""),
+                      ingredientName: String(recipeItem.ingredientName || ""),
+                      qty: typeof recipeItem.qty === "number" ? recipeItem.qty : Number(recipeItem.qty) || 0,
+                      ingredientUnit: String(recipeItem.ingredientUnit || "UNIDAD"),
+                    }))
+                    .filter((recipeItem: RecipeItem) => recipeItem.ingredientId && recipeItem.ingredientName)
+                : [],
+              recipeAdjustments: Array.isArray(item.recipeAdjustments)
+                ? item.recipeAdjustments
+                    .map((adjustment: any) => ({
+                      ingredientId: String(adjustment.ingredientId || ""),
+                      ingredientName: String(adjustment.ingredientName || ""),
+                      adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
+                    }))
+                    .filter((adjustment: RecipeAdjustment) => adjustment.ingredientId && adjustment.ingredientName && (adjustment.adjustmentType === "SIN" || adjustment.adjustmentType === "EXTRA"))
                 : [],
             })).filter((item: any) => item.productId && item.name) // Filtrar items inválidos
 
@@ -578,15 +625,11 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   const shippingCents = useMemo(() => toCents(shippingInput), [shippingInput])
   const totalCents = useMemo(() => itemsTotalCents + shippingCents, [itemsTotalCents, shippingCents])
 
-  function addToCart(p: ProductResult, selectedModifierIds: string[] = []) {
-    const productUnit = (p.saleUnit as UnitType) ?? "UNIDAD"
+  function addToCart(p: ProductResult, recipeAdjustments: RecipeAdjustment[] = []) {
+    const productUnit = (p.unit as UnitType) ?? "UNIDAD"
     const stockNum = decimalToNumber(p.stock)
-    const normalizedModifierIds = [...selectedModifierIds].sort()
-    const recipeModifiers = Array.isArray(p.recipeModifiers) ? p.recipeModifiers : []
-    const selectedModifierNames = recipeModifiers
-      .filter((modifier) => normalizedModifierIds.includes(modifier.id))
-      .map((modifier) => modifier.name)
-    const lineId = buildCartLineId(p.id, normalizedModifierIds)
+    const normalizedAdjustments = sortRecipeAdjustments(recipeAdjustments)
+    const lineId = buildCartLineId(p.id, normalizedAdjustments)
 
     setCart((prev) => {
       const existing = prev.find((x) => x.lineId === lineId)
@@ -610,22 +653,56 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           unit: productUnit,
           itbisRateBp: p.itbisRateBp ?? 1800,
           productKind: p.productKind === "RECIPE" ? "RECIPE" : p.productKind === "MEASURED" ? "MEASURED" : "BASIC",
-          selectedModifierIds: normalizedModifierIds,
-          selectedModifierNames,
-          recipeModifiers,
+          recipeItems: p.recipeItems ?? [],
+          recipeAdjustments: normalizedAdjustments,
         },
       ]
     })
   }
 
   function handleProductSelection(p: ProductResult) {
-    if (p.productKind === "RECIPE" && Array.isArray(p.recipeModifiers) && p.recipeModifiers.length > 0) {
-      setModifierDialogProduct(p)
-      setModifierDraftIds([])
-      return
-    }
-
     addToCart(p)
+  }
+
+  function closeRecipeDialog() {
+    setRecipeDialogLineId(null)
+    setRecipeDialogMode(null)
+    setRecipeApplyScope("ONE")
+    setRecipeDraftByIngredient({})
+  }
+
+  function openRecipeDialogForCartItem(item: CartItem) {
+    setRecipeDialogLineId(item.lineId)
+    setRecipeDialogMode(null)
+    setRecipeApplyScope(item.qty > 1 ? "ONE" : "ALL")
+    setRecipeDraftByIngredient(
+      item.recipeAdjustments.reduce<Record<string, "SIN" | "EXTRA">>((acc, adjustment) => {
+        acc[adjustment.ingredientId] = adjustment.adjustmentType
+        return acc
+      }, {})
+    )
+  }
+
+  function resolveRecipeApplyScope(item: CartItem | null, scope: RecipeApplyScope): RecipeApplyScope {
+    if (!item) return "ALL"
+    return scope === "ONE" && item.qty > 1 ? "ONE" : "ALL"
+  }
+
+  function applyRecipeAdjustmentsToCartLine(
+    lineId: string,
+    recipeAdjustments: RecipeAdjustment[],
+    scope: RecipeApplyScope
+  ) {
+    setCart((prev) =>
+      applyRecipeAdjustmentsWithScope({
+        lines: prev,
+        lineId,
+        recipeAdjustments,
+        scope,
+        buildLineId: buildCartLineId,
+        splitQty: 1,
+      })
+    )
   }
 
   async function handleBarcodeScan(code: string) {
@@ -729,7 +806,10 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           qty: c.qty,
           unitPriceCents: c.unitPriceCents,
           wasPriceOverridden: c.wasPriceOverridden,
-          selectedModifierIds: c.selectedModifierIds,
+          recipeAdjustments: c.recipeAdjustments.map((adjustment) => ({
+            ingredientId: adjustment.ingredientId,
+            adjustmentType: adjustment.adjustmentType,
+          })),
         })),
         shippingCents: shippingCents > 0 ? shippingCents : undefined,
         username: user.username,
@@ -765,7 +845,10 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                 qty: c.qty,
                 unitPriceCents: c.unitPriceCents,
                 wasPriceOverridden: c.wasPriceOverridden,
-                selectedModifierIds: c.selectedModifierIds,
+                recipeAdjustments: c.recipeAdjustments.map((adjustment) => ({
+                  ingredientId: adjustment.ingredientId,
+                  adjustmentType: adjustment.adjustmentType,
+                })),
               })),
               shippingCents: shippingCents > 0 ? shippingCents : undefined,
               username: user.username,
@@ -811,8 +894,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
 
   // Función helper para obtener la cantidad de un producto en el carrito
   function getCartQuantity(productId: string): number {
-    const item = cart.find((c) => c.productId === productId)
-    return item?.qty ?? 0
+    return cart.reduce((sum, item) => (item.productId === productId ? sum + item.qty : sum), 0)
   }
 
   return (
@@ -837,100 +919,135 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Venta</CardTitle>
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <List className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Lista</span>
-                </div>
-                <Switch
-                  checked={viewMode === "grid"}
-                  onCheckedChange={(checked) => setViewMode(checked ? "grid" : "list")}
-                  aria-label="Cambiar vista"
-                />
-                <div className="flex items-center gap-2">
-                  <Grid3x3 className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">Imágenes</span>
+              <div className="flex items-center gap-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsSaleConfigCollapsed((prev) => !prev)}
+                  className="h-8 px-2 text-muted-foreground"
+                >
+                  {isSaleConfigCollapsed ? (
+                    <>
+                      <ChevronDown className="mr-1 h-4 w-4" />
+                      Mostrar opciones
+                    </>
+                  ) : (
+                    <>
+                      <ChevronUp className="mr-1 h-4 w-4" />
+                      Ocultar opciones
+                    </>
+                  )}
+                </Button>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <List className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Lista</span>
+                  </div>
+                  <Switch
+                    checked={viewMode === "grid"}
+                    onCheckedChange={(checked) => setViewMode(checked ? "grid" : "list")}
+                    aria-label="Cambiar vista"
+                  />
+                  <div className="flex items-center gap-2">
+                    <Grid3x3 className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">Imágenes</span>
+                  </div>
                 </div>
               </div>
             </div>
           </CardHeader>
           <CardContent className="grid gap-4">
-            <div className="grid gap-2">
-              <Label>Cliente</Label>
-              <select
-                className="h-10 rounded-md border bg-background px-3 text-sm"
-                value={customerId ?? ""}
-                onChange={(e) => setCustomerId(e.target.value || null)}
-              >
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.isGeneric ? "(General) " : ""}{c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {!isSaleConfigCollapsed && (
+              <>
+                <div className="grid gap-2">
+                  <Label>Cliente</Label>
+                  <select
+                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                    value={customerId ?? ""}
+                    onChange={(e) => setCustomerId(e.target.value || null)}
+                  >
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.isGeneric ? "(General) " : ""}{c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <Button
-                type="button"
-                variant={saleType === SaleType.CONTADO ? "default" : "secondary"}
-                onClick={() => {
-                  setSaleType(SaleType.CONTADO)
-                  if (!paymentMethod) setPaymentMethod(PaymentMethod.EFECTIVO)
-                }}
-              >
-                Contado
-              </Button>
-              <Button
-                type="button"
-                variant={saleType === SaleType.CREDITO ? "default" : "secondary"}
-                onClick={() => setSaleType(SaleType.CREDITO)}
-              >
-                Crédito
-              </Button>
-            </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    variant={saleType === SaleType.CONTADO ? "default" : "secondary"}
+                    onClick={() => {
+                      setSaleType(SaleType.CONTADO)
+                      if (!paymentMethod) setPaymentMethod(PaymentMethod.EFECTIVO)
+                    }}
+                  >
+                    Contado
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={saleType === SaleType.CREDITO ? "default" : "secondary"}
+                    onClick={() => setSaleType(SaleType.CREDITO)}
+                  >
+                    Crédito
+                  </Button>
+                </div>
 
-            {saleType === SaleType.CONTADO && (
-              <div className="grid gap-2">
-                <Label>Método de pago</Label>
-                <select
-                  className="h-10 rounded-md border bg-background px-3 text-sm"
-                  value={paymentMethod ?? ""}
-                  onChange={(e) => {
-                    const nextMethod = e.target.value as PaymentMethod
-                    setPaymentMethod(nextMethod)
-                    if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
-                      setTransferBankName("")
-                    }
-                  }}
-                >
-                  <option value={PaymentMethod.EFECTIVO}>Efectivo</option>
-                  <option value={PaymentMethod.TRANSFERENCIA}>Transferencia</option>
-                  <option value={PaymentMethod.TARJETA}>Tarjeta</option>
-                  <option value={PaymentMethod.DIVIDIR_PAGO}>Dividir pago</option>
-                </select>
-              </div>
+                {saleType === SaleType.CONTADO && (
+                  <div className="grid gap-2">
+                    <Label>Método de pago</Label>
+                    <select
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                      value={paymentMethod ?? ""}
+                      onChange={(e) => {
+                        const nextMethod = e.target.value as PaymentMethod
+                        setPaymentMethod(nextMethod)
+                        if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
+                          setTransferBankName("")
+                        }
+                      }}
+                    >
+                      <option value={PaymentMethod.EFECTIVO}>Efectivo</option>
+                      <option value={PaymentMethod.TRANSFERENCIA}>Transferencia</option>
+                      <option value={PaymentMethod.TARJETA}>Tarjeta</option>
+                      <option value={PaymentMethod.DIVIDIR_PAGO}>Dividir pago</option>
+                    </select>
+                  </div>
+                )}
+
+                {saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && (
+                  <div className="grid gap-2">
+                    <Label>Banco de la transferencia</Label>
+                    <select
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                      value={transferBankName}
+                      onChange={(e) => setTransferBankName(e.target.value)}
+                    >
+                      <option value="">Selecciona un banco</option>
+                      {DOMINICAN_BANKS.map((bankName) => (
+                        <option key={bankName} value={bankName}>
+                          {bankName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <Separator />
+              </>
             )}
 
-            {saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && (
+            {isSaleConfigCollapsed && (
               <div className="grid gap-2">
-                <Label>Banco de la transferencia</Label>
-                <select
-                  className="h-10 rounded-md border bg-background px-3 text-sm"
-                  value={transferBankName}
-                  onChange={(e) => setTransferBankName(e.target.value)}
-                >
-                  <option value="">Selecciona un banco</option>
-                  {DOMINICAN_BANKS.map((bankName) => (
-                    <option key={bankName} value={bankName}>
-                      {bankName}
-                    </option>
-                  ))}
-                </select>
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  {customers.find((c) => c.id === customerId)?.name ?? "Cliente general"} ·{" "}
+                  {saleType === SaleType.CONTADO ? "Contado" : "Crédito"}
+                  {saleType === SaleType.CONTADO && paymentMethod ? ` · ${paymentMethod.toLowerCase().replace("_", " ")}` : ""}
+                </div>
               </div>
             )}
-
-            <Separator />
 
             <div className="grid gap-2">
               <Label>Buscar producto (descripción / código / referencia)</Label>
@@ -1014,7 +1131,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                               Código: {p.sku ?? "—"} · Ref: {p.reference ?? "—"} · {" "}
                               {p.productKind === "RECIPE"
                                 ? "Disponibilidad por insumos"
-                                : `Existencia: ${formatQty(decimalToNumber(p.stock), (p.saleUnit as UnitType) ?? "UNIDAD")}`}
+                                : `Existencia: ${formatQty(decimalToNumber(p.stock), (p.unit as UnitType) ?? "UNIDAD")}`}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1143,7 +1260,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                               <div className="text-xs text-muted-foreground">
                                 {p.productKind === "RECIPE"
                                   ? "Disponibilidad por insumos"
-                                  : `${formatQty(decimalToNumber(p.stock), (p.saleUnit as UnitType) ?? "UNIDAD")} disponible`}
+                                  : `${formatQty(decimalToNumber(p.stock), (p.unit as UnitType) ?? "UNIDAD")} disponible`}
                               </div>
                             </div>
                           </button>
@@ -1180,9 +1297,17 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                             Código: {c.sku ?? "—"} · Ref: {c.reference ?? "—"}
                             {c.unit !== "UNIDAD" && <span className="ml-2 text-purple-primary">({unitInfo.abbr})</span>}
                           </div>
-                          {c.selectedModifierNames.length > 0 && (
-                            <div className="mt-1 text-xs text-muted-foreground">
-                              Modificadores: {c.selectedModifierNames.join(", ")}
+                          {c.recipeItems.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {getRecipeVariantLabels(c.recipeAdjustments).map((label) => (
+                                <Badge
+                                  key={`${c.lineId}-${label}`}
+                                  variant={label === "Normal" ? "secondary" : "outline"}
+                                  className="text-[11px]"
+                                >
+                                  {label}
+                                </Badge>
+                              ))}
                             </div>
                           )}
                           <div className="mt-2 flex items-center gap-2">
@@ -1307,6 +1432,16 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                         </div>
                         <div className="flex flex-col items-end gap-2">
                           <div className="text-sm font-semibold">{formatRD(c.unitPriceCents * c.qty)}</div>
+                          {c.recipeItems.length > 0 && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openRecipeDialogForCartItem(c)}
+                            >
+                              Personalizar
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             variant="ghost"
@@ -1351,7 +1486,6 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                     const allowsDecimals = unitAllowsDecimals(c.unit)
                     const increment = allowsDecimals ? 0.5 : 1
                     const minQty = allowsDecimals ? 0.5 : 1
-                    const unitInfo = getUnitInfo(c.unit)
 
                     return (
                       <div key={c.lineId} className="space-y-2">
@@ -1384,9 +1518,17 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                 ? "Disponibilidad por insumos"
                                 : `${formatQty(c.stock, c.unit)} Disponible${c.stock !== 1 ? "s" : ""}`}
                             </div>
-                            {c.selectedModifierNames.length > 0 && (
-                              <div className="text-xs text-muted-foreground">
-                                Modificadores: {c.selectedModifierNames.join(", ")}
+                            {c.recipeItems.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {getRecipeVariantLabels(c.recipeAdjustments).map((label) => (
+                                  <Badge
+                                    key={`${c.lineId}-grid-${label}`}
+                                    variant={label === "Normal" ? "secondary" : "outline"}
+                                    className="text-[11px]"
+                                  >
+                                    {label}
+                                  </Badge>
+                                ))}
                               </div>
                             )}
                             <div className="flex items-center gap-2 mt-2">
@@ -1441,6 +1583,17 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                 </div>
                               ) : (
                                 <div className="ml-auto text-sm font-semibold">{formatRD(c.unitPriceCents)}</div>
+                              )}
+                              {c.recipeItems.length > 0 && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8"
+                                  onClick={() => openRecipeDialogForCartItem(c)}
+                                >
+                                  Personalizar
+                                </Button>
                               )}
                               <Button
                                 type="button"
@@ -1812,40 +1965,90 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
       </Dialog>
 
       <Dialog
-        open={!!modifierDialogProduct}
+        open={!!recipeDialogCartItem}
         onOpenChange={(open) => {
           if (!open) {
-            setModifierDialogProduct(null)
-            setModifierDraftIds([])
+            closeRecipeDialog()
           }
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Selecciona modificadores</DialogTitle>
+            <DialogTitle>Ajustes de receta — {recipeDialogCartItem?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="text-sm text-muted-foreground">
-              {modifierDialogProduct?.name} puede venderse con modificadores que ajustan sus insumos, sin cambiar el precio.
+              Selecciona el modo y marca los ingredientes que quieras ajustar.
             </div>
-            <div className="space-y-2">
-              {(modifierDialogProduct?.recipeModifiers ?? []).map((modifier) => {
-                const checked = modifierDraftIds.includes(modifier.id)
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={recipeDialogMode === "SIN" ? "default" : "outline"}
+                onClick={() => setRecipeDialogMode("SIN")}
+              >
+                Sin
+              </Button>
+              <Button
+                type="button"
+                variant={recipeDialogMode === "EXTRA" ? "default" : "outline"}
+                onClick={() => setRecipeDialogMode("EXTRA")}
+              >
+                Extra
+              </Button>
+            </div>
+            {recipeDialogCartItem && recipeDialogCartItem.qty > 1 && (
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">Aplicar a:</div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={recipeApplyScope === "ONE" ? "default" : "outline"}
+                    onClick={() => setRecipeApplyScope("ONE")}
+                  >
+                    Solo 1 unidad
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={recipeApplyScope === "ALL" ? "default" : "outline"}
+                    onClick={() => setRecipeApplyScope("ALL")}
+                  >
+                    Todas las unidades
+                  </Button>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {(recipeDialogCartItem?.recipeItems ?? []).map((item) => {
+                const current = recipeDraftByIngredient[item.ingredientId]
+                const checked = recipeDialogMode ? current === recipeDialogMode : Boolean(current)
                 return (
                   <label
-                    key={modifier.id}
+                    key={item.ingredientId}
                     className="flex items-center justify-between rounded-md border px-3 py-2 text-sm cursor-pointer"
                   >
-                    <span>{modifier.name}</span>
+                    <div>
+                      <div className="font-medium">{item.ingredientName}</div>
+                      {current && (
+                        <div className="text-xs text-muted-foreground">Aplicado: {current === "SIN" ? "Sin" : "Extra"}</div>
+                      )}
+                    </div>
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={(e) => {
-                        setModifierDraftIds((prev) =>
-                          e.target.checked
-                            ? [...prev, modifier.id]
-                            : prev.filter((modifierId) => modifierId !== modifier.id)
-                        )
+                      disabled={!recipeDialogMode}
+                      onChange={() => {
+                        if (!recipeDialogMode) return
+                        setRecipeDraftByIngredient((prev) => {
+                          const next = { ...prev }
+                          if (next[item.ingredientId] === recipeDialogMode) {
+                            delete next[item.ingredientId]
+                          } else {
+                            next[item.ingredientId] = recipeDialogMode
+                          }
+                          return next
+                        })
                       }}
                     />
                   </label>
@@ -1855,27 +2058,40 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           </div>
           <DialogFooter>
             <Button
-              variant="outline"
               onClick={() => {
-                if (modifierDialogProduct) {
-                  addToCart(modifierDialogProduct, [])
+                if (recipeDialogCartItem) {
+                  const scope = resolveRecipeApplyScope(recipeDialogCartItem, recipeApplyScope)
+                  const adjustments = (recipeDialogCartItem.recipeItems ?? []).flatMap((item) => {
+                    const adjustmentType = recipeDraftByIngredient[item.ingredientId]
+                    if (!adjustmentType) return []
+                    return [
+                      {
+                        ingredientId: item.ingredientId,
+                        ingredientName: item.ingredientName,
+                        adjustmentType,
+                      } as RecipeAdjustment,
+                    ]
+                  })
+                  applyRecipeAdjustmentsToCartLine(recipeDialogCartItem.lineId, adjustments, scope)
+                  const variantLabel =
+                    adjustments.length > 0 ? adjustments.map(formatAdjustmentLabel).join(", ") : "Normal"
+                  const description =
+                    adjustments.length === 0
+                      ? scope === "ONE"
+                        ? "Se dejó 1 unidad en versión normal."
+                        : "Se dejó toda la línea en versión normal."
+                      : scope === "ONE"
+                        ? `Se personalizó 1 unidad: ${variantLabel}.`
+                        : `Se personalizó toda la línea: ${variantLabel}.`
+                  toast({
+                    title: "Personalización aplicada",
+                    description,
+                  })
                 }
-                setModifierDialogProduct(null)
-                setModifierDraftIds([])
+                closeRecipeDialog()
               }}
             >
-              Sin modificadores
-            </Button>
-            <Button
-              onClick={() => {
-                if (modifierDialogProduct) {
-                  addToCart(modifierDialogProduct, modifierDraftIds)
-                }
-                setModifierDialogProduct(null)
-                setModifierDraftIds([])
-              }}
-            >
-              Agregar al carrito
+              Aplicar ajustes
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -44,16 +44,6 @@ type RecipeItemInput = {
   qty: number
 }
 
-type RecipeModifierItemInput = {
-  ingredientId: string
-  qtyDelta: number
-}
-
-type RecipeModifierInput = {
-  name: string
-  items: RecipeModifierItemInput[]
-}
-
 function roundRecipeQty(value: number) {
   return Math.round(value * 1000) / 1000
 }
@@ -101,26 +91,8 @@ function serializeProductRecord(product: any) {
             stock: item.ingredient.stock instanceof Decimal ? item.ingredient.stock.toNumber() : Number(item.ingredient.stock),
             minStock:
               item.ingredient.minStock instanceof Decimal ? item.ingredient.minStock.toNumber() : Number(item.ingredient.minStock),
-          }
-        : null,
-    })),
-    recipeModifiers: (product.recipeModifiers ?? []).map((modifier: any) => ({
-      ...modifier,
-      createdAt: modifier.createdAt instanceof Date ? modifier.createdAt.toISOString() : modifier.createdAt,
-      updatedAt: modifier.updatedAt instanceof Date ? modifier.updatedAt.toISOString() : modifier.updatedAt,
-      items: (modifier.items ?? []).map((item: any) => ({
-        ...item,
-        qtyDelta: item.qtyDelta instanceof Decimal ? item.qtyDelta.toNumber() : Number(item.qtyDelta),
-        createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
-        ingredient: item.ingredient
-          ? {
-              ...item.ingredient,
-              stock: item.ingredient.stock instanceof Decimal ? item.ingredient.stock.toNumber() : Number(item.ingredient.stock),
-              minStock:
-                item.ingredient.minStock instanceof Decimal ? item.ingredient.minStock.toNumber() : Number(item.ingredient.minStock),
             }
           : null,
-      })),
     })),
   }
 }
@@ -145,69 +117,19 @@ function normalizeRecipeItems(items: RecipeItemInput[]) {
   return normalized
 }
 
-function normalizeRecipeModifiers(modifiers: RecipeModifierInput[]) {
-  const normalized = modifiers
-    .map((modifier, index) => ({
-      name: sanitizeString(modifier.name ?? ""),
-      sortOrder: index,
-      items: (modifier.items ?? [])
-        .map((item) => ({
-          ingredientId: String(item.ingredientId ?? "").trim(),
-          qtyDelta: roundRecipeQty(Number(item.qtyDelta ?? 0)),
-        }))
-        .filter((item) => item.ingredientId),
-    }))
-    .filter((modifier) => modifier.name || modifier.items.length > 0)
-
-  const repeatedModifier = normalized.find(
-    (modifier, index) => normalized.findIndex((candidate) => candidate.name.toLowerCase() === modifier.name.toLowerCase()) !== index
-  )
-  if (repeatedModifier) {
-    throw new Error("No puedes repetir nombres de modificadores en la misma receta.")
-  }
-
-  for (const modifier of normalized) {
-    if (!modifier.name) {
-      throw new Error("Cada modificador debe tener un nombre.")
-    }
-    if (modifier.items.length === 0) {
-      throw new Error(`El modificador "${modifier.name}" debe ajustar al menos un insumo.`)
-    }
-    const repeatedIngredient = modifier.items.find(
-      (item, index) => modifier.items.findIndex((candidate) => candidate.ingredientId === item.ingredientId) !== index
-    )
-    if (repeatedIngredient) {
-      throw new Error(`El modificador "${modifier.name}" tiene insumos repetidos.`)
-    }
-    for (const item of modifier.items) {
-      if (!Number.isFinite(item.qtyDelta) || item.qtyDelta === 0) {
-        throw new Error(`El modificador "${modifier.name}" debe tener ajustes distintos de 0.`)
-      }
-    }
-  }
-
-  return normalized
-}
-
 async function validateRecipeDefinition(
   client: Prisma.TransactionClient,
   input: {
     accountId: string
     productId?: string
     recipeItems: ReturnType<typeof normalizeRecipeItems>
-    modifiers: ReturnType<typeof normalizeRecipeModifiers>
   }
 ) {
   if (input.recipeItems.length === 0) {
     throw new Error("Debes agregar al menos un insumo a la receta.")
   }
 
-  const ingredientIds = Array.from(
-    new Set([
-      ...input.recipeItems.map((item) => item.ingredientId),
-      ...input.modifiers.flatMap((modifier) => modifier.items.map((item) => item.ingredientId)),
-    ])
-  )
+  const ingredientIds = Array.from(new Set(input.recipeItems.map((item) => item.ingredientId)))
 
   if (input.productId && ingredientIds.includes(input.productId)) {
     throw new Error("Un producto no puede usar su propia receta como insumo.")
@@ -240,12 +162,8 @@ async function syncRecipeDefinition(
   client: Prisma.TransactionClient,
   productId: string,
   productKind: ProductKind,
-  recipeItems: ReturnType<typeof normalizeRecipeItems>,
-  modifiers: ReturnType<typeof normalizeRecipeModifiers>
+  recipeItems: ReturnType<typeof normalizeRecipeItems>
 ) {
-  await client.productRecipeModifier.deleteMany({
-    where: { productId },
-  })
   await client.productRecipeItem.deleteMany({
     where: { productId },
   })
@@ -259,22 +177,6 @@ async function syncRecipeDefinition(
         ingredientId: item.ingredientId,
         qty: new Decimal(item.qty),
       })),
-    })
-  }
-
-  for (const modifier of modifiers) {
-    await client.productRecipeModifier.create({
-      data: {
-        productId,
-        name: modifier.name,
-        sortOrder: modifier.sortOrder,
-        items: {
-          create: modifier.items.map((item) => ({
-            ingredientId: item.ingredientId,
-            qtyDelta: new Decimal(item.qtyDelta),
-          })),
-        },
-      },
     })
   }
 }
@@ -298,8 +200,7 @@ export async function listRecipeIngredientOptions(options?: { user?: any }) {
       sku: true,
       reference: true,
       stock: true,
-      purchaseUnit: true,
-      saleUnit: true,
+      unit: true,
       costCents: true,
       productKind: true,
     },
@@ -346,37 +247,12 @@ export async function listProducts(options?: { query?: string; cursor?: string |
               reference: true,
               stock: true,
               minStock: true,
-              purchaseUnit: true,
-              saleUnit: true,
+              unit: true,
               productKind: true,
             },
           },
         },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      },
-      recipeModifiers: {
-        include: {
-          items: {
-            include: {
-              ingredient: {
-                select: {
-                  id: true,
-                  productId: true,
-                  name: true,
-                  sku: true,
-                  reference: true,
-                  stock: true,
-                  minStock: true,
-                  purchaseUnit: true,
-                  saleUnit: true,
-                  productKind: true,
-                },
-              },
-            },
-            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          },
-        },
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
       },
     },
     orderBy: [{ productId: "asc" }, { id: "asc" }],
@@ -412,9 +288,7 @@ export async function upsertProduct(input: {
   imageUrls?: string[]
   productKind: ProductKind
   recipeItems?: RecipeItemInput[]
-  modifiers?: RecipeModifierInput[]
-  purchaseUnit: UnitType
-  saleUnit: UnitType
+  unit: UnitType
   user?: any
 }) {
   const user = input.user ?? await getCurrentUser()
@@ -425,8 +299,7 @@ export async function upsertProduct(input: {
     if (!name) throw new Error("El nombre del producto es requerido")
     if (!input.priceCents || input.priceCents <= 0) throw new Error("El precio de venta es requerido")
     if (!input.costCents || input.costCents < 0) throw new Error("El costo es requerido")
-    if (!input.saleUnit) throw new Error("La unidad de venta es requerida")
-    if (!input.purchaseUnit) throw new Error("La unidad de compra es requerida")
+    if (!input.unit) throw new Error("La unidad es requerida")
 
     const productKind = input.productKind ?? ProductKind.BASIC
     const sanitizedSku = input.sku ? sanitizeCode(input.sku) : ""
@@ -435,10 +308,14 @@ export async function upsertProduct(input: {
     const reference = sanitizedReference || null
     const imageUrls = input.imageUrls || []
     const recipeItems = normalizeRecipeItems(input.recipeItems ?? [])
-    const modifiers = normalizeRecipeModifiers(input.modifiers ?? [])
 
-    const finalPurchaseUnit = productKind === ProductKind.RECIPE ? UnitType.UNIDAD : input.purchaseUnit
-    const finalSaleUnit = productKind === ProductKind.RECIPE ? UnitType.UNIDAD : input.saleUnit
+    const finalUnit =
+      productKind === ProductKind.MEASURED
+        ? input.unit
+        : UnitType.UNIDAD
+    if (productKind === ProductKind.MEASURED && finalUnit === UnitType.UNIDAD) {
+      throw new Error("Los productos con medidas deben usar una unidad distinta de UNIDAD")
+    }
     const finalStock = productKind === ProductKind.RECIPE ? 0 : input.stock
     const finalMinStock = productKind === ProductKind.RECIPE ? 0 : input.minStock
 
@@ -448,7 +325,6 @@ export async function upsertProduct(input: {
           accountId: user.accountId,
           productId: input.id,
           recipeItems,
-          modifiers,
         })
       }
 
@@ -496,12 +372,11 @@ export async function upsertProduct(input: {
             minStock: finalMinStock,
             imageUrls,
             productKind,
-            purchaseUnit: finalPurchaseUnit,
-            saleUnit: finalSaleUnit,
+            unit: finalUnit,
           },
         })
 
-        await syncRecipeDefinition(tx, input.id, productKind, recipeItems, modifiers)
+        await syncRecipeDefinition(tx, input.id, productKind, recipeItems)
 
         await logAuditEvent(
           {
@@ -544,15 +419,14 @@ export async function upsertProduct(input: {
             minStock: finalMinStock,
             imageUrls,
             productKind,
-            purchaseUnit: finalPurchaseUnit,
-            saleUnit: finalSaleUnit,
+            unit: finalUnit,
           },
         })
 
-        await syncRecipeDefinition(tx, created.id, productKind, recipeItems, modifiers)
+        await syncRecipeDefinition(tx, created.id, productKind, recipeItems)
 
         if (productKind !== ProductKind.RECIPE) {
-          const initialAllowsDecimals = unitAllowsDecimals(finalSaleUnit)
+          const initialAllowsDecimals = unitAllowsDecimals(finalUnit)
           const initialRaw = Number(finalStock)
           const initialStock = Number.isFinite(initialRaw)
             ? initialAllowsDecimals
@@ -630,19 +504,7 @@ export async function deactivateProduct(productId: string) {
     take: 5,
   })
 
-  const usedInModifiers = await prisma.productRecipeModifierItem.findMany({
-    where: {
-      ingredientId: productId,
-      modifier: { product: { isActive: true, accountId: user.accountId } },
-    },
-    select: { modifier: { select: { product: { select: { name: true } } } } },
-    take: 5,
-  })
-
-  const recipeNames = Array.from(new Set([
-    ...usedInRecipes.map((r) => r.product.name),
-    ...usedInModifiers.map((m) => m.modifier.product.name),
-  ]))
+  const recipeNames = Array.from(new Set(usedInRecipes.map((r) => r.product.name)))
 
   if (recipeNames.length > 0) {
     throw new Error(
@@ -691,8 +553,7 @@ export type BulkProductImportRow = {
   sku?: string
   referencia?: string
   tipo_producto?: "BASICO" | "MEDIDO"
-  unidad_compra?: UnitType
-  unidad_venta?: UnitType
+  unidad?: UnitType
   precio_venta?: number
   costo?: number
   itbis?: number
@@ -927,6 +788,10 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
   for (const row of rows) {
     const rowNumber = Number.isInteger(row.rowNumber) && row.rowNumber > 0 ? row.rowNumber : 0
     try {
+      if ("unidad_compra" in (row as Record<string, unknown>) || "unidad_venta" in (row as Record<string, unknown>)) {
+        throw new Error("Usa la columna unidad. unidad_compra y unidad_venta ya no son válidas")
+      }
+
       const skuSanitized = row.sku ? sanitizeCode(String(row.sku)) : ""
       const sku = skuSanitized || null
       const hasName = hasImportValue(row.nombre)
@@ -939,13 +804,9 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
         throw new Error("tipo_producto inválido (usa BASICO o MEDIDO)")
       }
 
-      const purchaseUnitFromRow = parseImportUnit(row.unidad_compra)
-      if (hasImportValue(row.unidad_compra) && !purchaseUnitFromRow) {
-        throw new Error("unidad_compra inválida")
-      }
-      const saleUnitFromRow = parseImportUnit(row.unidad_venta)
-      if (hasImportValue(row.unidad_venta) && !saleUnitFromRow) {
-        throw new Error("unidad_venta inválida")
+      const unitFromRow = parseImportUnit(row.unidad)
+      if (hasImportValue(row.unidad) && !unitFromRow) {
+        throw new Error("unidad inválida")
       }
 
       const hasPrice = hasImportValue(row.precio_venta)
@@ -990,17 +851,16 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
           throw new Error("nombre inválido")
         }
 
-        const basePurchaseUnit = existing.purchaseUnit
-        const baseSaleUnit = existing.saleUnit
-        let nextPurchaseUnit = purchaseUnitFromRow ?? basePurchaseUnit
-        let nextSaleUnit = saleUnitFromRow ?? baseSaleUnit
+        const baseUnit = existing.unit
+        let nextUnit = unitFromRow ?? baseUnit
 
         if (productType === "BASICO") {
-          nextPurchaseUnit = "UNIDAD"
-          nextSaleUnit = "UNIDAD"
+          nextUnit = "UNIDAD"
         } else if (productType === "MEDIDO") {
-          nextPurchaseUnit = purchaseUnitFromRow ?? (basePurchaseUnit !== "UNIDAD" ? basePurchaseUnit : "KG")
-          nextSaleUnit = saleUnitFromRow ?? (baseSaleUnit !== "UNIDAD" ? baseSaleUnit : "KG")
+          nextUnit = unitFromRow ?? (baseUnit !== "UNIDAD" ? baseUnit : "KG")
+          if (nextUnit === "UNIDAD") {
+            throw new Error("Los productos MEDIDOS deben usar una unidad distinta de UNIDAD")
+          }
         }
 
         if (hasPrice && priceValue !== null) {
@@ -1015,7 +875,7 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
         const nextItbisRateBp = hasItbis && itbisRateBp !== null ? itbisRateBp : Number(existing.itbisRateBp)
 
         const nextMinStock = hasMinStock && minStockValue !== null
-          ? normalizeQtyForUnit(minStockValue, nextSaleUnit)
+          ? normalizeQtyForUnit(minStockValue, nextUnit)
           : decimalToNumber(existing.minStock)
 
         const nextReference = hasReference ? (reference || null) : existing.reference
@@ -1029,8 +889,8 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
           costCents: nextCostCents,
           itbisRateBp: nextItbisRateBp,
           minStock: nextMinStock,
-          purchaseUnit: nextPurchaseUnit,
-          saleUnit: nextSaleUnit,
+          productKind: productType === "MEDIDO" ? ProductKind.MEASURED : productType === "BASICO" ? ProductKind.BASIC : existing.productKind,
+          unit: nextUnit,
           isActive: true,
         }
 
@@ -1052,7 +912,7 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
           })
 
           if (hasStock && stockValue !== null && stockValue !== 0) {
-            const stockDelta = normalizeDelta(stockValue, unitAllowsDecimals(nextSaleUnit))
+            const stockDelta = normalizeDelta(stockValue, unitAllowsDecimals(nextUnit))
             const stockUpdate = stockDelta >= 0
               ? { increment: stockDelta }
               : { decrement: Math.abs(stockDelta) }
@@ -1134,16 +994,16 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
       }
 
       const resolvedProductType = productType ?? "BASICO"
-      const purchaseUnit = resolvedProductType === "BASICO"
+      const unit = resolvedProductType === "BASICO"
         ? "UNIDAD"
-        : (purchaseUnitFromRow ?? "KG")
-      const saleUnit = resolvedProductType === "BASICO"
-        ? "UNIDAD"
-        : (saleUnitFromRow ?? "KG")
+        : (unitFromRow ?? "KG")
+      if (resolvedProductType === "MEDIDO" && unit === "UNIDAD") {
+        throw new Error("Los productos MEDIDOS deben usar una unidad distinta de UNIDAD")
+      }
 
       const initialStockRaw = stockValue ?? 0
-      const initialStock = normalizeQtyForUnit(initialStockRaw, saleUnit)
-      const minStock = minStockValue === null ? 0 : normalizeQtyForUnit(minStockValue, saleUnit)
+      const initialStock = normalizeQtyForUnit(initialStockRaw, unit)
+      const minStock = minStockValue === null ? 0 : normalizeQtyForUnit(minStockValue, unit)
 
       const createdProduct = await prisma.$transaction(async (tx) => {
         const seq = await tx.productSequence.upsert({
@@ -1170,8 +1030,8 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
             stock: initialStock,
             minStock,
             imageUrls: images ?? [],
-            purchaseUnit,
-            saleUnit,
+            productKind: resolvedProductType === "MEDIDO" ? ProductKind.MEASURED : ProductKind.BASIC,
+            unit,
             isActive: true,
           },
         })
@@ -1279,7 +1139,7 @@ export async function adjustManyStock(input: {
       select: {
         id: true,
         productId: true,
-        saleUnit: true,
+        unit: true,
       },
     })
 
@@ -1296,7 +1156,7 @@ export async function adjustManyStock(input: {
       if (!product) {
         throw new Error(`Producto no encontrado: ${item.productId}`)
       }
-      const allowsDecimals = unitAllowsDecimals(product.saleUnit)
+      const allowsDecimals = unitAllowsDecimals(product.unit)
       const normalizedDelta = normalizeDelta(item.delta, allowsDecimals)
       aggregated.set(item.productId, (aggregated.get(item.productId) ?? 0) + normalizedDelta)
     }
@@ -1318,7 +1178,7 @@ export async function adjustManyStock(input: {
           throw new Error(`Producto no encontrado: ${item.productId}`)
         }
 
-        const allowsDecimals = unitAllowsDecimals(product.saleUnit)
+        const allowsDecimals = unitAllowsDecimals(product.unit)
         const normalizedDelta = normalizeDelta(item.delta, allowsDecimals)
 
         const stockUpdate = normalizedDelta >= 0

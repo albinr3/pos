@@ -1,6 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db"
+import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-auth"
 import { processBillingEngine } from "@/lib/billing"
 import { revalidatePath } from "next/cache"
@@ -119,6 +120,21 @@ export type AccountDetail = AccountListItem & {
     proofsCount: number
   }[]
 
+  // Products
+  products: {
+    id: string
+    productId: number
+    name: string
+    sku: string | null
+    priceCents: number
+    costCents: number
+    stock: number
+    productKind: string
+    unit: string
+    isActive: boolean
+    createdAt: Date
+  }[]
+
   // Subscription details
   subscriptionId: string | null
   manualVerificationStatus: string | null
@@ -217,6 +233,23 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
       users: {
         orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }],
       },
+      products: {
+        orderBy: [{ productId: "asc" }],
+        take: 500,
+        select: {
+          id: true,
+          productId: true,
+          name: true,
+          sku: true,
+          priceCents: true,
+          costCents: true,
+          stock: true,
+          productKind: true,
+          unit: true,
+          isActive: true,
+          createdAt: true,
+        },
+      },
       _count: {
         select: {
           users: true,
@@ -297,6 +330,21 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
       createdAt: p.createdAt,
       paidAt: p.paidAt,
       proofsCount: p.proofs.length,
+    })),
+
+    // Products
+    products: account.products.map((p) => ({
+      id: p.id,
+      productId: p.productId,
+      name: p.name,
+      sku: p.sku,
+      priceCents: p.priceCents,
+      costCents: p.costCents,
+      stock: p.stock instanceof Decimal ? p.stock.toNumber() : Number(p.stock),
+      productKind: p.productKind,
+      unit: p.unit,
+      isActive: p.isActive,
+      createdAt: p.createdAt,
     })),
 
     // Billing Plan

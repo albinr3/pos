@@ -15,6 +15,10 @@ type SaleBodyItem = {
   price?: number
   wasPriceOverridden?: boolean
   selectedModifierIds?: string[]
+  recipeAdjustments?: Array<{
+    ingredientId?: string
+    adjustmentType?: string
+  }>
 }
 
 type SalePaymentSplitBody = {
@@ -50,7 +54,10 @@ type CartItemInput = {
   qty: number
   unitPriceCents: number
   wasPriceOverridden: boolean
-  selectedModifierIds?: string[]
+  recipeAdjustments?: Array<{
+    ingredientId: string
+    adjustmentType: "SIN" | "EXTRA"
+  }>
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -154,14 +161,24 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as SaleCreateBody
     const soldAt = parseOptionalSaleDate(body.soldAt ?? body.createdAt)
 
+    if ((body.items ?? []).some((item) => Array.isArray(item.selectedModifierIds))) {
+      return NextResponse.json(
+        { error: "selectedModifierIds ya no es soportado. Usa recipeAdjustments." },
+        { status: 400 }
+      )
+    }
+
     // Convertir items del formato móvil al formato esperado
     const items: CartItemInput[] = (body.items || []).map((item) => ({
       productId: String(item.productId || ""),
       qty: Number(item.quantity ?? item.qty ?? 0),
       unitPriceCents: item.unitPriceCents || Math.round((item.price || 0) * 100),
       wasPriceOverridden: item.wasPriceOverridden || false,
-      selectedModifierIds: Array.isArray(item.selectedModifierIds)
-        ? item.selectedModifierIds.map((modifierId: string) => String(modifierId))
+      recipeAdjustments: Array.isArray(item.recipeAdjustments)
+        ? item.recipeAdjustments.map((adjustment) => ({
+            ingredientId: String(adjustment.ingredientId || ""),
+            adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
+          }))
         : [],
     }))
 

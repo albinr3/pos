@@ -16,6 +16,7 @@ import { PriceInput } from "@/components/app/price-input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, calcItbisIncluded } from "@/lib/money"
+import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { cn } from "@/lib/utils"
 import type { CurrentUser } from "@/lib/auth"
 
@@ -25,6 +26,14 @@ type Sale = Awaited<ReturnType<typeof listSales>>["items"][number]
 type SaleDetail = Awaited<ReturnType<typeof getSaleById>>
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
+
+type RecipeAdjustment = {
+  ingredientId: string
+  ingredientName: string
+  adjustmentType: "SIN" | "EXTRA"
+}
+
+type RecipeItem = NonNullable<ProductResult["recipeItems"]>[number]
 
 type CartItem = {
   lineId: string
@@ -37,13 +46,26 @@ type CartItem = {
   unitPriceCents: number
   wasPriceOverridden: boolean
   itbisRateBp: number
-  selectedModifierIds: string[]
-  selectedModifierNames: string[]
+  recipeItems: RecipeItem[]
+  recipeAdjustments: RecipeAdjustment[]
 }
 
-function buildCartLineId(productId: string, selectedModifierIds: string[]) {
-  const modifiersKey = [...selectedModifierIds].sort().join(",")
-  return modifiersKey ? `${productId}::${modifiersKey}` : productId
+function buildCartLineId(productId: string, recipeAdjustments: RecipeAdjustment[]) {
+  const adjustmentsKey = recipeAdjustments
+    .map((adjustment) => `${adjustment.ingredientId}:${adjustment.adjustmentType}`)
+    .sort()
+    .join(",")
+
+  return adjustmentsKey ? `${productId}::${adjustmentsKey}` : productId
+}
+
+function formatAdjustmentLabel(adjustment: RecipeAdjustment) {
+  return `${adjustment.adjustmentType === "SIN" ? "Sin" : "Extra"} ${adjustment.ingredientName}`
+}
+
+function getRecipeVariantLabels(recipeAdjustments: RecipeAdjustment[]) {
+  if (recipeAdjustments.length === 0) return ["Normal"]
+  return recipeAdjustments.map(formatAdjustmentLabel)
 }
 
 const PAGE_SIZE = 50
@@ -66,14 +88,20 @@ export function SalesListClient() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
   const [cart, setCart] = useState<CartItem[]>([])
   const [isSaving, startSaving] = useTransition()
-  const [modifierDialogProduct, setModifierDialogProduct] = useState<ProductResult | null>(null)
-  const [modifierDraftIds, setModifierDraftIds] = useState<string[]>([])
+  const [recipeDialogLineId, setRecipeDialogLineId] = useState<string | null>(null)
+  const [recipeDialogMode, setRecipeDialogMode] = useState<"SIN" | "EXTRA" | null>(null)
+  const [recipeApplyScope, setRecipeApplyScope] = useState<RecipeApplyScope>("ONE")
+  const [recipeDraftByIngredient, setRecipeDraftByIngredient] = useState<Record<string, "SIN" | "EXTRA">>({})
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [searchResults, setSearchResults] = useState<ProductResult[]>([])
   const [, startSearch] = useTransition()
   const [user, setUser] = useState<CurrentUser | null>(null)
+  const recipeDialogCartItem = useMemo(
+    () => cart.find((item) => item.lineId === recipeDialogLineId) ?? null,
+    [cart, recipeDialogLineId]
+  )
 
   useEffect(() => {
     // Obtener usuario actual con permisos
@@ -162,7 +190,11 @@ export function SalesListClient() {
         sale.items.map((item) => ({
           lineId: buildCartLineId(
             item.productId,
-            (item.selectedRecipeModifiers ?? []).flatMap((modifier) => (modifier.modifierId ? [modifier.modifierId] : []))
+            (item.recipeAdjustments ?? []).map((adjustment) => ({
+              ingredientId: adjustment.ingredientId,
+              ingredientName: adjustment.ingredientName,
+              adjustmentType: adjustment.type,
+            }))
           ),
           productId: item.productId,
           name: item.product.name,
@@ -173,10 +205,12 @@ export function SalesListClient() {
           unitPriceCents: item.unitPriceCents,
           wasPriceOverridden: item.wasPriceOverridden,
           itbisRateBp: (item.product as any).itbisRateBp ?? 1800,
-          selectedModifierIds: (item.selectedRecipeModifiers ?? []).flatMap((modifier) =>
-            modifier.modifierId ? [modifier.modifierId] : []
-          ),
-          selectedModifierNames: (item.selectedRecipeModifiers ?? []).map((modifier) => modifier.modifierName),
+          recipeItems: item.product.recipeItems ?? [],
+          recipeAdjustments: (item.recipeAdjustments ?? []).map((adjustment) => ({
+            ingredientId: adjustment.ingredientId,
+            ingredientName: adjustment.ingredientName,
+            adjustmentType: adjustment.type,
+          })),
         }))
       )
       setOpenEdit(true)
@@ -185,13 +219,9 @@ export function SalesListClient() {
     }
   }
 
-  function addProductToCart(p: ProductResult, selectedModifierIds: string[] = []) {
-    const normalizedModifierIds = [...selectedModifierIds].sort()
-    const recipeModifiers = Array.isArray(p.recipeModifiers) ? p.recipeModifiers : []
-    const selectedModifierNames = recipeModifiers
-      .filter((modifier) => normalizedModifierIds.includes(modifier.id))
-      .map((modifier) => modifier.name)
-    const lineId = buildCartLineId(p.id, normalizedModifierIds)
+  function addProductToCart(p: ProductResult, recipeAdjustments: RecipeAdjustment[] = []) {
+    const normalizedAdjustments = sortRecipeAdjustments(recipeAdjustments)
+    const lineId = buildCartLineId(p.id, normalizedAdjustments)
 
     setCart((prev) => {
       const existing = prev.find((x) => x.lineId === lineId)
@@ -209,20 +239,56 @@ export function SalesListClient() {
           unitPriceCents: p.priceCents,
           wasPriceOverridden: false,
           itbisRateBp: p.itbisRateBp ?? 1800,
-          selectedModifierIds: normalizedModifierIds,
-          selectedModifierNames,
+          recipeItems: p.recipeItems ?? [],
+          recipeAdjustments: normalizedAdjustments,
         },
       ]
     })
   }
 
   function handleProductSelection(p: ProductResult) {
-    if (p.productKind === "RECIPE" && Array.isArray(p.recipeModifiers) && p.recipeModifiers.length > 0) {
-      setModifierDialogProduct(p)
-      setModifierDraftIds([])
-      return
-    }
     addProductToCart(p)
+  }
+
+  function closeRecipeDialog() {
+    setRecipeDialogLineId(null)
+    setRecipeDialogMode(null)
+    setRecipeApplyScope("ONE")
+    setRecipeDraftByIngredient({})
+  }
+
+  function openRecipeDialogForCartItem(item: CartItem) {
+    setRecipeDialogLineId(item.lineId)
+    setRecipeDialogMode(null)
+    setRecipeApplyScope(item.qty > 1 ? "ONE" : "ALL")
+    setRecipeDraftByIngredient(
+      item.recipeAdjustments.reduce<Record<string, "SIN" | "EXTRA">>((acc, adjustment) => {
+        acc[adjustment.ingredientId] = adjustment.adjustmentType
+        return acc
+      }, {})
+    )
+  }
+
+  function resolveRecipeApplyScope(item: CartItem | null, scope: RecipeApplyScope): RecipeApplyScope {
+    if (!item) return "ALL"
+    return scope === "ONE" && item.qty > 1 ? "ONE" : "ALL"
+  }
+
+  function applyRecipeAdjustmentsToCartLine(
+    lineId: string,
+    recipeAdjustments: RecipeAdjustment[],
+    scope: RecipeApplyScope
+  ) {
+    setCart((prev) =>
+      applyRecipeAdjustmentsWithScope({
+        lines: prev,
+        lineId,
+        recipeAdjustments,
+        scope,
+        buildLineId: buildCartLineId,
+        splitQty: 1,
+      })
+    )
   }
 
   async function handleSave() {
@@ -250,7 +316,10 @@ export function SalesListClient() {
             qty: c.qty,
             unitPriceCents: c.unitPriceCents,
             wasPriceOverridden: c.wasPriceOverridden,
-            selectedModifierIds: c.selectedModifierIds,
+            recipeAdjustments: c.recipeAdjustments.map((adjustment) => ({
+              ingredientId: adjustment.ingredientId,
+              adjustmentType: adjustment.adjustmentType,
+            })),
           })),
         })
         toast({ title: "Guardado", description: "Venta actualizada" })
@@ -512,13 +581,30 @@ export function SalesListClient() {
                           <div>
                             <div className="font-medium">{c.name}</div>
                             <div className="text-xs text-muted-foreground">Código: {c.sku ?? "—"} · Stock: {c.stock}</div>
-                            {c.selectedModifierNames.length > 0 && (
-                              <div className="text-xs text-muted-foreground">Modificadores: {c.selectedModifierNames.join(", ")}</div>
+                            {c.recipeItems.length > 0 && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {getRecipeVariantLabels(c.recipeAdjustments).map((label) => (
+                                  <Badge
+                                    key={`${c.lineId}-${label}`}
+                                    variant={label === "Normal" ? "secondary" : "outline"}
+                                    className="text-[11px]"
+                                  >
+                                    {label}
+                                  </Badge>
+                                ))}
+                              </div>
                             )}
                           </div>
-                          <Button variant="ghost" size="icon" onClick={() => setCart((p) => p.filter((x) => x.lineId !== c.lineId))}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            {c.recipeItems.length > 0 && (
+                              <Button variant="outline" size="sm" onClick={() => openRecipeDialogForCartItem(c)}>
+                                Personalizar
+                              </Button>
+                            )}
+                            <Button variant="ghost" size="icon" onClick={() => setCart((p) => p.filter((x) => x.lineId !== c.lineId))}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                         <div className="grid grid-cols-3 gap-2 mt-2">
                           <div>
@@ -580,48 +666,144 @@ export function SalesListClient() {
         </DialogContent>
       </Dialog>
 
-      {/* Modifier Dialog for RECIPE products */}
-      <Dialog open={!!modifierDialogProduct} onOpenChange={(open) => { if (!open) setModifierDialogProduct(null) }}>
-        <DialogContent className="sm:max-w-[400px]">
+      {/* Recipe Adjustments Dialog */}
+      <Dialog
+        open={!!recipeDialogCartItem}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeRecipeDialog()
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[460px]">
           <DialogHeader>
-            <DialogTitle>Modificadores — {modifierDialogProduct?.name}</DialogTitle>
+            <DialogTitle>Ajustes de receta — {recipeDialogCartItem?.name}</DialogTitle>
           </DialogHeader>
           <div className="grid gap-3 py-2">
-            {modifierDialogProduct?.recipeModifiers?.map((modifier) => (
-              <label key={modifier.id} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-gray-300"
-                  checked={modifierDraftIds.includes(modifier.id)}
-                  onChange={(e) => {
-                    const checked = e.target.checked
-                    setModifierDraftIds((prev) =>
-                      checked
-                        ? [...prev, modifier.id]
-                        : prev.filter((id) => id !== modifier.id)
-                    )
-                  }}
-                />
-                <span className="text-sm">{modifier.name}</span>
-              </label>
-            ))}
+            <div className="text-sm text-muted-foreground">
+              Selecciona el modo y luego marca los ingredientes que quieras ajustar.
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={recipeDialogMode === "SIN" ? "default" : "outline"}
+                onClick={() => setRecipeDialogMode("SIN")}
+              >
+                Sin
+              </Button>
+              <Button
+                type="button"
+                variant={recipeDialogMode === "EXTRA" ? "default" : "outline"}
+                onClick={() => setRecipeDialogMode("EXTRA")}
+              >
+                Extra
+              </Button>
+            </div>
+            {recipeDialogCartItem && recipeDialogCartItem.qty > 1 && (
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">Aplicar a:</div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={recipeApplyScope === "ONE" ? "default" : "outline"}
+                    onClick={() => setRecipeApplyScope("ONE")}
+                  >
+                    Solo 1 unidad
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={recipeApplyScope === "ALL" ? "default" : "outline"}
+                    onClick={() => setRecipeApplyScope("ALL")}
+                  >
+                    Todas las unidades
+                  </Button>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {(recipeDialogCartItem?.recipeItems ?? []).map((item) => {
+                const current = recipeDraftByIngredient[item.ingredientId]
+                const checked = recipeDialogMode ? current === recipeDialogMode : Boolean(current)
+
+                return (
+                  <label key={item.ingredientId} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 cursor-pointer">
+                    <div>
+                      <div className="text-sm font-medium">{item.ingredientName}</div>
+                      {current && (
+                        <div className="text-xs text-muted-foreground">
+                          Aplicado: {current === "SIN" ? "Sin" : "Extra"}
+                        </div>
+                      )}
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-gray-300"
+                      checked={checked}
+                      disabled={!recipeDialogMode}
+                      onChange={() => {
+                        if (!recipeDialogMode) return
+                        setRecipeDraftByIngredient((prev) => {
+                          const next = { ...prev }
+                          if (next[item.ingredientId] === recipeDialogMode) {
+                            delete next[item.ingredientId]
+                          } else {
+                            next[item.ingredientId] = recipeDialogMode
+                          }
+                          return next
+                        })
+                      }}
+                    />
+                  </label>
+                )
+              })}
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setModifierDialogProduct(null)}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                closeRecipeDialog()
+              }}
+            >
               Cancelar
             </Button>
             <Button
               onClick={() => {
-                if (modifierDialogProduct) {
-                  addProductToCart(modifierDialogProduct, modifierDraftIds)
-                  setModifierDialogProduct(null)
-                  setModifierDraftIds([])
-                  setSearchQuery("")
-                  setSearchResults([])
+                if (recipeDialogCartItem) {
+                  const scope = resolveRecipeApplyScope(recipeDialogCartItem, recipeApplyScope)
+                  const adjustments = (recipeDialogCartItem.recipeItems ?? []).flatMap((item) => {
+                    const adjustmentType = recipeDraftByIngredient[item.ingredientId]
+                    if (!adjustmentType) return []
+                    return [
+                      {
+                        ingredientId: item.ingredientId,
+                        ingredientName: item.ingredientName,
+                        adjustmentType,
+                      } as RecipeAdjustment,
+                    ]
+                  })
+                  applyRecipeAdjustmentsToCartLine(recipeDialogCartItem.lineId, adjustments, scope)
+                  const variantLabel =
+                    adjustments.length > 0 ? adjustments.map(formatAdjustmentLabel).join(", ") : "Normal"
+                  const description =
+                    adjustments.length === 0
+                      ? scope === "ONE"
+                        ? "Se dejó 1 unidad en versión normal."
+                        : "Se dejó toda la línea en versión normal."
+                      : scope === "ONE"
+                        ? `Se personalizó 1 unidad: ${variantLabel}.`
+                        : `Se personalizó toda la línea: ${variantLabel}.`
+                  toast({
+                    title: "Personalización aplicada",
+                    description,
+                  })
                 }
+                closeRecipeDialog()
               }}
             >
-              Agregar
+              Aplicar ajustes
             </Button>
           </DialogFooter>
         </DialogContent>

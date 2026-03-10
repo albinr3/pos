@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcItbisIncluded, invoiceCode } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
-import { ProductKind, SaleType, PaymentMethod, type Prisma } from "@prisma/client"
+import { ProductKind, RecipeAdjustmentType, SaleType, PaymentMethod, type Prisma } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
@@ -49,14 +49,19 @@ export async function searchProducts(query: string) {
       itbisRateBp: true,
       stock: true,
       imageUrls: true,
-      saleUnit: true,
+      unit: true,
       productKind: true,
-      recipeModifiers: {
-        where: { isActive: true },
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      recipeItems: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
-          id: true,
-          name: true,
+          ingredientId: true,
+          qty: true,
+          ingredient: {
+            select: {
+              name: true,
+              unit: true,
+            },
+          },
         },
       },
     },
@@ -65,6 +70,12 @@ export async function searchProducts(query: string) {
   return products.map((p) => ({
     ...p,
     stock: decimalToNumber(p.stock),
+    recipeItems: p.recipeItems.map((item) => ({
+      ingredientId: item.ingredientId,
+      qty: decimalToNumber(item.qty),
+      ingredientName: item.ingredient.name,
+      ingredientUnit: item.ingredient.unit,
+    })),
   }))
 }
 
@@ -87,14 +98,19 @@ export async function listAllProductsForSale() {
       itbisRateBp: true,
       stock: true,
       imageUrls: true,
-      saleUnit: true,
+      unit: true,
       productKind: true,
-      recipeModifiers: {
-        where: { isActive: true },
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      recipeItems: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
-          id: true,
-          name: true,
+          ingredientId: true,
+          qty: true,
+          ingredient: {
+            select: {
+              name: true,
+              unit: true,
+            },
+          },
         },
       },
     },
@@ -104,6 +120,12 @@ export async function listAllProductsForSale() {
   return products.map((p) => ({
     ...p,
     stock: decimalToNumber(p.stock),
+    recipeItems: p.recipeItems.map((item) => ({
+      ingredientId: item.ingredientId,
+      qty: decimalToNumber(item.qty),
+      ingredientName: item.ingredient.name,
+      ingredientUnit: item.ingredient.unit,
+    })),
   }))
 }
 
@@ -132,14 +154,19 @@ export async function findProductByBarcode(code: string) {
       itbisRateBp: true,
       stock: true,
       imageUrls: true,
-      saleUnit: true,
+      unit: true,
       productKind: true,
-      recipeModifiers: {
-        where: { isActive: true },
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      recipeItems: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
-          id: true,
-          name: true,
+          ingredientId: true,
+          qty: true,
+          ingredient: {
+            select: {
+              name: true,
+              unit: true,
+            },
+          },
         },
       },
     },
@@ -150,6 +177,12 @@ export async function findProductByBarcode(code: string) {
   return {
     ...product,
     stock: decimalToNumber(product.stock),
+    recipeItems: product.recipeItems.map((item) => ({
+      ingredientId: item.ingredientId,
+      qty: decimalToNumber(item.qty),
+      ingredientName: item.ingredient.name,
+      ingredientUnit: item.ingredient.unit,
+    })),
   }
 }
 
@@ -271,7 +304,10 @@ type CartItemInput = {
   qty: number
   unitPriceCents: number
   wasPriceOverridden: boolean
-  selectedModifierIds?: string[]
+  recipeAdjustments?: Array<{
+    ingredientId: string
+    adjustmentType: RecipeAdjustmentType
+  }>
 }
 
 type PaymentSplitInput = {
@@ -369,7 +405,11 @@ type ResolvedSaleLine = {
     isActive: boolean
     productKind: ProductKind
   }
-  selectedModifiers: Array<{ id: string; name: string }>
+  recipeAdjustments: Array<{
+    ingredientId: string
+    ingredientName: string
+    type: RecipeAdjustmentType
+  }>
   consumptions: ResolvedConsumption[]
 }
 
@@ -377,16 +417,36 @@ function roundQty(value: number) {
   return Math.round(value * 1000) / 1000
 }
 
-function normalizeModifierIds(modifierIds: string[] | undefined) {
-  const normalized = Array.from(
-    new Set(
-      (modifierIds ?? [])
-        .map((modifierId) => String(modifierId ?? "").trim())
-        .filter(Boolean)
-    )
-  )
+function normalizeRecipeAdjustments(
+  recipeAdjustments: CartItemInput["recipeAdjustments"] | undefined,
+  productName: string
+) {
+  const normalized = (recipeAdjustments ?? []).map((adjustment) => {
+    const ingredientId = String(adjustment.ingredientId ?? "").trim()
+    const typeRaw = String(adjustment.adjustmentType ?? "").trim().toUpperCase()
+    if (!ingredientId) {
+      throw new Error(`Hay un ajuste de receta inválido en "${productName}".`)
+    }
+    if (typeRaw !== RecipeAdjustmentType.SIN && typeRaw !== RecipeAdjustmentType.EXTRA) {
+      throw new Error(`Hay un tipo de ajuste inválido en "${productName}".`)
+    }
+    return {
+      ingredientId,
+      adjustmentType: typeRaw as RecipeAdjustmentType,
+    }
+  })
 
-  return normalized
+  const byIngredient = new Map<string, RecipeAdjustmentType>()
+  for (const adjustment of normalized) {
+    if (byIngredient.has(adjustment.ingredientId)) {
+      throw new Error(`No puedes repetir ajustes para el mismo ingrediente en "${productName}".`)
+    }
+    byIngredient.set(adjustment.ingredientId, adjustment.adjustmentType)
+  }
+
+  return Array.from(byIngredient.entries())
+    .map(([ingredientId, adjustmentType]) => ({ ingredientId, adjustmentType }))
+    .sort((a, b) => a.ingredientId.localeCompare(b.ingredientId))
 }
 
 async function loadProductsForSaleResolution(
@@ -410,17 +470,9 @@ async function loadProductsForSaleResolution(
         select: {
           ingredientId: true,
           qty: true,
-        },
-      },
-      recipeModifiers: {
-        where: { isActive: true },
-        select: {
-          id: true,
-          name: true,
-          items: {
+          ingredient: {
             select: {
-              ingredientId: true,
-              qtyDelta: true,
+              name: true,
             },
           },
         },
@@ -437,13 +489,7 @@ async function loadProductsForSaleResolution(
         recipeItems: product.recipeItems.map((item) => ({
           ingredientId: item.ingredientId,
           qty: decimalToNumber(item.qty),
-        })),
-        recipeModifiers: product.recipeModifiers.map((modifier) => ({
-          ...modifier,
-          items: modifier.items.map((item) => ({
-            ingredientId: item.ingredientId,
-            qtyDelta: decimalToNumber(item.qtyDelta),
-          })),
+          ingredientName: item.ingredient.name,
         })),
       },
     ])
@@ -489,7 +535,7 @@ async function resolveSaleLines(
       resolvedLines.push({
         item: {
           ...item,
-          selectedModifierIds: [],
+          recipeAdjustments: [],
         },
         product: {
           id: product.id,
@@ -499,7 +545,7 @@ async function resolveSaleLines(
           isActive: product.isActive,
           productKind: product.productKind,
         },
-        selectedModifiers: [],
+        recipeAdjustments: [],
         consumptions: [
           {
             ingredientId: product.id,
@@ -514,47 +560,50 @@ async function resolveSaleLines(
       throw new Error(`El producto "${product.name}" no tiene una receta configurada.`)
     }
 
-    const selectedModifierIds = normalizeModifierIds(item.selectedModifierIds)
-    const modifiersById = new Map(product.recipeModifiers.map((modifier) => [modifier.id, modifier]))
-    const selectedModifiers = selectedModifierIds.map((modifierId) => {
-      const modifier = modifiersById.get(modifierId)
-      if (!modifier) {
-        throw new Error(`El modificador seleccionado ya no existe para "${product.name}".`)
-      }
-      return modifier
-    })
+    const normalizedAdjustments = normalizeRecipeAdjustments(item.recipeAdjustments, product.name)
+    const recipeItemsByIngredient = new Map(
+      product.recipeItems.map((recipeItem) => [
+        recipeItem.ingredientId,
+        {
+          ingredientId: recipeItem.ingredientId,
+          ingredientName: recipeItem.ingredientName,
+          qty: recipeItem.qty,
+        },
+      ])
+    )
+    const adjustmentsByIngredient = new Map(
+      normalizedAdjustments.map((adjustment) => [adjustment.ingredientId, adjustment.adjustmentType] as const)
+    )
 
-    const ingredientMap = new Map<string, number>()
-    for (const recipeItem of product.recipeItems) {
-      ingredientMap.set(recipeItem.ingredientId, roundQty(recipeItem.qty * item.qty))
-    }
-
-    for (const modifier of selectedModifiers) {
-      for (const modifierItem of modifier.items) {
-        ingredientMap.set(
-          modifierItem.ingredientId,
-          roundQty((ingredientMap.get(modifierItem.ingredientId) ?? 0) + modifierItem.qtyDelta * item.qty)
-        )
+    for (const adjustment of normalizedAdjustments) {
+      if (!recipeItemsByIngredient.has(adjustment.ingredientId)) {
+        throw new Error(`El ajuste seleccionado no pertenece a la receta de "${product.name}".`)
       }
     }
 
     const consumptions: ResolvedConsumption[] = []
-    for (const [ingredientId, qty] of ingredientMap.entries()) {
-      if (qty < 0) {
-        throw new Error(`Los modificadores seleccionados dejan un consumo negativo en "${product.name}".`)
-      }
+    for (const recipeItem of product.recipeItems) {
+      const baseQty = roundQty(recipeItem.qty * item.qty)
+      const adjustmentType = adjustmentsByIngredient.get(recipeItem.ingredientId)
+      const qty =
+        adjustmentType === RecipeAdjustmentType.SIN
+          ? 0
+          : adjustmentType === RecipeAdjustmentType.EXTRA
+            ? roundQty(baseQty * 2)
+            : baseQty
+
       if (qty === 0) continue
-      consumptions.push({ ingredientId, qty })
+      consumptions.push({ ingredientId: recipeItem.ingredientId, qty })
     }
 
     if (consumptions.length === 0) {
-      throw new Error(`Los modificadores seleccionados dejan "${product.name}" sin insumos que descontar.`)
+      throw new Error(`Los ajustes seleccionados dejan "${product.name}" sin insumos que descontar.`)
     }
 
     resolvedLines.push({
       item: {
         ...item,
-        selectedModifierIds,
+        recipeAdjustments: normalizedAdjustments,
       },
       product: {
         id: product.id,
@@ -564,9 +613,10 @@ async function resolveSaleLines(
         isActive: product.isActive,
         productKind: product.productKind,
       },
-      selectedModifiers: selectedModifiers.map((modifier) => ({
-        id: modifier.id,
-        name: modifier.name,
+      recipeAdjustments: normalizedAdjustments.map((adjustment) => ({
+        ingredientId: adjustment.ingredientId,
+        ingredientName: recipeItemsByIngredient.get(adjustment.ingredientId)?.ingredientName ?? "Insumo",
+        type: adjustment.adjustmentType,
       })),
       consumptions: aggregateConsumptions(consumptions),
     })
@@ -828,11 +878,12 @@ export async function createSale(input: {
               unitPriceCents: line.item.unitPriceCents,
               wasPriceOverridden: line.item.wasPriceOverridden,
               lineTotalCents: line.item.unitPriceCents * line.item.qty,
-              selectedRecipeModifiers: line.selectedModifiers.length
+              recipeAdjustments: line.recipeAdjustments.length
                 ? {
-                    create: line.selectedModifiers.map((modifier) => ({
-                      modifierId: modifier.id,
-                      modifierName: modifier.name,
+                    create: line.recipeAdjustments.map((adjustment) => ({
+                      ingredientId: adjustment.ingredientId,
+                      ingredientName: adjustment.ingredientName,
+                      type: adjustment.type,
                     })),
                   }
                 : undefined,
@@ -943,7 +994,7 @@ export async function getSaleById(id: string) {
     include: {
       items: {
         include: {
-          selectedRecipeModifiers: true,
+          recipeAdjustments: true,
           consumptions: true,
           product: {
             select: {
@@ -953,14 +1004,19 @@ export async function getSaleById(id: string) {
               reference: true,
               priceCents: true,
               stock: true,
-              saleUnit: true,
+              unit: true,
               productKind: true,
-              recipeModifiers: {
-                where: { isActive: true },
-                orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+              recipeItems: {
+                orderBy: [{ createdAt: "asc" }, { id: "asc" }],
                 select: {
-                  id: true,
-                  name: true,
+                  ingredientId: true,
+                  qty: true,
+                  ingredient: {
+                    select: {
+                      name: true,
+                      unit: true,
+                    },
+                  },
                 },
               },
             },
@@ -982,7 +1038,7 @@ export async function getSaleById(id: string) {
     items: sale.items.map((item) => ({
       ...item,
       qty: decimalToNumber(item.qty),
-      selectedRecipeModifiers: item.selectedRecipeModifiers,
+      recipeAdjustments: item.recipeAdjustments,
       consumptions: item.consumptions.map((consumption) => ({
         ...consumption,
         qty: decimalToNumber(consumption.qty),
@@ -990,6 +1046,12 @@ export async function getSaleById(id: string) {
       product: {
         ...item.product,
         stock: decimalToNumber(item.product.stock),
+        recipeItems: item.product.recipeItems.map((recipeItem) => ({
+          ingredientId: recipeItem.ingredientId,
+          qty: decimalToNumber(recipeItem.qty),
+          ingredientName: recipeItem.ingredient.name,
+          ingredientUnit: recipeItem.ingredient.unit,
+        })),
       },
     })),
   }
@@ -1134,7 +1196,7 @@ export async function updateSale(input: {
         items: {
           include: {
             consumptions: true,
-            selectedRecipeModifiers: true,
+            recipeAdjustments: true,
           },
         },
         payments: true,
@@ -1273,11 +1335,12 @@ export async function updateSale(input: {
           unitPriceCents: line.item.unitPriceCents,
           wasPriceOverridden: line.item.wasPriceOverridden,
           lineTotalCents: line.item.unitPriceCents * line.item.qty,
-          selectedRecipeModifiers: line.selectedModifiers.length
+          recipeAdjustments: line.recipeAdjustments.length
             ? {
-                create: line.selectedModifiers.map((modifier) => ({
-                  modifierId: modifier.id,
-                  modifierName: modifier.name,
+                create: line.recipeAdjustments.map((adjustment) => ({
+                  ingredientId: adjustment.ingredientId,
+                  ingredientName: adjustment.ingredientName,
+                  type: adjustment.type,
                 })),
               }
             : undefined,

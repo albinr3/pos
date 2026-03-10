@@ -54,7 +54,7 @@ export default async function SaleReceiptPage({
       },
       include: {
         customer: true,
-        items: { include: { product: true } },
+        items: { include: { product: true, recipeAdjustments: true } },
         cancelledUser: { select: { name: true } },
         payments: true,
         ar: true,
@@ -149,6 +149,14 @@ export default async function SaleReceiptPage({
           <div key={it.id} className="border-b border-dashed pb-2">
             <div className="font-semibold">{it.product.name}</div>
             <div className="text-[14.5px] text-neutral-700">Cod: {it.product.sku ?? "—"} · Ref: {it.product.reference ?? "—"}</div>
+            {it.recipeAdjustments.length > 0 && (
+              <div className="mt-1 text-[14px] text-neutral-700">
+                Ajustes:{" "}
+                {it.recipeAdjustments
+                  .map((adjustment) => `${adjustment.type === "SIN" ? "Sin" : "Extra"} ${adjustment.ingredientName}`)
+                  .join(", ")}
+              </div>
+            )}
             <div className="mt-1 flex justify-between">
               <span>
                 {decimalToNumber(it.qty)} x {formatRD(it.unitPriceCents)}

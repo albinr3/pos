@@ -44,8 +44,15 @@ export async function GET(request: NextRequest) {
       itbisRateBp: p.itbisRateBp,
       imageUrls: p.imageUrls,
       productKind: p.productKind,
-      purchaseUnit: p.purchaseUnit,
-      saleUnit: p.saleUnit,
+      unit: p.unit,
+      recipeItems: Array.isArray(p.recipeItems)
+        ? p.recipeItems.map((item: any) => ({
+            ingredientId: item.ingredientId,
+            qty: typeof item.qty === "number" ? item.qty : item.qty?.toNumber?.() || 0,
+            ingredientName: item.ingredient?.name ?? null,
+            ingredientUnit: item.ingredient?.unit ?? null,
+          }))
+        : [],
       categoryId: p.category?.categoryId ?? null,
       categoryInternalId: p.categoryId ?? null,
       createdAt: p.createdAt,
@@ -74,6 +81,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+    if (hasValue(body.purchaseUnit) || hasValue(body.saleUnit)) {
+      return NextResponse.json({ error: "Usa unit. purchaseUnit y saleUnit ya no son válidos." }, { status: 400 })
+    }
+    if (Array.isArray(body.modifiers) && body.modifiers.length > 0) {
+      return NextResponse.json({ error: "modifiers ya no es soportado. Usa recipeAdjustments al momento de la venta." }, { status: 400 })
+    }
     
     // Convertir precio de pesos a centavos si viene como número decimal
     const priceCents = body.priceCents ?? (body.price ? Math.round(body.price * 100) : undefined)
@@ -113,9 +126,7 @@ export async function POST(request: NextRequest) {
       imageUrls: body.imageUrls || [],
       productKind: body.productKind || "BASIC",
       recipeItems: body.recipeItems || [],
-      modifiers: body.modifiers || [],
-      purchaseUnit: body.purchaseUnit || "UNIDAD",
-      saleUnit: body.saleUnit || "UNIDAD",
+      unit: body.unit || "UNIDAD",
       user,
     })
 
@@ -152,8 +163,7 @@ export async function POST(request: NextRequest) {
       itbisRateBp: product.itbisRateBp,
       imageUrls: product.imageUrls,
       productKind: product.productKind,
-      purchaseUnit: product.purchaseUnit,
-      saleUnit: product.saleUnit,
+      unit: product.unit,
       categoryId: product.category?.categoryId ?? null,
       categoryInternalId: product.categoryId ?? null,
     }, { status: 201 })

@@ -19,6 +19,7 @@ import type {
   BillingProfile,
 } from "@prisma/client"
 import { addDays, isBefore, isAfter, differenceInDays } from "date-fns"
+import { sendMetaEvent, splitFullName, type MetaUserDataInput } from "@/lib/meta/server"
 
 // ==========================================
 // CONSTANTS
@@ -62,6 +63,15 @@ export type BillingState = {
 
 export type CreateSubscriptionInput = {
   accountId: string
+}
+
+export type LemonCheckoutTrackingInput = {
+  eventId?: string | null
+  eventSourceUrl?: string | null
+  clientIpAddress?: string | null
+  clientUserAgent?: string | null
+  fbc?: string | null
+  fbp?: string | null
 }
 
 export type ProcessPaymentInput = {
@@ -450,18 +460,34 @@ export async function processLemonPayment(
   amountCents: number,
   lemonCustomerId?: string,
   lemonSubscriptionId?: string,
-  periodEndsAtOverride?: Date
+  periodEndsAtOverride?: Date,
+  tracking?: LemonCheckoutTrackingInput
 ): Promise<BillingPayment> {
   const prisma = await getPrisma()
   const now = new Date()
 
   let subscription = await prisma.billingSubscription.findUnique({
     where: { accountId },
+    include: {
+      account: {
+        include: {
+          billingProfile: true,
+          users: {
+            where: { isOwner: true },
+            select: { name: true, email: true },
+            take: 1,
+          },
+        },
+      },
+    },
   })
 
   if (!subscription) {
     throw new Error("Subscription not found")
   }
+
+  const shouldSendSubscribeEvent =
+    subscription.status !== "ACTIVE" || subscription.provider !== "LEMON"
 
   // Calcular período
   let periodStartsAt: Date
@@ -514,6 +540,40 @@ export async function processLemonPayment(
       pendingProvider: null,
     },
   })
+
+  if (shouldSendSubscribeEvent) {
+    const ownerUser = subscription.account.users[0] ?? null
+    const billingProfile = subscription.account.billingProfile
+    const ownerNameParts = splitFullName(ownerUser?.name || billingProfile?.legalName || subscription.account.name)
+    const subscribeUserData: MetaUserDataInput = {
+      email: billingProfile?.email || ownerUser?.email || null,
+      firstName: ownerNameParts.firstName,
+      lastName: ownerNameParts.lastName,
+      country: "DO",
+      externalId: accountId,
+      clientIpAddress: tracking?.clientIpAddress,
+      clientUserAgent: tracking?.clientUserAgent,
+      fbc: tracking?.fbc,
+      fbp: tracking?.fbp,
+    }
+
+    try {
+      await sendMetaEvent({
+        eventName: "Subscribe",
+        eventId: tracking?.eventId || `subscribe-${payment.id}`,
+        eventSourceUrl:
+          tracking?.eventSourceUrl ||
+          `${(process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com").replace(/\/$/, "")}/billing`,
+        userData: subscribeUserData,
+        customData: {
+          currency: "USD",
+          value: Number((amountCents / 100).toFixed(2)),
+        },
+      })
+    } catch (error) {
+      console.error("[Meta] Error enviando evento Subscribe:", error)
+    }
+  }
 
   return payment
 }
@@ -819,7 +879,11 @@ function buildLemonCheckoutTarget(storeSlug: string, variantOrUrl: string): Lemo
  * Genera la URL de checkout de Lemon Squeezy
  * Usa el variant ID del plan asignado a la cuenta, o el default si no tiene
  */
-export async function getLemonCheckoutUrl(accountId: string, email?: string): Promise<string> {
+export async function getLemonCheckoutUrl(
+  accountId: string,
+  email?: string,
+  tracking?: LemonCheckoutTrackingInput
+): Promise<string> {
   const prisma = await getPrisma()
   const storeId = process.env.LEMON_STORE_ID
   const defaultVariantId = process.env.LEMON_VARIANT_ID_USD
@@ -854,6 +918,24 @@ export async function getLemonCheckoutUrl(accountId: string, email?: string): Pr
   params.set("checkout[custom][account_id]", accountId)
   if (email) {
     params.set("checkout[email]", email)
+  }
+  if (tracking?.eventId) {
+    params.set("checkout[custom][meta_event_id]", tracking.eventId)
+  }
+  if (tracking?.eventSourceUrl) {
+    params.set("checkout[custom][meta_event_source_url]", tracking.eventSourceUrl)
+  }
+  if (tracking?.clientIpAddress) {
+    params.set("checkout[custom][meta_client_ip_address]", tracking.clientIpAddress)
+  }
+  if (tracking?.clientUserAgent) {
+    params.set("checkout[custom][meta_client_user_agent]", tracking.clientUserAgent)
+  }
+  if (tracking?.fbc) {
+    params.set("checkout[custom][meta_fbc]", tracking.fbc)
+  }
+  if (tracking?.fbp) {
+    params.set("checkout[custom][meta_fbp]", tracking.fbp)
   }
 
   return `${target.baseUrl}?${params.toString()}`

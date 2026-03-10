@@ -1,5 +1,7 @@
 "use server"
 
+import { randomUUID } from "crypto"
+import { cookies, headers } from "next/headers"
 import { getCurrentUser } from "@/lib/auth"
 import type { CurrentUser } from "@/lib/auth"
 import {
@@ -21,6 +23,7 @@ import {
 import { logAuditEvent } from "@/lib/audit-log"
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 import { logError, ErrorCodes } from "@/lib/error-logger"
+import { getClientIpFromHeaders } from "@/lib/meta/server"
 import type {
   BillingSubscription,
   BillingProfile,
@@ -284,6 +287,7 @@ export async function submitPaymentProof(
 export async function getUsdCheckoutUrl(): Promise<{
   success: boolean
   url?: string
+  eventId?: string
   error?: string
 }> {
   let user: CurrentUser | null = null
@@ -295,9 +299,20 @@ export async function getUsdCheckoutUrl(): Promise<{
     }
 
     const profile = await getBillingProfile(user.accountId)
-    const url = await getLemonCheckoutUrl(user.accountId, profile?.email)
+    const headersList = await headers()
+    const cookieStore = await cookies()
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com").replace(/\/$/, "")
+    const eventId = `checkout-${randomUUID()}`
+    const url = await getLemonCheckoutUrl(user.accountId, profile?.email, {
+      eventId,
+      eventSourceUrl: `${appUrl}/billing`,
+      clientIpAddress: getClientIpFromHeaders(headersList),
+      clientUserAgent: headersList.get("user-agent"),
+      fbc: cookieStore.get("_fbc")?.value ?? null,
+      fbp: cookieStore.get("_fbp")?.value ?? null,
+    })
 
-    return { success: true, url }
+    return { success: true, url, eventId }
   } catch (error) {
     console.error("Error getting checkout URL:", error)
     await logError(error as Error, {

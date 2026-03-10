@@ -1,5 +1,6 @@
 "use server"
 
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { currentUser } from "@clerk/nextjs/server"
 import {
@@ -14,6 +15,7 @@ import {
 import { createBillingSubscription } from "@/lib/billing"
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 import { logAuditEvent } from "@/lib/audit-log"
+import { getClientIpFromHeaders, sendMetaEvent } from "@/lib/meta/server"
 import { sendResendEmail } from "@/lib/resend"
 import { renderSubUserTemporaryCodeEmail } from "@/lib/resend/templates"
 import { randomInt } from "crypto"
@@ -226,7 +228,36 @@ export async function createFirstUser(formData: FormData) {
       where: { accountId },
     })
     if (!existingSubscription) {
-      await createBillingSubscription({ accountId })
+      const subscription = await createBillingSubscription({ accountId })
+      const headersList = await headers()
+      const cookieStore = await cookies()
+      const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com").replace(/\/$/, "")
+
+      try {
+        await sendMetaEvent({
+          eventName: "StartTrial",
+          eventId: `trial-${subscription.id}`,
+          eventSourceUrl: `${appUrl}/select-user`,
+          userData: {
+            email,
+            firstName: clerkUser.firstName ?? null,
+            lastName: clerkUser.lastName ?? null,
+            country: "DO",
+            externalId: accountId,
+            clientIpAddress: getClientIpFromHeaders(headersList),
+            clientUserAgent: headersList.get("user-agent"),
+            fbc: cookieStore.get("_fbc")?.value ?? null,
+            fbp: cookieStore.get("_fbp")?.value ?? null,
+          },
+          customData: {
+            currency: "DOP",
+            value: Number((subscription.priceDopCents / 100).toFixed(2)),
+            predicted_ltv: Number((subscription.priceDopCents / 100).toFixed(2)),
+          },
+        })
+      } catch (metaError) {
+        console.error("[Meta] Error enviando evento StartTrial:", metaError)
+      }
     }
   } catch (error) {
     console.error("Error creating billing subscription:", error)

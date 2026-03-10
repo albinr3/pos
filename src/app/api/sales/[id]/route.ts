@@ -18,6 +18,10 @@ type EditableSaleItem = {
   price?: number
   wasPriceOverridden?: boolean
   selectedModifierIds?: string[]
+  recipeAdjustments?: Array<{
+    ingredientId?: string
+    adjustmentType?: string
+  }>
 }
 
 type UpdateSalePaymentSplitBody = {
@@ -128,6 +132,13 @@ export async function GET(
         items: {
           include: {
             product: { select: { id: true, name: true, sku: true, reference: true } },
+            recipeAdjustments: {
+              select: {
+                ingredientId: true,
+                ingredientName: true,
+                type: true,
+              },
+            },
           },
         },
       },
@@ -167,6 +178,11 @@ export async function GET(
         qty: decimalToNumber(item.qty),
         unitPriceCents: item.unitPriceCents,
         lineTotalCents: item.lineTotalCents,
+        recipeAdjustments: item.recipeAdjustments.map((adjustment) => ({
+          ingredientId: adjustment.ingredientId,
+          ingredientName: adjustment.ingredientName,
+          adjustmentType: adjustment.type,
+        })),
       })),
     })
   } catch (error: unknown) {
@@ -216,9 +232,11 @@ export async function PUT(
             qty: true,
             unitPriceCents: true,
             wasPriceOverridden: true,
-            selectedRecipeModifiers: {
+            recipeAdjustments: {
               select: {
-                modifierId: true,
+                ingredientId: true,
+                ingredientName: true,
+                type: true,
               },
             },
           },
@@ -235,16 +253,30 @@ export async function PUT(
       quantity: decimalToNumber(item.qty),
       unitPriceCents: item.unitPriceCents,
       wasPriceOverridden: item.wasPriceOverridden,
-      selectedModifierIds: item.selectedRecipeModifiers.flatMap((modifier) => (modifier.modifierId ? [modifier.modifierId] : [])),
+      recipeAdjustments: item.recipeAdjustments.map((adjustment) => ({
+        ingredientId: adjustment.ingredientId,
+        adjustmentType: adjustment.type,
+      })),
     }))
 
     const requestItems = Array.isArray(body?.items) && body.items.length > 0 ? body.items : baseItems
+    if (requestItems.some((item) => Array.isArray(item.selectedModifierIds))) {
+      return NextResponse.json(
+        { error: "selectedModifierIds ya no es soportado. Usa recipeAdjustments." },
+        { status: 400 }
+      )
+    }
     const items = requestItems.map((item) => ({
       productId: String(item.productId || ""),
       qty: Number(item.qty ?? item.quantity ?? 0),
       unitPriceCents: Number(item.unitPriceCents ?? item.priceCents ?? Math.round((item.price || 0) * 100)),
       wasPriceOverridden: Boolean(item.wasPriceOverridden || false),
-      selectedModifierIds: Array.isArray(item.selectedModifierIds) ? item.selectedModifierIds.map((modifierId) => String(modifierId)) : [],
+      recipeAdjustments: Array.isArray(item.recipeAdjustments)
+        ? item.recipeAdjustments.map((adjustment) => ({
+            ingredientId: String(adjustment.ingredientId || ""),
+            adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
+          }))
+        : [],
     }))
 
     if (items.length === 0) {

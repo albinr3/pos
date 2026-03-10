@@ -52,11 +52,30 @@ Permisos configurables por usuario:
 
 ---
 
-## ✅ Implementaciones y correcciones recientes (enero 2026)
+## ✅ Implementaciones y correcciones recientes (enero-marzo 2026)
 
 ### Implementaciones
 - **Verificación de conectividad real**: Se agrega ping periódico (`HEAD`) a `/api/health-check` con timeout para detectar si hay internet real, no solo `navigator.onLine`.
 - **Navegación en modo offline**: Al estar sin conexión, solo se habilitan rutas de **Ventas** (`/sales`) y **CxC** (`/ar`); el resto queda deshabilitado en el menú.
+- **Personalización por unidad en productos por receta**:
+  - En líneas con cantidad mayor a 1, al personalizar se puede elegir alcance:
+    - `Solo 1 unidad` (divide la línea automáticamente)
+    - `Todas las unidades`
+  - Se pueden tener en el carrito varias líneas del mismo producto con ajustes distintos (ej: 1 normal + 1 sin queso)
+- **Unificación de unidades en productos**: Desde marzo de 2026 los productos usan un solo campo `unit`.
+  - `BASIC` y `RECIPE` usan `UNIDAD`
+  - `MEASURED` exige una unidad distinta de `UNIDAD`
+  - La misma unidad se usa para costo, precio, stock, stock mínimo, recetas, POS, devoluciones y movimientos
+  - La importación Excel ahora usa solo la columna `unidad`
+  - La API de productos (`GET/POST/PUT /api/products`) acepta y devuelve `unit`
+- **Recetas con ajustes en venta (`Sin/Extra`)**: Desde marzo de 2026 se eliminaron los modificadores configurables en el perfil del producto.
+  - En productos `RECIPE`, los ajustes se definen al vender: `Sin` (no descuenta ese insumo) y `Extra` (duplica consumo de ese insumo, `x2`)
+  - Se permite combinar `Sin` y `Extra` en una misma línea para ingredientes distintos
+  - POS y edición de ventas muestran modal de ingredientes para aplicar ajustes
+  - Historial de venta, recibo térmico y factura carta muestran los ajustes aplicados por línea
+  - **Cambio API breaking**:
+    - `POST/PUT /api/sales`: se reemplaza `selectedModifierIds` por `recipeAdjustments[]`
+    - `POST/PUT /api/products`: `modifiers` ya no es válido (retorna `400` si se envía)
 
 ### Correcciones
 - **Página offline**: Se corrige el CTA para permitir **cobrar** (CxC) en lugar de **comprar**, con enlace directo a `/ar`.
@@ -114,18 +133,87 @@ Ruta: `/products`
   - Precio (ITBIS incluido)
   - Costo
   - Stock y Stock mínimo
-  - **Unidades de medida**: Unidad de compra y unidad de venta (pueden ser diferentes)
+  - **Unidad de medida única**: cada producto usa un solo campo `unit`
     - Unidades disponibles: UNIDAD, KG, LIBRA, GRAMO, LITRO, ML, GALON, METRO, CM, PIE
-    - Productos con medidas permiten decimales (ej: 2.5 kg)
-    - Productos por unidad solo permiten enteros
+    - `BASIC`: siempre usa `UNIDAD`
+    - `MEASURED`: usa una unidad distinta de `UNIDAD` y permite decimales (ej: 2.5 kg)
+    - `RECIPE`: siempre usa `UNIDAD`
+    - La misma unidad se usa para costo, precio de venta, stock y stock mínimo
   - **Imágenes del producto** (hasta 3 imágenes, máximo 2MB cada una)
   - **Asociación con proveedor** (opcional)
   - **Asociación con categoría** (opcional)
+- **Importación masiva por Excel**
+  - La plantilla usa una sola columna `unidad`
+  - `unidad_compra` y `unidad_venta` ya no son válidas
 - **Impresión de etiquetas con código de barras** (formato CODE128)
   - Vista previa antes de imprimir
   - Tamaño configurable en ajustes
   - Incluye nombre, referencia, código de barras y precio
 - Desactivar productos
+  - **Protección de insumos**: No se puede desactivar un producto que es insumo de una receta activa
+
+### Productos por Receta
+Los productos por receta permiten que negocios como cafeterías, restaurantes o fast-foods definan productos compuestos cuyo inventario se descuenta automáticamente de sus insumos al venderse.
+
+#### Tipos de producto (`ProductKind`)
+| Tipo | Descripción | Stock | Ejemplo |
+|------|-------------|-------|---------|
+| `BASIC` | Producto simple por unidad | Se descuenta directamente | Refresco, caja de galletas |
+| `MEASURED` | Producto vendido por medida | Se descuenta directamente | Queso por libra, tela por metro |
+| `RECIPE` | Producto compuesto por insumos | **No tiene stock propio**, descuenta insumos | Sandwich, café latte |
+
+#### Definición de receta
+Al crear/editar un producto RECIPE:
+- Se define una **lista de insumos** con la cantidad requerida por unidad vendida
+  - Ej: 1 Sandwich = 2 rebanadas de pan + 50g queso + 30g jamón
+  - Cada insumo usa su `unit` única para cantidades y ajustes
+- **Validaciones**: receta no vacía, cantidades > 0, sin insumos duplicados, sin auto-referencia, sin recetas anidadas (un RECIPE no puede ser insumo de otro RECIPE)
+- El producto RECIPE tiene `stock = 0`, `minStock = 0`, unidades fijas en `UNIDAD`
+
+#### Ajustes al vender (`Sin/Extra`)
+- Los ajustes **no se configuran en el producto**, se seleccionan al momento de la venta
+- `Sin`: el consumo del ingrediente ajustado pasa a `0`
+- `Extra`: el consumo del ingrediente ajustado se duplica (`x2` sobre la cantidad base de receta)
+- Se permite mezclar `Sin` y `Extra` en la misma línea para ingredientes distintos
+- Los ajustes no cambian el precio del producto (solo afectan inventario)
+
+#### Motor de consumo
+Al vender un producto RECIPE:
+1. Se parte de la receta base del producto
+2. Se aplican ajustes `Sin/Extra` por ingrediente
+3. Se valida que haya stock suficiente de cada insumo
+4. Se descuenta el stock de cada insumo
+5. Se guarda un **snapshot** (`SaleItemConsumption`) con los insumos exactos consumidos
+
+#### Comportamiento en ventas y devoluciones
+- **Venta**: Descuenta insumos según receta + ajustes `Sin/Extra`
+- **Cancelación de venta**: Restaura insumos usando el snapshot histórico (no la receta actual)
+- **Edición de venta**: Revierte consumos anteriores y reaplicar con la receta actual
+- **Devolución**: Restaura insumos proporcionalmente (ej: devolver 1 de 3 restaura 1/3 de cada insumo)
+- **Cancelación de devolución**: Re-descuenta lo que se había restaurado
+
+#### POS y offline
+- En el carrito, cada línea RECIPE tiene botón **Personalizar** para abrir el modal de ajustes por ingrediente (`Sin`/`Extra`)
+- Si la línea tiene cantidad > 1, el modal permite aplicar ajustes a:
+  - **Solo 1 unidad** (divide la línea automáticamente)
+  - **Todas las unidades**
+- Cada combinación producto + ajustes genera una **línea de carrito diferente**
+- Si se aplican ajustes sin seleccionar ingredientes, la línea queda en variante **Normal**
+- Los ajustes seleccionados se **persisten offline** en IndexedDB
+- La edición de ventas también soporta ajustes `Sin/Extra`
+
+#### Restricciones
+- Los productos RECIPE **no aparecen en búsquedas de compras** (se compran sus insumos directamente)
+- Los insumos usados en recetas activas **no se pueden desactivar**
+- Los movimientos de inventario de un insumo muestran las ventas de recetas que lo consumieron
+
+#### Limitaciones (v1)
+- No soporta recetas anidadas (receta dentro de otra receta)
+- No soporta lotes de producción
+- El costo reportado usa el `costCents` del producto, no el costo real de los insumos consumidos
+- Los ajustes `Sin/Extra` no afectan el precio del producto
+- No hay importación/exportación Excel de recetas
+
 
 ### Categorías
 Ruta: `/categories`
@@ -462,6 +550,11 @@ UPLOADTHING_SECRET="sk_live_..."
 UPLOADTHING_APP_ID="..."
 NEXT_PUBLIC_UPLOADTHING_APP_ID="..."  # Mismo valor que UPLOADTHING_APP_ID
 
+# Meta Pixel + Conversions API (opcional - marketing SaaS)
+NEXT_PUBLIC_META_PIXEL_ID="123456789012345"
+META_ACCESS_TOKEN="EAAG..."
+META_API_VERSION="v22.0"  # Opcional, default: v22.0
+
 # OpenAI (opcional - para OCR de facturas)
 OPENAI_API_KEY="sk-..."
 
@@ -602,6 +695,9 @@ Configura estas variables en Settings → Environment Variables:
 | `RESEND_API_KEY` | ❌ | API Key de Resend para emails |
 | `EMAIL_FROM` | ❌ | Email remitente para notificaciones |
 | `NEXT_PUBLIC_APP_URL` | ❌ | URL de la app (para links en emails) |
+| `NEXT_PUBLIC_META_PIXEL_ID` | ❌ | Pixel ID de Meta para eventos del navegador |
+| `META_ACCESS_TOKEN` | ❌ | Token de acceso para Conversions API |
+| `META_API_VERSION` | ❌ | Versión de Graph API para Meta (default: `v22.0`) |
 | `CRON_SECRET` | ❌ | Secret para proteger el cron job |
 
 ### Configurar Clerk Webhook en producción
@@ -626,6 +722,108 @@ Configura estas variables en Settings → Environment Variables:
    - Copia el Signing Secret a `LEMON_WEBHOOK_SECRET`
 
 **Nota sobre variantes:** Cada plan de precios puede tener su propio `lemonVariantId`. Cuando un usuario paga con tarjeta, el sistema usa automáticamente el variant ID del plan asignado a su cuenta. Si no tiene plan asignado, usa el `LEMON_VARIANT_ID_USD` del `.env`.
+
+### Meta Pixel + Conversions API (funnel SaaS)
+
+El proyecto incluye una integración de Meta enfocada solo en el funnel SaaS de `MOVOPos`. No se usa para las ventas internas del POS (`/sales`, `/products`, `/returns`, etc.).
+
+#### Eventos implementados
+
+- `ViewContent`: páginas clave del funnel (`/`, `/pricing`, `/login`, `/billing`)
+- `StartTrial`: cuando se crea la suscripción de prueba al completar el onboarding inicial
+- `InitiateCheckout`: cuando el usuario abre el checkout USD de Lemon Squeezy
+- `Subscribe`: cuando Lemon confirma el primer pago de la suscripción
+
+#### Cómo funciona
+
+1. **Navegador (`Meta Pixel`)**
+   - Se inicializa en el layout raíz usando `src/components/analytics/meta-pixel-provider.tsx`
+   - Registra `ViewContent` automáticamente en rutas clave del funnel
+   - Registra `InitiateCheckout` desde `src/app/(app)/billing/billing-client.tsx`
+
+2. **Servidor (`Conversions API`)**
+   - `StartTrial` se envía al crear la primera suscripción de billing en `src/app/select-user/actions.ts`
+   - `Subscribe` se envía desde `src/lib/billing.ts` cuando `processLemonPayment()` confirma el primer pago exitoso
+
+3. **Puente con Lemon Squeezy**
+   - Al abrir el checkout, el sistema adjunta a la URL datos técnicos en `checkout[custom][...]`:
+     - `meta_event_id`
+     - `meta_event_source_url`
+     - `meta_client_ip_address`
+     - `meta_client_user_agent`
+     - `meta_fbc`
+     - `meta_fbp`
+   - El webhook `src/app/api/webhooks/lemon/route.ts` recupera esos datos y los reusa para enriquecer el evento server-side `Subscribe`
+
+#### Lógica de matching y deduplicación
+
+- El sistema usa `event_id` para eventos del navegador y servidor
+- `ViewContent` adapta su payload según la sesión:
+  - visitante anónimo: señales base (`event_id`, URL, IP/UA, `fbp`, `fbc`)
+  - usuario autenticado: agrega `email`, `external_id`, `first_name` y `last_name` si existen
+- `StartTrial` y `Subscribe` priorizan datos de matching más ricos (`email`, `external_id`, nombre/apellido, país, IP, user agent, `fbp`, `fbc`)
+- `Subscribe` no se envía en renovaciones si la suscripción ya estaba `ACTIVE` con proveedor `LEMON`, para evitar tratar renovaciones como nuevas altas
+
+#### Campos enviados a Meta
+
+- **Base del evento**
+  - `event_name`
+  - `event_time`
+  - `event_id`
+  - `event_source_url`
+  - `action_source = website`
+
+- **User data**
+  - `em` (email hasheado)
+  - `fn` / `ln` (nombre y apellido hasheados)
+  - `country` (hasheado)
+  - `external_id` (hasheado)
+  - `client_ip_address` (sin hash)
+  - `client_user_agent` (sin hash)
+  - `fbc` / `fbp` (sin hash)
+
+- **Custom data**
+  - `StartTrial`: `currency`, `value`, `predicted_ltv`
+  - `InitiateCheckout`: `currency`, `value`, `content_ids`, `contents`, `num_items`
+  - `Subscribe`: `currency`, `value`
+
+#### Archivos clave
+
+- `src/app/layout.tsx`
+- `src/components/analytics/meta-pixel-provider.tsx`
+- `src/lib/meta/browser.ts`
+- `src/lib/meta/server.ts`
+- `src/app/select-user/actions.ts`
+- `src/app/(app)/billing/actions.ts`
+- `src/app/(app)/billing/billing-client.tsx`
+- `src/lib/billing.ts`
+- `src/app/api/webhooks/lemon/route.ts`
+
+#### Configuración en Meta
+
+Los eventos previstos por esta integración son:
+
+- `ViewContent`
+- `StartTrial`
+- `InitiateCheckout`
+- `Subscribe`
+
+No se usa `Purchase` para la suscripción SaaS principal. La conversión final optimizable es `Subscribe`.
+
+#### Cómo probar
+
+1. Configura `NEXT_PUBLIC_META_PIXEL_ID` y `META_ACCESS_TOKEN`
+2. En Meta Events Manager, abre **Test Events**
+3. Recorre el funnel:
+   - visita `/` o `/pricing` para `ViewContent`
+   - crea una cuenta nueva para `StartTrial`
+   - abre el checkout USD desde `/billing` para `InitiateCheckout`
+   - completa un pago de prueba en Lemon para `Subscribe`
+4. Verifica:
+   - que lleguen los 4 eventos
+   - que `Subscribe` incluya `currency` y `value`
+   - que `Event Match Quality` sea aceptable
+   - que no se registren eventos del POS interno
 
 ### Configurar Resend (emails de billing)
 1. Crea cuenta en [resend.com](https://resend.com)

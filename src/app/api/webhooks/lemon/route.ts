@@ -21,6 +21,12 @@ interface LemonWebhookPayload {
     event_name: LemonEvent
     custom_data?: {
       account_id?: string
+      meta_event_id?: string
+      meta_event_source_url?: string
+      meta_client_ip_address?: string
+      meta_client_user_agent?: string
+      meta_fbc?: string
+      meta_fbp?: string
     }
   }
   data: {
@@ -258,7 +264,15 @@ async function handlePaymentSuccess(
     amountCents,
     lemonCustomerId,
     data.id,
-    validRenewsAt
+    validRenewsAt,
+    {
+      eventId: payload.meta.custom_data?.meta_event_id,
+      eventSourceUrl: payload.meta.custom_data?.meta_event_source_url,
+      clientIpAddress: payload.meta.custom_data?.meta_client_ip_address,
+      clientUserAgent: payload.meta.custom_data?.meta_client_user_agent,
+      fbc: payload.meta.custom_data?.meta_fbc,
+      fbp: payload.meta.custom_data?.meta_fbp,
+    }
   )
 
   console.log(`Processed payment success for account ${accountId}`)

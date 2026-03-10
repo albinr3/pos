@@ -68,7 +68,7 @@ export async function searchProducts(query: string) {
       reference: true,
       priceCents: true,
       stock: true,
-      saleUnit: true,
+      unit: true,
       imageUrls: true,
       itbisRateBp: true,
     },
@@ -154,7 +154,7 @@ export async function getQuoteById(id: string) {
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true, saleUnit: true },
+            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true, unit: true },
           },
         },
       },

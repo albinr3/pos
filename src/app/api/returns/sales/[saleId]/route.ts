@@ -54,7 +54,7 @@ export async function GET(
               name: item.product.name,
               sku: item.product.sku,
               reference: item.product.reference,
-              saleUnit: item.product.saleUnit,
+              unit: item.product.unit,
             }
           : null,
       })),

@@ -86,7 +86,7 @@ export async function listReturns(currentUserArg?: unknown) {
               name: true,
               sku: true,
               reference: true,
-              saleUnit: true,
+              unit: true,
             },
           },
         },
@@ -124,7 +124,7 @@ export async function getReturnById(id: string) {
                   reference: true,
                   priceCents: true,
                   stock: true,
-                  saleUnit: true,
+                  unit: true,
                 },
               },
             },
@@ -144,7 +144,7 @@ export async function getReturnById(id: string) {
               name: true,
               sku: true,
               reference: true,
-              saleUnit: true,
+              unit: true,
             },
           },
           saleItem: true,
@@ -196,7 +196,7 @@ export async function getSaleForReturn(saleId: string, currentUserArg?: unknown)
               sku: true,
               reference: true,
               priceCents: true,
-              saleUnit: true,
+              unit: true,
             },
           },
         },
@@ -639,7 +639,6 @@ export async function searchSalesForReturn(
 
   return sales
 }
-
 
 
 

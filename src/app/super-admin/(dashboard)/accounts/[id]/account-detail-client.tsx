@@ -28,6 +28,7 @@ import {
   Pause,
   Trash2,
   Key,
+  Search,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -115,6 +116,120 @@ function PaymentStatusBadge({ status }: { status: string }) {
   }
   const { label, className } = config[status] || { label: status, className: "" }
   return <Badge className={className}>{label}</Badge>
+}
+
+const PRODUCT_KIND_LABELS: Record<string, string> = {
+  BASIC: "Básico",
+  MEASURED: "Medido",
+  RECIPE: "Receta",
+}
+
+function ProductKindBadge({ kind }: { kind: string }) {
+  const label = PRODUCT_KIND_LABELS[kind] || kind
+  const className =
+    kind === "RECIPE"
+      ? "bg-purple-100 text-purple-800"
+      : kind === "MEASURED"
+        ? "bg-blue-100 text-blue-800"
+        : "bg-gray-100 text-gray-800"
+  return <Badge className={className}>{label}</Badge>
+}
+
+function formatProductPrice(cents: number) {
+  return new Intl.NumberFormat("es-DO", { style: "currency", currency: "DOP" }).format(cents / 100)
+}
+
+function ProductsSection({ products }: { products: AccountDetail["products"] }) {
+  const [search, setSearch] = useState("")
+
+  const filtered = search.trim()
+    ? products.filter((p) => {
+        const q = search.trim().toLowerCase()
+        return (
+          p.name.toLowerCase().includes(q) ||
+          (p.sku && p.sku.toLowerCase().includes(q)) ||
+          String(p.productId).includes(q)
+        )
+      })
+    : products
+
+  const activeCount = products.filter((p) => p.isActive).length
+  const inactiveCount = products.length - activeCount
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Productos ({products.length})
+            </CardTitle>
+            <CardDescription>
+              {activeCount} activos{inactiveCount > 0 ? `, ${inactiveCount} inactivos` : ""}
+            </CardDescription>
+          </div>
+        </div>
+        <div className="relative mt-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nombre, SKU o ID..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+      </CardHeader>
+      <CardContent>
+        {filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            {search.trim() ? "No se encontraron productos" : "No hay productos registrados"}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[60px]">ID</TableHead>
+                  <TableHead>Nombre</TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead className="text-right">Precio</TableHead>
+                  <TableHead className="text-right">Costo</TableHead>
+                  <TableHead className="text-right">Stock</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Estado</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((product) => (
+                  <TableRow key={product.id} className={!product.isActive ? "opacity-50" : undefined}>
+                    <TableCell className="font-mono text-muted-foreground">{product.productId}</TableCell>
+                    <TableCell className="font-medium">{product.name}</TableCell>
+                    <TableCell className="text-muted-foreground">{product.sku || "—"}</TableCell>
+                    <TableCell className="text-right">{formatProductPrice(product.priceCents)}</TableCell>
+                    <TableCell className="text-right">{formatProductPrice(product.costCents)}</TableCell>
+                    <TableCell className="text-right">
+                      {product.productKind === "RECIPE" ? "—" : product.stock}
+                    </TableCell>
+                    <TableCell>
+                      <ProductKindBadge kind={product.productKind} />
+                    </TableCell>
+                    <TableCell>
+                      {product.isActive ? (
+                        <Badge className="bg-green-100 text-green-800">Activo</Badge>
+                      ) : (
+                        <Badge variant="destructive">Inactivo</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
 type BillingPlanOption = {
@@ -602,6 +717,9 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
               )}
             </CardContent>
           </Card>
+
+          {/* Productos */}
+          <ProductsSection products={account.products} />
         </div>
 
         {/* Sidebar */}

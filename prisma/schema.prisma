@@ -148,6 +148,11 @@ enum ProductKind {
   RECIPE
 }
 
+enum RecipeAdjustmentType {
+  SIN
+  EXTRA
+}
+
 // ==========================================
 // ACCOUNT (Tenant/Cuenta Principal)
 // ==========================================
@@ -502,26 +507,24 @@ model Product {
 
   itbisRateBp Int @default(1800)
 
-  productKind  ProductKind @default(BASIC)
-  purchaseUnit UnitType    @default(UNIDAD)
-  saleUnit     UnitType    @default(UNIDAD)
-  stock        Decimal     @default(0) @db.Decimal(10, 3)
-  minStock     Decimal     @default(0) @db.Decimal(10, 3)
+  productKind ProductKind @default(BASIC)
+  unit        UnitType    @default(UNIDAD)
+  stock       Decimal     @default(0) @db.Decimal(10, 3)
+  minStock    Decimal     @default(0) @db.Decimal(10, 3)
 
   isActive Boolean @default(true)
 
   imageUrls String[] @default([])
 
-  recipeItems                ProductRecipeItem[]         @relation("RecipeProduct")
-  usedAsIngredientInRecipes  ProductRecipeItem[]         @relation("RecipeIngredient")
-  recipeModifiers            ProductRecipeModifier[]
-  usedAsModifierIngredientIn ProductRecipeModifierItem[] @relation("ModifierIngredient")
-  usedInSaleConsumptions     SaleItemConsumption[]       @relation("SaleConsumptionIngredient")
-  saleItems                  SaleItem[]
-  purchaseItems              PurchaseItem[]
-  returnItems                ReturnItem[]
-  quoteItems                 QuoteItem[]
-  inventoryAdjustments       InventoryAdjustment[]
+  recipeItems               ProductRecipeItem[]          @relation("RecipeProduct")
+  usedAsIngredientInRecipes ProductRecipeItem[]          @relation("RecipeIngredient")
+  usedInSaleConsumptions    SaleItemConsumption[]        @relation("SaleConsumptionIngredient")
+  usedInSaleAdjustments     SaleItemRecipeAdjustment[]   @relation("SaleAdjustmentIngredient")
+  saleItems                 SaleItem[]
+  purchaseItems             PurchaseItem[]
+  returnItems               ReturnItem[]
+  quoteItems                QuoteItem[]
+  inventoryAdjustments      InventoryAdjustment[]
 
   // productId único dentro del account
   @@unique([accountId, productId])
@@ -550,40 +553,6 @@ model ProductRecipeItem {
 
   @@unique([productId, ingredientId])
   @@index([productId])
-  @@index([ingredientId])
-}
-
-model ProductRecipeModifier {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  name      String
-  isActive  Boolean @default(true)
-  sortOrder Int     @default(0)
-
-  items             ProductRecipeModifierItem[]
-  saleItemModifiers SaleItemRecipeModifier[]
-
-  @@index([productId, sortOrder])
-}
-
-model ProductRecipeModifierItem {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  modifierId String
-  modifier   ProductRecipeModifier @relation(fields: [modifierId], references: [id], onDelete: Cascade)
-
-  ingredientId String
-  ingredient   Product @relation("ModifierIngredient", fields: [ingredientId], references: [id], onDelete: Restrict)
-
-  qtyDelta Decimal @db.Decimal(10, 3)
-
-  @@index([modifierId])
   @@index([ingredientId])
 }
 
@@ -681,24 +650,26 @@ model SaleItem {
 
   lineTotalCents Int
 
-  selectedRecipeModifiers SaleItemRecipeModifier[]
-  consumptions            SaleItemConsumption[]
-  returnItems             ReturnItem[]
+  recipeAdjustments SaleItemRecipeAdjustment[]
+  consumptions      SaleItemConsumption[]
+  returnItems       ReturnItem[]
 }
 
-model SaleItemRecipeModifier {
+model SaleItemRecipeAdjustment {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
 
   saleItemId String
   saleItem   SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
 
-  modifierId   String?
-  modifier     ProductRecipeModifier? @relation(fields: [modifierId], references: [id], onDelete: SetNull)
-  modifierName String
+  ingredientId   String
+  ingredient     Product @relation("SaleAdjustmentIngredient", fields: [ingredientId], references: [id], onDelete: Restrict)
+  ingredientName String
+  type           RecipeAdjustmentType
 
-  @@unique([saleItemId, modifierName])
-  @@index([modifierId])
+  @@unique([saleItemId, ingredientId])
+  @@index([ingredientId])
+  @@index([saleItemId])
 }
 
 model SaleItemConsumption {

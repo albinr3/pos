@@ -254,7 +254,7 @@ export async function searchProductsForPurchase(query: string) {
         { reference: { contains: q, mode: "insensitive" } },
       ],
     },
-    select: { id: true, name: true, sku: true, reference: true, costCents: true, priceCents: true, itbisRateBp: true, stock: true, purchaseUnit: true, saleUnit: true },
+    select: { id: true, name: true, sku: true, reference: true, costCents: true, priceCents: true, itbisRateBp: true, stock: true, unit: true },
     orderBy: { name: "asc" },
     take: 20,
   })
@@ -276,7 +276,7 @@ export async function getPurchaseById(id: string) {
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, reference: true, costCents: true, priceCents: true, itbisRateBp: true, stock: true, minStock: true, purchaseUnit: true, saleUnit: true },
+            select: { id: true, name: true, sku: true, reference: true, costCents: true, priceCents: true, itbisRateBp: true, stock: true, minStock: true, unit: true },
           },
         },
       },

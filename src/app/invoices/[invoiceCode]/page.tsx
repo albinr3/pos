@@ -55,7 +55,7 @@ export default async function InvoicePrintPage({
       include: {
         customer: true,
         items: {
-          include: { product: true },
+          include: { product: true, recipeAdjustments: true },
         },
         cancelledUser: { select: { name: true } },
         payments: true,
@@ -191,7 +191,17 @@ export default async function InvoicePrintPage({
         <tbody>
           {sale.items.map((it) => (
             <tr key={it.id} className="border-b align-top">
-              <td className="py-2 pr-2">{it.product.name}</td>
+              <td className="py-2 pr-2">
+                <div>{it.product.name}</div>
+                {it.recipeAdjustments.length > 0 && (
+                  <div className="mt-1 text-xs text-neutral-700">
+                    Ajustes:{" "}
+                    {it.recipeAdjustments
+                      .map((adjustment) => `${adjustment.type === "SIN" ? "Sin" : "Extra"} ${adjustment.ingredientName}`)
+                      .join(", ")}
+                  </div>
+                )}
+              </td>
               <td className="py-2 pr-2">{it.product.sku ?? "—"}</td>
               <td className="py-2 pr-2">{it.product.reference ?? "—"}</td>
               <td className="py-2 text-right">{decimalToNumber(it.qty)}</td>

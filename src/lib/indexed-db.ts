@@ -1,7 +1,7 @@
 "use client"
 
 const DB_NAME = "tejada-pos-offline"
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 // Store names
 const STORES = {
@@ -30,6 +30,7 @@ function openDB(): Promise<IDBDatabase> {
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
+      const oldVersion = (event as IDBVersionChangeEvent).oldVersion
 
       // Crear stores si no existen
       if (!db.objectStoreNames.contains(STORES.PENDING_SALES)) {
@@ -69,6 +70,16 @@ function openDB(): Promise<IDBDatabase> {
         arStore.createIndex("customerId", "customerId", { unique: false })
         arStore.createIndex("saleId", "saleId", { unique: true })
       }
+
+      if (oldVersion < 2) {
+        // Limpiar estructuras legacy para forzar cache y pendientes con el nuevo shape.
+        if (db.objectStoreNames.contains(STORES.PENDING_SALES)) {
+          request.transaction?.objectStore(STORES.PENDING_SALES).clear()
+        }
+        if (db.objectStoreNames.contains(STORES.PRODUCTS_CACHE)) {
+          request.transaction?.objectStore(STORES.PRODUCTS_CACHE).clear()
+        }
+      }
     }
   })
 
@@ -88,7 +99,10 @@ export async function savePendingSale(sale: {
     qty: number
     unitPriceCents: number
     wasPriceOverridden: boolean
-    selectedModifierIds?: string[]
+    recipeAdjustments?: Array<{
+      ingredientId: string
+      adjustmentType: "SIN" | "EXTRA"
+    }>
   }>
   shippingCents?: number
   username: string

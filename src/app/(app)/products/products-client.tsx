@@ -49,18 +49,6 @@ type RecipeItemFormRow = {
   qty: string
 }
 
-type RecipeModifierItemFormRow = {
-  id: string
-  ingredientId: string
-  qtyDelta: string
-}
-
-type RecipeModifierFormRow = {
-  id: string
-  name: string
-  items: RecipeModifierItemFormRow[]
-}
-
 const PAGE_SIZE = 50
 const INVENTORY_IMPORT_MAX_ROWS = 5000
 const INVENTORY_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -71,8 +59,7 @@ const INVENTORY_TEMPLATE_HEADERS = [
   "sku",
   "referencia",
   "tipo_producto",
-  "unidad_compra",
-  "unidad_venta",
+  "unidad",
   "precio_venta",
   "costo",
   "itbis",
@@ -118,26 +105,10 @@ function createRecipeItemRow(): RecipeItemFormRow {
   }
 }
 
-function createRecipeModifierItemRow(): RecipeModifierItemFormRow {
-  return {
-    id: createLocalRowId(),
-    ingredientId: "",
-    qtyDelta: "1",
-  }
-}
-
-function createRecipeModifierRow(): RecipeModifierFormRow {
-  return {
-    id: createLocalRowId(),
-    name: "",
-    items: [createRecipeModifierItemRow()],
-  }
-}
-
 function getProductFormType(product?: Product | null): ProductFormType {
   if (!product) return "basic"
   if (product.productKind === "RECIPE") return "recipe"
-  return product.purchaseUnit === "UNIDAD" && product.saleUnit === "UNIDAD" ? "basic" : "measured"
+  return product.productKind === "MEASURED" ? "measured" : "basic"
 }
 
 function getProductTypeLabel(productType: ProductFormType) {
@@ -310,8 +281,11 @@ function mapExcelRowsToImportRows(rows: Record<string, unknown>[]) {
     const sku = getCellValue(normalized, ["sku", "codigo", "codigo_de_proveedor"])
     const referencia = getCellValue(normalized, ["referencia", "reference"])
     const tipoProducto = getCellValue(normalized, ["tipo_producto", "tipo"])
-    const unidadCompra = getCellValue(normalized, ["unidad_compra"])
-    const unidadVenta = getCellValue(normalized, ["unidad_venta"])
+    if ("unidad_compra" in normalized || "unidad_venta" in normalized) {
+      throw new Error(`Línea ${index + 2}: usa la columna unidad; unidad_compra y unidad_venta ya no son válidas`)
+    }
+
+    const unidad = getCellValue(normalized, ["unidad"])
     const precioVenta = getCellValue(normalized, ["precio_venta", "precio", "price"])
     const costo = getCellValue(normalized, ["costo", "cost"])
     const itbis = getCellValue(normalized, ["itbis", "itbis_percent"])
@@ -338,17 +312,11 @@ function mapExcelRowsToImportRows(rows: Record<string, unknown>[]) {
     }
     if (parsedType) parsed.tipo_producto = parsedType
 
-    const parsedPurchaseUnit = parseExcelUnit(unidadCompra)
-    if (hasCellValue(unidadCompra) && !parsedPurchaseUnit) {
-      throw new Error(`Línea ${index + 2}: unidad_compra inválida`)
+    const parsedUnit = parseExcelUnit(unidad)
+    if (hasCellValue(unidad) && !parsedUnit) {
+      throw new Error(`Línea ${index + 2}: unidad inválida`)
     }
-    if (parsedPurchaseUnit) parsed.unidad_compra = parsedPurchaseUnit
-
-    const parsedSaleUnit = parseExcelUnit(unidadVenta)
-    if (hasCellValue(unidadVenta) && !parsedSaleUnit) {
-      throw new Error(`Línea ${index + 2}: unidad_venta inválida`)
-    }
-    if (parsedSaleUnit) parsed.unidad_venta = parsedSaleUnit
+    if (parsedUnit) parsed.unidad = parsedUnit
 
     const precio = parseNumberWithContext(precioVenta, "precio_venta")
     if (precio !== undefined) parsed.precio_venta = precio
@@ -414,11 +382,23 @@ export function ProductsClient() {
   
   // Estado para producto básico o con medidas
   const [productType, setProductType] = useState<ProductFormType>("basic")
-  // Unidades de compra y venta
-  const [purchaseUnit, setPurchaseUnit] = useState<UnitType>("KG")
-  const [saleUnit, setSaleUnit] = useState<UnitType>("KG")
+  const [unit, setUnit] = useState<UnitType>("KG")
   const [recipeItems, setRecipeItems] = useState<RecipeItemFormRow[]>([createRecipeItemRow()])
-  const [recipeModifiers, setRecipeModifiers] = useState<RecipeModifierFormRow[]>([])
+  const [ingredientPickerOpen, setIngredientPickerOpen] = useState(false)
+  const [ingredientPickerSearch, setIngredientPickerSearch] = useState("")
+  const ingredientPickerCallbackRef = useRef<((id: string) => void) | null>(null)
+
+  function openIngredientPicker(callback: (id: string) => void) {
+    ingredientPickerCallbackRef.current = callback
+    setIngredientPickerSearch("")
+    setIngredientPickerOpen(true)
+  }
+
+  function onIngredientPicked(id: string) {
+    ingredientPickerCallbackRef.current?.(id)
+    ingredientPickerCallbackRef.current = null
+    setIngredientPickerOpen(false)
+  }
 
   const selectAllOnFocus = (event: FocusEvent<HTMLInputElement>) => {
     event.target.select()
@@ -499,14 +479,11 @@ export function ProductsClient() {
     const nextType = getProductFormType(x)
     setProductType(nextType)
 
-    const purchaseU = (x?.purchaseUnit as UnitType) ?? "UNIDAD"
-    const saleU = (x?.saleUnit as UnitType) ?? "UNIDAD"
     if (nextType === "measured") {
-      setPurchaseUnit(purchaseU === "UNIDAD" ? "KG" : purchaseU)
-      setSaleUnit(saleU === "UNIDAD" ? "KG" : saleU)
+      const nextUnit = (x?.unit as UnitType) ?? "UNIDAD"
+      setUnit(nextUnit === "UNIDAD" ? "KG" : nextUnit)
     } else {
-      setPurchaseUnit("KG")
-      setSaleUnit("KG")
+      setUnit("KG")
     }
 
     setRecipeItems(
@@ -517,21 +494,6 @@ export function ProductsClient() {
             qty: String(decimalToNumber(item.qty)),
           }))
         : [createRecipeItemRow()]
-    )
-    setRecipeModifiers(
-      x?.recipeModifiers?.length
-        ? x.recipeModifiers.map((modifier: Product["recipeModifiers"][number]) => ({
-            id: modifier.id,
-            name: modifier.name,
-            items: modifier.items.length
-              ? modifier.items.map((item: Product["recipeModifiers"][number]["items"][number]) => ({
-                  id: item.id,
-                  ingredientId: item.ingredientId,
-                  qtyDelta: String(decimalToNumber(item.qtyDelta)),
-                }))
-              : [createRecipeModifierItemRow()],
-          }))
-        : []
     )
   }
 
@@ -557,57 +519,6 @@ export function ProductsClient() {
     })
   }
 
-  function updateRecipeModifier(modifierId: string, name: string) {
-    setRecipeModifiers((prev) => prev.map((modifier) => (modifier.id === modifierId ? { ...modifier, name } : modifier)))
-  }
-
-  function addRecipeModifier() {
-    setRecipeModifiers((prev) => [...prev, createRecipeModifierRow()])
-  }
-
-  function removeRecipeModifier(modifierId: string) {
-    setRecipeModifiers((prev) => prev.filter((modifier) => modifier.id !== modifierId))
-  }
-
-  function updateRecipeModifierItem(
-    modifierId: string,
-    itemId: string,
-    field: "ingredientId" | "qtyDelta",
-    value: string
-  ) {
-    setRecipeModifiers((prev) =>
-      prev.map((modifier) =>
-        modifier.id === modifierId
-          ? {
-              ...modifier,
-              items: modifier.items.map((item) => (item.id === itemId ? { ...item, [field]: value } : item)),
-            }
-          : modifier
-      )
-    )
-  }
-
-  function addRecipeModifierItem(modifierId: string) {
-    setRecipeModifiers((prev) =>
-      prev.map((modifier) =>
-        modifier.id === modifierId ? { ...modifier, items: [...modifier.items, createRecipeModifierItemRow()] } : modifier
-      )
-    )
-  }
-
-  function removeRecipeModifierItem(modifierId: string, itemId: string) {
-    setRecipeModifiers((prev) =>
-      prev.map((modifier) => {
-        if (modifier.id !== modifierId) return modifier
-        const nextItems = modifier.items.filter((item) => item.id !== itemId)
-        return {
-          ...modifier,
-          items: nextItems.length ? nextItems : [createRecipeModifierItemRow()],
-        }
-      })
-    )
-  }
-
   async function onSave() {
     const trimmedName = name.trim()
     const priceCents = toCents(price)
@@ -616,18 +527,16 @@ export function ProductsClient() {
       toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
       return
     }
-    if (productType === "measured" && (!purchaseUnit || !saleUnit)) {
+    if (productType === "measured" && !unit) {
       toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
       return
     }
     startSaving(async () => {
       try {
         const productKind = productType === "recipe" ? "RECIPE" : productType === "measured" ? "MEASURED" : "BASIC"
-        const finalPurchaseUnit: UnitType =
-          productType === "basic" || productType === "recipe" ? "UNIDAD" : purchaseUnit
-        const finalSaleUnit: UnitType =
-          productType === "basic" || productType === "recipe" ? "UNIDAD" : saleUnit
-        const allowsDecimals = unitAllowsDecimals(finalSaleUnit)
+        const finalUnit: UnitType =
+          productType === "basic" || productType === "recipe" ? "UNIDAD" : unit
+        const allowsDecimals = unitAllowsDecimals(finalUnit)
         const stockValue = productType === "recipe" ? 0 : allowsDecimals ? toDecimal(stock) : toInt(stock)
         const minStockValue = productType === "recipe" ? 0 : allowsDecimals ? toDecimal(minStock) : toInt(minStock)
         const normalizedRecipeItems =
@@ -638,20 +547,6 @@ export function ProductsClient() {
                   qty: Number(item.qty),
                 }))
                 .filter((item) => item.ingredientId)
-            : []
-        const normalizedModifiers =
-          productType === "recipe"
-            ? recipeModifiers
-                .map((modifier) => ({
-                  name: modifier.name,
-                  items: modifier.items
-                    .map((item) => ({
-                      ingredientId: item.ingredientId,
-                      qtyDelta: Number(item.qtyDelta),
-                    }))
-                    .filter((item) => item.ingredientId),
-                }))
-                .filter((modifier) => modifier.name.trim() || modifier.items.length > 0)
             : []
 
         await upsertProduct({
@@ -669,9 +564,7 @@ export function ProductsClient() {
           imageUrls,
           productKind,
           recipeItems: normalizedRecipeItems,
-          modifiers: normalizedModifiers,
-          purchaseUnit: finalPurchaseUnit,
-          saleUnit: finalSaleUnit,
+          unit: finalUnit,
         })
         toast({ title: "Guardado", description: "Producto actualizado" })
         setOpen(false)
@@ -737,7 +630,6 @@ export function ProductsClient() {
         "SKU-001",
         "REF-001",
         "BASICO",
-        "",
         "",
         150,
         100,
@@ -1340,31 +1232,14 @@ export function ProductsClient() {
                     </TabsContent>
 
                     <TabsContent value="measured" className="mt-0 space-y-4">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid gap-2">
                         <div className="grid gap-2">
                           <Label>
-                            Unidad de compra <span className="text-red-500">*</span>
+                            Unidad <span className="text-red-500">*</span>
                           </Label>
                           <select
-                            value={purchaseUnit}
-                            onChange={(e) => setPurchaseUnit(e.target.value as UnitType)}
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            required
-                          >
-                            {UNIT_OPTIONS.filter((u) => u.value !== "UNIDAD").map((u) => (
-                              <option key={u.value} value={u.value}>
-                                {u.label} ({u.abbr})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>
-                            Unidad de venta <span className="text-red-500">*</span>
-                          </Label>
-                          <select
-                            value={saleUnit}
-                            onChange={(e) => setSaleUnit(e.target.value as UnitType)}
+                            value={unit}
+                            onChange={(e) => setUnit(e.target.value as UnitType)}
                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                             required
                           >
@@ -1377,12 +1252,12 @@ export function ProductsClient() {
                         </div>
                       </div>
                       <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-                        La unidad de compra y venta pueden ser diferentes. Ejemplo: compras por kilogramos (kg) pero vendes por gramos (g).
+                        La misma unidad se usa para costo, precio, existencia y movimientos del producto.
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="grid gap-2">
                           <Label>
-                            Precio de venta por ({getUnitInfo(saleUnit).abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
+                            Precio de venta por ({getUnitInfo(unit).abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
                           </Label>
                           <Input
                             value={price}
@@ -1396,7 +1271,7 @@ export function ProductsClient() {
                         {(user?.canViewProductCosts || user?.role === "ADMIN") && (
                           <div className="grid gap-2">
                             <Label>
-                              Costo por ({getUnitInfo(purchaseUnit).abbr}) (RD$) <span className="text-red-500">*</span>
+                              Costo por ({getUnitInfo(unit).abbr}) (RD$) <span className="text-red-500">*</span>
                             </Label>
                             <Input
                               value={cost}
@@ -1410,7 +1285,7 @@ export function ProductsClient() {
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div className="grid gap-2">
-                          <Label>Existencia ({getUnitInfo(saleUnit).abbr})</Label>
+                          <Label>Existencia ({getUnitInfo(unit).abbr})</Label>
                           <Input
                             value={stock}
                             onChange={(e) => setStock(e.target.value)}
@@ -1420,7 +1295,7 @@ export function ProductsClient() {
                           />
                         </div>
                         <div className="grid gap-2">
-                          <Label>Existencia mínima ({getUnitInfo(saleUnit).abbr})</Label>
+                          <Label>Existencia mínima ({getUnitInfo(unit).abbr})</Label>
                           <Input value={minStock} onChange={(e) => setMinStock(e.target.value)} inputMode="decimal" placeholder="Ej: 5" />
                         </div>
                       </div>
@@ -1486,21 +1361,28 @@ export function ProductsClient() {
                             <div key={item.id} className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-[minmax(0,1fr)_140px_44px]">
                               <div className="grid gap-2">
                                 <Label>Insumo #{index + 1}</Label>
-                                <select
-                                  value={item.ingredientId}
-                                  onChange={(e) => updateRecipeItem(item.id, "ingredientId", e.target.value)}
-                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="justify-start font-normal h-10 w-full text-sm"
+                                  onClick={() => openIngredientPicker((id) => updateRecipeItem(item.id, "ingredientId", id))}
                                 >
-                                  <option value="">Selecciona un insumo</option>
-                                  {availableIngredients.map((option) => (
-                                    <option key={option.id} value={option.id}>
-                                      {option.productId} - {option.name}
-                                    </option>
-                                  ))}
-                                </select>
+                                  {item.ingredientId
+                                    ? (() => {
+                                        const opt = availableIngredients.find((o) => o.id === item.ingredientId)
+                                        return opt ? `${opt.productId} - ${opt.name}` : "Insumo no encontrado"
+                                      })()
+                                    : <span className="text-muted-foreground">Selecciona un insumo</span>}
+                                </Button>
                               </div>
                               <div className="grid gap-2">
-                                <Label>Cantidad</Label>
+                                <Label>
+                                  Cantidad
+                                  {(() => {
+                                    const opt = item.ingredientId ? availableIngredients.find((o) => o.id === item.ingredientId) : null
+                                    return opt && opt.unit !== "UNIDAD" ? ` (${getUnitInfo(opt.unit as UnitType).abbr})` : ""
+                                  })()}
+                                </Label>
                                 <Input
                                   value={item.qty}
                                   onChange={(e) => updateRecipeItem(item.id, "qty", e.target.value)}
@@ -1518,94 +1400,8 @@ export function ProductsClient() {
                         </div>
                       </div>
 
-                      <div className="grid gap-3 rounded-md border p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <Label>Modificadores</Label>
-                            <div className="text-xs text-muted-foreground">
-                              Ajustan cantidades de insumos sin cambiar el precio. Ejemplo: sin tomate, extra queso.
-                            </div>
-                          </div>
-                          <Button type="button" variant="secondary" size="sm" onClick={addRecipeModifier}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            Agregar modificador
-                          </Button>
-                        </div>
-
-                        {recipeModifiers.length === 0 && (
-                          <div className="text-sm text-muted-foreground">
-                            Aún no has agregado modificadores. Puedes dejar esta sección vacía si solo usarás la receta base.
-                          </div>
-                        )}
-
-                        {recipeModifiers.map((modifier, modifierIndex) => (
-                          <div key={modifier.id} className="grid gap-3 rounded-md border p-3">
-                            <div className="flex items-center gap-2">
-                              <div className="grid flex-1 gap-2">
-                                <Label>Modificador #{modifierIndex + 1}</Label>
-                                <Input
-                                  value={modifier.name}
-                                  onChange={(e) => updateRecipeModifier(modifier.id, e.target.value)}
-                                  placeholder="Ej: Sin tomate"
-                                />
-                              </div>
-                              <Button type="button" variant="outline" size="icon" onClick={() => removeRecipeModifier(modifier.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-
-                            <div className="grid gap-3">
-                              {modifier.items.map((item, itemIndex) => (
-                                <div
-                                  key={item.id}
-                                  className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-[minmax(0,1fr)_160px_44px]"
-                                >
-                                  <div className="grid gap-2">
-                                    <Label>Ajuste #{itemIndex + 1}</Label>
-                                    <select
-                                      value={item.ingredientId}
-                                      onChange={(e) => updateRecipeModifierItem(modifier.id, item.id, "ingredientId", e.target.value)}
-                                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                                    >
-                                      <option value="">Selecciona un insumo</option>
-                                      {availableIngredients.map((option) => (
-                                        <option key={option.id} value={option.id}>
-                                          {option.productId} - {option.name}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  </div>
-                                  <div className="grid gap-2">
-                                    <Label>Ajuste de cantidad</Label>
-                                    <Input
-                                      value={item.qtyDelta}
-                                      onChange={(e) => updateRecipeModifierItem(modifier.id, item.id, "qtyDelta", e.target.value)}
-                                      inputMode="decimal"
-                                      placeholder="Ej: -1 o 0.5"
-                                    />
-                                  </div>
-                                  <div className="flex items-end">
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="icon"
-                                      onClick={() => removeRecipeModifierItem(modifier.id, item.id)}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-
-                            <div>
-                              <Button type="button" variant="outline" size="sm" onClick={() => addRecipeModifierItem(modifier.id)}>
-                                <Plus className="mr-2 h-4 w-4" />
-                                Agregar ajuste
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
+                      <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                        Los ajustes de receta (Sin/Extra) se configuran al momento de la venta, no en el perfil del producto.
                       </div>
                     </TabsContent>
 
@@ -1685,7 +1481,7 @@ export function ProductsClient() {
                     <TableCell className="text-right">
                       {p.productKind === "RECIPE"
                         ? "Por insumos"
-                        : formatQty(decimalToNumber(p.stock), (p.saleUnit as UnitType) ?? "UNIDAD")}
+                        : formatQty(decimalToNumber(p.stock), (p.unit as UnitType) ?? "UNIDAD")}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
@@ -1811,7 +1607,7 @@ export function ProductsClient() {
                       </TableRow>
                     )}
                     {movementInitial && !isMovementsLoading && (() => {
-                      const unit = (movementsProduct.saleUnit as UnitType) ?? "UNIDAD"
+                      const unit = (movementsProduct.unit as UnitType) ?? "UNIDAD"
                       const qty = Math.abs(movementInitial.qtyDelta)
                       const qtyLabel = formatQty(qty, unit)
                       return (
@@ -1833,7 +1629,7 @@ export function ProductsClient() {
                       )
                     })()}
                     {movementPageItems.map((movement) => {
-                      const unit = (movementsProduct.saleUnit as UnitType) ?? "UNIDAD"
+                      const unit = (movementsProduct.unit as UnitType) ?? "UNIDAD"
                       const qty = Math.abs(movement.qtyDelta)
                       const qtyLabel = `${movement.qtyDelta > 0 ? "+" : ""}${formatQty(qty, unit)}`
                       const qtyClass = movement.qtyDelta > 0 ? "text-emerald-600" : "text-red-600"
@@ -1904,6 +1700,54 @@ export function ProductsClient() {
           onPrintComplete={() => setPrintingProduct(null)}
         />
       )}
+
+      <Dialog open={ingredientPickerOpen} onOpenChange={setIngredientPickerOpen}>
+        <DialogContent className="sm:max-w-[480px] max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Seleccionar insumo</DialogTitle>
+          </DialogHeader>
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
+            <Input
+              className="pl-10"
+              value={ingredientPickerSearch}
+              onChange={(e) => setIngredientPickerSearch(e.target.value)}
+              placeholder="Buscar por nombre o ID…"
+              autoFocus
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto border rounded-md min-h-0" style={{ maxHeight: "50vh" }}>
+            {(() => {
+              const term = ingredientPickerSearch.trim().toLowerCase()
+              const filtered = term
+                ? availableIngredients.filter(
+                    (o) =>
+                      o.name.toLowerCase().includes(term) ||
+                      String(o.productId).toLowerCase().includes(term)
+                  )
+                : availableIngredients
+              if (filtered.length === 0) {
+                return (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    No se encontraron insumos.
+                  </div>
+                )
+              }
+              return filtered.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-accent transition-colors border-b last:border-b-0"
+                  onClick={() => onIngredientPicked(option.id)}
+                >
+                  <span className="font-medium text-muted-foreground min-w-[3rem]">{option.productId}</span>
+                  <span>{option.name}</span>
+                </button>
+              ))
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

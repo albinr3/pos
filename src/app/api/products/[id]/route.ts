@@ -26,6 +26,12 @@ export async function PUT(
 
     const { id } = await params
     const body = await request.json()
+    if (hasValue(body.purchaseUnit) || hasValue(body.saleUnit)) {
+      return NextResponse.json({ error: "Usa unit. purchaseUnit y saleUnit ya no son válidos." }, { status: 400 })
+    }
+    if (Array.isArray(body.modifiers) && body.modifiers.length > 0) {
+      return NextResponse.json({ error: "modifiers ya no es soportado. Usa recipeAdjustments al momento de la venta." }, { status: 400 })
+    }
     
     // Convertir precio de pesos a centavos si viene como número decimal
     const priceCents = body.priceCents ?? (body.price ? Math.round(body.price * 100) : undefined)
@@ -66,9 +72,7 @@ export async function PUT(
       imageUrls: body.imageUrls || [],
       productKind: body.productKind || "BASIC",
       recipeItems: body.recipeItems || [],
-      modifiers: body.modifiers || [],
-      purchaseUnit: body.purchaseUnit || "UNIDAD",
-      saleUnit: body.saleUnit || "UNIDAD",
+      unit: body.unit || "UNIDAD",
       user,
     })
 
@@ -104,8 +108,7 @@ export async function PUT(
       itbisRateBp: product.itbisRateBp,
       imageUrls: product.imageUrls,
       productKind: product.productKind,
-      purchaseUnit: product.purchaseUnit,
-      saleUnit: product.saleUnit,
+      unit: product.unit,
       categoryId: product.category?.categoryId ?? null,
       categoryInternalId: product.categoryId ?? null,
     })

@@ -30,15 +30,20 @@ export async function syncProductsToIndexedDB() {
       priceCents: true, // Asegurar que se seleccione priceCents
       costCents: true,
       itbisRateBp: true,
-      saleUnit: true,
+      unit: true,
       imageUrls: true,
       productKind: true,
-      recipeModifiers: {
-        where: { isActive: true },
-        orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+      recipeItems: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
-          id: true,
-          name: true,
+          ingredientId: true,
+          qty: true,
+          ingredient: {
+            select: {
+              name: true,
+              unit: true,
+            },
+          },
         },
       },
       supplier: {
@@ -68,10 +73,15 @@ export async function syncProductsToIndexedDB() {
     unitPriceCents: p.priceCents, // Alias para compatibilidad
     costCents: p.costCents,
     itbisRateBp: p.itbisRateBp ?? 1800, // Valor por defecto si no existe
-    saleUnit: p.saleUnit,
+    unit: p.unit,
     imageUrls: p.imageUrls,
     productKind: p.productKind,
-    recipeModifiers: p.recipeModifiers,
+    recipeItems: p.recipeItems.map((item) => ({
+      ingredientId: item.ingredientId,
+      qty: decimalToNumber(item.qty),
+      ingredientName: item.ingredient.name,
+      ingredientUnit: item.ingredient.unit,
+    })),
     supplier: p.supplier
       ? {
           id: p.supplier.id,

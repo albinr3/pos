@@ -29,6 +29,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { UploadButton } from "@uploadthing/react"
 import type { OurFileRouter } from "@/app/api/uploadthing/core"
+import { createMetaEventId, trackMetaEvent } from "@/lib/meta/browser"
 import {
   getBillingData,
   saveBillingProfile,
@@ -194,6 +195,19 @@ export function BillingClient({ initialData }: BillingClientProps) {
     try {
       const result = await getUsdCheckoutUrl()
       if (result.success && result.url) {
+        const eventId = result.eventId || createMetaEventId("initiate-checkout")
+        const checkoutValue = ((subscription?.priceUsdCents ?? state.priceInCents) / 100)
+
+        trackMetaEvent("InitiateCheckout", {
+          content_name: "Suscripción MOVOPos",
+          content_category: "billing",
+          content_ids: ["movopos-subscription"],
+          contents: [{ id: "movopos-subscription", quantity: 1 }],
+          num_items: 1,
+          currency: "USD",
+          value: Number(checkoutValue.toFixed(2)),
+        }, eventId)
+
         window.open(result.url, "_blank")
       } else {
         toast({ title: "Error", description: result.error, variant: "destructive" })

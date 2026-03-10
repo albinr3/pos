@@ -53,7 +53,24 @@ export async function syncPendingData() {
           paymentMethod: sale.paymentMethod || undefined,
           transferBankName: sale.transferBankName || undefined,
           paymentSplits: sale.paymentSplits,
-          items: sale.items,
+          items: (sale.items ?? []).map((item: any) => ({
+            productId: String(item.productId || ""),
+            qty: Number(item.qty ?? 0),
+            unitPriceCents: Number(item.unitPriceCents ?? 0),
+            wasPriceOverridden: Boolean(item.wasPriceOverridden),
+            recipeAdjustments: Array.isArray(item.recipeAdjustments)
+              ? item.recipeAdjustments
+                  .map((adjustment: any) => ({
+                    ingredientId: String(adjustment.ingredientId || ""),
+                    adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
+                  }))
+                  .filter(
+                    (adjustment: { ingredientId: string; adjustmentType: string }) =>
+                      adjustment.ingredientId.length > 0 &&
+                      (adjustment.adjustmentType === "SIN" || adjustment.adjustmentType === "EXTRA")
+                  )
+              : [],
+          })),
           shippingCents: sale.shippingCents || 0,
           soldAt: sale.createdAt,
           username: sale.username,
