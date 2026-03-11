@@ -1,6 +1,19 @@
+import { redirect } from "next/navigation"
+import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import { OperatingExpensesClient } from "./operating-expenses-client"
 
-export default function OperatingExpensesPage() {
+export default async function OperatingExpensesPage() {
+  const user = await getCurrentUser()
+  if (!user) {
+    redirect("/login")
+  }
+  const canManageExpenses = hasPermission(user, "canManageExpenses", { allowAdminBypass: false })
+  const canCancelExpenses = hasPermission(user, "canCancelExpenses", { allowAdminBypass: false })
+  if (!canManageExpenses && !canCancelExpenses) {
+    redirect("/app")
+  }
+
   return (
     <div className="grid gap-6">
       <div>

@@ -49,6 +49,20 @@ export type CurrentUser = {
   canManageBackups: boolean
   canViewProductCosts: boolean
   canViewProfitReport: boolean
+  canAdjustInventory: boolean
+  canManageCategories: boolean
+  canManagePurchases: boolean
+  canCancelPurchases: boolean
+  canManageSuppliers: boolean
+  canManageCustomers: boolean
+  canApproveCredit: boolean
+  canManageExpenses: boolean
+  canCancelExpenses: boolean
+  canManageQuotes: boolean
+  canApplyDiscounts: boolean
+  canViewAuditLogs: boolean
+  canManageUsers: boolean
+  canManageSettings: boolean
 }
 
 export type AccountInfo = {
@@ -539,6 +553,20 @@ export async function authenticateSubUser(
         canManageBackups: user.canManageBackups,
         canViewProductCosts: user.canViewProductCosts,
         canViewProfitReport: user.canViewProfitReport,
+        canAdjustInventory: user.canAdjustInventory,
+        canManageCategories: user.canManageCategories,
+        canManagePurchases: user.canManagePurchases,
+        canCancelPurchases: user.canCancelPurchases,
+        canManageSuppliers: user.canManageSuppliers,
+        canManageCustomers: user.canManageCustomers,
+        canApproveCredit: user.canApproveCredit,
+        canManageExpenses: user.canManageExpenses,
+        canCancelExpenses: user.canCancelExpenses,
+        canManageQuotes: user.canManageQuotes,
+        canApplyDiscounts: user.canApplyDiscounts,
+        canViewAuditLogs: user.canViewAuditLogs,
+        canManageUsers: user.canManageUsers,
+        canManageSettings: user.canManageSettings,
       },
     }
   } catch (error) {
@@ -577,6 +605,20 @@ export async function createSubUser(
       canManageBackups: boolean
       canViewProductCosts: boolean
       canViewProfitReport: boolean
+      canAdjustInventory: boolean
+      canManageCategories: boolean
+      canManagePurchases: boolean
+      canCancelPurchases: boolean
+      canManageSuppliers: boolean
+      canManageCustomers: boolean
+      canApproveCredit: boolean
+      canManageExpenses: boolean
+      canCancelExpenses: boolean
+      canManageQuotes: boolean
+      canApplyDiscounts: boolean
+      canViewAuditLogs: boolean
+      canManageUsers: boolean
+      canManageSettings: boolean
     }>
   }
 ): Promise<{ success: boolean; user?: SubUser; error?: string }> {
@@ -785,6 +827,20 @@ export async function getCurrentUser(
     canManageBackups: user.canManageBackups,
     canViewProductCosts: user.canViewProductCosts,
     canViewProfitReport: user.canViewProfitReport,
+    canAdjustInventory: user.canAdjustInventory,
+    canManageCategories: user.canManageCategories,
+    canManagePurchases: user.canManagePurchases,
+    canCancelPurchases: user.canCancelPurchases,
+    canManageSuppliers: user.canManageSuppliers,
+    canManageCustomers: user.canManageCustomers,
+    canApproveCredit: user.canApproveCredit,
+    canManageExpenses: user.canManageExpenses,
+    canCancelExpenses: user.canCancelExpenses,
+    canManageQuotes: user.canManageQuotes,
+    canApplyDiscounts: user.canApplyDiscounts,
+    canViewAuditLogs: user.canViewAuditLogs,
+    canManageUsers: user.canManageUsers,
+    canManageSettings: user.canManageSettings,
   }
   
   return currentUser

@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react"
 
 export function Hero() {
   return (
-    <section 
+    <section
       className="relative overflow-hidden -mt-20 pb-12 sm:pb-16"
       style={{
         background: 'linear-gradient(35deg, rgb(6, 0, 151) 0%, rgb(130, 4, 255) 73%, rgb(193, 15, 255) 100%)'
@@ -22,8 +22,8 @@ export function Hero() {
             </h1>
             <p className="mt-8 text-xl leading-8 text-white/90 sm:text-2xl">
               Sistema de facturación en la nube para negocios en República Dominicana con un
-              software de facturacion, sistema de ventas e inventario, cuentas por cobrar y
-              facturación térmica. Prueba gratis 15 días y administra ventas en RD$ desde cualquier
+              software de facturacion, sistema de ventas e inventario, cuentas por cobrar.
+              Prueba gratis 15 días y administra ventas en RD$ desde cualquier
               dispositivo.
             </p>
             <div className="mt-10 flex items-center justify-center lg:justify-start gap-x-6">
@@ -33,9 +33,9 @@ export function Hero() {
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
-            <Button asChild variant="outline" size="lg" className="border-2 border-white text-white bg-transparent hover:bg-white/10 hover:text-white">
-              <Link href="/sistema-pos">Ver sistema POS</Link>
-            </Button>
+              <Button asChild variant="outline" size="lg" className="border-2 border-white text-white bg-transparent hover:bg-white/10 hover:text-white">
+                <Link href="/sistema-pos">Ver sistema POS</Link>
+              </Button>
             </div>
           </div>
           <div className="flex justify-center lg:justify-end">

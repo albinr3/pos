@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import type { AuditAction } from "@prisma/client"
+import { ensurePermission } from "@/lib/permission-guard"
 
 export type AuditLogFilters = {
   action?: AuditAction | "ALL"
@@ -29,10 +30,11 @@ export async function listAuditLogs(filters?: AuditLogFilters): Promise<AuditLog
   if (!user) {
     throw new Error("No autenticado")
   }
-
-  if (!user.isOwner) {
-    throw new Error("No tienes permisos para ver el audit log")
-  }
+  await ensurePermission(user, "canViewAuditLogs", {
+    allowAdminBypass: false,
+    message: "No tienes permisos para ver el audit log",
+    resourceType: "AuditLog",
+  })
 
   const where: Record<string, any> = {
     accountId: user.accountId,

@@ -38,7 +38,6 @@ export const metadata: Metadata = {
     "inventario",
     "sistema de inventario",
     "punto de venta",
-    "facturación térmica",
     "república dominicana",
     "control de ventas",
   ],

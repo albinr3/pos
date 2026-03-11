@@ -4,6 +4,7 @@ import { calcItbisIncluded } from "@/lib/money"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
+import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -112,6 +113,13 @@ export async function PUT(
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+    const canManageQuotes = await hasPermissionOrLog(user, "canManageQuotes", {
+      resourceType: "Quote",
+      details: { endpoint: "/api/quotes/[id]", method: "PUT" },
+    })
+    if (!canManageQuotes) {
+      return NextResponse.json({ error: "No tienes permiso para gestionar cotizaciones" }, { status: 403 })
     }
 
     const { id } = await params

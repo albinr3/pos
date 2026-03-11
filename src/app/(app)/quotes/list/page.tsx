@@ -1,6 +1,17 @@
+import { redirect } from "next/navigation"
+import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import { QuotesListClient } from "./quotes-list-client"
 
-export default function QuotesListPage() {
+export default async function QuotesListPage() {
+  const user = await getCurrentUser()
+  if (!user) {
+    redirect("/login")
+  }
+  if (!hasPermission(user, "canManageQuotes", { allowAdminBypass: false })) {
+    redirect("/app")
+  }
+
   return (
     <div className="grid gap-6">
       <div>

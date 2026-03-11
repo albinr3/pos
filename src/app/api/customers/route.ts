@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { listCustomers, upsertCustomer } from "@/app/(app)/customers/actions"
+import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -49,8 +50,24 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
+    const canManageCustomers = await hasPermissionOrLog(user, "canManageCustomers", {
+      resourceType: "Customer",
+      details: { endpoint: "/api/customers", method: "POST" },
+    })
+    if (!canManageCustomers) {
+      return NextResponse.json({ error: "No tienes permiso para gestionar clientes" }, { status: 403 })
+    }
 
     const body = await request.json()
+    if (body?.creditEnabled || Number(body?.creditDays || 0) > 0) {
+      const canApproveCredit = await hasPermissionOrLog(user, "canApproveCredit", {
+        resourceType: "Customer",
+        details: { endpoint: "/api/customers", method: "POST", creditEnabled: body?.creditEnabled ?? false },
+      })
+      if (!canApproveCredit) {
+        return NextResponse.json({ error: "No tienes permiso para aprobar lineas de credito" }, { status: 403 })
+      }
+    }
 
     await upsertCustomer({
       name: body.name,
@@ -91,6 +108,9 @@ export async function POST(request: NextRequest) {
     }, { status: 201 })
   } catch (error: any) {
     console.error("Error en POST /api/customers:", error)
+    if (typeof error?.message === "string" && error.message.includes("No tienes permiso")) {
+      return NextResponse.json({ error: error.message }, { status: 403 })
+    }
     return NextResponse.json(
       { error: error.message || "Error al crear cliente" },
       { status: 500 }

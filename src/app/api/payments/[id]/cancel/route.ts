@@ -22,7 +22,7 @@ export async function POST(
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
 
-    if (!user.canCancelPayments && user.role !== "ADMIN") {
+    if (!user.canCancelPayments && !user.isOwner) {
       return NextResponse.json({ error: "No tienes permiso para cancelar pagos" }, { status: 403 })
     }
 
@@ -113,4 +113,3 @@ export async function POST(
     )
   }
 }
-

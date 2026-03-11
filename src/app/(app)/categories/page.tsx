@@ -1,6 +1,17 @@
+import { redirect } from "next/navigation"
+import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import { CategoriesClient } from "./categories-client"
 
-export default function CategoriesPage() {
+export default async function CategoriesPage() {
+  const user = await getCurrentUser()
+  if (!user) {
+    redirect("/login")
+  }
+  if (!hasPermission(user, "canManageCategories", { allowAdminBypass: false })) {
+    redirect("/app")
+  }
+
   return (
     <div className="grid gap-6">
       <div>

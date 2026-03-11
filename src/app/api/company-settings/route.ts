@@ -1,14 +1,14 @@
-import { NextResponse } from "next/server"
-import { getCurrentUser } from "@/lib/auth"
+import { NextRequest, NextResponse } from "next/server"
+import { getCurrentUserFromRequest } from "../_helpers/auth"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   // Lazy import de Prisma para evitar inicialización durante el build
   const { prisma } = await import("@/lib/db")
   try {
-    const user = await getCurrentUser()
+    const user = await getCurrentUserFromRequest(request)
     if (!user) {
       return NextResponse.json(
         { error: "No autenticado" },
@@ -34,7 +34,6 @@ export async function GET() {
     )
   }
 }
-
 
 
 

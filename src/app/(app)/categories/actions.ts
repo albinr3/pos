@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
+import { ensurePermission } from "@/lib/permission-guard"
 
 export async function listCategories(query?: string) {
   const user = await getCurrentUser()
@@ -46,6 +47,11 @@ export async function upsertCategory(input: {
 }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageCategories", {
+    message: "No tienes permiso para gestionar categorias",
+    resourceType: "Category",
+    resourceId: input.id,
+  })
 
   const name = sanitizeString(input.name)
   if (!name) throw new Error("El nombre es requerido")
@@ -123,6 +129,11 @@ export async function upsertCategory(input: {
 export async function deactivateCategory(categoryId: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageCategories", {
+    message: "No tienes permiso para gestionar categorias",
+    resourceType: "Category",
+    resourceId: categoryId,
+  })
 
   const existing = await prisma.category.findFirst({
     where: { id: categoryId, accountId: user.accountId },

@@ -1,9 +1,20 @@
 import Link from "next/link"
 import { Camera } from "lucide-react"
+import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
+import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import { PurchasesClient } from "./purchases-client"
 
-export default function PurchasesPage() {
+export default async function PurchasesPage() {
+  const user = await getCurrentUser()
+  if (!user) {
+    redirect("/login")
+  }
+  if (!hasPermission(user, "canManagePurchases", { allowAdminBypass: false })) {
+    redirect("/app")
+  }
+
   return (
     <div className="grid gap-6">
       <div className="flex items-start justify-between gap-4">

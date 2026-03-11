@@ -42,7 +42,7 @@ export function BackupsClient() {
   const [isRestoring, startRestoring] = useTransition()
   
   // Verificar permiso
-  if (!user.canManageBackups && user.username !== "admin") {
+  if (!user.canManageBackups) {
     return (
       <div className="flex items-center justify-center p-8">
         <Card>

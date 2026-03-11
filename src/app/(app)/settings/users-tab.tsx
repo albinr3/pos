@@ -46,22 +46,18 @@ import {
   setAllUserPermissions,
   type UserWithPermissions,
 } from "./users-actions"
+import {
+  ALL_PERMISSION_KEYS,
+  CRITICAL_PERMISSION_KEYS,
+  PERMISSION_LABELS,
+  PERMISSION_MODULES,
+  buildPermissionPatch,
+  getModulePermissionState,
+  isCriticalPermission,
+  type PermissionKey,
+} from "@/lib/permissions"
 
-const PERMISSION_LABELS: Record<string, string> = {
-  canOverridePrice: "Modificar precios",
-  canCancelSales: "Cancelar facturas",
-  canCancelReturns: "Cancelar devoluciones",
-  canCancelPayments: "Cancelar pagos",
-  canEditSales: "Editar facturas",
-  canEditProducts: "Editar productos",
-  canChangeSaleType: "Cambiar tipo de venta",
-  canSellWithoutStock: "Vender sin stock",
-  canManageBackups: "Gestionar backups",
-  canViewProductCosts: "Ver costos de productos",
-  canViewProfitReport: "Ver reporte de ganancia",
-}
-
-const PERMISSION_KEYS = Object.keys(PERMISSION_LABELS) as (keyof typeof PERMISSION_LABELS)[]
+type PermissionState = Record<PermissionKey, boolean>
 
 type NewUserForm = {
   name: string
@@ -69,20 +65,17 @@ type NewUserForm = {
   password: string
   email: string
   role: "ADMIN" | "CAJERO" | "ALMACEN"
-  permissions: {
-    canOverridePrice: boolean
-    canCancelSales: boolean
-    canCancelReturns: boolean
-    canCancelPayments: boolean
-    canEditSales: boolean
-    canEditProducts: boolean
-    canChangeSaleType: boolean
-    canSellWithoutStock: boolean
-    canManageBackups: boolean
-    canViewProductCosts: boolean
-    canViewProfitReport: boolean
-  }
+  permissions: PermissionState
 }
+
+const DEFAULT_PERMISSIONS = ALL_PERMISSION_KEYS.reduce<PermissionState>((acc, key) => {
+  acc[key] = false
+  return acc
+}, {} as PermissionState)
+
+const NON_CRITICAL_PERMISSION_KEYS = ALL_PERMISSION_KEYS.filter(
+  (permission) => !(CRITICAL_PERMISSION_KEYS as readonly string[]).includes(permission)
+)
 
 const DEFAULT_NEW_USER: NewUserForm = {
   name: "",
@@ -90,33 +83,23 @@ const DEFAULT_NEW_USER: NewUserForm = {
   password: "",
   email: "",
   role: "CAJERO",
-  permissions: {
-    canOverridePrice: false,
-    canCancelSales: false,
-    canCancelReturns: false,
-    canCancelPayments: false,
-    canEditSales: false,
-    canEditProducts: false,
-    canChangeSaleType: false,
-    canSellWithoutStock: false,
-    canManageBackups: false,
-    canViewProductCosts: false,
-    canViewProfitReport: false,
-  },
+  permissions: DEFAULT_PERMISSIONS,
 }
 
-export function UsersTab({ isOwner }: { isOwner: boolean }) {
+function getPermissionValue(user: UserWithPermissions, permission: PermissionKey): boolean {
+  return Boolean(user[permission as keyof UserWithPermissions])
+}
+
+export function UsersTab({ isOwner, canManageUsers }: { isOwner: boolean; canManageUsers: boolean }) {
   const [users, setUsers] = useState<UserWithPermissions[]>([])
   const [isLoading, startLoading] = useTransition()
   const [isSaving, startSaving] = useTransition()
 
-  // Dialog states
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showEditDialog, setShowEditDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [selectedUser, setSelectedUser] = useState<UserWithPermissions | null>(null)
 
-  // Form states
   const [newUser, setNewUser] = useState<NewUserForm>(DEFAULT_NEW_USER)
   const [editPassword, setEditPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -136,6 +119,17 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
     loadUsers()
   }, [])
 
+  function canEditTargetUser(targetUser: UserWithPermissions): boolean {
+    if (!canManageUsers) return false
+    if (targetUser.isOwner && !isOwner) return false
+    return true
+  }
+
+  function getEditableModulePermissions(modulePermissions: PermissionKey[]) {
+    if (isOwner) return modulePermissions
+    return modulePermissions.filter((permission) => !isCriticalPermission(permission))
+  }
+
   const handleCreateUser = async () => {
     if (!newUser.name || !newUser.username || !newUser.password) {
       toast({ title: "Error", description: "Nombre, usuario y contraseña son requeridos", variant: "destructive" })
@@ -150,7 +144,7 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
           password: newUser.password,
           email: newUser.email || undefined,
           role: newUser.role,
-          permissions: newUser.permissions as NewUserForm["permissions"],
+          permissions: newUser.permissions,
         })
         toast({ title: "Usuario creado" })
         setShowCreateDialog(false)
@@ -174,19 +168,10 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
           role: selectedUser.role,
           isActive: selectedUser.isActive,
           password: editPassword || undefined,
-          permissions: {
-            canOverridePrice: selectedUser.canOverridePrice,
-            canCancelSales: selectedUser.canCancelSales,
-            canCancelReturns: selectedUser.canCancelReturns,
-            canCancelPayments: selectedUser.canCancelPayments,
-            canEditSales: selectedUser.canEditSales,
-            canEditProducts: selectedUser.canEditProducts,
-            canChangeSaleType: selectedUser.canChangeSaleType,
-            canSellWithoutStock: selectedUser.canSellWithoutStock,
-            canManageBackups: selectedUser.canManageBackups,
-            canViewProductCosts: selectedUser.canViewProductCosts,
-            canViewProfitReport: selectedUser.canViewProfitReport,
-          },
+          permissions: ALL_PERMISSION_KEYS.reduce<Record<PermissionKey, boolean>>((acc, key) => {
+            acc[key] = getPermissionValue(selectedUser, key)
+            return acc
+          }, {} as Record<PermissionKey, boolean>),
         })
         toast({ title: "Usuario actualizado" })
         setShowEditDialog(false)
@@ -215,10 +200,9 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
     })
   }
 
-  const handleTogglePermission = (userId: string, permission: string, value: boolean) => {
-    // Actualización optimista
+  const handleTogglePermission = (userId: string, permission: PermissionKey, value: boolean) => {
     setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, [permission]: value } : u))
+      prev.map((user) => (user.id === userId ? { ...user, [permission]: value } : user))
     )
 
     startSaving(async () => {
@@ -226,10 +210,10 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
         await updateUser(userId, {
           permissions: { [permission]: value },
         })
-        toast({ 
+        toast({
           title: "Cambio aplicado",
-          description: `${PERMISSION_LABELS[permission as keyof typeof PERMISSION_LABELS]} ${value ? "activado" : "desactivado"}`,
-          duration: 2000
+          description: `${PERMISSION_LABELS[permission]} ${value ? "activado" : "desactivado"}`,
+          duration: 2000,
         })
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "Error al guardar", variant: "destructive" })
@@ -238,33 +222,41 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
     })
   }
 
-  const handleSetAllPermissions = (userId: string, value: boolean) => {
-    // Actualización optimista
+  const handleToggleModule = (targetUser: UserWithPermissions, permissions: PermissionKey[], value: boolean) => {
+    if (!permissions.length) return
+
+    const patch = buildPermissionPatch(permissions, value)
+
     setUsers((prev) =>
-      prev.map((u) =>
-        u.id === userId
-          ? {
-              ...u,
-              canOverridePrice: value,
-              canCancelSales: value,
-              canCancelReturns: value,
-              canCancelPayments: value,
-              canEditSales: value,
-              canEditProducts: value,
-              canChangeSaleType: value,
-              canSellWithoutStock: value,
-              canManageBackups: value,
-              canViewProductCosts: value,
-              canViewProfitReport: value,
-            }
-          : u
-      )
+      prev.map((user) => (user.id === targetUser.id ? { ...user, ...patch } : user))
     )
 
     startSaving(async () => {
       try {
-        await setAllUserPermissions(userId, value)
-        toast({ title: value ? "Todos los permisos activados" : "Todos los permisos desactivados" })
+        await updateUser(targetUser.id, { permissions: patch })
+        toast({
+          title: value ? "Permisos del módulo activados" : "Permisos del módulo desactivados",
+          duration: 2000,
+        })
+      } catch (e) {
+        toast({ title: "Error", description: e instanceof Error ? e.message : "Error al guardar", variant: "destructive" })
+        loadUsers()
+      }
+    })
+  }
+
+  const handleSetAllPermissions = (targetUser: UserWithPermissions, value: boolean) => {
+    const editablePermissions = isOwner ? ALL_PERMISSION_KEYS : NON_CRITICAL_PERMISSION_KEYS
+    const patch = buildPermissionPatch(editablePermissions, value)
+
+    setUsers((prev) =>
+      prev.map((user) => (user.id === targetUser.id ? { ...user, ...patch } : user))
+    )
+
+    startSaving(async () => {
+      try {
+        await setAllUserPermissions(targetUser.id, value)
+        toast({ title: value ? "Todos los permisos aplicables activados" : "Todos los permisos aplicables desactivados" })
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "Error al guardar", variant: "destructive" })
         loadUsers()
@@ -276,6 +268,7 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
     if (userIsOwner) {
       return <Badge className="bg-purple-100 text-purple-800 border-purple-300">Dueño</Badge>
     }
+
     switch (role) {
       case "ADMIN":
         return <Badge className="bg-blue-100 text-blue-800 border-blue-300">Admin</Badge>
@@ -297,7 +290,7 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
               <Users className="h-5 w-5" />
               Usuarios
             </CardTitle>
-            {isOwner && (
+            {canManageUsers && (
               <Button onClick={() => setShowCreateDialog(true)} size="sm">
                 <Plus className="h-4 w-4 mr-1" />
                 Nuevo Usuario
@@ -307,9 +300,9 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="text-sm text-muted-foreground">
-            {isOwner
-              ? "Gestiona los usuarios de tu cuenta. Puedes crear nuevos usuarios y asignar permisos específicos."
-              : "Lista de usuarios de la cuenta. Solo el dueño puede gestionar usuarios."}
+            {canManageUsers
+              ? "Gestiona usuarios y permisos por módulos."
+              : "No tienes permisos para gestionar usuarios."}
           </div>
           <Separator />
 
@@ -320,69 +313,72 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
           )}
 
           <div className="space-y-6">
-            {users.map((user) => (
-              <div key={user.id} className="rounded-lg border p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <div className="font-medium flex items-center gap-2">
-                        {user.name}
-                        {!user.isActive && (
-                          <Badge variant="outline" className="text-red-600 border-red-300">
-                            Inactivo
-                          </Badge>
-                        )}
+            {users.map((user) => {
+              const canEditUser = canEditTargetUser(user)
+
+              return (
+                <div key={user.id} className="rounded-lg border p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <div className="font-medium flex items-center gap-2">
+                          {user.name}
+                          {!user.isActive && (
+                            <Badge variant="outline" className="text-red-600 border-red-300">
+                              Inactivo
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground">@{user.username}</div>
                       </div>
-                      <div className="text-sm text-muted-foreground">@{user.username}</div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {getRoleBadge(user.role, user.isOwner)}
-                    {isOwner && (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedUser(user)
-                            setShowEditDialog(true)
-                          }}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        {!user.isOwner && (
+                    <div className="flex items-center gap-2">
+                      {getRoleBadge(user.role, user.isOwner)}
+                      {canManageUsers && (
+                        <>
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => {
                               setSelectedUser(user)
-                              setShowDeleteDialog(true)
+                              setShowEditDialog(true)
                             }}
-                            className="text-destructive hover:text-destructive"
+                            disabled={!canEditUser}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Pencil className="h-4 w-4" />
                           </Button>
-                        )}
-                      </>
-                    )}
+                          {!user.isOwner && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedUser(user)
+                                setShowDeleteDialog(true)
+                              }}
+                              className="text-destructive hover:text-destructive"
+                              disabled={!canEditUser}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
 
-                {/* Permisos */}
-                <Accordion type="single" collapsible className="w-full">
-                  <AccordionItem value={`permissions-${user.id}`}>
-                    <div className="flex items-center justify-between">
-                      <AccordionTrigger className="flex items-center gap-2 hover:no-underline flex-1">
-                        <Shield className="h-4 w-4" />
-                        <span className="text-sm font-medium">Permisos</span>
-                      </AccordionTrigger>
-                      {isOwner && (
+                  <Accordion type="single" collapsible className="w-full">
+                    <AccordionItem value={`permissions-${user.id}`}>
+                      <div className="flex items-center justify-between gap-2">
+                        <AccordionTrigger className="flex items-center gap-2 hover:no-underline flex-1">
+                          <Shield className="h-4 w-4" />
+                          <span className="text-sm font-medium">Permisos por módulo</span>
+                        </AccordionTrigger>
                         <div className="flex gap-1 ml-4">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleSetAllPermissions(user.id, true)}
-                            disabled={isSaving}
+                            onClick={() => handleSetAllPermissions(user, true)}
+                            disabled={isSaving || !canEditUser}
                           >
                             <Check className="h-4 w-4 mr-1" />
                             Todos
@@ -390,41 +386,76 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleSetAllPermissions(user.id, false)}
-                            disabled={isSaving}
+                            onClick={() => handleSetAllPermissions(user, false)}
+                            disabled={isSaving || !canEditUser}
                           >
                             <X className="h-4 w-4 mr-1" />
                             Ninguno
                           </Button>
                         </div>
-                      )}
-                    </div>
-                    <AccordionContent>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
-                        {PERMISSION_KEYS.map((permission) => (
-                          <div
-                            key={permission}
-                            className="flex items-center justify-between gap-2 rounded-md border p-3"
-                          >
-                            <Label className="text-sm">{PERMISSION_LABELS[permission]}</Label>
-                            <Switch
-                              checked={user[permission as keyof UserWithPermissions] as boolean}
-                              onCheckedChange={(v) => handleTogglePermission(user.id, permission, v)}
-                              disabled={isSaving || !isOwner}
-                            />
-                          </div>
-                        ))}
                       </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              </div>
-            ))}
+                      <AccordionContent>
+                        <div className="grid gap-4 pt-2">
+                          {PERMISSION_MODULES.map((module) => {
+                            const editableModulePermissions = getEditableModulePermissions(module.permissions)
+                            const moduleState = getModulePermissionState(
+                              user,
+                              {
+                                ...module,
+                                permissions: editableModulePermissions.length > 0
+                                  ? editableModulePermissions
+                                  : module.permissions,
+                              },
+                              { allowAdminBypass: false }
+                            )
+                            const moduleToggleDisabled = isSaving || !canEditUser || editableModulePermissions.length === 0
+
+                            return (
+                              <div key={module.id} className="rounded-md border p-3">
+                                <div className="mb-3 flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="text-sm font-medium">{module.label}</div>
+                                    {moduleState === "partial" && (
+                                      <Badge variant="outline" className="text-xs">Parcial</Badge>
+                                    )}
+                                  </div>
+                                  <Switch
+                                    checked={moduleState === "all"}
+                                    onCheckedChange={(value) => handleToggleModule(user, editableModulePermissions, value)}
+                                    disabled={moduleToggleDisabled}
+                                  />
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                  {module.permissions.map((permission) => {
+                                    const disableCriticalForDelegated = !isOwner && isCriticalPermission(permission)
+                                    const disabled = isSaving || !canEditUser || disableCriticalForDelegated
+
+                                    return (
+                                      <div key={permission} className="flex items-center justify-between gap-2 rounded-md border p-3">
+                                        <Label className="text-sm">{PERMISSION_LABELS[permission]}</Label>
+                                        <Switch
+                                          checked={getPermissionValue(user, permission)}
+                                          onCheckedChange={(value) => handleTogglePermission(user.id, permission, value)}
+                                          disabled={disabled}
+                                        />
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                </div>
+              )
+            })}
           </div>
         </CardContent>
       </Card>
 
-      {/* Create User Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -487,7 +518,7 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
               <Label htmlFor="role">Rol</Label>
               <Select
                 value={newUser.role}
-                onValueChange={(v) => setNewUser({ ...newUser, role: v as NewUserForm["role"] })}
+                onValueChange={(value) => setNewUser({ ...newUser, role: value as NewUserForm["role"] })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -511,7 +542,6 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
         </DialogContent>
       </Dialog>
 
-      {/* Edit User Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -572,7 +602,7 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
                 <Label htmlFor="edit-role">Rol</Label>
                 <Select
                   value={selectedUser.role}
-                  onValueChange={(v) => setSelectedUser({ ...selectedUser, role: v as UserWithPermissions["role"] })}
+                  onValueChange={(value) => setSelectedUser({ ...selectedUser, role: value as UserWithPermissions["role"] })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -589,7 +619,7 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
                 <Switch
                   id="edit-active"
                   checked={selectedUser.isActive}
-                  onCheckedChange={(v) => setSelectedUser({ ...selectedUser, isActive: v })}
+                  onCheckedChange={(value) => setSelectedUser({ ...selectedUser, isActive: value })}
                 />
               </div>
             </div>
@@ -605,13 +635,12 @@ export function UsersTab({ isOwner }: { isOwner: boolean }) {
         </DialogContent>
       </Dialog>
 
-      {/* Delete User Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>¿Eliminar usuario?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta acción no se puede deshacer. El usuario "{selectedUser?.name}" será eliminado permanentemente.
+              Esta acción no se puede deshacer. El usuario &quot;{selectedUser?.name}&quot; será eliminado permanentemente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

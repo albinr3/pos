@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { startOfDay, endOfDay, parseDateParam } from "@/lib/dates"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
+import { ensurePermission } from "@/lib/permission-guard"
 
 export async function listOperatingExpenses(input?: { from?: string; to?: string }) {
   const user = await getCurrentUser()
@@ -40,6 +41,10 @@ export async function createOperatingExpense(input: {
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
+  await ensurePermission(currentUser, "canManageExpenses", {
+    message: "No tienes permiso para registrar gastos",
+    resourceType: "OperatingExpense",
+  })
 
   const description = input.description.trim()
   if (!description) throw new Error("La descripcion es requerida")
@@ -87,6 +92,11 @@ export async function updateOperatingExpense(input: {
 }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageExpenses", {
+    message: "No tienes permiso para registrar gastos",
+    resourceType: "OperatingExpense",
+    resourceId: input.id,
+  })
 
   const description = input.description.trim()
   if (!description) throw new Error("La descripción es requerida")
@@ -131,6 +141,11 @@ export async function updateOperatingExpense(input: {
 export async function deleteOperatingExpense(id: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canCancelExpenses", {
+    message: "No tienes permiso para anular gastos",
+    resourceType: "OperatingExpense",
+    resourceId: id,
+  })
 
   const existing = await prisma.operatingExpense.findFirst({ 
     where: { accountId: user.accountId, id } 

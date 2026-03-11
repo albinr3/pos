@@ -497,7 +497,7 @@ export async function cancelReturn(id: string) {
   if (!dbUser) throw new Error("Usuario inválido")
 
   // Verificar permiso para cancelar devoluciones
-  if (!dbUser.canCancelReturns && dbUser.role !== "ADMIN") {
+  if (!dbUser.canCancelReturns && !dbUser.isOwner) {
     throw new Error("No tienes permiso para cancelar devoluciones")
   }
 
@@ -639,7 +639,6 @@ export async function searchSalesForReturn(
 
   return sales
 }
-
 
 
 

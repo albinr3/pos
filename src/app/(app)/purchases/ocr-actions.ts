@@ -8,6 +8,7 @@ import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { INITIAL_STOCK_REASON } from "@/lib/inventory"
 import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
+import { ensurePermission } from "@/lib/permission-guard"
 
 // Tipos para los datos extraídos del OCR
 export type ExtractedProduct = {
@@ -216,6 +217,10 @@ export async function createPurchaseFromOCR(input: {
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
+  await ensurePermission(currentUser, "canManagePurchases", {
+    message: "No tienes permiso para gestionar compras",
+    resourceType: "Purchase",
+  })
 
   if (!input.products.length) throw new Error("La compra no tiene productos")
 

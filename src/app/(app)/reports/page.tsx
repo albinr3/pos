@@ -3,12 +3,16 @@ import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
 
 export default async function ReportsPage() {
   const user = await getCurrentUser()
+  const canViewProfit = user
+    ? hasPermission(user, "canViewProfitReport", { allowAdminBypass: false })
+    : false
   
   return (
     <div className="grid gap-6">
@@ -48,7 +52,7 @@ export default async function ReportsPage() {
             </Button>
           </CardContent>
         </Card>
-        {(user?.canViewProfitReport || user?.role === "ADMIN") && (
+        {canViewProfit && (
           <Card>
             <CardHeader>
               <CardTitle>Ganancia</CardTitle>

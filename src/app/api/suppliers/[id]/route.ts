@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { sanitizePhone, sanitizeString } from "@/lib/sanitize"
+import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -66,6 +67,13 @@ export async function PUT(
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+    const canManageSuppliers = await hasPermissionOrLog(user, "canManageSuppliers", {
+      resourceType: "Supplier",
+      details: { endpoint: "/api/suppliers/[id]", method: "PUT" },
+    })
+    if (!canManageSuppliers) {
+      return NextResponse.json({ error: "No tienes permiso para gestionar proveedores" }, { status: 403 })
     }
 
     const { id } = await params

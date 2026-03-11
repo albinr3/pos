@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
+import { ensurePermission } from "@/lib/permission-guard"
 
 export async function updateCompanyInfo(input: {
   name: string
@@ -13,6 +14,11 @@ export async function updateCompanyInfo(input: {
 }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSettings", {
+    allowAdminBypass: false,
+    message: "No tienes permiso para modificar ajustes",
+    resourceType: "CompanySettings",
+  })
 
   const name = input.name.trim()
   const phone = input.phone.trim()

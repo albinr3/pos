@@ -43,6 +43,24 @@ Permisos configurables por usuario:
 - `canManageBackups`: Gestionar backups de base de datos
 - `canViewProductCosts`: Ver costos de productos
 - `canViewProfitReport`: Ver reporte de ganancia
+- `canAdjustInventory`: Ajustar inventario manualmente
+- `canManageCategories`: Gestionar categorías
+- `canManagePurchases`: Registrar/editar compras
+- `canCancelPurchases`: Anular compras
+- `canManageSuppliers`: Gestionar proveedores
+- `canManageCustomers`: Gestionar clientes
+- `canApproveCredit`: Aprobar línea de crédito
+- `canManageExpenses`: Registrar/editar gastos operativos
+- `canCancelExpenses`: Anular gastos operativos
+- `canManageQuotes`: Crear/gestionar cotizaciones
+- `canApplyDiscounts`: Aplicar descuentos globales (preparado para futuros flujos)
+- `canViewAuditLogs`: Ver bitácora de auditoría
+- `canManageUsers`: Gestionar subusuarios (delegación limitada)
+- `canManageSettings`: Modificar ajustes de empresa
+
+Notas de autorización:
+- El `owner` conserva bypass administrativo para evitar lockout.
+- El rol `ADMIN` ya no hace bypass automático de permisos granulares.
 
 ### Modo Offline
 - **Ventas offline**: Se guardan en IndexedDB y sincronizan al volver la conexión
@@ -53,6 +71,26 @@ Permisos configurables por usuario:
 ---
 
 ## ✅ Implementaciones y correcciones recientes (enero-marzo 2026)
+
+### Permisos modulares y hardening de acceso (marzo 2026)
+- Se agregaron permisos modulares por categoría en `User`:
+  - inventario/productos, compras/proveedores, clientes/crédito, gastos, cotizaciones, ventas/caja, auditoría/configuración.
+- Se creó migración con backfill de compatibilidad:
+  - owner: permisos nuevos en `true`
+  - no-owner: mapeo de compatibilidad operativo (incluye `canAdjustInventory`/`canManageCategories` desde `canEditProducts`).
+- Se centralizó el contrato de permisos en `src/lib/permissions.ts` y guardas en `src/lib/permission-guard.ts`.
+- Se aplicó enforcement server-side en Server Actions y API REST (`403` en denegados) y auditoría de intentos no autorizados (`UNAUTHORIZED_ACCESS`).
+- Se rediseñó la gestión de subusuarios:
+  - permisos por módulos
+  - toggle ON/OFF por módulo
+  - estado parcial por módulo
+  - restricciones de delegación para permisos críticos.
+- Se propagaron los nuevos flags de permisos en auth/session y payloads de login (`/api/auth/subuser/login`, `/api/auth/me`).
+- Se endureció acceso por URL directa en páginas de módulos:
+  - `/categories`, `/suppliers`, `/customers`, `/quotes`, `/quotes/list`, `/operating-expenses`, `/purchases`, `/purchases/list`, `/purchases/scan`.
+- Ajuste adicional de seguridad:
+  - se eliminó el bypass implícito por `role=ADMIN` y por `username=admin` en validaciones de permisos de negocio.
+  - el bypass administrativo queda solo para `isOwner`.
 
 ### Implementaciones
 - **Verificación de conectividad real**: Se agrega ping periódico (`HEAD`) a `/api/health-check` con timeout para detectar si hay internet real, no solo `navigator.onLine`.
@@ -373,7 +411,7 @@ Ruta: `/settings`
 - Botón "Sincronizar ahora"
 - Botón "Pre-cargar datos offline"
 
-#### Gestión de Usuarios (solo dueño)
+#### Gestión de Usuarios (owner o usuario con `canManageUsers`)
 - Crear nuevos usuarios/operadores
 - Editar usuarios existentes
 - Cambiar contraseñas
@@ -381,10 +419,11 @@ Ruta: `/settings`
 - Configurar permisos individuales
 - Activar/desactivar usuarios
 - Eliminar usuarios
+- Restricción: solo `owner` puede modificar permisos críticos (`canManageUsers`, `canManageSettings`, `canViewAuditLogs`) y cuentas owner
 
 ### Backups de Base de Datos
 Ruta: `/backups`
-- **Requiere permiso**: `canManageBackups` o rol ADMIN
+- **Requiere permiso**: `canManageBackups` (owner con bypass)
 - Crear backups manuales
 - Ver lista de backups disponibles
 - Descargar backups

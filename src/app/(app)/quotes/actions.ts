@@ -7,6 +7,7 @@ import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
+import { ensurePermission } from "@/lib/permission-guard"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -217,6 +218,10 @@ export async function createQuote(input: {
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
+  await ensurePermission(currentUser, "canManageQuotes", {
+    message: "No tienes permiso para gestionar cotizaciones",
+    resourceType: "Quote",
+  })
 
   if (!input.items.length) throw new Error("La cotización no tiene productos.")
 
@@ -310,6 +315,11 @@ export async function updateQuote(input: {
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
+  await ensurePermission(currentUser, "canManageQuotes", {
+    message: "No tienes permiso para gestionar cotizaciones",
+    resourceType: "Quote",
+    resourceId: input.id,
+  })
 
   if (!input.items.length) throw new Error("La cotización no tiene productos.")
 
@@ -397,6 +407,11 @@ export async function updateQuote(input: {
 export async function deleteQuote(id: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageQuotes", {
+    message: "No tienes permiso para gestionar cotizaciones",
+    resourceType: "Quote",
+    resourceId: id,
+  })
 
   // Verificar que la cotización pertenece al account
   const quote = await prisma.quote.findFirst({

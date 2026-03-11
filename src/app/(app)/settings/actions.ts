@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
+import { ensurePermission } from "@/lib/permission-guard"
 
 export async function getSettings() {
   const user = await getCurrentUser()
@@ -32,6 +33,11 @@ export async function getSettings() {
 export async function updateAllowNegativeStock(allow: boolean) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSettings", {
+    allowAdminBypass: false,
+    message: "No tienes permiso para modificar ajustes",
+    resourceType: "CompanySettings",
+  })
 
   await prisma.companySettings.upsert({
     where: { accountId: user.accountId },
@@ -62,6 +68,11 @@ export async function updateAllowNegativeStock(allow: boolean) {
 export async function updateLabelSizes(barcodeLabelSize: string, shippingLabelSize: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSettings", {
+    allowAdminBypass: false,
+    message: "No tienes permiso para modificar ajustes",
+    resourceType: "CompanySettings",
+  })
 
   const sanitizedBarcodeLabelSize = sanitizeString(barcodeLabelSize)
   const sanitizedShippingLabelSize = sanitizeString(shippingLabelSize)
@@ -102,6 +113,11 @@ export async function updateLabelSizes(barcodeLabelSize: string, shippingLabelSi
 export async function updateSalesSettings(defaultViewMode: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSettings", {
+    allowAdminBypass: false,
+    message: "No tienes permiso para modificar ajustes",
+    resourceType: "CompanySettings",
+  })
 
   const sanitizedViewMode = sanitizeString(defaultViewMode)
 
@@ -135,6 +151,11 @@ export async function updateSalesSettings(defaultViewMode: string) {
 export async function updateReceiptSettings(showItbis: boolean) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSettings", {
+    allowAdminBypass: false,
+    message: "No tienes permiso para modificar ajustes",
+    resourceType: "CompanySettings",
+  })
 
   await prisma.companySettings.upsert({
     where: { accountId: user.accountId },
@@ -165,6 +186,11 @@ export async function updateReceiptSettings(showItbis: boolean) {
 export async function updatePurchasePricingSettings(defaultProfitMarginBp: number) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSettings", {
+    allowAdminBypass: false,
+    message: "No tienes permiso para modificar ajustes",
+    resourceType: "CompanySettings",
+  })
 
   const normalizedMargin = Math.min(50000, Math.max(0, Math.round(defaultProfitMarginBp || 0)))
 

@@ -1,6 +1,17 @@
+import { redirect } from "next/navigation"
+import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import { SuppliersClient } from "./suppliers-client"
 
-export default function SuppliersPage() {
+export default async function SuppliersPage() {
+  const user = await getCurrentUser()
+  if (!user) {
+    redirect("/login")
+  }
+  if (!hasPermission(user, "canManageSuppliers", { allowAdminBypass: false })) {
+    redirect("/app")
+  }
+
   return (
     <div className="grid gap-6">
       <div>

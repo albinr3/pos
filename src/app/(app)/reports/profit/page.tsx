@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { formatRD } from "@/lib/money"
 import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import { redirect } from "next/navigation"
 
 import { ReportDateRangeFilter } from "../filter-client"
@@ -22,7 +23,7 @@ export default async function ProfitReportPage({
   }
 
   // Verificar permiso para ver reporte de ganancia
-  if (!user.canViewProfitReport && user.role !== "ADMIN") {
+  if (!hasPermission(user, "canViewProfitReport", { allowAdminBypass: false })) {
     redirect("/reports")
   }
 

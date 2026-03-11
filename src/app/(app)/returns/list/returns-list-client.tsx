@@ -196,7 +196,7 @@ export function ReturnsListClient() {
                               size="icon"
                               onClick={() => handleCancel(r.id)}
                               title="Cancelar devolución"
-                              disabled={!user || (!user.canCancelReturns && user.role !== "ADMIN")}
+                              disabled={!user || (!user.canCancelReturns && !user.isOwner)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>

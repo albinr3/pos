@@ -9,6 +9,24 @@ import { logAuditEvent } from "@/lib/audit-log"
 import { sendResendEmail } from "@/lib/resend"
 import { renderWelcomeNewUserEmail } from "@/lib/resend/templates"
 import { sanitizeEmail } from "@/lib/sanitize"
+import {
+  ALL_PERMISSION_KEYS,
+  CRITICAL_PERMISSION_KEYS,
+  hasPermission,
+  isCriticalPermission,
+  type PermissionKey,
+} from "@/lib/permissions"
+import { ensurePermission, logUnauthorizedAccess } from "@/lib/permission-guard"
+
+type PermissionState = Record<PermissionKey, boolean>
+type PartialPermissionState = Partial<Record<PermissionKey, boolean>>
+
+const USER_PERMISSION_SELECT = ALL_PERMISSION_KEYS.reduce<Record<PermissionKey, true>>((acc, key) => {
+  acc[key] = true
+  return acc
+}, {} as Record<PermissionKey, true>)
+
+const NON_CRITICAL_PERMISSION_KEYS = ALL_PERMISSION_KEYS.filter((key) => !isCriticalPermission(key))
 
 export type UserWithPermissions = {
   id: string
@@ -18,24 +36,61 @@ export type UserWithPermissions = {
   role: UserRole
   isOwner: boolean
   isActive: boolean
-  canOverridePrice: boolean
-  canCancelSales: boolean
-  canCancelReturns: boolean
-  canCancelPayments: boolean
-  canEditSales: boolean
-  canEditProducts: boolean
-  canChangeSaleType: boolean
-  canSellWithoutStock: boolean
-  canManageBackups: boolean
-  canViewProductCosts: boolean
-  canViewProfitReport: boolean
   createdAt: Date
+} & PermissionState
+
+function canManageUsers(currentUser: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>) {
+  if (currentUser.isOwner) return true
+  return hasPermission(currentUser, "canManageUsers", { allowAdminBypass: false })
+}
+
+async function assertCanManageUsers(currentUser: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>) {
+  if (currentUser.isOwner) return
+  await ensurePermission(currentUser, "canManageUsers", {
+    allowAdminBypass: false,
+    message: "No tienes permisos para gestionar usuarios",
+    resourceType: "User",
+  })
+}
+
+function assertNoCriticalPermissionMutation(
+  currentUser: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>,
+  permissions?: PartialPermissionState
+) {
+  if (!permissions || currentUser.isOwner) return
+
+  for (const key of CRITICAL_PERMISSION_KEYS) {
+    if (permissions[key] !== undefined) {
+      throw new Error("Solo el owner puede modificar permisos criticos")
+    }
+  }
+}
+
+function assertNoCriticalPermissionGrantForDelegatedManager(
+  currentUser: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>,
+  permissions: PermissionState
+) {
+  if (currentUser.isOwner) return
+
+  for (const key of CRITICAL_PERMISSION_KEYS) {
+    if (permissions[key]) {
+      throw new Error("Solo el owner puede asignar permisos criticos")
+    }
+  }
 }
 
 export async function listAccountUsers(): Promise<UserWithPermissions[]> {
   const currentUser = await getCurrentUser()
   if (!currentUser) {
     throw new Error("No autenticado")
+  }
+  const canListUsers = canManageUsers(currentUser) || hasPermission(currentUser, "canViewAuditLogs", { allowAdminBypass: false })
+  if (!canListUsers) {
+    await logUnauthorizedAccess(currentUser, "canManageUsers", {
+      resourceType: "User",
+      details: { reason: "list_users" },
+    })
+    throw new Error("No tienes permisos para ver usuarios")
   }
 
   const users = await prisma.user.findMany({
@@ -49,18 +104,8 @@ export async function listAccountUsers(): Promise<UserWithPermissions[]> {
       role: true,
       isOwner: true,
       isActive: true,
-      canOverridePrice: true,
-      canCancelSales: true,
-      canCancelReturns: true,
-      canCancelPayments: true,
-      canEditSales: true,
-      canEditProducts: true,
-      canChangeSaleType: true,
-      canSellWithoutStock: true,
-      canManageBackups: true,
-      canViewProductCosts: true,
-      canViewProfitReport: true,
       createdAt: true,
+      ...USER_PERMISSION_SELECT,
     },
   })
 
@@ -73,31 +118,16 @@ export async function createUser(data: {
   password: string
   email?: string
   role: UserRole
-  permissions: {
-    canOverridePrice: boolean
-    canCancelSales: boolean
-    canCancelReturns: boolean
-    canCancelPayments: boolean
-    canEditSales: boolean
-    canEditProducts: boolean
-    canChangeSaleType: boolean
-    canSellWithoutStock: boolean
-    canManageBackups: boolean
-    canViewProductCosts: boolean
-    canViewProfitReport: boolean
-  }
+  permissions: PermissionState
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) {
     throw new Error("No autenticado")
   }
 
-  // Solo el owner puede crear usuarios
-  if (!currentUser.isOwner) {
-    throw new Error("Solo el dueño de la cuenta puede crear usuarios")
-  }
+  await assertCanManageUsers(currentUser)
+  assertNoCriticalPermissionGrantForDelegatedManager(currentUser, data.permissions)
 
-  // Verificar que el username no exista
   const existing = await prisma.user.findUnique({
     where: {
       accountId_username: {
@@ -111,14 +141,13 @@ export async function createUser(data: {
     throw new Error("El nombre de usuario ya existe")
   }
 
-  // Validar contraseña
   if (data.password.length < 4) {
     throw new Error("La contraseña debe tener al menos 4 caracteres")
   }
 
   const normalizedEmail = data.email ? sanitizeEmail(data.email) : null
   if (data.email && !normalizedEmail) {
-    throw new Error("Email inválido")
+    throw new Error("Email invalido")
   }
 
   const passwordHash = await bcrypt.hash(data.password, 10)
@@ -192,19 +221,7 @@ export async function updateUser(
     role?: UserRole
     isActive?: boolean
     password?: string
-    permissions?: {
-      canOverridePrice?: boolean
-      canCancelSales?: boolean
-      canCancelReturns?: boolean
-      canCancelPayments?: boolean
-      canEditSales?: boolean
-      canEditProducts?: boolean
-      canChangeSaleType?: boolean
-      canSellWithoutStock?: boolean
-      canManageBackups?: boolean
-      canViewProductCosts?: boolean
-      canViewProfitReport?: boolean
-    }
+    permissions?: PartialPermissionState
   }
 ) {
   const currentUser = await getCurrentUser()
@@ -212,7 +229,6 @@ export async function updateUser(
     throw new Error("No autenticado")
   }
 
-  // Verificar que el usuario pertenece al mismo account
   const user = await prisma.user.findUnique({
     where: { id: userId },
   })
@@ -221,17 +237,27 @@ export async function updateUser(
     throw new Error("Usuario no encontrado")
   }
 
-  // Solo el owner puede editar otros usuarios
-  if (!currentUser.isOwner && currentUser.id !== userId) {
+  const canManage = canManageUsers(currentUser)
+  const isSelf = currentUser.id === userId
+
+  if (!canManage && !isSelf) {
     throw new Error("No tienes permisos para editar este usuario")
   }
 
-  // No se puede desactivar al owner
+  if (user.isOwner && !currentUser.isOwner) {
+    throw new Error("Solo el owner puede editar la cuenta owner")
+  }
+
+  if (!canManage && (data.role !== undefined || data.isActive !== undefined || data.permissions !== undefined)) {
+    throw new Error("No tienes permisos para cambiar rol, estado o permisos")
+  }
+
+  assertNoCriticalPermissionMutation(currentUser, data.permissions)
+
   if (user.isOwner && data.isActive === false) {
     throw new Error("No se puede desactivar al dueño de la cuenta")
   }
 
-  // Si se cambia el username, verificar que no exista
   if (data.username && data.username !== user.username) {
     const existing = await prisma.user.findUnique({
       where: {
@@ -247,7 +273,6 @@ export async function updateUser(
     }
   }
 
-  // Preparar datos de actualización
   const updateData: Record<string, unknown> = {}
   const changes: Record<string, unknown> = {}
 
@@ -260,8 +285,13 @@ export async function updateUser(
     if (data.username !== user.username) changes.username = data.username
   }
   if (data.email !== undefined) {
-    updateData.email = data.email || null
-    if ((data.email || null) !== user.email) changes.email = data.email || null
+    const sanitizedEmail = data.email ? sanitizeEmail(data.email) : null
+    if (data.email && !sanitizedEmail) {
+      throw new Error("Email invalido")
+    }
+
+    updateData.email = sanitizedEmail
+    if (sanitizedEmail !== user.email) changes.email = sanitizedEmail
   }
   if (data.role !== undefined) {
     updateData.role = data.role
@@ -338,12 +368,8 @@ export async function deleteUser(userId: string) {
     throw new Error("No autenticado")
   }
 
-  // Solo el owner puede eliminar usuarios
-  if (!currentUser.isOwner) {
-    throw new Error("Solo el dueño de la cuenta puede eliminar usuarios")
-  }
+  await assertCanManageUsers(currentUser)
 
-  // Verificar que el usuario pertenece al mismo account
   const user = await prisma.user.findUnique({
     where: { id: userId },
   })
@@ -352,12 +378,14 @@ export async function deleteUser(userId: string) {
     throw new Error("Usuario no encontrado")
   }
 
-  // No se puede eliminar al owner
+  if (user.isOwner && !currentUser.isOwner) {
+    throw new Error("Solo el owner puede eliminar la cuenta owner")
+  }
+
   if (user.isOwner) {
     throw new Error("No se puede eliminar al dueño de la cuenta")
   }
 
-  // No se puede eliminar a sí mismo
   if (user.id === currentUser.id) {
     throw new Error("No puedes eliminarte a ti mismo")
   }
@@ -391,12 +419,8 @@ export async function setAllUserPermissions(userId: string, value: boolean) {
     throw new Error("No autenticado")
   }
 
-  // Solo el owner puede cambiar permisos
-  if (!currentUser.isOwner) {
-    throw new Error("Solo el dueño de la cuenta puede cambiar permisos")
-  }
+  await assertCanManageUsers(currentUser)
 
-  // Verificar que el usuario pertenece al mismo account
   const user = await prisma.user.findUnique({
     where: { id: userId },
   })
@@ -405,21 +429,19 @@ export async function setAllUserPermissions(userId: string, value: boolean) {
     throw new Error("Usuario no encontrado")
   }
 
+  if (user.isOwner && !currentUser.isOwner) {
+    throw new Error("Solo el owner puede modificar permisos del owner")
+  }
+
+  const keysToUpdate = currentUser.isOwner ? ALL_PERMISSION_KEYS : NON_CRITICAL_PERMISSION_KEYS
+  const data = keysToUpdate.reduce<Record<string, boolean>>((acc, key) => {
+    acc[key] = value
+    return acc
+  }, {})
+
   await prisma.user.update({
     where: { id: userId },
-    data: {
-      canOverridePrice: value,
-      canCancelSales: value,
-      canCancelReturns: value,
-      canCancelPayments: value,
-      canEditSales: value,
-      canEditProducts: value,
-      canChangeSaleType: value,
-      canSellWithoutStock: value,
-      canManageBackups: value,
-      canViewProductCosts: value,
-      canViewProfitReport: value,
-    },
+    data,
   })
 
   await logAuditEvent({
@@ -433,6 +455,7 @@ export async function setAllUserPermissions(userId: string, value: boolean) {
     details: {
       setAll: true,
       value,
+      scope: currentUser.isOwner ? "all" : "non_critical",
     },
   })
 

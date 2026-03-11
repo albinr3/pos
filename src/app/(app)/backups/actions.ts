@@ -3,6 +3,7 @@
 import * as fs from "fs/promises"
 import * as path from "path"
 import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 
@@ -16,7 +17,7 @@ async function checkBackupPermission() {
     throw new Error("No autenticado")
   }
   
-  if (!user.canManageBackups && user.role !== "ADMIN") {
+  if (!hasPermission(user, "canManageBackups", { allowAdminBypass: false })) {
     throw new Error("No tienes permiso para gestionar backups")
   }
 

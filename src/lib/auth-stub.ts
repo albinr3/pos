@@ -12,6 +12,22 @@ export type CurrentUser = {
   canChangeSaleType: boolean
   canSellWithoutStock: boolean
   canManageBackups: boolean
+  canViewProductCosts: boolean
+  canViewProfitReport: boolean
+  canAdjustInventory: boolean
+  canManageCategories: boolean
+  canManagePurchases: boolean
+  canCancelPurchases: boolean
+  canManageSuppliers: boolean
+  canManageCustomers: boolean
+  canApproveCredit: boolean
+  canManageExpenses: boolean
+  canCancelExpenses: boolean
+  canManageQuotes: boolean
+  canApplyDiscounts: boolean
+  canViewAuditLogs: boolean
+  canManageUsers: boolean
+  canManageSettings: boolean
 }
 
 export function getCurrentUserStub(): CurrentUser {
@@ -28,6 +44,22 @@ export function getCurrentUserStub(): CurrentUser {
     canChangeSaleType: true,
     canSellWithoutStock: true,
     canManageBackups: true,
+    canViewProductCosts: true,
+    canViewProfitReport: true,
+    canAdjustInventory: true,
+    canManageCategories: true,
+    canManagePurchases: true,
+    canCancelPurchases: true,
+    canManageSuppliers: true,
+    canManageCustomers: true,
+    canApproveCredit: true,
+    canManageExpenses: true,
+    canCancelExpenses: true,
+    canManageQuotes: true,
+    canApplyDiscounts: true,
+    canViewAuditLogs: true,
+    canManageUsers: true,
+    canManageSettings: true,
   }
 }
 

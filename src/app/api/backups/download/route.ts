@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import * as fs from "fs/promises"
 import * as path from "path"
-import { getCurrentUser } from "@/lib/auth"
+import { getCurrentUserFromRequest } from "../../_helpers/auth"
+import { hasPermission } from "@/lib/permissions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { checkRateLimit, getClientIdentifier, RateLimitError } from "@/lib/rate-limit"
 
@@ -15,12 +16,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Filename requerido" }, { status: 400 })
   }
 
-  const user = await getCurrentUser()
+  const user = await getCurrentUserFromRequest(request)
   if (!user) {
     return NextResponse.json({ error: "No autenticado" }, { status: 401 })
   }
 
-  if (!user.canManageBackups && user.role !== "ADMIN" && user.username !== "admin") {
+  if (!hasPermission(user, "canManageBackups", { allowAdminBypass: false })) {
     return NextResponse.json({ error: "No tienes permiso para gestionar backups" }, { status: 403 })
   }
 

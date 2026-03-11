@@ -45,7 +45,7 @@ const jsonLd = [
     name: "Sistema de facturación en República Dominicana | MOVOPos",
     url: "https://movopos.com/",
     description:
-      "Sistema de facturación en República Dominicana con punto de venta, inventario, cuentas por cobrar y facturación térmica para negocios locales.",
+      "Sistema de facturación en República Dominicana con punto de venta, inventario, cuentas por cobrar para negocios locales.",
   },
   {
     "@context": "https://schema.org",

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { logAuditEvent } from "@/lib/audit-log"
+import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -96,6 +97,13 @@ export async function POST(request: NextRequest) {
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+    const canManageExpenses = await hasPermissionOrLog(user, "canManageExpenses", {
+      resourceType: "OperatingExpense",
+      details: { endpoint: "/api/operating-expenses", method: "POST" },
+    })
+    if (!canManageExpenses) {
+      return NextResponse.json({ error: "No tienes permiso para registrar gastos" }, { status: 403 })
     }
 
     const body = await request.json()

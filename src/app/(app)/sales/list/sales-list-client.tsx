@@ -435,7 +435,7 @@ export function SalesListClient() {
                               aria-label="Editar"
                               className="bg-blue-500 hover:bg-blue-600 text-white"
                               title="Editar"
-                              disabled={!user || (!user.canEditSales && user.role !== "ADMIN")}
+                              disabled={!user || (!user.canEditSales && !user.isOwner)}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -445,7 +445,7 @@ export function SalesListClient() {
                               aria-label="Cancelar"
                               className="bg-red-500 hover:bg-red-600 text-white"
                               title="Cancelar"
-                              disabled={!user || (!user.canCancelSales && user.role !== "ADMIN")}
+                              disabled={!user || (!user.canCancelSales && !user.isOwner)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -511,7 +511,7 @@ export function SalesListClient() {
                         setPaymentMethod(PaymentMethod.EFECTIVO)
                       }
                     }}
-                    disabled={!user || (!user.canChangeSaleType && user.role !== "ADMIN")}
+                    disabled={!user || (!user.canChangeSaleType && !user.isOwner)}
                   >
                     <option value={SaleType.CONTADO}>Contado</option>
                     <option value={SaleType.CREDITO}>Crédito</option>

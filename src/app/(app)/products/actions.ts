@@ -11,6 +11,7 @@ import { logAuditEvent } from "@/lib/audit-log"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { unitAllowsDecimals, decimalToNumber } from "@/lib/units"
 import { INITIAL_STOCK_REASON } from "@/lib/inventory"
+import { ensurePermission } from "@/lib/permission-guard"
 
 type InventoryAdjustmentClient = {
   inventoryAdjustment: {
@@ -330,7 +331,7 @@ export async function upsertProduct(input: {
       }
 
       if (input.id) {
-        if (!user.canEditProducts && user.role !== "ADMIN") {
+        if (!user.canEditProducts && !user.isOwner) {
           throw new Error("No tienes permiso para editar productos")
         }
 
@@ -347,7 +348,7 @@ export async function upsertProduct(input: {
         if (!existing) throw new Error("Producto no encontrado")
 
         const originalPriceCents = Number(existing.priceCents)
-        if (input.priceCents !== originalPriceCents && !user.canOverridePrice && user.role !== "ADMIN") {
+        if (input.priceCents !== originalPriceCents && !user.canOverridePrice && !user.isOwner) {
           throw new Error("No tienes permiso para modificar el precio del producto")
         }
 
@@ -543,7 +544,7 @@ export async function setProductSaleAvailability(
   const user = options?.user ?? (await getCurrentUser())
   if (!user) throw new Error("No autenticado")
 
-  if (!user.canEditProducts && user.role !== "ADMIN") {
+  if (!user.canEditProducts && !user.isOwner) {
     throw new Error("No tienes permiso para editar productos")
   }
 
@@ -737,7 +738,7 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
   const user = (input.user as CurrentUser | null | undefined) ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  if (!user.canEditProducts && user.role !== "ADMIN") {
+  if (!user.canEditProducts && !user.isOwner) {
     throw new Error("No tienes permiso para importar productos")
   }
 
@@ -913,7 +914,7 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
 
         if (hasPrice && priceValue !== null) {
           const priceCents = Math.round(priceValue * 100)
-          if (priceCents !== Number(existing.priceCents) && !user.canOverridePrice && user.role !== "ADMIN") {
+          if (priceCents !== Number(existing.priceCents) && !user.canOverridePrice && !user.isOwner) {
             throw new Error("No tienes permiso para modificar el precio del producto")
           }
         }
@@ -1154,10 +1155,10 @@ export async function adjustManyStock(input: {
 }) {
   const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
-
-  if (!user.canEditProducts && user.role !== "ADMIN") {
-    throw new Error("No tienes permiso para ajustar inventario")
-  }
+  await ensurePermission(user, "canAdjustInventory", {
+    message: "No tienes permiso para ajustar inventario",
+    resourceType: "InventoryAdjustment",
+  })
 
   try {
     const rawItems = input.items ?? []

@@ -156,7 +156,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   const [shippingInput, setShippingInput] = useState("")
   const [user, setUser] = useState<CurrentUser | null>(() => getCachedUser())
   // Usar el permiso del usuario para vender sin stock
-  const allowNegativeStock = useMemo(() => user?.canSellWithoutStock || user?.role === "ADMIN" || false, [user])
+  const allowNegativeStock = useMemo(() => user?.canSellWithoutStock || user?.isOwner || false, [user])
   const [isSaving, startSave] = useTransition()
   const [showChangeDialog, setShowChangeDialog] = useState(false)
   const [amountPaidInput, setAmountPaidInput] = useState("")
@@ -318,12 +318,12 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                   String(item.productId || ""),
                   Array.isArray(item.recipeAdjustments)
                     ? item.recipeAdjustments
-                        .map((adjustment: any) => ({
-                          ingredientId: String(adjustment.ingredientId || ""),
-                          ingredientName: String(adjustment.ingredientName || ""),
-                          adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
-                        }))
-                        .filter((adjustment: RecipeAdjustment) => adjustment.ingredientId && adjustment.ingredientName && (adjustment.adjustmentType === "SIN" || adjustment.adjustmentType === "EXTRA"))
+                      .map((adjustment: any) => ({
+                        ingredientId: String(adjustment.ingredientId || ""),
+                        ingredientName: String(adjustment.ingredientName || ""),
+                        adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
+                      }))
+                      .filter((adjustment: RecipeAdjustment) => adjustment.ingredientId && adjustment.ingredientName && (adjustment.adjustmentType === "SIN" || adjustment.adjustmentType === "EXTRA"))
                     : []
                 )
               ),
@@ -340,22 +340,22 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
               productKind: item.productKind === "RECIPE" ? "RECIPE" : item.productKind === "MEASURED" ? "MEASURED" : "BASIC",
               recipeItems: Array.isArray(item.recipeItems)
                 ? item.recipeItems
-                    .map((recipeItem: any) => ({
-                      ingredientId: String(recipeItem.ingredientId || ""),
-                      ingredientName: String(recipeItem.ingredientName || ""),
-                      qty: typeof recipeItem.qty === "number" ? recipeItem.qty : Number(recipeItem.qty) || 0,
-                      ingredientUnit: String(recipeItem.ingredientUnit || "UNIDAD"),
-                    }))
-                    .filter((recipeItem: RecipeItem) => recipeItem.ingredientId && recipeItem.ingredientName)
+                  .map((recipeItem: any) => ({
+                    ingredientId: String(recipeItem.ingredientId || ""),
+                    ingredientName: String(recipeItem.ingredientName || ""),
+                    qty: typeof recipeItem.qty === "number" ? recipeItem.qty : Number(recipeItem.qty) || 0,
+                    ingredientUnit: String(recipeItem.ingredientUnit || "UNIDAD"),
+                  }))
+                  .filter((recipeItem: RecipeItem) => recipeItem.ingredientId && recipeItem.ingredientName)
                 : [],
               recipeAdjustments: Array.isArray(item.recipeAdjustments)
                 ? item.recipeAdjustments
-                    .map((adjustment: any) => ({
-                      ingredientId: String(adjustment.ingredientId || ""),
-                      ingredientName: String(adjustment.ingredientName || ""),
-                      adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
-                    }))
-                    .filter((adjustment: RecipeAdjustment) => adjustment.ingredientId && adjustment.ingredientName && (adjustment.adjustmentType === "SIN" || adjustment.adjustmentType === "EXTRA"))
+                  .map((adjustment: any) => ({
+                    ingredientId: String(adjustment.ingredientId || ""),
+                    ingredientName: String(adjustment.ingredientName || ""),
+                    adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
+                  }))
+                  .filter((adjustment: RecipeAdjustment) => adjustment.ingredientId && adjustment.ingredientName && (adjustment.adjustmentType === "SIN" || adjustment.adjustmentType === "EXTRA"))
                 : [],
             })).filter((item: any) => item.productId && item.name) // Filtrar items inválidos
 
@@ -796,10 +796,10 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
         customerId: customerId === "generic" ? null : customerId,
         type: saleType,
         paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
-          transferBankName:
-            saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
-              ? transferBankName
-              : null,
+        transferBankName:
+          saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
+            ? transferBankName
+            : null,
         paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
         items: cart.map((c) => ({
           productId: c.productId,
@@ -1041,11 +1041,18 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
 
             {isSaleConfigCollapsed && (
               <div className="grid gap-2">
-                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                  {customers.find((c) => c.id === customerId)?.name ?? "Cliente general"} ·{" "}
-                  {saleType === SaleType.CONTADO ? "Contado" : "Crédito"}
-                  {saleType === SaleType.CONTADO && paymentMethod ? ` · ${paymentMethod.toLowerCase().replace("_", " ")}` : ""}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsSaleConfigCollapsed(false)}
+                  className="flex w-full items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/60 hover:border-foreground/20 transition-colors cursor-pointer text-left"
+                >
+                  <span>
+                    {customers.find((c) => c.id === customerId)?.name ?? "Cliente general"} ·{" "}
+                    {saleType === SaleType.CONTADO ? "Contado" : "Crédito"}
+                    {saleType === SaleType.CONTADO && paymentMethod ? ` · ${paymentMethod.toLowerCase().replace("_", " ")}` : ""}
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 ml-2" />
+                </button>
               </div>
             )}
 
@@ -1397,8 +1404,9 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                             </Button>
                             <div className="ml-2 text-sm text-muted-foreground">x</div>
                             {user && user.canOverridePrice ? (
-                              <div className="w-28">
+                              <div className="w-36">
                                 <PriceInput
+                                  className="text-right px-2"
                                   valueCents={c.unitPriceCents}
                                   onChangeCents={(unitPriceCents) => {
                                     // Obtener el precio original del producto para comparar
@@ -1560,8 +1568,9 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                 +
                               </Button>
                               {user && user.canOverridePrice ? (
-                                <div className="w-24 ml-auto">
+                                <div className="w-32 ml-auto">
                                   <PriceInput
+                                    className="text-right px-2"
                                     valueCents={c.unitPriceCents}
                                     onChangeCents={(unitPriceCents) => {
                                       // Obtener el precio original del producto para comparar

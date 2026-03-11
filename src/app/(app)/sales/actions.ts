@@ -757,7 +757,7 @@ export async function createSale(input: {
       }
 
       // Usar el permiso del usuario para vender sin stock
-      const allowNegativeStock = user.canSellWithoutStock || user.role === "ADMIN"
+      const allowNegativeStock = user.canSellWithoutStock || user.isOwner
 
       // Invoice sequence por account
       // Usar upsert con el constraint compuesto (accountId + series)
@@ -788,7 +788,7 @@ export async function createSale(input: {
         const priceDiffers = line.item.unitPriceCents !== originalPriceCents
 
         if (priceDiffers) {
-          if (!user.canOverridePrice && user.role !== "ADMIN") {
+          if (!user.canOverridePrice && !user.isOwner) {
             throw new Error("No tienes permiso para modificar precios. El precio fue cambiado sin autorización.")
           }
           await logAuditEvent({
@@ -1093,7 +1093,7 @@ export async function cancelSale(id: string, username: string, currentUserArg?: 
       if (sale.cancelledAt) return { success: false, error: "Esta venta ya está cancelada" }
 
       // Verificar permiso para cancelar ventas
-      if (!user.canCancelSales && user.role !== "ADMIN") {
+      if (!user.canCancelSales && !user.isOwner) {
         return { success: false, error: "No tienes permiso para cancelar ventas" }
       }
 
@@ -1197,11 +1197,11 @@ export async function updateSale(input: {
   const itbisRateBp = settings?.itbisRateBp ?? 1800
 
   // Verificar permiso para editar ventas
-  if (!user.canEditSales && user.role !== "ADMIN") {
+  if (!user.canEditSales && !user.isOwner) {
     throw new Error("No tienes permiso para editar ventas")
   }
 
-  const allowNegativeStock = user.canSellWithoutStock || user.role === "ADMIN"
+  const allowNegativeStock = user.canSellWithoutStock || user.isOwner
 
   return prisma.$transaction(async (tx) => {
     const existingSale = await tx.sale.findFirst({
@@ -1223,7 +1223,7 @@ export async function updateSale(input: {
 
     // Validar permiso para cambiar tipo de venta
     if (input.type !== existingSale.type) {
-      if (!user.canChangeSaleType && user.role !== "ADMIN") {
+      if (!user.canChangeSaleType && !user.isOwner) {
         throw new Error("No tienes permiso para cambiar el tipo de venta")
       }
     }
@@ -1265,7 +1265,7 @@ export async function updateSale(input: {
 
     for (const line of resolvedLines) {
       if (line.item.unitPriceCents !== line.product.priceCents) {
-        if (!user.canOverridePrice && user.role !== "ADMIN") {
+        if (!user.canOverridePrice && !user.isOwner) {
           throw new Error("No tienes permiso para modificar precios. El precio fue cambiado sin autorización.")
         }
         await logAuditEvent({

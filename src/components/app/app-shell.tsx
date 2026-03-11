@@ -164,13 +164,65 @@ export function AppShell({ children, billingState }: AppShellProps) {
   // Filtrar navegación según permisos
   const filteredNav = useMemo(() => {
     if (!user) return []
-    return nav.filter((item) => {
-      // Ocultar backups si no tiene permiso
-      if (item.href === "/backups" && !user.canManageBackups && user.username !== "admin") {
-        return false
-      }
-      return true
-    })
+
+    return nav
+      .map((item) => {
+        if (
+          item.href === "/purchases" &&
+          !user.isOwner
+        ) {
+          if (!user.canManagePurchases && !user.canCancelPurchases) {
+            return null
+          }
+          if (!user.canManagePurchases && user.canCancelPurchases) {
+            return { ...item, href: "/purchases/list" }
+          }
+        }
+
+        if (
+          item.href === "/categories" &&
+          !user.isOwner &&
+          !user.canManageCategories
+        ) {
+          return null
+        }
+        if (
+          item.href === "/suppliers" &&
+          !user.isOwner &&
+          !user.canManageSuppliers
+        ) {
+          return null
+        }
+        if (
+          item.href === "/customers" &&
+          !user.isOwner &&
+          !user.canManageCustomers
+        ) {
+          return null
+        }
+        if (
+          item.href === "/quotes" &&
+          !user.isOwner &&
+          !user.canManageQuotes
+        ) {
+          return null
+        }
+        if (
+          item.href === "/operating-expenses" &&
+          !user.isOwner &&
+          !user.canManageExpenses &&
+          !user.canCancelExpenses
+        ) {
+          return null
+        }
+
+        // Ocultar backups si no tiene permiso
+        if (item.href === "/backups" && !user.isOwner && !user.canManageBackups) {
+          return null
+        }
+        return item
+      })
+      .filter((item): item is (typeof nav)[number] => item !== null)
   }, [user])
   
   useEffect(() => {

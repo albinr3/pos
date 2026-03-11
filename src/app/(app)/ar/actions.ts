@@ -85,7 +85,7 @@ export async function cancelPayment(id: string) {
     const user = currentUser
 
     // Verificar permiso para cancelar pagos
-    if (!user.canCancelPayments && user.role !== "ADMIN") {
+    if (!user.canCancelPayments && !user.isOwner) {
       throw new Error("No tienes permiso para cancelar pagos")
     }
 

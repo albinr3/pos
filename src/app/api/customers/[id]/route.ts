@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { upsertCustomer } from "@/app/(app)/customers/actions"
+import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -15,9 +16,26 @@ export async function PUT(
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
+    const canManageCustomers = await hasPermissionOrLog(user, "canManageCustomers", {
+      resourceType: "Customer",
+      details: { endpoint: "/api/customers/[id]", method: "PUT" },
+    })
+    if (!canManageCustomers) {
+      return NextResponse.json({ error: "No tienes permiso para gestionar clientes" }, { status: 403 })
+    }
 
     const { id } = await params
     const body = await request.json()
+    if (body?.creditEnabled || Number(body?.creditDays || 0) > 0) {
+      const canApproveCredit = await hasPermissionOrLog(user, "canApproveCredit", {
+        resourceType: "Customer",
+        resourceId: id,
+        details: { endpoint: "/api/customers/[id]", method: "PUT", creditEnabled: body?.creditEnabled ?? false },
+      })
+      if (!canApproveCredit) {
+        return NextResponse.json({ error: "No tienes permiso para aprobar lineas de credito" }, { status: 403 })
+      }
+    }
 
     await upsertCustomer({
       id,
@@ -58,6 +76,9 @@ export async function PUT(
     })
   } catch (error: any) {
     console.error("Error en PUT /api/customers/:id:", error)
+    if (typeof error?.message === "string" && error.message.includes("No tienes permiso")) {
+      return NextResponse.json({ error: error.message }, { status: 403 })
+    }
     return NextResponse.json(
       { error: error.message || "Error al actualizar cliente" },
       { status: 500 }

@@ -1,0 +1,6 @@
+src/app/(app)/products/products-client.tsx(1529,15): error TS17002: Expected corresponding JSX closing tag for 'Dialog'.
+src/app/(app)/products/products-client.tsx(1784,13): error TS1382: Unexpected token. Did you mean `{'>'}` or `&gt;`?
+src/app/(app)/products/products-client.tsx(1899,7): error TS17002: Expected corresponding JSX closing tag for 'div'.
+src/app/(app)/products/products-client.tsx(1963,7): error TS1128: Declaration or statement expected.
+src/app/(app)/products/products-client.tsx(1964,5): error TS1109: Expression expected.
+src/app/(app)/products/products-client.tsx(1965,1): error TS1128: Declaration or statement expected.

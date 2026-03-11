@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
@@ -388,7 +389,7 @@ export function ProductsClient() {
   const [categoryId, setCategoryId] = useState("")
   const [isSaving, startSaving] = useTransition()
   const [user, setUser] = useState<CurrentUser | null>(null)
-  
+
   // Estado para producto básico o con medidas
   const [productType, setProductType] = useState<ProductFormType>("basic")
   const [unit, setUnit] = useState<UnitType>("KG")
@@ -445,7 +446,7 @@ export function ProductsClient() {
     getAllSuppliers().then(setSuppliers).catch(() => setSuppliers([]))
     getAllCategories().then(setCategories).catch(() => setCategories([]))
     listRecipeIngredientOptions().then(setIngredientOptions).catch(() => setIngredientOptions([]))
-    getSettings().then((s) => setBarcodeLabelSize(s.barcodeLabelSize)).catch(() => {})
+    getSettings().then((s) => setBarcodeLabelSize(s.barcodeLabelSize)).catch(() => { })
   }, [])
 
   useEffect(() => {
@@ -499,10 +500,10 @@ export function ProductsClient() {
     setRecipeItems(
       x?.recipeItems?.length
         ? x.recipeItems.map((item: Product["recipeItems"][number]) => ({
-            id: item.id,
-            ingredientId: item.ingredientId,
-            qty: String(decimalToNumber(item.qty)),
-          }))
+          id: item.id,
+          ingredientId: item.ingredientId,
+          qty: String(decimalToNumber(item.qty)),
+        }))
         : [createRecipeItemRow()]
     )
   }
@@ -580,11 +581,11 @@ export function ProductsClient() {
         const normalizedRecipeItems =
           productType === "recipe"
             ? recipeItems
-                .map((item) => ({
-                  ingredientId: item.ingredientId,
-                  qty: Number(item.qty),
-                }))
-                .filter((item) => item.ingredientId)
+              .map((item) => ({
+                ingredientId: item.ingredientId,
+                qty: Number(item.qty),
+              }))
+              .filter((item) => item.ingredientId)
             : []
 
         await upsertProduct({
@@ -900,7 +901,7 @@ export function ProductsClient() {
   }
 
   async function onDelete(id: string) {
-    if (!confirm("¿Desactivar este producto?") ) return
+    if (!confirm("¿Desactivar este producto?")) return
     try {
       await deactivateProduct(id)
       toast({ title: "Listo", description: "Producto desactivado" })
@@ -911,7 +912,7 @@ export function ProductsClient() {
   }
 
   const totalProducts = items.length
-  const canAdjustStock = !!user && (user.canEditProducts || user.role === "ADMIN")
+  const canAdjustStock = !!user && (user.canAdjustInventory || user.isOwner)
   const movementInitial = useMemo(() => movements.find((m) => m.type === "INITIAL") ?? null, [movements])
   const movementItems = useMemo(() => movements.filter((m) => m.type !== "INITIAL"), [movements])
   const movementPageSize = 10
@@ -944,590 +945,623 @@ export function ProductsClient() {
             <CardTitle>Productos</CardTitle>
             <div className="text-sm text-muted-foreground">Descripción, código (SKU), referencia, precio y existencia.</div>
           </div>
-          <div className="flex items-center gap-2">
-            <Dialog
-              open={inventoryBulkOpen}
-              onOpenChange={(v) => {
-                setInventoryBulkOpen(v)
-                if (!v) resetInventoryImportState()
-              }}
-            >
-              <DialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  disabled={!canAdjustStock}
-                  className="bg-green-100 border-green-300 text-green-900 hover:bg-green-200"
-                >
-                  Inventario masivo
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[780px]">
-                <DialogHeader>
-                  <DialogTitle>Inventario masivo</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-6">
-                  <div className="grid gap-2">
-                    <div className="text-sm font-medium">Primer paso: descargar plantilla</div>
-                    <div className="text-xs text-muted-foreground">
-                      Usa esta plantilla para completar productos. Campos requeridos para crear: nombre, precio_venta y costo.
-                    </div>
-                    <div>
-                      <Button type="button" variant="secondary" onClick={downloadInventoryTemplate}>
-                        Descargar plantilla
-                      </Button>
-                    </div>
-                  </div>
-
-                  <Separator />
-
-                  <div className="grid gap-2">
-                    <div className="text-sm font-medium">Segundo paso: subir archivo con productos</div>
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      onDragOver={onInventoryDragOver}
-                      onDragLeave={onInventoryDragLeave}
-                      onDrop={onInventoryDrop}
-                      onClick={() => inventoryFileInputRef.current?.click()}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " ") {
-                          event.preventDefault()
-                          inventoryFileInputRef.current?.click()
-                        }
-                      }}
-                      className={`relative rounded-lg border-2 border-dashed p-10 text-center transition-colors ${
-                        isInventoryDragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/60"
-                      }`}
-                    >
-                      <input
-                        ref={inventoryFileInputRef}
-                        type="file"
-                        accept=".xlsx,.xls"
-                        onChange={onInventoryFileChange}
-                        className="hidden"
-                      />
-                      <div className="flex flex-col items-center gap-2">
-                        <Plus className="h-8 w-8 text-primary" />
-                        <div className="text-sm font-medium">Arrastra y suelta el archivo aquí</div>
-                        <div className="text-xs text-muted-foreground">o haz click para seleccionar (.xlsx, .xls)</div>
-                        <div className="text-xs text-muted-foreground">Máximo 10 MB y 5,000 filas</div>
-                      </div>
-                    </div>
-                    {inventoryFile && (
-                      <div className="text-xs text-muted-foreground">
-                        Archivo: <span className="font-medium">{inventoryFile.name}</span> · Filas detectadas:{" "}
-                        <span className="font-medium">{inventoryRows.length}</span>
-                      </div>
-                    )}
-                    {inventoryParseError && (
-                      <div className="text-xs text-red-500">{inventoryParseError}</div>
-                    )}
-                  </div>
-
-                  <div className="grid gap-2">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{inventoryStatus}</span>
-                      <span>{inventoryProgress}%</span>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-muted">
-                      <div
-                        className="h-2 rounded-full bg-primary transition-all"
-                        style={{ width: `${inventoryProgress}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {inventorySummary && (
-                    <div className="rounded-md border p-3 text-sm">
-                      <div className="font-medium">Resultado de la carga</div>
-                      <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
-                        <div>Total filas: {inventorySummary.total}</div>
-                        <div>Creados: {inventorySummary.created}</div>
-                        <div>Actualizados por SKU: {inventorySummary.updated}</div>
-                        <div>Errores: {inventorySummary.failed}</div>
-                      </div>
-                      {inventorySummary.failed > 0 && (
-                        <div className="mt-3">
-                          <Button type="button" variant="outline" size="sm" onClick={downloadInventoryErrorReport}>
-                            Descargar reporte de errores
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button variant="secondary" onClick={closeInventoryImportModal} type="button">
-                    Cerrar
-                  </Button>
-                  <Button
-                    onClick={onInventoryUpload}
-                    disabled={isInventoryUploading || !inventoryRows.length || !canAdjustStock}
-                    type="button"
-                  >
-                    {isInventoryUploading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="mr-2 h-4 w-4" /> Cargar
-                      </>
-                    )}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-            <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" disabled={!canAdjustStock}>Ajuste masivo</Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[720px]">
-                <DialogHeader>
-                  <DialogTitle>Ajuste masivo de inventario</DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4">
-                  <div className="grid gap-2">
-                    <Label>Motivo (opcional)</Label>
-                    <Input
-                      value={bulkReason}
-                      onChange={(e) => setBulkReason(e.target.value)}
-                      placeholder="Ej: Conteo físico"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>IDs y cantidades (una línea por producto)</Label>
-                    <Textarea
-                      value={bulkLines}
-                      onChange={(e) => setBulkLines(e.target.value)}
-                      rows={8}
-                      placeholder={"101\t+5\n102\t-2"}
-                      className="font-mono"
-                    />
-                    <div className="text-xs text-muted-foreground">
-                      Formato: ID y cantidad (usa + o -). Puedes pegar desde Excel/Sheets (tabulado).
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    Líneas válidas: {bulkParsed.items.length}
-                    {bulkParsed.errors.length > 0 ? ` · Errores: ${bulkParsed.errors.length}` : ""}
-                  </div>
-                  {bulkParsed.errors.length > 0 && (
-                    <div className="text-xs text-red-500">{bulkParsed.errors[0]}</div>
-                  )}
-                </div>
-                <DialogFooter>
-                  <Button variant="secondary" onClick={() => setBulkOpen(false)} type="button">Cancelar</Button>
-                  <Button onClick={onBulkSave} disabled={isBulkSaving || !canAdjustStock} type="button">
-                    {isBulkSaving ? "Aplicando…" : "Aplicar ajustes"}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-            <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) resetForm(null) }}>
-            <DialogTrigger asChild>
-              <Button onClick={() => { resetForm(null); setOpen(true) }}>
-                <Plus className="mr-2 h-4 w-4" /> Nuevo
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[620px] max-h-[90vh] flex flex-col">
-              <DialogHeader>
-                <DialogTitle>{title}</DialogTitle>
-              </DialogHeader>
-
-              <Tabs value={productType} onValueChange={(v) => setProductType(v as ProductFormType)} className="flex-1 flex flex-col min-h-0">
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="basic">Producto básico</TabsTrigger>
-                  <TabsTrigger value="measured">Producto con medidas</TabsTrigger>
-                  <TabsTrigger value="recipe">Productos por receta</TabsTrigger>
-                </TabsList>
-
-                <div className="flex-1 overflow-y-auto pr-2 mt-4">
-                  <div className="grid gap-4">
-                    <div className="grid gap-2">
-                      <Label>ID</Label>
-                      <Input
-                        value={editing ? editing.productId : "Se asignará automáticamente"}
-                        disabled
-                        className="bg-muted"
-                      />
-                    </div>
-
-                    <div className="grid gap-2">
-                      <Label>
-                        Nombre del producto <span className="text-red-500">*</span>
-                      </Label>
-                      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Alfombra" required />
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="grid gap-2">
-                        <Label>Código de proveedor (SKU)</Label>
-                        <Input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Ej: 12345" />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Referencia</Label>
-                        <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ej: REF-01" />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="grid gap-2">
-                        <Label>Proveedor (opcional)</Label>
-                        <Select value={supplierId || NONE_SUPPLIER_OPTION} onValueChange={handleSupplierChange}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Sin proveedor" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE_SUPPLIER_OPTION}>Sin proveedor</SelectItem>
-                            {suppliers.length === 0 ? (
-                              <>
-                                <SelectSeparator />
-                                <SelectItem value={CREATE_SUPPLIER_OPTION}>
-                                  <span className="inline-flex items-center gap-2">
-                                    <Plus className="h-4 w-4" />
-                                    Crear proveedor
-                                  </span>
-                                </SelectItem>
-                              </>
-                            ) : (
-                              suppliers.map((s) => (
-                                <SelectItem key={s.id} value={s.id}>
-                                  {s.name}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label>Categoría (opcional)</Label>
-                        <Select value={categoryId || NONE_CATEGORY_OPTION} onValueChange={handleCategoryChange}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Sin categoría" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value={NONE_CATEGORY_OPTION}>Sin categoría</SelectItem>
-                            {categories.length === 0 ? (
-                              <>
-                                <SelectSeparator />
-                                <SelectItem value={CREATE_CATEGORY_OPTION}>
-                                  <span className="inline-flex items-center gap-2">
-                                    <Plus className="h-4 w-4" />
-                                    Crear categoría
-                                  </span>
-                                </SelectItem>
-                              </>
-                            ) : (
-                              categories.map((c) => (
-                                <SelectItem key={c.id} value={c.id}>
-                                  {c.name}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Campos específicos según el tipo de producto */}
-                    <TabsContent value="basic" className="mt-0 space-y-4">
-                      <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-                        Los productos básicos se compran y venden por unidad. Las unidades de compra y venta se establecen automáticamente como Unidad.
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="grid gap-2">
-                          <Label>
-                            Precio de venta por ({getUnitInfo("UNIDAD").abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
-                          </Label>
-                          <Input
-                            value={price}
-                            onChange={(e) => setPrice(e.target.value)}
-                            inputMode="decimal"
-                            required
-                            disabled={editing ? (!user || (!user.canOverridePrice && user.role !== "ADMIN")) : false}
-                            onFocus={selectAllOnFocus}
-                          />
-                        </div>
-                        {(user?.canViewProductCosts || user?.role === "ADMIN") && (
-                          <div className="grid gap-2">
-                            <Label>
-                              Costo por ({getUnitInfo("UNIDAD").abbr}) (RD$) <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              value={cost}
-                              onChange={(e) => setCost(e.target.value)}
-                              inputMode="decimal"
-                              required
-                              onFocus={selectAllOnFocus}
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="grid gap-2">
-                          <Label>Existencia ({getUnitInfo("UNIDAD").abbr})</Label>
-                          <Input
-                            value={stock}
-                            onChange={(e) => setStock(e.target.value)}
-                            inputMode="numeric"
-                            placeholder="Ej: 100"
-                            disabled={!!editing}
-                            onFocus={selectAllOnFocus}
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Existencia mínima ({getUnitInfo("UNIDAD").abbr})</Label>
-                          <Input
-                            value={minStock}
-                            onChange={(e) => setMinStock(e.target.value)}
-                            inputMode="numeric"
-                            placeholder="Ej: 10"
-                            onFocus={selectAllOnFocus}
-                          />
-                        </div>
-                      </div>
-                      {editing && (
-                        <div className="text-xs text-muted-foreground">
-                          La existencia se ajusta desde Ajuste masivo.
-                        </div>
-                      )}
-                    </TabsContent>
-
-                    <TabsContent value="measured" className="mt-0 space-y-4">
-                      <div className="grid gap-2">
-                        <div className="grid gap-2">
-                          <Label>
-                            Unidad <span className="text-red-500">*</span>
-                          </Label>
-                          <select
-                            value={unit}
-                            onChange={(e) => setUnit(e.target.value as UnitType)}
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            required
-                          >
-                            {UNIT_OPTIONS.filter((u) => u.value !== "UNIDAD").map((u) => (
-                              <option key={u.value} value={u.value}>
-                                {u.label} ({u.abbr})
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-                        La misma unidad se usa para costo, precio, existencia y movimientos del producto.
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="grid gap-2">
-                          <Label>
-                            Precio de venta por ({getUnitInfo(unit).abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
-                          </Label>
-                          <Input
-                            value={price}
-                            onChange={(e) => setPrice(e.target.value)}
-                            inputMode="decimal"
-                            required
-                            disabled={editing ? (!user || (!user.canOverridePrice && user.role !== "ADMIN")) : false}
-                            onFocus={selectAllOnFocus}
-                          />
-                        </div>
-                        {(user?.canViewProductCosts || user?.role === "ADMIN") && (
-                          <div className="grid gap-2">
-                            <Label>
-                              Costo por ({getUnitInfo(unit).abbr}) (RD$) <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              value={cost}
-                              onChange={(e) => setCost(e.target.value)}
-                              inputMode="decimal"
-                              required
-                              onFocus={selectAllOnFocus}
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="grid gap-2">
-                          <Label>Existencia ({getUnitInfo(unit).abbr})</Label>
-                          <Input
-                            value={stock}
-                            onChange={(e) => setStock(e.target.value)}
-                            inputMode="decimal"
-                            placeholder="Ej: 45.5"
-                            disabled={!!editing}
-                          />
-                        </div>
-                        <div className="grid gap-2">
-                          <Label>Existencia mínima ({getUnitInfo(unit).abbr})</Label>
-                          <Input value={minStock} onChange={(e) => setMinStock(e.target.value)} inputMode="decimal" placeholder="Ej: 5" />
-                        </div>
-                      </div>
-                      {editing && (
-                        <div className="text-xs text-muted-foreground">
-                          La existencia se ajusta desde Ajuste masivo.
-                        </div>
-                      )}
-                      <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-                        Los productos con medidas permiten cantidades decimales (ej: 2.5 kg, 1.75 m).
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="recipe" className="mt-0 space-y-4">
-                      <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-                        Los productos por receta no manejan existencia propia. Al venderlos, el sistema descuenta sus materias primas del inventario.
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="grid gap-2">
-                          <Label>
-                            Precio de venta por unidad (RD$, ITBIS incluido) <span className="text-red-500">*</span>
-                          </Label>
-                          <Input
-                            value={price}
-                            onChange={(e) => setPrice(e.target.value)}
-                            inputMode="decimal"
-                            required
-                            disabled={editing ? (!user || (!user.canOverridePrice && user.role !== "ADMIN")) : false}
-                            onFocus={selectAllOnFocus}
-                          />
-                        </div>
-                        {(user?.canViewProductCosts || user?.role === "ADMIN") && (
-                          <div className="grid gap-2">
-                            <Label>
-                              Costo de referencia por unidad (RD$) <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              value={cost}
-                              onChange={(e) => setCost(e.target.value)}
-                              inputMode="decimal"
-                              required
-                              onFocus={selectAllOnFocus}
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="grid gap-2 rounded-md border p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <Label>Receta base</Label>
-                            <div className="text-xs text-muted-foreground">
-                              Define los insumos que se consumirán por cada unidad vendida.
-                            </div>
-                          </div>
-                          <Button type="button" variant="secondary" size="sm" onClick={addRecipeItem}>
-                            <Plus className="mr-2 h-4 w-4" />
-                            Agregar insumo
-                          </Button>
-                        </div>
-                        <div className="grid gap-3">
-                          {recipeItems.map((item, index) => (
-                            <div key={item.id} className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-[minmax(0,1fr)_140px_44px]">
-                              <div className="grid gap-2">
-                                <Label>Insumo #{index + 1}</Label>
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  className="justify-start font-normal h-10 w-full text-sm"
-                                  onClick={() => openIngredientPicker((id) => updateRecipeItem(item.id, "ingredientId", id))}
-                                >
-                                  {item.ingredientId
-                                    ? (() => {
-                                        const opt = availableIngredients.find((o) => o.id === item.ingredientId)
-                                        return opt ? `${opt.productId} - ${opt.name}` : "Insumo no encontrado"
-                                      })()
-                                    : <span className="text-muted-foreground">Selecciona un insumo</span>}
-                                </Button>
-                              </div>
-                              <div className="grid gap-2">
-                                <Label>
-                                  Cantidad
-                                  {(() => {
-                                    const opt = item.ingredientId ? availableIngredients.find((o) => o.id === item.ingredientId) : null
-                                    return opt && opt.unit !== "UNIDAD" ? ` (${getUnitInfo(opt.unit as UnitType).abbr})` : ""
-                                  })()}
-                                </Label>
-                                <Input
-                                  value={item.qty}
-                                  onChange={(e) => updateRecipeItem(item.id, "qty", e.target.value)}
-                                  inputMode="decimal"
-                                  placeholder="Ej: 2"
-                                />
-                              </div>
-                              <div className="flex items-end">
-                                <Button type="button" variant="outline" size="icon" onClick={() => removeRecipeItem(item.id)}>
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-                        Los ajustes de receta (Sin/Extra) se configuran al momento de la venta, no en el perfil del producto.
-                      </div>
-                    </TabsContent>
-
-                    <Separator />
-
-                    <div className="grid gap-2">
-                      <Label>ITBIS aplicable para venta</Label>
-                      <select
-                        value={itbisRateBp}
-                        onChange={(e) => setItbisRateBp(Number(e.target.value))}
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          <TooltipProvider>
+            <div className="flex items-center gap-2">
+              <Dialog
+                open={inventoryBulkOpen}
+                onOpenChange={(v) => {
+                  setInventoryBulkOpen(v)
+                  if (!v) resetInventoryImportState()
+                }}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        disabled={!canAdjustStock}
+                        className="bg-green-100 border-green-300 text-green-900 hover:bg-green-200"
                       >
-                        <option value={1800}>18% (Estándar)</option>
-                        <option value={1600}>16%</option>
-                        <option value={0}>0% (Exento)</option>
-                      </select>
+                        Inventario masivo
+                      </Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Carga masiva desde Excel</p>
+                  </TooltipContent>
+                </Tooltip>
+                <DialogContent className="sm:max-w-[780px]">
+                  <DialogHeader>
+                    <DialogTitle>Inventario masivo</DialogTitle>
+                  </DialogHeader>
+                  <div className="grid gap-6">
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">Primer paso: descargar plantilla</div>
                       <div className="text-xs text-muted-foreground">
-                        El ITBIS se calcula automáticamente según el porcentaje seleccionado.
+                        Usa esta plantilla para completar productos. Campos requeridos para crear: nombre, precio_venta y costo.
+                      </div>
+                      <div>
+                        <Button type="button" variant="secondary" onClick={downloadInventoryTemplate}>
+                          Descargar plantilla
+                        </Button>
                       </div>
                     </div>
 
                     <Separator />
 
                     <div className="grid gap-2">
-                      <Label htmlFor="sale-availability">Disponible para venta</Label>
-                      <div className="flex items-center justify-between rounded-md border p-3">
-                        <div className="text-xs text-muted-foreground pr-3">
-                          Si se desactiva, no aparecerá en ventas, pero podrá seguir usándose como insumo en recetas.
+                      <div className="text-sm font-medium">Segundo paso: subir archivo con productos</div>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onDragOver={onInventoryDragOver}
+                        onDragLeave={onInventoryDragLeave}
+                        onDrop={onInventoryDrop}
+                        onClick={() => inventoryFileInputRef.current?.click()}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault()
+                            inventoryFileInputRef.current?.click()
+                          }
+                        }}
+                        className={`relative rounded-lg border-2 border-dashed p-10 text-center transition-colors ${isInventoryDragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/60"
+                          }`}
+                      >
+                        <input
+                          ref={inventoryFileInputRef}
+                          type="file"
+                          accept=".xlsx,.xls"
+                          onChange={onInventoryFileChange}
+                          className="hidden"
+                        />
+                        <div className="flex flex-col items-center gap-2">
+                          <Plus className="h-8 w-8 text-primary" />
+                          <div className="text-sm font-medium">Arrastra y suelta el archivo aquí</div>
+                          <div className="text-xs text-muted-foreground">o haz click para seleccionar (.xlsx, .xls)</div>
+                          <div className="text-xs text-muted-foreground">Máximo 10 MB y 5,000 filas</div>
                         </div>
-                        <Switch
-                          id="sale-availability"
-                          checked={isAvailableForSale}
-                          onCheckedChange={setIsAvailableForSale}
-                          className="data-[state=checked]:bg-purple-primary"
+                      </div>
+                      {inventoryFile && (
+                        <div className="text-xs text-muted-foreground">
+                          Archivo: <span className="font-medium">{inventoryFile.name}</span> · Filas detectadas:{" "}
+                          <span className="font-medium">{inventoryRows.length}</span>
+                        </div>
+                      )}
+                      {inventoryParseError && (
+                        <div className="text-xs text-red-500">{inventoryParseError}</div>
+                      )}
+                    </div>
+
+                    <div className="grid gap-2">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{inventoryStatus}</span>
+                        <span>{inventoryProgress}%</span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-muted">
+                        <div
+                          className="h-2 rounded-full bg-primary transition-all"
+                          style={{ width: `${inventoryProgress}%` }}
                         />
                       </div>
                     </div>
 
-                    <Separator />
-
-                    <div className="grid gap-2">
-                      <Label>Imágenes del producto</Label>
-                      <ProductImageUpload images={imageUrls} onChange={setImageUrls} maxImages={3} />
-                    </div>
-
-                    <Separator />
-                    <div className="text-xs text-muted-foreground">
-                      Tip: el precio es el precio final al público (incluye ITBIS).
-                      {itbisRateBp === 0 ? " En este caso, estará excento." : ""}
-                    </div>
+                    {inventorySummary && (
+                      <div className="rounded-md border p-3 text-sm">
+                        <div className="font-medium">Resultado de la carga</div>
+                        <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                          <div>Total filas: {inventorySummary.total}</div>
+                          <div>Creados: {inventorySummary.created}</div>
+                          <div>Actualizados por SKU: {inventorySummary.updated}</div>
+                          <div>Errores: {inventorySummary.failed}</div>
+                        </div>
+                        {inventorySummary.failed > 0 && (
+                          <div className="mt-3">
+                            <Button type="button" variant="outline" size="sm" onClick={downloadInventoryErrorReport}>
+                              Descargar reporte de errores
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </div>
-              </Tabs>
+                  <DialogFooter>
+                    <Button variant="secondary" onClick={closeInventoryImportModal} type="button">
+                      Cerrar
+                    </Button>
+                    <Button
+                      onClick={onInventoryUpload}
+                      disabled={isInventoryUploading || !inventoryRows.length || !canAdjustStock}
+                      type="button"
+                    >
+                      {isInventoryUploading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="mr-2 h-4 w-4" /> Cargar
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" disabled={!canAdjustStock}>Ajuste masivo</Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Ajuste de inventario rápido</p>
+                  </TooltipContent>
+                </Tooltip>
+                <DialogContent className="sm:max-w-[720px]">
+                  <DialogHeader>
+                    <DialogTitle>Ajuste masivo de inventario</DialogTitle>
+                  </DialogHeader>
 
-              <DialogFooter>
-                <Button variant="secondary" onClick={() => setOpen(false)} type="button">Cancelar</Button>
-                <Button onClick={onSave} disabled={isSaving} type="button">{isSaving ? "Guardando…" : "Guardar"}</Button>
-              </DialogFooter>
-            </DialogContent>
-            </Dialog>
-          </div>
+                  <div className="text-sm text-muted-foreground bg-muted/50 p-4 rounded-md mb-2">
+                    <p className="font-medium text-foreground mb-1">¿Cómo funciona?</p>
+                    <ul className="list-disc pl-5 space-y-1">
+                      <li>Escribe el <strong>ID del producto</strong> seguido de un espacio o tabulación, y luego la <strong>cantidad</strong> a ajustar.</li>
+                      <li>Usa el signo <code className="bg-muted px-1 rounded text-primary">+</code> para aumentar la existencia o <code className="bg-muted px-1 rounded text-red-500">-</code> para disminuirla.</li>
+                      <li>Coloca un producto por línea.</li>
+                    </ul>
+                    <p className="mt-2 text-xs italic">Tip: Puedes copiar y pegar directamente desde dos columnas de Excel o Google Sheets.</p>
+                  </div>
+
+                  <div className="grid gap-4">
+                    <div className="grid gap-2">
+                      <Label>Motivo (opcional)</Label>
+                      <Input
+                        value={bulkReason}
+                        onChange={(e) => setBulkReason(e.target.value)}
+                        placeholder="Ej: Conteo físico"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>IDs y cantidades (una línea por producto)</Label>
+                      <Textarea
+                        value={bulkLines}
+                        onChange={(e) => setBulkLines(e.target.value)}
+                        rows={8}
+                        placeholder={"101\t+5\n102\t-2"}
+                        className="font-mono"
+                      />
+                      <div className="text-xs text-muted-foreground">
+                        Formato: ID y cantidad (usa + o -). Puedes pegar desde Excel/Sheets (tabulado).
+                      </div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Líneas válidas: {bulkParsed.items.length}
+                      {bulkParsed.errors.length > 0 ? ` · Errores: ${bulkParsed.errors.length}` : ""}
+                    </div>
+                    {bulkParsed.errors.length > 0 && (
+                      <div className="text-xs text-red-500">{bulkParsed.errors[0]}</div>
+                    )}
+                  </div>
+                  <DialogFooter>
+                    <Button variant="secondary" onClick={() => setBulkOpen(false)} type="button">Cancelar</Button>
+                    <Button onClick={onBulkSave} disabled={isBulkSaving || !canAdjustStock} type="button">
+                      {isBulkSaving ? "Aplicando…" : "Aplicar ajustes"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) resetForm(null) }}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button onClick={() => { resetForm(null); setOpen(true) }}>
+                        <Plus className="mr-2 h-4 w-4" /> Nuevo
+                      </Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Crear un nuevo producto</p>
+                  </TooltipContent>
+                </Tooltip>
+                <DialogContent className="sm:max-w-[620px] max-h-[90vh] flex flex-col">
+                  <DialogHeader>
+                    <DialogTitle>{title}</DialogTitle>
+                  </DialogHeader>
+
+                  <Tabs value={productType} onValueChange={(v) => setProductType(v as ProductFormType)} className="flex-1 flex flex-col min-h-0">
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="basic">Producto básico</TabsTrigger>
+                      <TabsTrigger value="measured">Producto con medidas</TabsTrigger>
+                      <TabsTrigger value="recipe">Productos por receta</TabsTrigger>
+                    </TabsList>
+
+                    <div className="flex-1 overflow-y-auto pr-2 mt-4">
+                      <div className="grid gap-4">
+                        <div className="grid gap-2">
+                          <Label>ID</Label>
+                          <Input
+                            value={editing ? editing.productId : "Se asignará automáticamente"}
+                            disabled
+                            className="bg-muted"
+                          />
+                        </div>
+
+                        <div className="grid gap-2">
+                          <Label>
+                            Nombre del producto <span className="text-red-500">*</span>
+                          </Label>
+                          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Alfombra" required />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="grid gap-2">
+                            <Label>Código de proveedor (SKU)</Label>
+                            <Input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Ej: 12345" />
+                          </div>
+                          <div className="grid gap-2">
+                            <Label>Referencia</Label>
+                            <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ej: REF-01" />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="grid gap-2">
+                            <Label>Proveedor (opcional)</Label>
+                            <Select value={supplierId || NONE_SUPPLIER_OPTION} onValueChange={handleSupplierChange}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sin proveedor" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={NONE_SUPPLIER_OPTION}>Sin proveedor</SelectItem>
+                                {suppliers.length === 0 ? (
+                                  <>
+                                    <SelectSeparator />
+                                    <SelectItem value={CREATE_SUPPLIER_OPTION}>
+                                      <span className="inline-flex items-center gap-2">
+                                        <Plus className="h-4 w-4" />
+                                        Crear proveedor
+                                      </span>
+                                    </SelectItem>
+                                  </>
+                                ) : (
+                                  suppliers.map((s) => (
+                                    <SelectItem key={s.id} value={s.id}>
+                                      {s.name}
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="grid gap-2">
+                            <Label>Categoría (opcional)</Label>
+                            <Select value={categoryId || NONE_CATEGORY_OPTION} onValueChange={handleCategoryChange}>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Sin categoría" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={NONE_CATEGORY_OPTION}>Sin categoría</SelectItem>
+                                {categories.length === 0 ? (
+                                  <>
+                                    <SelectSeparator />
+                                    <SelectItem value={CREATE_CATEGORY_OPTION}>
+                                      <span className="inline-flex items-center gap-2">
+                                        <Plus className="h-4 w-4" />
+                                        Crear categoría
+                                      </span>
+                                    </SelectItem>
+                                  </>
+                                ) : (
+                                  categories.map((c) => (
+                                    <SelectItem key={c.id} value={c.id}>
+                                      {c.name}
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        <Separator />
+
+                        {/* Campos específicos según el tipo de producto */}
+                        <TabsContent value="basic" className="mt-0 space-y-4">
+                          <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                            Los productos básicos se compran y venden por unidad. Las unidades de compra y venta se establecen automáticamente como Unidad.
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid gap-2">
+                              <Label>
+                                Precio de venta por ({getUnitInfo("UNIDAD").abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
+                              </Label>
+                              <Input
+                                value={price}
+                                onChange={(e) => setPrice(e.target.value)}
+                                inputMode="decimal"
+                                required
+                                disabled={editing ? (!user || (!user.canOverridePrice && !user.isOwner)) : false}
+                                onFocus={selectAllOnFocus}
+                              />
+                            </div>
+                            {(user?.canViewProductCosts || user?.isOwner) && (
+                              <div className="grid gap-2">
+                                <Label>
+                                  Costo por ({getUnitInfo("UNIDAD").abbr}) (RD$) <span className="text-red-500">*</span>
+                                </Label>
+                                <Input
+                                  value={cost}
+                                  onChange={(e) => setCost(e.target.value)}
+                                  inputMode="decimal"
+                                  required
+                                  onFocus={selectAllOnFocus}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid gap-2">
+                              <Label>Existencia ({getUnitInfo("UNIDAD").abbr})</Label>
+                              <Input
+                                value={stock}
+                                onChange={(e) => setStock(e.target.value)}
+                                inputMode="numeric"
+                                placeholder="Ej: 100"
+                                disabled={!!editing}
+                                onFocus={selectAllOnFocus}
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label>Existencia mínima ({getUnitInfo("UNIDAD").abbr})</Label>
+                              <Input
+                                value={minStock}
+                                onChange={(e) => setMinStock(e.target.value)}
+                                inputMode="numeric"
+                                placeholder="Ej: 10"
+                                onFocus={selectAllOnFocus}
+                              />
+                            </div>
+                          </div>
+                          {editing && (
+                            <div className="text-xs text-muted-foreground">
+                              La existencia se ajusta desde Ajuste masivo.
+                            </div>
+                          )}
+                        </TabsContent>
+
+                        <TabsContent value="measured" className="mt-0 space-y-4">
+                          <div className="grid gap-2">
+                            <div className="grid gap-2">
+                              <Label>
+                                Unidad <span className="text-red-500">*</span>
+                              </Label>
+                              <select
+                                value={unit}
+                                onChange={(e) => setUnit(e.target.value as UnitType)}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                required
+                              >
+                                {UNIT_OPTIONS.filter((u) => u.value !== "UNIDAD").map((u) => (
+                                  <option key={u.value} value={u.value}>
+                                    {u.label} ({u.abbr})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                          <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                            La misma unidad se usa para costo, precio, existencia y movimientos del producto.
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid gap-2">
+                              <Label>
+                                Precio de venta por ({getUnitInfo(unit).abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
+                              </Label>
+                              <Input
+                                value={price}
+                                onChange={(e) => setPrice(e.target.value)}
+                                inputMode="decimal"
+                                required
+                                disabled={editing ? (!user || (!user.canOverridePrice && !user.isOwner)) : false}
+                                onFocus={selectAllOnFocus}
+                              />
+                            </div>
+                            {(user?.canViewProductCosts || user?.isOwner) && (
+                              <div className="grid gap-2">
+                                <Label>
+                                  Costo por ({getUnitInfo(unit).abbr}) (RD$) <span className="text-red-500">*</span>
+                                </Label>
+                                <Input
+                                  value={cost}
+                                  onChange={(e) => setCost(e.target.value)}
+                                  inputMode="decimal"
+                                  required
+                                  onFocus={selectAllOnFocus}
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid gap-2">
+                              <Label>Existencia ({getUnitInfo(unit).abbr})</Label>
+                              <Input
+                                value={stock}
+                                onChange={(e) => setStock(e.target.value)}
+                                inputMode="decimal"
+                                placeholder="Ej: 45.5"
+                                disabled={!!editing}
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label>Existencia mínima ({getUnitInfo(unit).abbr})</Label>
+                              <Input value={minStock} onChange={(e) => setMinStock(e.target.value)} inputMode="decimal" placeholder="Ej: 5" />
+                            </div>
+                          </div>
+                          {editing && (
+                            <div className="text-xs text-muted-foreground">
+                              La existencia se ajusta desde Ajuste masivo.
+                            </div>
+                          )}
+                          <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                            Los productos con medidas permiten cantidades decimales (ej: 2.5 kg, 1.75 m).
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent value="recipe" className="mt-0 space-y-4">
+                          <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                            Los productos por receta no manejan existencia propia. Al venderlos, el sistema descuenta sus materias primas del inventario.
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div className="grid gap-2">
+                              <Label>
+                                Precio de venta por unidad (RD$, ITBIS incluido) <span className="text-red-500">*</span>
+                              </Label>
+                              <Input
+                                value={price}
+                                onChange={(e) => setPrice(e.target.value)}
+                                inputMode="decimal"
+                                required
+                                disabled={editing ? (!user || (!user.canOverridePrice && !user.isOwner)) : false}
+                                onFocus={selectAllOnFocus}
+                              />
+                            </div>
+                            {(user?.canViewProductCosts || user?.isOwner) && (
+                              <div className="grid gap-2">
+                                <Label>
+                                  Costo de referencia por unidad (RD$) <span className="text-red-500">*</span>
+                                </Label>
+                                <Input
+                                  value={cost}
+                                  onChange={(e) => setCost(e.target.value)}
+                                  inputMode="decimal"
+                                  required
+                                  onFocus={selectAllOnFocus}
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="grid gap-2 rounded-md border p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <div>
+                                <Label>Receta base</Label>
+                                <div className="text-xs text-muted-foreground">
+                                  Define los insumos que se consumirán por cada unidad vendida.
+                                </div>
+                              </div>
+                              <Button type="button" variant="secondary" size="sm" onClick={addRecipeItem}>
+                                <Plus className="mr-2 h-4 w-4" />
+                                Agregar insumo
+                              </Button>
+                            </div>
+                            <div className="grid gap-3">
+                              {recipeItems.map((item, index) => (
+                                <div key={item.id} className="grid grid-cols-1 gap-3 rounded-md border p-3 sm:grid-cols-[minmax(0,1fr)_140px_44px]">
+                                  <div className="grid gap-2">
+                                    <Label>Insumo #{index + 1}</Label>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      className="justify-start font-normal h-10 w-full text-sm"
+                                      onClick={() => openIngredientPicker((id) => updateRecipeItem(item.id, "ingredientId", id))}
+                                    >
+                                      {item.ingredientId
+                                        ? (() => {
+                                          const opt = availableIngredients.find((o) => o.id === item.ingredientId)
+                                          return opt ? `${opt.productId} - ${opt.name}` : "Insumo no encontrado"
+                                        })()
+                                        : <span className="text-muted-foreground">Selecciona un insumo</span>}
+                                    </Button>
+                                  </div>
+                                  <div className="grid gap-2">
+                                    <Label>
+                                      Cantidad
+                                      {(() => {
+                                        const opt = item.ingredientId ? availableIngredients.find((o) => o.id === item.ingredientId) : null
+                                        return opt && opt.unit !== "UNIDAD" ? ` (${getUnitInfo(opt.unit as UnitType).abbr})` : ""
+                                      })()}
+                                    </Label>
+                                    <Input
+                                      value={item.qty}
+                                      onChange={(e) => updateRecipeItem(item.id, "qty", e.target.value)}
+                                      inputMode="decimal"
+                                      placeholder="Ej: 2"
+                                    />
+                                  </div>
+                                  <div className="flex items-end">
+                                    <Button type="button" variant="outline" size="icon" onClick={() => removeRecipeItem(item.id)}>
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
+                            Los ajustes de receta (Sin/Extra) se configuran al momento de la venta, no en el perfil del producto.
+                          </div>
+                        </TabsContent>
+
+                        <Separator />
+
+                        <div className="grid gap-2">
+                          <Label>ITBIS aplicable para venta</Label>
+                          <select
+                            value={itbisRateBp}
+                            onChange={(e) => setItbisRateBp(Number(e.target.value))}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <option value={1800}>18% (Estándar)</option>
+                            <option value={1600}>16%</option>
+                            <option value={0}>0% (Exento)</option>
+                          </select>
+                          <div className="text-xs text-muted-foreground">
+                            El ITBIS se calcula automáticamente según el porcentaje seleccionado.
+                          </div>
+                        </div>
+
+                        <Separator />
+
+                        <div className="grid gap-2">
+                          <Label htmlFor="sale-availability">Disponible para venta</Label>
+                          <div className="flex items-center justify-between rounded-md border p-3">
+                            <div className="text-xs text-muted-foreground pr-3">
+                              Si se desactiva, no aparecerá en ventas, pero podrá seguir usándose como insumo en recetas.
+                            </div>
+                            <Switch
+                              id="sale-availability"
+                              checked={isAvailableForSale}
+                              onCheckedChange={setIsAvailableForSale}
+                              className="data-[state=checked]:bg-purple-primary"
+                            />
+                          </div>
+                        </div>
+
+                        <Separator />
+
+                        <div className="grid gap-2">
+                          <Label>Imágenes del producto</Label>
+                          <ProductImageUpload images={imageUrls} onChange={setImageUrls} maxImages={3} />
+                        </div>
+
+                        <Separator />
+                        <div className="text-xs text-muted-foreground">
+                          Tip: el precio es el precio final al público (incluye ITBIS).
+                          {itbisRateBp === 0 ? " En este caso, estará excento." : ""}
+                        </div>
+                      </div>
+                    </div>
+                  </Tabs>
+
+                  <DialogFooter>
+                    <Button variant="secondary" onClick={() => setOpen(false)} type="button">Cancelar</Button>
+                    <Button onClick={onSave} disabled={isSaving} type="button">{isSaving ? "Guardando…" : "Guardar"}</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </TooltipProvider>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="relative">
@@ -1602,7 +1636,7 @@ export function ProductsClient() {
                           }}
                           aria-label="Editar"
                           title="Editar"
-                          disabled={!user || (!user.canEditProducts && user.role !== "ADMIN")}
+                          disabled={!user || (!user.canEditProducts && !user.isOwner)}
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
@@ -1652,144 +1686,146 @@ export function ProductsClient() {
         </CardContent>
       </Card>
 
-      {movementsProduct && (
-        <Dialog
-          open={movementsOpen}
-          onOpenChange={(v) => {
+
+      {
+        movementsProduct && (
+          <Dialog open={movementsOpen} onOpenChange={(v) => {
             setMovementsOpen(v)
             if (!v) {
               setMovementsProduct(null)
               setMovements([])
             }
-          }}
-        >
-          <DialogContent className="sm:max-w-[900px] max-h-[85vh] flex flex-col">
-            <DialogHeader>
-              <DialogTitle>
-                Movimientos de {movementsProduct.name} (ID {movementsProduct.productId})
-              </DialogTitle>
-            </DialogHeader>
-            <div className="flex-1">
-              <div className="rounded-md border max-h-[60vh] overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Fecha</TableHead>
-                      <TableHead>Tipo</TableHead>
-                      <TableHead className="text-right">Cantidad</TableHead>
-                      <TableHead>Referencia</TableHead>
-                      <TableHead>Detalle</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {isMovementsLoading && (
+          }}>
+            <DialogContent className="sm:max-w-[900px] max-h-[85vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>
+                  Movimientos de {movementsProduct.name} (ID {movementsProduct.productId})
+                </DialogTitle>
+              </DialogHeader>
+              <div className="flex-1">
+                <div className="rounded-md border max-h-[60vh] overflow-y-auto">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">
-                          Cargando movimientos...
-                        </TableCell>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead className="text-right">Cantidad</TableHead>
+                        <TableHead>Referencia</TableHead>
+                        <TableHead>Detalle</TableHead>
                       </TableRow>
-                    )}
-                    {!isMovementsLoading && movementItems.length === 0 && !movementInitial && (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground">
-                          No hay movimientos para este producto.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                    {movementInitial && !isMovementsLoading && (() => {
-                      const unit = (movementsProduct.unit as UnitType) ?? "UNIDAD"
-                      const qty = Math.abs(movementInitial.qtyDelta)
-                      const qtyLabel = formatQty(qty, unit)
-                      return (
-                        <TableRow key={movementInitial.id} className="bg-muted/30">
-                          <TableCell className="whitespace-nowrap">
-                            {formatMovementDate(movementInitial.occurredAt)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary">{MOVEMENT_LABELS[movementInitial.type]}</Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-medium text-muted-foreground">{qtyLabel}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {movementInitial.reference ?? "—"}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {movementInitial.note ?? "—"}
+                    </TableHeader>
+                    <TableBody>
+                      {isMovementsLoading && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground">
+                            Cargando movimientos...
                           </TableCell>
                         </TableRow>
-                      )
-                    })()}
-                    {movementPageItems.map((movement) => {
-                      const unit = (movementsProduct.unit as UnitType) ?? "UNIDAD"
-                      const qty = Math.abs(movement.qtyDelta)
-                      const qtyLabel = `${movement.qtyDelta > 0 ? "+" : ""}${formatQty(qty, unit)}`
-                      const qtyClass = movement.qtyDelta > 0 ? "text-emerald-600" : "text-red-600"
-                      const detailParts = [movement.actor, movement.note].filter(Boolean)
-                      return (
-                        <TableRow key={movement.id}>
-                          <TableCell className="whitespace-nowrap">
-                            {formatMovementDate(movement.occurredAt)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{MOVEMENT_LABELS[movement.type]}</Badge>
-                          </TableCell>
-                          <TableCell className={`text-right font-medium ${qtyClass}`}>{qtyLabel}</TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {movement.reference ?? "—"}
-                          </TableCell>
-                          <TableCell className="text-xs text-muted-foreground">
-                            {detailParts.length ? detailParts.join(" • ") : "—"}
+                      )}
+                      {!isMovementsLoading && movementItems.length === 0 && !movementInitial && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="text-center text-muted-foreground">
+                            No hay movimientos para este producto.
                           </TableCell>
                         </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-            <DialogFooter>
-              <div className="flex items-center justify-between w-full">
-                <div className="text-xs text-muted-foreground">
-                  Página {Math.min(movementsPage + 1, movementPageCount)} de {movementPageCount}
+                      )}
+                      {movementInitial && !isMovementsLoading && (() => {
+                        const unit = (movementsProduct.unit as UnitType) ?? "UNIDAD"
+                        const qty = Math.abs(movementInitial.qtyDelta)
+                        const qtyLabel = formatQty(qty, unit)
+                        return (
+                          <TableRow key={movementInitial.id} className="bg-muted/30">
+                            <TableCell className="whitespace-nowrap">
+                              {formatMovementDate(movementInitial.occurredAt)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">{MOVEMENT_LABELS[movementInitial.type]}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-muted-foreground">{qtyLabel}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {movementInitial.reference ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {movementInitial.note ?? "—"}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })()}
+                      {movementPageItems.map((movement) => {
+                        const unit = (movementsProduct.unit as UnitType) ?? "UNIDAD"
+                        const qty = Math.abs(movement.qtyDelta)
+                        const qtyLabel = `${movement.qtyDelta > 0 ? "+" : ""}${formatQty(qty, unit)}`
+                        const qtyClass = movement.qtyDelta > 0 ? "text-emerald-600" : "text-red-600"
+                        const detailParts = [movement.actor, movement.note].filter(Boolean)
+                        return (
+                          <TableRow key={movement.id}>
+                            <TableCell className="whitespace-nowrap">
+                              {formatMovementDate(movement.occurredAt)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{MOVEMENT_LABELS[movement.type]}</Badge>
+                            </TableCell>
+                            <TableCell className={`text-right font-medium ${qtyClass}`}>{qtyLabel}</TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {movement.reference ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {detailParts.length ? detailParts.join(" • ") : "—"}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setMovementsPage((p) => Math.max(p - 1, 0))}
-                    disabled={movementsPage === 0}
-                    type="button"
-                  >
-                    Anterior
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setMovementsPage((p) => Math.min(p + 1, movementPageCount - 1))}
-                    disabled={movementsPage >= movementPageCount - 1}
-                    type="button"
-                  >
-                    Siguiente
-                  </Button>
-                </div>
               </div>
-              <Button variant="secondary" onClick={() => setMovementsOpen(false)} type="button">
-                Cerrar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
+              <DialogFooter>
+                <div className="flex items-center justify-between w-full">
+                  <div className="text-xs text-muted-foreground">
+                    Página {Math.min(movementsPage + 1, movementPageCount)} de {movementPageCount}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setMovementsPage((p) => Math.max(p - 1, 0))}
+                      disabled={movementsPage === 0}
+                      type="button"
+                    >
+                      Anterior
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setMovementsPage((p) => Math.min(p + 1, movementPageCount - 1))}
+                      disabled={movementsPage >= movementPageCount - 1}
+                      type="button"
+                    >
+                      Siguiente
+                    </Button>
+                  </div>
+                </div>
+                <Button variant="secondary" onClick={() => setMovementsOpen(false)} type="button">
+                  Cerrar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog >
+        )
+      }
 
-      {printingProduct && (
-        <BarcodeLabel
-          productName={printingProduct.name}
-          sku={printingProduct.sku}
-          reference={printingProduct.reference}
-          priceCents={printingProduct.priceCents}
-          labelSize={barcodeLabelSize}
-          onPrintComplete={() => setPrintingProduct(null)}
-        />
-      )}
+      {
+        printingProduct && (
+          <BarcodeLabel
+            productName={printingProduct.name}
+            sku={printingProduct.sku}
+            reference={printingProduct.reference}
+            priceCents={printingProduct.priceCents}
+            labelSize={barcodeLabelSize}
+            onPrintComplete={() => setPrintingProduct(null)}
+          />
+        )
+      }
 
       <Dialog open={ingredientPickerOpen} onOpenChange={setIngredientPickerOpen}>
         <DialogContent className="sm:max-w-[480px] max-h-[80vh] flex flex-col">
@@ -1811,10 +1847,10 @@ export function ProductsClient() {
               const term = ingredientPickerSearch.trim().toLowerCase()
               const filtered = term
                 ? availableIngredients.filter(
-                    (o) =>
-                      o.name.toLowerCase().includes(term) ||
-                      String(o.productId).toLowerCase().includes(term)
-                  )
+                  (o) =>
+                    o.name.toLowerCase().includes(term) ||
+                    String(o.productId).toLowerCase().includes(term)
+                )
                 : availableIngredients
               if (filtered.length === 0) {
                 return (
@@ -1838,6 +1874,6 @@ export function ProductsClient() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </div >
   )
 }

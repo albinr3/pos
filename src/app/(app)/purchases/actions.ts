@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
+import { ensurePermission } from "@/lib/permission-guard"
 
 function toNumber(value: Decimal | number) {
   return value instanceof Decimal ? value.toNumber() : Number(value)
@@ -149,6 +150,10 @@ export async function createPurchase(input: {
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
+  await ensurePermission(currentUser, "canManagePurchases", {
+    message: "No tienes permiso para gestionar compras",
+    resourceType: "Purchase",
+  })
 
   if (!input.items.length) throw new Error("La compra no tiene productos")
 
@@ -306,6 +311,11 @@ export async function getPurchaseById(id: string) {
 export async function cancelPurchase(id: string) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
+  await ensurePermission(currentUser, "canCancelPurchases", {
+    message: "No tienes permiso para anular compras",
+    resourceType: "Purchase",
+    resourceId: id,
+  })
 
   return prisma.$transaction(async (tx) => {
     const purchase = await tx.purchase.findFirst({
@@ -371,6 +381,11 @@ export async function updatePurchase(input: {
 }) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
+  await ensurePermission(currentUser, "canManagePurchases", {
+    message: "No tienes permiso para gestionar compras",
+    resourceType: "Purchase",
+    resourceId: input.id,
+  })
 
   if (!input.items.length) throw new Error("La compra no tiene productos")
 

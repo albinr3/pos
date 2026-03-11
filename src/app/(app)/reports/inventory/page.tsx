@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatRD } from "@/lib/money"
 import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 
 import { getInventoryReport } from "../actions"
 import { InventoryExportClient } from "./inventory-export-client"
@@ -12,7 +13,9 @@ export const dynamic = "force-dynamic"
 
 export default async function InventoryReportPage() {
   const user = await getCurrentUser()
-  const canViewCosts = user?.canViewProductCosts || user?.role === "ADMIN"
+  const canViewCosts = user
+    ? hasPermission(user, "canViewProductCosts", { allowAdminBypass: false })
+    : false
   const data = await getInventoryReport()
 
   return (

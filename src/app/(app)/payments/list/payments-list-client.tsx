@@ -131,7 +131,7 @@ export function PaymentsListClient() {
                             onClick={() => handleCancel(p.id)}
                             aria-label="Cancelar"
                             title="Cancelar"
-                            disabled={!user || (!user.canCancelPayments && user.role !== "ADMIN")}
+                            disabled={!user || (!user.canCancelPayments && !user.isOwner)}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>

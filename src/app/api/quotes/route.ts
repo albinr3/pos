@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { calcItbisIncluded } from "@/lib/money"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
+import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -97,6 +98,13 @@ export async function POST(request: NextRequest) {
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+    const canManageQuotes = await hasPermissionOrLog(user, "canManageQuotes", {
+      resourceType: "Quote",
+      details: { endpoint: "/api/quotes", method: "POST" },
+    })
+    if (!canManageQuotes) {
+      return NextResponse.json({ error: "No tienes permiso para gestionar cotizaciones" }, { status: 403 })
     }
 
     const body = await request.json() as {

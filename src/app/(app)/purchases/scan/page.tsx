@@ -1,6 +1,17 @@
+import { redirect } from "next/navigation"
+import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import { ScanInvoiceClient } from "./scan-invoice-client"
 
-export default function ScanInvoicePage() {
+export default async function ScanInvoicePage() {
+  const user = await getCurrentUser()
+  if (!user) {
+    redirect("/login")
+  }
+  if (!hasPermission(user, "canManagePurchases", { allowAdminBypass: false })) {
+    redirect("/app")
+  }
+
   return (
     <div className="grid gap-6">
       <div>

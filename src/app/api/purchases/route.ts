@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
+import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -176,6 +177,13 @@ export async function POST(request: NextRequest) {
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+    const canManagePurchases = await hasPermissionOrLog(user, "canManagePurchases", {
+      resourceType: "Purchase",
+      details: { endpoint: "/api/purchases", method: "POST" },
+    })
+    if (!canManagePurchases) {
+      return NextResponse.json({ error: "No tienes permiso para gestionar compras" }, { status: 403 })
     }
 
     const body = await request.json()

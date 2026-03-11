@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
+import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -169,6 +170,13 @@ export async function PUT(
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
+    const canManagePurchases = await hasPermissionOrLog(user, "canManagePurchases", {
+      resourceType: "Purchase",
+      details: { endpoint: "/api/purchases/[id]", method: "PUT" },
+    })
+    if (!canManagePurchases) {
+      return NextResponse.json({ error: "No tienes permiso para gestionar compras" }, { status: 403 })
+    }
 
     const { id } = await params
     const body = await request.json()
@@ -304,6 +312,64 @@ export async function PUT(
     console.error("Error en PUT /api/purchases/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al editar compra" },
+      { status: 500 }
+    )
+  }
+}
+
+// DELETE /api/purchases/:id - Anular compra
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getCurrentUserFromRequest(request)
+    if (!user) {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+    const canCancelPurchases = await hasPermissionOrLog(user, "canCancelPurchases", {
+      resourceType: "Purchase",
+      details: { endpoint: "/api/purchases/[id]", method: "DELETE" },
+    })
+    if (!canCancelPurchases) {
+      return NextResponse.json({ error: "No tienes permiso para anular compras" }, { status: 403 })
+    }
+
+    const { id } = await params
+    const cancelledPurchase = await prisma.$transaction(async (tx) => {
+      const purchase = await tx.purchase.findFirst({
+        where: { id, accountId: user.accountId },
+        include: { items: true },
+      })
+
+      if (!purchase) throw new Error("Compra no encontrada")
+      if (purchase.cancelledAt) throw new Error("Esta compra ya esta cancelada")
+
+      for (const item of purchase.items) {
+        const updated = await tx.product.updateMany({
+          where: { id: item.productId, accountId: user.accountId },
+          data: { stock: { decrement: item.qty } },
+        })
+        if (updated.count === 0) throw new Error("Producto no encontrado")
+      }
+
+      return tx.purchase.update({
+        where: { id },
+        data: {
+          cancelledAt: new Date(),
+          cancelledBy: user.id,
+        },
+      })
+    }, TRANSACTION_OPTIONS)
+
+    return NextResponse.json({
+      id: cancelledPurchase.id,
+      cancelledAt: cancelledPurchase.cancelledAt?.toISOString() ?? null,
+    })
+  } catch (error: unknown) {
+    console.error("Error en DELETE /api/purchases/[id]:", error)
+    return NextResponse.json(
+      { error: getErrorMessage(error) || "Error al anular compra" },
       { status: 500 }
     )
   }

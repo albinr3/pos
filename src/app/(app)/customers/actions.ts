@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizePhone, sanitizeCedula, validateLength } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
+import { ensurePermission } from "@/lib/permission-guard"
 
 type AuthActor = {
   id: string
@@ -128,6 +129,13 @@ export async function upsertCustomer(input: {
 }, actor?: AuthActor) {
   const user = actor ?? await getCurrentUser()
   assertAuthActor(user)
+  await ensurePermission(user, "canManageCustomers", {
+    message: "No tienes permiso para gestionar clientes",
+    resourceType: "Customer",
+    resourceId: input.id,
+  })
+
+  const normalizedCreditDays = input.creditEnabled ? input.creditDays : 0
 
   // 🔐 SANITIZAR todos los inputs
   const sanitized = {
@@ -154,6 +162,18 @@ export async function upsertCustomer(input: {
     if (!existing) throw new Error("Cliente no encontrado")
     if (existing.isGeneric) throw new Error("No se puede modificar el Cliente general")
 
+    const isChangingCreditPolicy =
+      existing.creditEnabled !== input.creditEnabled ||
+      existing.creditDays !== normalizedCreditDays
+
+    if (isChangingCreditPolicy) {
+      await ensurePermission(user, "canApproveCredit", {
+        message: "No tienes permiso para aprobar lineas de credito",
+        resourceType: "Customer",
+        resourceId: input.id,
+      })
+    }
+
     const updated = await prisma.customer.updateMany({
       where: { id: input.id, accountId: user.accountId },
       data: {
@@ -163,7 +183,7 @@ export async function upsertCustomer(input: {
         cedula: sanitized.cedula,
         province: sanitized.province,
         creditEnabled: input.creditEnabled,
-        creditDays: input.creditDays,
+        creditDays: normalizedCreditDays,
       },
     })
     if (updated.count === 0) throw new Error("Cliente no encontrado")
@@ -185,6 +205,13 @@ export async function upsertCustomer(input: {
       },
     })
   } else {
+    if (input.creditEnabled || normalizedCreditDays > 0) {
+      await ensurePermission(user, "canApproveCredit", {
+        message: "No tienes permiso para aprobar lineas de credito",
+        resourceType: "Customer",
+      })
+    }
+
     const created = await prisma.customer.create({
       data: {
         accountId: user.accountId,
@@ -194,7 +221,7 @@ export async function upsertCustomer(input: {
         cedula: sanitized.cedula,
         province: sanitized.province,
         creditEnabled: input.creditEnabled,
-        creditDays: input.creditDays,
+        creditDays: normalizedCreditDays,
         isGeneric: false,
         isActive: true,
       },
@@ -226,6 +253,11 @@ export async function upsertCustomer(input: {
 export async function deactivateCustomer(id: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageCustomers", {
+    message: "No tienes permiso para gestionar clientes",
+    resourceType: "Customer",
+    resourceId: id,
+  })
 
   const existing = await prisma.customer.findFirst({
     where: { id, accountId: user.accountId },

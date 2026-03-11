@@ -87,6 +87,20 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
       canManageBackups: user.canManageBackups,
       canViewProductCosts: user.canViewProductCosts,
       canViewProfitReport: user.canViewProfitReport,
+      canAdjustInventory: user.canAdjustInventory,
+      canManageCategories: user.canManageCategories,
+      canManagePurchases: user.canManagePurchases,
+      canCancelPurchases: user.canCancelPurchases,
+      canManageSuppliers: user.canManageSuppliers,
+      canManageCustomers: user.canManageCustomers,
+      canApproveCredit: user.canApproveCredit,
+      canManageExpenses: user.canManageExpenses,
+      canCancelExpenses: user.canCancelExpenses,
+      canManageQuotes: user.canManageQuotes,
+      canApplyDiscounts: user.canApplyDiscounts,
+      canViewAuditLogs: user.canViewAuditLogs,
+      canManageUsers: user.canManageUsers,
+      canManageSettings: user.canManageSettings,
     }
   }
   

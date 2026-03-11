@@ -55,9 +55,12 @@ function parseLastSyncDay(raw: string | null) {
 
 type Props = {
   isOwner: boolean
+  canManageUsers: boolean
+  canViewAuditLogs: boolean
+  canManageSettings: boolean
 }
 
-export function SettingsClient({ isOwner }: Props) {
+export function SettingsClient({ isOwner, canManageUsers, canViewAuditLogs, canManageSettings }: Props) {
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
@@ -75,6 +78,9 @@ export function SettingsClient({ isOwner }: Props) {
   const [isPreloading, setIsPreloading] = useState(false)
   const [lastPreloadDay, setLastPreloadDay] = useState<string | null>(null)
   const logoActionLabel = logoUrl ? "Cambiar logo" : "Subir logo"
+  const canEditSettings = isOwner || canManageSettings
+  const canSeeUsers = isOwner || canManageUsers
+  const canSeeAudit = isOwner || canViewAuditLogs
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -172,6 +178,7 @@ export function SettingsClient({ isOwner }: Props) {
   }
 
   async function handleLogoUpload(url: string) {
+    if (!canEditSettings) return
     try {
       setLogoUrl(url)
       // Guardar en la base de datos
@@ -183,6 +190,7 @@ export function SettingsClient({ isOwner }: Props) {
   }
 
   async function handleRemoveLogo() {
+    if (!canEditSettings) return
     try {
       await updateCompanyInfo({ name, phone, address, logoUrl: null })
       setLogoUrl(null)
@@ -193,6 +201,7 @@ export function SettingsClient({ isOwner }: Props) {
   }
 
   function onSaveCompany() {
+    if (!canEditSettings) return
     startSaving(async () => {
       try {
         await updateCompanyInfo({ name, phone, address, logoUrl })
@@ -205,6 +214,11 @@ export function SettingsClient({ isOwner }: Props) {
 
   return (
     <div className="grid gap-6">
+      {!canEditSettings && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Solo puedes visualizar esta sección. Se requiere permiso para modificar ajustes de empresa.
+        </div>
+      )}
       <Card>
         <CardHeader>
           <CardTitle>Empresa</CardTitle>
@@ -230,6 +244,7 @@ export function SettingsClient({ isOwner }: Props) {
                     size="icon"
                     className="absolute -right-2 -top-2 h-6 w-6 rounded-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={handleRemoveLogo}
+                    disabled={!canEditSettings}
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -261,6 +276,7 @@ export function SettingsClient({ isOwner }: Props) {
                       })
                     }}
                     className="absolute inset-0 z-10"
+                    disabled={!canEditSettings}
                     appearance={{
                       container: "h-full w-full",
                       button: "h-full w-full mt-0 bg-transparent text-transparent hover:bg-transparent after:hidden",
@@ -279,18 +295,18 @@ export function SettingsClient({ isOwner }: Props) {
           <Separator />
           <div className="grid gap-2">
             <Label>Nombre</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Input value={name} onChange={(e) => setName(e.target.value)} disabled={!canEditSettings} />
           </div>
           <div className="grid gap-2">
             <Label>Teléfono</Label>
-            <Input value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <Input value={phone} onChange={(e) => setPhone(e.target.value)} disabled={!canEditSettings} />
           </div>
           <div className="grid gap-2">
             <Label>Dirección</Label>
-            <Input value={address} onChange={(e) => setAddress(e.target.value)} />
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} disabled={!canEditSettings} />
           </div>
           <div className="flex justify-end">
-            <Button type="button" onClick={onSaveCompany} disabled={isSaving}>
+            <Button type="button" onClick={onSaveCompany} disabled={isSaving || !canEditSettings}>
               Guardar empresa
             </Button>
           </div>
@@ -311,6 +327,7 @@ export function SettingsClient({ isOwner }: Props) {
                 className="h-10 rounded-md border bg-background px-3 text-sm"
                 value={barcodeLabelSize}
                 onChange={(e) => setBarcodeLabelSize(e.target.value)}
+                disabled={!canEditSettings}
               >
                 <option value="4x2">4&quot; x 2&quot; (101.6mm x 50.8mm) - Estándar</option>
                 <option value="3x1">3&quot; x 1&quot; (76.2mm x 25.4mm) - Pequeña</option>
@@ -324,6 +341,7 @@ export function SettingsClient({ isOwner }: Props) {
                 className="h-10 rounded-md border bg-background px-3 text-sm"
                 value={shippingLabelSize}
                 onChange={(e) => setShippingLabelSize(e.target.value)}
+                disabled={!canEditSettings}
               >
                 <option value="4x6">4&quot; x 6&quot; (101.6mm x 152.4mm) - Estándar</option>
                 <option value="4x4">4&quot; x 4&quot; (101.6mm x 101.6mm) - Cuadrada</option>
@@ -344,7 +362,7 @@ export function SettingsClient({ isOwner }: Props) {
                   }
                 })
               }}
-              disabled={isSaving}
+              disabled={isSaving || !canEditSettings}
             >
               Guardar etiquetas
             </Button>
@@ -365,6 +383,7 @@ export function SettingsClient({ isOwner }: Props) {
               className="h-10 rounded-md border bg-background px-3 text-sm w-full md:w-[300px]"
               value={defaultViewMode}
               onChange={(e) => {
+                if (!canEditSettings) return
                 const newValue = e.target.value
                 setDefaultViewMode(newValue)
                 startSaving(async () => {
@@ -376,6 +395,7 @@ export function SettingsClient({ isOwner }: Props) {
                   }
                 })
               }}
+              disabled={!canEditSettings}
             >
               <option value="list">Lista (texto y campos compactos)</option>
               <option value="grid">Imágenes (cuadrícula con fotos)</option>
@@ -391,6 +411,7 @@ export function SettingsClient({ isOwner }: Props) {
             <Switch
               checked={showItbisOnReceipts}
               onCheckedChange={(checked) => {
+                if (!canEditSettings) return
                 setShowItbisOnReceipts(checked)
                 startSaving(async () => {
                   try {
@@ -401,7 +422,7 @@ export function SettingsClient({ isOwner }: Props) {
                   }
                 })
               }}
-              disabled={isSaving}
+              disabled={isSaving || !canEditSettings}
             />
           </div>
           <div className="grid gap-2">
@@ -410,6 +431,7 @@ export function SettingsClient({ isOwner }: Props) {
               <Input
                 value={defaultProfitMargin}
                 onChange={(e) => {
+                  if (!canEditSettings) return
                   const cleaned = e.target.value.replace(/[^0-9.]/g, "")
                   const parts = cleaned.split(".")
                   if (parts.length > 2) return
@@ -418,12 +440,14 @@ export function SettingsClient({ isOwner }: Props) {
                 }}
                 inputMode="decimal"
                 className="w-full md:w-[180px]"
+                disabled={!canEditSettings}
               />
               <Button
                 type="button"
                 variant="outline"
-                disabled={isSaving}
+                disabled={isSaving || !canEditSettings}
                 onClick={() => {
+                  if (!canEditSettings) return
                   startSaving(async () => {
                     try {
                       const parsedMargin = Number.parseFloat(defaultProfitMargin || "0")
@@ -525,8 +549,8 @@ export function SettingsClient({ isOwner }: Props) {
         </CardContent>
       </Card>
 
-      {isOwner && <UsersTab isOwner={isOwner} />}
-      {isOwner && (
+      {canSeeUsers && <UsersTab isOwner={isOwner} canManageUsers={canSeeUsers} />}
+      {canSeeAudit && (
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="audit-log">
             <AccordionTrigger className="text-left text-base font-semibold">

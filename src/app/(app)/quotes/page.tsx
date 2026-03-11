@@ -1,9 +1,20 @@
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { FileText } from "lucide-react"
+import { getCurrentUser } from "@/lib/auth"
+import { hasPermission } from "@/lib/permissions"
 import { QuotesClient } from "./quotes-client"
 
-export default function QuotesPage() {
+export default async function QuotesPage() {
+  const user = await getCurrentUser()
+  if (!user) {
+    redirect("/login")
+  }
+  if (!hasPermission(user, "canManageQuotes", { allowAdminBypass: false })) {
+    redirect("/app")
+  }
+
   return (
     <div className="grid gap-6">
       <div className="flex items-center justify-between">
@@ -24,4 +35,3 @@ export default function QuotesPage() {
     </div>
   )
 }
-

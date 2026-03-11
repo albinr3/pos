@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizePhone } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
+import { ensurePermission } from "@/lib/permission-guard"
 
 export async function listSuppliers(query?: string) {
   const user = await getCurrentUser()
@@ -54,6 +55,11 @@ export async function upsertSupplier(input: {
 }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSuppliers", {
+    message: "No tienes permiso para gestionar proveedores",
+    resourceType: "Supplier",
+    resourceId: input.id,
+  })
 
   const name = sanitizeString(input.name)
   if (!name) throw new Error("El nombre es requerido")
@@ -151,6 +157,11 @@ export async function upsertSupplier(input: {
 export async function deactivateSupplier(supplierId: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSuppliers", {
+    message: "No tienes permiso para gestionar proveedores",
+    resourceType: "Supplier",
+    resourceId: supplierId,
+  })
 
   const existing = await prisma.supplier.findFirst({
     where: { id: supplierId, accountId: user.accountId },

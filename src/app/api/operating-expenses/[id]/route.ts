@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { logAuditEvent } from "@/lib/audit-log"
+import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -74,6 +75,13 @@ export async function PUT(
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    }
+    const canManageExpenses = await hasPermissionOrLog(user, "canManageExpenses", {
+      resourceType: "OperatingExpense",
+      details: { endpoint: "/api/operating-expenses/[id]", method: "PUT" },
+    })
+    if (!canManageExpenses) {
+      return NextResponse.json({ error: "No tienes permiso para registrar gastos" }, { status: 403 })
     }
 
     const { id } = await params
@@ -166,6 +174,13 @@ export async function DELETE(
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
+    const canCancelExpenses = await hasPermissionOrLog(user, "canCancelExpenses", {
+      resourceType: "OperatingExpense",
+      details: { endpoint: "/api/operating-expenses/[id]", method: "DELETE" },
+    })
+    if (!canCancelExpenses) {
+      return NextResponse.json({ error: "No tienes permiso para anular gastos" }, { status: 403 })
+    }
 
     const { id } = await params
     const existing = await prisma.operatingExpense.findFirst({
@@ -207,4 +222,3 @@ export async function DELETE(
     )
   }
 }
-
