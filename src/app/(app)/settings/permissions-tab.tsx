@@ -192,6 +192,7 @@ export function PermissionsTab() {
                       checked={user[permission]}
                       onCheckedChange={(v) => handleToggle(user.id, permission, v)}
                       disabled={isSaving}
+                      className="data-[state=checked]:bg-purple-primary"
                     />
                   </div>
                 ))}

@@ -423,6 +423,7 @@ export function UsersTab({ isOwner, canManageUsers }: { isOwner: boolean; canMan
                                     checked={moduleState === "all"}
                                     onCheckedChange={(value) => handleToggleModule(user, editableModulePermissions, value)}
                                     disabled={moduleToggleDisabled}
+                                    className="data-[state=checked]:bg-purple-primary"
                                   />
                                 </div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -437,6 +438,7 @@ export function UsersTab({ isOwner, canManageUsers }: { isOwner: boolean; canMan
                                           checked={getPermissionValue(user, permission)}
                                           onCheckedChange={(value) => handleTogglePermission(user.id, permission, value)}
                                           disabled={disabled}
+                                          className="data-[state=checked]:bg-purple-primary"
                                         />
                                       </div>
                                     )
