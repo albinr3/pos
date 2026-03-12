@@ -42,6 +42,29 @@ function findHistoricalUnitCostCents(
   return found === null ? fallbackCostCents : history[found].netCostCents
 }
 
+function calculateConsumptionsCostCents(
+  costsByProductId: Map<string, Array<{ purchasedAt: Date; netCostCents: number }>>,
+  consumptions: Array<{
+    ingredientId: string
+    qty: Decimal | number
+    ingredient: { costCents: number } | null
+  }>,
+  soldAt: Date
+) {
+  return consumptions.reduce((sum, consumption) => {
+    const qty = toQty(consumption.qty)
+    if (qty <= 0) return sum
+
+    const historicalUnitCostCents = findHistoricalUnitCostCents(
+      costsByProductId,
+      consumption.ingredientId,
+      soldAt,
+      consumption.ingredient?.costCents ?? 0
+    )
+    return sum + Math.round(historicalUnitCostCents * qty)
+  }, 0)
+}
+
 export async function getSalesReport(input: { from?: string; to?: string }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -165,9 +188,16 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
           include: {
             saleItem: {
               select: {
-                product: {
+                qty: true,
+                consumptions: {
                   select: {
-                    costCents: true,
+                    ingredientId: true,
+                    qty: true,
+                    ingredient: {
+                      select: {
+                        costCents: true,
+                      },
+                    },
                   },
                 },
               },
@@ -187,8 +217,16 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
       include: {
         items: {
           include: {
-            product: {
-              select: { costCents: true },
+            consumptions: {
+              select: {
+                ingredientId: true,
+                qty: true,
+                ingredient: {
+                  select: {
+                    costCents: true,
+                  },
+                },
+              },
             },
           },
         },
@@ -212,8 +250,14 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     : null
   const soldProductIds = Array.from(
     new Set([
-      ...allSales.flatMap((sale) => sale.items.map((item) => item.productId)),
-      ...cashReturns.flatMap((ret) => ret.items.map((item) => item.productId)),
+      ...allSales.flatMap((sale) =>
+        sale.items.flatMap((item) => item.consumptions.map((consumption) => consumption.ingredientId))
+      ),
+      ...cashReturns.flatMap((ret) =>
+        ret.items.flatMap((item) =>
+          item.saleItem?.consumptions.map((consumption) => consumption.ingredientId) ?? []
+        )
+      ),
     ])
   )
 
@@ -254,27 +298,36 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   // Calcular costo de ventas usando costo histórico (ultima compra antes de la venta).
   const grossCostOfSalesCents = allSales.reduce((total, sale) => {
     const saleCost = sale.items.reduce((itemTotal, item) => {
-      const historicalUnitCostCents = findHistoricalUnitCostCents(
+      const itemCost = calculateConsumptionsCostCents(
         costsByProductId,
-        item.productId,
+        item.consumptions,
         sale.soldAt,
-        item.product.costCents
       )
-      return itemTotal + (historicalUnitCostCents * toQty(item.qty))
+      return itemTotal + itemCost
     }, 0)
     return total + saleCost
   }, 0)
 
   const cashReturnsCostCents = cashReturns.reduce((total, ret) => {
     const returnCost = ret.items.reduce((itemTotal, item) => {
-      const fallbackCostCents = item.saleItem?.product.costCents ?? 0
-      const historicalUnitCostCents = findHistoricalUnitCostCents(
+      const soldQty = item.saleItem ? toQty(item.saleItem.qty) : 0
+      if (!item.saleItem || soldQty <= 0) return itemTotal
+
+      const returnedQty = toQty(item.qty)
+      if (returnedQty <= 0) return itemTotal
+
+      const ratio = returnedQty / soldQty
+      const proportionalConsumptions = item.saleItem.consumptions.map((consumption) => ({
+        ingredientId: consumption.ingredientId,
+        qty: toQty(consumption.qty) * ratio,
+        ingredient: consumption.ingredient,
+      }))
+      const itemCost = calculateConsumptionsCostCents(
         costsByProductId,
-        item.productId,
+        proportionalConsumptions,
         ret.sale.soldAt,
-        fallbackCostCents
       )
-      return itemTotal + (historicalUnitCostCents * toQty(item.qty))
+      return itemTotal + itemCost
     }, 0)
     return total + returnCost
   }, 0)

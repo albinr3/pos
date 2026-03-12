@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcItbisIncluded } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
+import { ProductKind, RecipeAdjustmentType, type Prisma } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
@@ -17,6 +18,10 @@ function decimalToNumber(decimal: unknown): number {
     return (decimal as { toNumber: () => number }).toNumber()
   }
   return 0
+}
+
+function roundQty(value: number) {
+  return Math.round(value * 1000) / 1000
 }
 
 function normalizeQuote<T extends { items: { qty: Decimal | number; product?: unknown }[] }>(quote: T): T {
@@ -43,6 +48,34 @@ function normalizeQuote<T extends { items: { qty: Decimal | number; product?: un
   } as T
 }
 
+type ProductRecipeItemResult = {
+  ingredientId: string
+  qty: number
+  ingredientName: string
+  ingredientUnit: string
+}
+
+function normalizeProductResult<T extends {
+  stock: Decimal | number
+  recipeItems: Array<{
+    ingredientId: string
+    qty: Decimal | number
+    ingredient: { name: string; unit: string }
+  }>
+}>(product: T): Omit<T, "stock" | "recipeItems"> & { stock: number; recipeItems: ProductRecipeItemResult[] } {
+  const { stock, recipeItems, ...rest } = product
+  return {
+    ...rest,
+    stock: decimalToNumber(stock),
+    recipeItems: recipeItems.map((item) => ({
+      ingredientId: item.ingredientId,
+      qty: decimalToNumber(item.qty),
+      ingredientName: item.ingredient.name,
+      ingredientUnit: item.ingredient.unit,
+    })),
+  }
+}
+
 export async function searchProducts(query: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -54,6 +87,7 @@ export async function searchProducts(query: string) {
     where: {
       accountId: user.accountId,
       isActive: true,
+      isAvailableForSale: true,
       OR: [
         { name: { contains: q, mode: "insensitive" } },
         { sku: { contains: q, mode: "insensitive" } },
@@ -72,14 +106,24 @@ export async function searchProducts(query: string) {
       unit: true,
       imageUrls: true,
       itbisRateBp: true,
+      productKind: true,
+      recipeItems: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: {
+          ingredientId: true,
+          qty: true,
+          ingredient: {
+            select: {
+              name: true,
+              unit: true,
+            },
+          },
+        },
+      },
     },
   })
 
-  // Convertir Decimal a número
-  return products.map((p) => ({
-    ...p,
-    stock: decimalToNumber(p.stock),
-  }))
+  return products.map(normalizeProductResult)
 }
 
 export async function listAllProductsForQuotes() {
@@ -90,6 +134,7 @@ export async function listAllProductsForQuotes() {
     where: {
       accountId: user.accountId,
       isActive: true,
+      isAvailableForSale: true,
     },
     orderBy: { name: "asc" },
     take: 500,
@@ -103,18 +148,57 @@ export async function listAllProductsForQuotes() {
       unit: true,
       imageUrls: true,
       itbisRateBp: true,
+      productKind: true,
+      recipeItems: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: {
+          ingredientId: true,
+          qty: true,
+          ingredient: {
+            select: {
+              name: true,
+              unit: true,
+            },
+          },
+        },
+      },
     },
   })
 
-  return products.map((p) => ({
-    ...p,
-    stock: decimalToNumber(p.stock),
-  }))
+  return products.map(normalizeProductResult)
 }
 
 export async function listCustomers() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+
+  // Asegurar que el cliente general existe (con manejo de condiciones de carrera)
+  try {
+    const existingGeneric = await prisma.customer.findFirst({
+      where: {
+        accountId: user.accountId,
+        isGeneric: true,
+      },
+    })
+
+    if (!existingGeneric) {
+      await prisma.customer.create({
+        data: {
+          accountId: user.accountId,
+          name: "Cliente general",
+          isGeneric: true,
+          isActive: true,
+        },
+      })
+    }
+  } catch (error: unknown) {
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : null
+    if (code !== "P2002") {
+      console.error("Error asegurando cliente genérico:", error)
+    }
+  }
 
   return prisma.customer.findMany({
     where: { accountId: user.accountId, isActive: true },
@@ -136,8 +220,9 @@ export async function listQuotes() {
       items: {
         include: {
           product: {
-            select: { name: true, sku: true, reference: true },
+            select: { name: true, sku: true, reference: true, unit: true },
           },
+          recipeAdjustments: true,
         },
       },
       user: {
@@ -161,8 +246,9 @@ export async function getQuoteByCode(quoteCode: string) {
       items: {
         include: {
           product: {
-            select: { name: true, sku: true, reference: true },
+            select: { name: true, sku: true, reference: true, unit: true },
           },
+          recipeAdjustments: true,
         },
       },
       user: {
@@ -185,8 +271,32 @@ export async function getQuoteById(id: string) {
       items: {
         include: {
           product: {
-            select: { id: true, name: true, sku: true, reference: true, priceCents: true, stock: true, unit: true },
+            select: {
+              id: true,
+              name: true,
+              sku: true,
+              reference: true,
+              priceCents: true,
+              stock: true,
+              unit: true,
+              itbisRateBp: true,
+              productKind: true,
+              recipeItems: {
+                orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+                select: {
+                  ingredientId: true,
+                  qty: true,
+                  ingredient: {
+                    select: {
+                      name: true,
+                      unit: true,
+                    },
+                  },
+                },
+              },
+            },
           },
+          recipeAdjustments: true,
         },
       },
       user: {
@@ -203,6 +313,221 @@ type CartItemInput = {
   qty: number
   unitPriceCents: number
   wasPriceOverridden: boolean
+  recipeAdjustments?: Array<{
+    ingredientId: string
+    adjustmentType: RecipeAdjustmentType
+  }>
+}
+
+const MAX_QUOTE_ITEMS = 100
+
+function validateQuoteItems(items: CartItemInput[]) {
+  if (!items.length) throw new Error("La cotización no tiene productos.")
+  if (items.length > MAX_QUOTE_ITEMS) throw new Error(`La cotización no puede tener más de ${MAX_QUOTE_ITEMS} productos.`)
+
+  for (const item of items) {
+    if (!item.productId) throw new Error("Producto inválido en la cotización.")
+    if (!Number.isFinite(item.qty) || item.qty <= 0) {
+      throw new Error("La cantidad debe ser mayor a 0.")
+    }
+    if (!Number.isFinite(item.unitPriceCents) || item.unitPriceCents <= 0 || !Number.isInteger(item.unitPriceCents)) {
+      throw new Error("El precio unitario debe ser un entero positivo en centavos.")
+    }
+  }
+}
+
+function normalizeQuoteInputItems(items: CartItemInput[]): CartItemInput[] {
+  return items.map((item) => ({
+    ...item,
+    qty: roundQty(item.qty),
+  }))
+}
+
+function normalizeRecipeAdjustments(
+  recipeAdjustments: CartItemInput["recipeAdjustments"] | undefined,
+  productName: string
+) {
+  const normalized = (recipeAdjustments ?? []).map((adjustment) => {
+    const ingredientId = String(adjustment.ingredientId ?? "").trim()
+    const typeRaw = String(adjustment.adjustmentType ?? "").trim().toUpperCase()
+    if (!ingredientId) {
+      throw new Error(`Hay un ajuste de receta inválido en "${productName}".`)
+    }
+    if (typeRaw !== RecipeAdjustmentType.SIN && typeRaw !== RecipeAdjustmentType.EXTRA) {
+      throw new Error(`Hay un tipo de ajuste inválido en "${productName}".`)
+    }
+    return {
+      ingredientId,
+      adjustmentType: typeRaw as RecipeAdjustmentType,
+    }
+  })
+
+  const byIngredient = new Map<string, RecipeAdjustmentType>()
+  for (const adjustment of normalized) {
+    if (byIngredient.has(adjustment.ingredientId)) {
+      throw new Error(`No puedes repetir ajustes para el mismo ingrediente en "${productName}".`)
+    }
+    byIngredient.set(adjustment.ingredientId, adjustment.adjustmentType)
+  }
+
+  return Array.from(byIngredient.entries())
+    .map(([ingredientId, adjustmentType]) => ({ ingredientId, adjustmentType }))
+    .sort((a, b) => a.ingredientId.localeCompare(b.ingredientId))
+}
+
+type ResolvedQuoteLine = {
+  item: CartItemInput
+  product: {
+    id: string
+    name: string
+    priceCents: number
+    isActive: boolean
+    isAvailableForSale: boolean
+    productKind: ProductKind
+  }
+  recipeAdjustments: Array<{
+    ingredientId: string
+    ingredientName: string
+    type: RecipeAdjustmentType
+  }>
+}
+
+async function loadProductsForQuoteResolution(
+  tx: Prisma.TransactionClient,
+  accountId: string,
+  productIds: string[]
+) {
+  const products = await tx.product.findMany({
+    where: {
+      id: { in: productIds },
+      accountId,
+    },
+    select: {
+      id: true,
+      name: true,
+      priceCents: true,
+      isActive: true,
+      isAvailableForSale: true,
+      productKind: true,
+      recipeItems: {
+        select: {
+          ingredientId: true,
+          qty: true,
+          ingredient: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  return new Map(
+    products.map((product) => [
+      product.id,
+      {
+        ...product,
+        recipeItems: product.recipeItems.map((item) => ({
+          ingredientId: item.ingredientId,
+          qty: decimalToNumber(item.qty),
+          ingredientName: item.ingredient.name,
+        })),
+      },
+    ])
+  )
+}
+
+async function resolveQuoteLines(
+  tx: Prisma.TransactionClient,
+  accountId: string,
+  items: CartItemInput[],
+  options?: {
+    allowUnavailableProductIds?: Set<string>
+  }
+) {
+  const productsById = await loadProductsForQuoteResolution(
+    tx,
+    accountId,
+    Array.from(new Set(items.map((item) => item.productId)))
+  )
+
+  const resolvedLines: ResolvedQuoteLine[] = []
+
+  for (const item of items) {
+    const product = productsById.get(item.productId)
+    if (!product || !product.isActive) {
+      throw new Error("Hay un producto inválido o inactivo en la cotización.")
+    }
+
+    const canUseUnavailableProduct = options?.allowUnavailableProductIds?.has(product.id) ?? false
+    if (!product.isAvailableForSale && !canUseUnavailableProduct) {
+      throw new Error(`El producto "${product.name}" no está disponible para la venta.`)
+    }
+
+    if (product.productKind !== ProductKind.RECIPE) {
+      resolvedLines.push({
+        item: {
+          ...item,
+          recipeAdjustments: [],
+        },
+        product: {
+          id: product.id,
+          name: product.name,
+          priceCents: product.priceCents,
+          isActive: product.isActive,
+          isAvailableForSale: product.isAvailableForSale,
+          productKind: product.productKind,
+        },
+        recipeAdjustments: [],
+      })
+      continue
+    }
+
+    if (product.recipeItems.length === 0) {
+      throw new Error(`El producto "${product.name}" no tiene una receta configurada.`)
+    }
+
+    const normalizedAdjustments = normalizeRecipeAdjustments(item.recipeAdjustments, product.name)
+    const recipeItemsByIngredient = new Map(
+      product.recipeItems.map((recipeItem) => [
+        recipeItem.ingredientId,
+        {
+          ingredientId: recipeItem.ingredientId,
+          ingredientName: recipeItem.ingredientName,
+          qty: recipeItem.qty,
+        },
+      ])
+    )
+
+    for (const adjustment of normalizedAdjustments) {
+      if (!recipeItemsByIngredient.has(adjustment.ingredientId)) {
+        throw new Error(`El ajuste seleccionado no pertenece a la receta de "${product.name}".`)
+      }
+    }
+
+    resolvedLines.push({
+      item: {
+        ...item,
+        recipeAdjustments: normalizedAdjustments,
+      },
+      product: {
+        id: product.id,
+        name: product.name,
+        priceCents: product.priceCents,
+        isActive: product.isActive,
+        isAvailableForSale: product.isAvailableForSale,
+        productKind: product.productKind,
+      },
+      recipeAdjustments: normalizedAdjustments.map((adjustment) => ({
+        ingredientId: adjustment.ingredientId,
+        ingredientName: recipeItemsByIngredient.get(adjustment.ingredientId)?.ingredientName ?? "Insumo",
+        type: adjustment.adjustmentType,
+      })),
+    })
+  }
+
+  return resolvedLines
 }
 
 function quoteCode(number: number) {
@@ -223,13 +548,13 @@ export async function createQuote(input: {
     resourceType: "Quote",
   })
 
-  if (!input.items.length) throw new Error("La cotización no tiene productos.")
+  const normalizedItems = normalizeQuoteInputItems(input.items)
+  validateQuoteItems(normalizedItems)
 
   const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
 
   return prisma.$transaction(async (tx) => {
-
     // Quote sequence por account
     const seq = await tx.quoteSequence.upsert({
       where: { accountId: currentUser.accountId },
@@ -240,19 +565,36 @@ export async function createQuote(input: {
     const number = seq.lastNumber
     const code = quoteCode(number)
 
-    // Load products to validate (no stock check for quotes)
-    const products = await tx.product.findMany({
-      where: { accountId: currentUser.accountId, id: { in: input.items.map((i) => i.productId) } },
-      select: { id: true, priceCents: true, isActive: true },
-    })
-    const byId = new Map(products.map((p) => [p.id, p]))
+    const resolvedLines = await resolveQuoteLines(tx, currentUser.accountId, normalizedItems)
 
-    for (const item of input.items) {
-      const p = byId.get(item.productId)
-      if (!p || !p.isActive) throw new Error("Hay un producto inválido o inactivo en la cotización.")
+    for (const line of resolvedLines) {
+      const originalPriceCents = Number(line.product.priceCents)
+      const priceDiffers = line.item.unitPriceCents !== originalPriceCents
+
+      if (priceDiffers) {
+        if (!currentUser.canOverridePrice && !currentUser.isOwner) {
+          throw new Error("No tienes permiso para modificar precios. El precio fue cambiado sin autorización.")
+        }
+        await logAuditEvent({
+          accountId: currentUser.accountId,
+          userId: currentUser.id,
+          userEmail: currentUser.email ?? null,
+          userUsername: currentUser.username ?? null,
+          action: "PRICE_OVERRIDE",
+          resourceType: "Product",
+          resourceId: line.product.id,
+          details: {
+            oldPriceCents: originalPriceCents,
+            newPriceCents: line.item.unitPriceCents,
+          },
+        }, tx)
+      }
     }
 
-    const itemsTotalCents = input.items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
+    const itemsTotalCents = resolvedLines.reduce(
+      (sum, line) => sum + Math.round(line.item.unitPriceCents * line.item.qty),
+      0
+    )
     const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
     const shippingCents = input.shippingCents ?? 0
     const totalCents = itemsTotalCents + shippingCents
@@ -271,12 +613,21 @@ export async function createQuote(input: {
         totalCents,
         notes: input.notes || null,
         items: {
-          create: input.items.map((i) => ({
-            productId: i.productId,
-            qty: i.qty,
-            unitPriceCents: i.unitPriceCents,
-            wasPriceOverridden: i.wasPriceOverridden,
-            lineTotalCents: i.unitPriceCents * i.qty,
+          create: resolvedLines.map((line) => ({
+            productId: line.item.productId,
+            qty: line.item.qty,
+            unitPriceCents: line.item.unitPriceCents,
+            wasPriceOverridden: line.item.wasPriceOverridden,
+            lineTotalCents: Math.round(line.item.unitPriceCents * line.item.qty),
+            recipeAdjustments: line.recipeAdjustments.length
+              ? {
+                  create: line.recipeAdjustments.map((adjustment) => ({
+                    ingredientId: adjustment.ingredientId,
+                    ingredientName: adjustment.ingredientName,
+                    type: adjustment.type,
+                  })),
+                }
+              : undefined,
           })),
         },
       },
@@ -294,12 +645,13 @@ export async function createQuote(input: {
       details: {
         quoteCode: quote.quoteCode,
         totalCents,
-        itemsCount: input.items.length,
+        itemsCount: resolvedLines.length,
         customerId: input.customerId,
       },
     }, tx)
 
     revalidatePath("/quotes")
+    revalidatePath("/quotes/list")
 
     return quote
   }, TRANSACTION_OPTIONS)
@@ -321,7 +673,8 @@ export async function updateQuote(input: {
     resourceId: input.id,
   })
 
-  if (!input.items.length) throw new Error("La cotización no tiene productos.")
+  const normalizedItems = normalizeQuoteInputItems(input.items)
+  validateQuoteItems(normalizedItems)
 
   const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
   const itbisRateBp = settings?.itbisRateBp ?? 1800
@@ -330,31 +683,55 @@ export async function updateQuote(input: {
     const existingQuote = await tx.quote.findFirst({
       where: { accountId: currentUser.accountId, id: input.id },
       include: {
-        items: true,
+        items: {
+          select: {
+            productId: true,
+          },
+        },
       },
     })
 
     if (!existingQuote) throw new Error("Cotización no encontrada")
 
-    // Validar productos
-    const products = await tx.product.findMany({
-      where: { accountId: currentUser.accountId, id: { in: input.items.map((i) => i.productId) } },
-      select: { id: true, priceCents: true, isActive: true },
+    const allowUnavailableProductIds = new Set(existingQuote.items.map((item) => item.productId))
+    const resolvedLines = await resolveQuoteLines(tx, currentUser.accountId, normalizedItems, {
+      allowUnavailableProductIds,
     })
-    const byId = new Map(products.map((p) => [p.id, p]))
 
-    for (const item of input.items) {
-      const p = byId.get(item.productId)
-      if (!p || !p.isActive) throw new Error("Hay un producto inválido o inactivo en la cotización.")
+    for (const line of resolvedLines) {
+      const originalPriceCents = Number(line.product.priceCents)
+      const priceDiffers = line.item.unitPriceCents !== originalPriceCents
+
+      if (priceDiffers) {
+        if (!currentUser.canOverridePrice && !currentUser.isOwner) {
+          throw new Error("No tienes permiso para modificar precios. El precio fue cambiado sin autorización.")
+        }
+        await logAuditEvent({
+          accountId: currentUser.accountId,
+          userId: currentUser.id,
+          userEmail: currentUser.email ?? null,
+          userUsername: currentUser.username ?? null,
+          action: "PRICE_OVERRIDE",
+          resourceType: "Product",
+          resourceId: line.product.id,
+          details: {
+            oldPriceCents: originalPriceCents,
+            newPriceCents: line.item.unitPriceCents,
+          },
+        }, tx)
+      }
     }
 
-    // Eliminar items anteriores
+    // Eliminar items anteriores y sus ajustes
     await tx.quoteItem.deleteMany({
       where: { quoteId: input.id, quote: { accountId: currentUser.accountId } },
     })
 
     // Calcular nuevos totales
-    const itemsTotalCents = input.items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
+    const itemsTotalCents = resolvedLines.reduce(
+      (sum, line) => sum + Math.round(line.item.unitPriceCents * line.item.qty),
+      0
+    )
     const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
     const shippingCents = input.shippingCents ?? 0
     const totalCents = itemsTotalCents + shippingCents
@@ -374,16 +751,27 @@ export async function updateQuote(input: {
     })
     if (updatedQuote.count === 0) throw new Error("Cotización no encontrada")
 
-    await tx.quoteItem.createMany({
-      data: input.items.map((i) => ({
-        quoteId: input.id,
-        productId: i.productId,
-        qty: i.qty,
-        unitPriceCents: i.unitPriceCents,
-        wasPriceOverridden: i.wasPriceOverridden,
-        lineTotalCents: i.unitPriceCents * i.qty,
-      })),
-    })
+    for (const line of resolvedLines) {
+      await tx.quoteItem.create({
+        data: {
+          quoteId: input.id,
+          productId: line.item.productId,
+          qty: line.item.qty,
+          unitPriceCents: line.item.unitPriceCents,
+          wasPriceOverridden: line.item.wasPriceOverridden,
+          lineTotalCents: Math.round(line.item.unitPriceCents * line.item.qty),
+          recipeAdjustments: line.recipeAdjustments.length
+            ? {
+                create: line.recipeAdjustments.map((adjustment) => ({
+                  ingredientId: adjustment.ingredientId,
+                  ingredientName: adjustment.ingredientName,
+                  type: adjustment.type,
+                })),
+              }
+            : undefined,
+        },
+      })
+    }
 
     await logAuditEvent({
       accountId: currentUser.accountId,
@@ -395,12 +783,13 @@ export async function updateQuote(input: {
       resourceId: input.id,
       details: {
         totalCents,
-        itemsCount: input.items.length,
+        itemsCount: resolvedLines.length,
         customerId: input.customerId,
       },
     }, tx)
 
     revalidatePath("/quotes")
+    revalidatePath("/quotes/list")
   }, TRANSACTION_OPTIONS)
 }
 
@@ -438,14 +827,5 @@ export async function deleteQuote(id: string) {
     },
   })
   revalidatePath("/quotes")
+  revalidatePath("/quotes/list")
 }
-
-
-
-
-
-
-
-
-
-

@@ -535,6 +535,7 @@ model Product {
   usedAsIngredientInRecipes ProductRecipeItem[]          @relation("RecipeIngredient")
   usedInSaleConsumptions    SaleItemConsumption[]        @relation("SaleConsumptionIngredient")
   usedInSaleAdjustments     SaleItemRecipeAdjustment[]   @relation("SaleAdjustmentIngredient")
+  usedInQuoteAdjustments    QuoteItemRecipeAdjustment[]  @relation("QuoteAdjustmentIngredient")
   saleItems                 SaleItem[]
   purchaseItems             PurchaseItem[]
   returnItems               ReturnItem[]
@@ -998,6 +999,25 @@ model QuoteItem {
   wasPriceOverridden Boolean @default(false)
 
   lineTotalCents Int
+
+  recipeAdjustments QuoteItemRecipeAdjustment[]
+}
+
+model QuoteItemRecipeAdjustment {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  quoteItemId String
+  quoteItem   QuoteItem @relation(fields: [quoteItemId], references: [id], onDelete: Cascade)
+
+  ingredientId   String
+  ingredient     Product @relation("QuoteAdjustmentIngredient", fields: [ingredientId], references: [id], onDelete: Restrict)
+  ingredientName String
+  type           RecipeAdjustmentType
+
+  @@unique([quoteItemId, ingredientId])
+  @@index([ingredientId])
+  @@index([quoteItemId])
 }
 
 // ==========================================

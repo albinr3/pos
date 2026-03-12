@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
+import { formatQty } from "@/lib/units"
 import { DownloadInvoicePdfButton } from "@/components/app/download-invoice-pdf-button"
 import { QuoteShareButton } from "@/components/app/quote-share-button"
 
@@ -47,6 +48,7 @@ export default async function QuotePage({
         items: {
           include: {
             product: true,
+            recipeAdjustments: true,
           },
         },
         user: {
@@ -59,6 +61,7 @@ export default async function QuotePage({
   if (!quote) return notFound()
 
   const logoUrl = company?.logoUrl || "/movoLogo.png"
+  const itbisLabel = `ITBIS (${((company?.itbisRateBp ?? 1800) / 100).toFixed(2)}% incluido)`
 
   return (
     <div className="mx-auto max-w-[850px] bg-white p-10 text-black">
@@ -145,10 +148,19 @@ export default async function QuotePage({
         <tbody>
           {quote.items.map((it) => (
             <tr key={it.id} className="border-b align-top">
-              <td className="py-2 pr-2">{it.product.name}</td>
+              <td className="py-2 pr-2">
+                <div>{it.product.name}</div>
+                {it.recipeAdjustments.length > 0 && (
+                  <div className="mt-1 text-[11px] text-neutral-500">
+                    {it.recipeAdjustments
+                      .map((adjustment) => `${adjustment.type === "SIN" ? "Sin" : "Extra"} ${adjustment.ingredientName}`)
+                      .join(", ")}
+                  </div>
+                )}
+              </td>
               <td className="py-2 pr-2">{it.product.sku ?? "—"}</td>
               <td className="py-2 pr-2">{it.product.reference ?? "—"}</td>
-              <td className="py-2 text-right">{Number(it.qty)}</td>
+              <td className="py-2 text-right">{formatQty(Number(it.qty), it.product.unit)}</td>
               <td className="py-2 text-right">{formatRD(it.unitPriceCents)}</td>
               <td className="py-2 text-right">{formatRD(it.lineTotalCents)}</td>
             </tr>
@@ -177,7 +189,7 @@ export default async function QuotePage({
             <span>{formatRD(quote.subtotalCents)}</span>
           </div>
           <div className="mt-1 flex items-center justify-between">
-            <span>ITBIS (18% incluido)</span>
+            <span>{itbisLabel}</span>
             <span>{formatRD(quote.itbisCents)}</span>
           </div>
           {quote.shippingCents > 0 && (
@@ -195,4 +207,3 @@ export default async function QuotePage({
     </div>
   )
 }
-

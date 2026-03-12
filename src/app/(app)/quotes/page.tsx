@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { FileText } from "lucide-react"
 import { getCurrentUser } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
+import { getSettings } from "../settings/actions"
 import { QuotesClient } from "./quotes-client"
 
 export default async function QuotesPage() {
@@ -14,6 +15,7 @@ export default async function QuotesPage() {
   if (!hasPermission(user, "canManageQuotes", { allowAdminBypass: false })) {
     redirect("/app")
   }
+  const settings = await getSettings()
 
   return (
     <div className="grid gap-6">
@@ -31,7 +33,7 @@ export default async function QuotesPage() {
           </Button>
         </div>
       </div>
-      <QuotesClient />
+      <QuotesClient defaultViewMode={settings.defaultViewMode} itbisRateBp={settings.itbisRateBp} />
     </div>
   )
 }
