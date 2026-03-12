@@ -6,12 +6,21 @@ export const UNIT_OPTIONS: { value: UnitType; label: string; abbr: string; allow
   { value: "KG", label: "Kilogramo", abbr: "kg", allowsDecimals: true },
   { value: "LIBRA", label: "Libra", abbr: "lb", allowsDecimals: true },
   { value: "GRAMO", label: "Gramo", abbr: "g", allowsDecimals: true },
+  { value: "MILIGRAMO", label: "Miligramo", abbr: "mg", allowsDecimals: true },
+  { value: "ONZA", label: "Onza", abbr: "oz", allowsDecimals: true },
+  { value: "TONELADA", label: "Tonelada", abbr: "t", allowsDecimals: true },
   { value: "LITRO", label: "Litro", abbr: "L", allowsDecimals: true },
   { value: "ML", label: "Mililitro", abbr: "ml", allowsDecimals: true },
+  { value: "ONZA_LIQUIDA", label: "Onza líquida", abbr: "fl oz", allowsDecimals: true },
+  { value: "CC", label: "Centímetro cúbico", abbr: "cc", allowsDecimals: true },
   { value: "GALON", label: "Galón", abbr: "gal", allowsDecimals: true },
   { value: "METRO", label: "Metro", abbr: "m", allowsDecimals: true },
   { value: "CM", label: "Centímetro", abbr: "cm", allowsDecimals: true },
+  { value: "MM", label: "Milímetro", abbr: "mm", allowsDecimals: true },
   { value: "PIE", label: "Pie", abbr: "ft", allowsDecimals: true },
+  { value: "PULGADA", label: "Pulgada", abbr: "in", allowsDecimals: true },
+  { value: "YARDA", label: "Yarda", abbr: "yd", allowsDecimals: true },
+  { value: "M3", label: "Metro cúbico", abbr: "m3", allowsDecimals: true },
 ]
 
 // Unidades que NO son "UNIDAD" (para el dropdown de productos con medidas)

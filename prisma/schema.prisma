@@ -134,12 +134,21 @@ enum UnitType {
   KG // Kilogramos
   LIBRA // Libras
   GRAMO // Gramos
+  MILIGRAMO // Miligramos
+  ONZA // Onzas (peso)
+  TONELADA // Toneladas
   LITRO // Litros
   ML // Mililitros
+  ONZA_LIQUIDA // Onzas fluidas
+  CC // Centímetros cúbicos
   GALON // Galones
   METRO // Metros
   CM // Centímetros
+  MM // Milímetros
   PIE // Pies
+  PULGADA // Pulgadas
+  YARDA // Yardas
+  M3 // Metros cúbicos
 }
 
 enum ProductKind {

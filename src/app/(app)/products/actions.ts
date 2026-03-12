@@ -665,7 +665,11 @@ function parseImportItbisBp(value: unknown) {
 
 function parseImportUnit(value: unknown) {
   if (!hasImportValue(value)) return null
-  const raw = String(value).trim().toUpperCase()
+  const raw = String(value)
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
   const map: Record<string, UnitType> = {
     UNIDAD: "UNIDAD",
     UND: "UNIDAD",
@@ -680,12 +684,37 @@ function parseImportUnit(value: unknown) {
     GRAMO: "GRAMO",
     GRAMOS: "GRAMO",
     G: "GRAMO",
+    MILIGRAMO: "MILIGRAMO",
+    MILIGRAMOS: "MILIGRAMO",
+    MG: "MILIGRAMO",
+    ONZA: "ONZA",
+    ONZAS: "ONZA",
+    OZ: "ONZA",
+    TONELADA: "TONELADA",
+    TONELADAS: "TONELADA",
+    TON: "TONELADA",
+    T: "TONELADA",
     LITRO: "LITRO",
     LITROS: "LITRO",
     L: "LITRO",
     ML: "ML",
     MILILITRO: "ML",
     MILILITROS: "ML",
+    ONZA_LIQUIDA: "ONZA_LIQUIDA",
+    ONZA_LIQUIDAS: "ONZA_LIQUIDA",
+    "ONZA LIQUIDA": "ONZA_LIQUIDA",
+    "ONZAS LIQUIDAS": "ONZA_LIQUIDA",
+    ONZAFLUIDA: "ONZA_LIQUIDA",
+    ONZASFLUIDAS: "ONZA_LIQUIDA",
+    FLOZ: "ONZA_LIQUIDA",
+    FL_OZ: "ONZA_LIQUIDA",
+    "FL OZ": "ONZA_LIQUIDA",
+    CC: "CC",
+    CM3: "CC",
+    CENTIMETRO_CUBICO: "CC",
+    CENTIMETROS_CUBICOS: "CC",
+    "CENTIMETRO CUBICO": "CC",
+    "CENTIMETROS CUBICOS": "CC",
     GALON: "GALON",
     GALONES: "GALON",
     GAL: "GALON",
@@ -695,9 +724,23 @@ function parseImportUnit(value: unknown) {
     CM: "CM",
     CENTIMETRO: "CM",
     CENTIMETROS: "CM",
+    MM: "MM",
+    MILIMETRO: "MM",
+    MILIMETROS: "MM",
     PIE: "PIE",
     PIES: "PIE",
     FT: "PIE",
+    PULGADA: "PULGADA",
+    PULGADAS: "PULGADA",
+    IN: "PULGADA",
+    YARDA: "YARDA",
+    YARDAS: "YARDA",
+    YD: "YARDA",
+    M3: "M3",
+    METRO_CUBICO: "M3",
+    METROS_CUBICOS: "M3",
+    "METRO CUBICO": "M3",
+    "METROS CUBICOS": "M3",
   }
   return map[raw] ?? null
 }
