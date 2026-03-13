@@ -390,6 +390,14 @@ export async function deleteAccount(accountId: string): Promise<{ success: boole
       await tx.operatingExpense.deleteMany({ where: { accountId } })
       await tx.quote.deleteMany({ where: { accountId } })
       await tx.sale.deleteMany({ where: { accountId } })
+      await tx.productRecipeItem.deleteMany({
+        where: {
+          OR: [
+            { product: { accountId } },
+            { ingredient: { accountId } },
+          ],
+        },
+      })
 
       // 2) Eliminar usuarios del account
       await tx.user.deleteMany({ where: { accountId } })

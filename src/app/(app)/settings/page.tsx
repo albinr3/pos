@@ -20,6 +20,7 @@ export default async function SettingsPage() {
       </div>
       <SettingsClient
         isOwner={user.isOwner}
+        role={user.role}
         canManageUsers={user.canManageUsers}
         canViewAuditLogs={user.canViewAuditLogs}
         canManageSettings={user.canManageSettings}

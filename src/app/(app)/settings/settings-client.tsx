@@ -5,6 +5,7 @@ import { X, Image as ImageIcon, RefreshCw, WifiOff, Database, Upload } from "luc
 import Image from "next/image"
 import { UploadButton } from "@uploadthing/react"
 import type { OurFileRouter } from "@/app/api/uploadthing/core"
+import type { UserRole } from "@prisma/client"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -33,6 +34,7 @@ import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
+import { InventoryRecoveryCard } from "./inventory-recovery-card"
 
 const CACHE_SYNC_KEY = "tejada-pos-cache-sync"
 
@@ -55,12 +57,13 @@ function parseLastSyncDay(raw: string | null) {
 
 type Props = {
   isOwner: boolean
+  role: UserRole
   canManageUsers: boolean
   canViewAuditLogs: boolean
   canManageSettings: boolean
 }
 
-export function SettingsClient({ isOwner, canManageUsers, canViewAuditLogs, canManageSettings }: Props) {
+export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs, canManageSettings }: Props) {
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
@@ -81,6 +84,7 @@ export function SettingsClient({ isOwner, canManageUsers, canViewAuditLogs, canM
   const canEditSettings = isOwner || canManageSettings
   const canSeeUsers = isOwner || canManageUsers
   const canSeeAudit = isOwner || canViewAuditLogs
+  const canManageBulkRecovery = isOwner || role === "ADMIN"
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -548,6 +552,8 @@ export function SettingsClient({ isOwner, canManageUsers, canViewAuditLogs, canM
           </div>
         </CardContent>
       </Card>
+
+      <InventoryRecoveryCard canManage={canManageBulkRecovery} />
 
       {canSeeUsers && <UsersTab isOwner={isOwner} canManageUsers={canSeeUsers} />}
       {canSeeAudit && (

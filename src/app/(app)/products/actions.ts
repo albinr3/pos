@@ -3,7 +3,7 @@
 import { randomUUID } from "crypto"
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { ProductKind, UnitType, type Prisma } from "@prisma/client"
+import { InventoryBulkOperationStatus, InventoryBulkSource, ProductKind, UnitType, Prisma } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser, type CurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizeCode } from "@/lib/sanitize"
@@ -582,6 +582,158 @@ type BulkStockAdjustmentItem = {
   delta: number
 }
 
+type InventoryBulkSnapshotState = {
+  name: string
+  sku: string | null
+  reference: string | null
+  supplierId: string | null
+  categoryId: string | null
+  priceCents: number
+  costCents: number
+  itbisRateBp: number
+  stock: number
+  minStock: number
+  imageUrls: string[]
+  productKind: ProductKind
+  unit: UnitType
+  isActive: boolean
+  isAvailableForSale: boolean
+}
+
+type SnapshotProductRecord = {
+  name: string
+  sku: string | null
+  reference: string | null
+  supplierId: string | null
+  categoryId: string | null
+  priceCents: number
+  costCents: number
+  itbisRateBp: number
+  stock: Decimal | number
+  minStock: Decimal | number
+  imageUrls: string[]
+  productKind: ProductKind
+  unit: UnitType
+  isActive: boolean
+  isAvailableForSale: boolean
+}
+
+const BULK_REVERT_REASON = "Reversión de inventario masivo"
+const BULK_REVERT_SOURCE = "bulk_revert"
+
+function canManageBulkInventoryRecovery(user: CurrentUser) {
+  return user.isOwner || user.role === "ADMIN"
+}
+
+function assertBulkInventoryRecoveryAccess(user: CurrentUser) {
+  if (!canManageBulkInventoryRecovery(user)) {
+    throw new Error("Solo el dueño o un admin puede revertir inventario masivo")
+  }
+}
+
+function serializeBulkSnapshotState(product: SnapshotProductRecord): InventoryBulkSnapshotState {
+  return {
+    name: String(product.name),
+    sku: product.sku ? String(product.sku) : null,
+    reference: product.reference ? String(product.reference) : null,
+    supplierId: product.supplierId ? String(product.supplierId) : null,
+    categoryId: product.categoryId ? String(product.categoryId) : null,
+    priceCents: Number(product.priceCents),
+    costCents: Number(product.costCents),
+    itbisRateBp: Number(product.itbisRateBp),
+    stock: decimalToNumber(product.stock),
+    minStock: decimalToNumber(product.minStock),
+    imageUrls: Array.isArray(product.imageUrls) ? product.imageUrls.map((value) => String(value)) : [],
+    productKind: product.productKind,
+    unit: product.unit,
+    isActive: Boolean(product.isActive),
+    isAvailableForSale: Boolean(product.isAvailableForSale),
+  }
+}
+
+function parseBulkSnapshotState(value: Prisma.JsonValue | null): InventoryBulkSnapshotState {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Snapshot inválido: beforeState no es un objeto")
+  }
+
+  const data = value as Record<string, unknown>
+  const parseNumber = (field: keyof InventoryBulkSnapshotState) => {
+    const parsed = Number(data[field])
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`Snapshot inválido: ${String(field)} no es numérico`)
+    }
+    return parsed
+  }
+
+  const parseNullableString = (field: keyof InventoryBulkSnapshotState) => {
+    const raw = data[field]
+    if (raw === null || raw === undefined || raw === "") return null
+    return String(raw)
+  }
+
+  const productKind = String(data.productKind ?? "")
+  if (!Object.values(ProductKind).includes(productKind as ProductKind)) {
+    throw new Error("Snapshot inválido: productKind no es válido")
+  }
+  const unit = String(data.unit ?? "")
+  if (!Object.values(UnitType).includes(unit as UnitType)) {
+    throw new Error("Snapshot inválido: unit no es válido")
+  }
+
+  return {
+    name: String(data.name ?? ""),
+    sku: parseNullableString("sku"),
+    reference: parseNullableString("reference"),
+    supplierId: parseNullableString("supplierId"),
+    categoryId: parseNullableString("categoryId"),
+    priceCents: parseNumber("priceCents"),
+    costCents: parseNumber("costCents"),
+    itbisRateBp: parseNumber("itbisRateBp"),
+    stock: parseNumber("stock"),
+    minStock: parseNumber("minStock"),
+    imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls.map((item) => String(item)) : [],
+    productKind: productKind as ProductKind,
+    unit: unit as UnitType,
+    isActive: Boolean(data.isActive),
+    isAvailableForSale: Boolean(data.isAvailableForSale),
+  }
+}
+
+async function ensureBulkSnapshot(
+  tx: Prisma.TransactionClient,
+  input: {
+    operationId: string
+    accountId: string
+    productId: string
+    existedBefore: boolean
+    beforeState: InventoryBulkSnapshotState | null
+  }
+) {
+  const existingSnapshot = await tx.inventoryBulkSnapshot.findUnique({
+    where: {
+      operationId_productId: {
+        operationId: input.operationId,
+        productId: input.productId,
+      },
+    },
+    select: { id: true },
+  })
+  if (existingSnapshot) return
+
+  await tx.inventoryBulkSnapshot.create({
+    data: {
+      accountId: input.accountId,
+      operationId: input.operationId,
+      productId: input.productId,
+      existedBefore: input.existedBefore,
+      beforeState:
+        input.beforeState === null
+          ? Prisma.DbNull
+          : (input.beforeState as unknown as Prisma.InputJsonValue),
+    },
+  })
+}
+
 function normalizeDelta(delta: number, allowsDecimals: boolean) {
   if (!Number.isFinite(delta) || delta === 0) {
     throw new Error("La cantidad debe ser un número distinto de 0.")
@@ -614,6 +766,7 @@ export type BulkProductImportRow = {
 }
 
 export type BulkProductImportChunkInput = {
+  operationId: string
   rows: BulkProductImportRow[]
   reason?: string
   user?: unknown
@@ -637,6 +790,70 @@ export type BulkProductImportChunkResult = {
 
 const IMPORT_REASON_DEFAULT = "Importación masiva Excel"
 const MAX_IMPORT_ROWS_PER_CHUNK = 200
+
+export type StartInventoryBulkOperationInput = {
+  source: InventoryBulkSource
+  reason?: string
+  totalRows?: number
+  user?: CurrentUser | null
+}
+
+export type FinalizeInventoryBulkOperationInput = {
+  operationId: string
+  status: "COMPLETED" | "FAILED"
+  totalRows?: number
+  createdCount?: number
+  updatedCount?: number
+  failedCount?: number
+  errorMessage?: string
+  user?: CurrentUser | null
+}
+
+export type InventoryBulkOperationHistoryItem = {
+  id: string
+  source: InventoryBulkSource
+  status: InventoryBulkOperationStatus
+  reason: string | null
+  startedAt: string
+  completedAt: string | null
+  revertedAt: string | null
+  totalRows: number
+  createdCount: number
+  updatedCount: number
+  failedCount: number
+  snapshotsCount: number
+  userName: string | null
+  userUsername: string | null
+  revertedByName: string | null
+  revertedByUsername: string | null
+}
+
+export type InventoryBulkRevertConflictReason =
+  | "MISSING_PRODUCT"
+  | "MODIFIED_AFTER_COMPLETION"
+  | "CREATED_PRODUCT_HAS_DEPENDENCIES"
+  | "INVALID_SNAPSHOT"
+
+export type InventoryBulkRevertConflict = {
+  productId: string
+  productNumber: number | null
+  productName: string | null
+  reason: InventoryBulkRevertConflictReason
+  detail: string
+}
+
+export type InventoryBulkRevertResult =
+  | {
+      ok: true
+      revertedProducts: number
+      deletedProducts: number
+    }
+  | {
+      ok: false
+      code: "ALREADY_REVERTED" | "NOT_COMPLETED" | "CONFLICTS"
+      message: string
+      conflicts: InventoryBulkRevertConflict[]
+    }
 
 function hasImportValue(value: unknown) {
   if (value === null || value === undefined) return false
@@ -777,6 +994,597 @@ function parseImageUrls(value: unknown) {
     .filter(Boolean)
 }
 
+async function assertWritableBulkOperation(
+  operationId: string,
+  user: CurrentUser,
+  source: InventoryBulkSource
+) {
+  const operation = await prisma.inventoryBulkOperation.findFirst({
+    where: {
+      id: operationId,
+      accountId: user.accountId,
+    },
+    select: {
+      id: true,
+      status: true,
+      source: true,
+      userId: true,
+    },
+  })
+
+  if (!operation) {
+    throw new Error("Operación masiva no encontrada")
+  }
+  if (operation.source !== source) {
+    throw new Error("La operación masiva no corresponde al origen esperado")
+  }
+  if (operation.status !== InventoryBulkOperationStatus.IN_PROGRESS) {
+    throw new Error("La operación masiva ya no está disponible para escritura")
+  }
+  if (operation.userId && operation.userId !== user.id && !canManageBulkInventoryRecovery(user)) {
+    throw new Error("No tienes permiso para modificar esta operación masiva")
+  }
+
+  return operation
+}
+
+type ProductDependencyClient = Pick<
+  Prisma.TransactionClient,
+  | "saleItem"
+  | "purchaseItem"
+  | "returnItem"
+  | "quoteItem"
+  | "productRecipeItem"
+  | "saleItemConsumption"
+  | "saleItemRecipeAdjustment"
+  | "quoteItemRecipeAdjustment"
+>
+
+async function collectProductDependencyIds(
+  client: ProductDependencyClient,
+  accountId: string,
+  productIds: string[]
+) {
+  const ids = Array.from(new Set(productIds.filter(Boolean)))
+  const dependencyIds = new Set<string>()
+  if (ids.length === 0) return dependencyIds
+
+  const [
+    saleDeps,
+    purchaseDeps,
+    returnDeps,
+    quoteDeps,
+    recipeDeps,
+    saleConsumptionDeps,
+    saleAdjustmentDeps,
+    quoteAdjustmentDeps,
+  ] = await Promise.all([
+    client.saleItem.findMany({
+      where: {
+        productId: { in: ids },
+        sale: { accountId },
+      },
+      select: { productId: true },
+      distinct: ["productId"],
+    }),
+    client.purchaseItem.findMany({
+      where: {
+        productId: { in: ids },
+        purchase: { accountId },
+      },
+      select: { productId: true },
+      distinct: ["productId"],
+    }),
+    client.returnItem.findMany({
+      where: {
+        productId: { in: ids },
+        return: { accountId },
+      },
+      select: { productId: true },
+      distinct: ["productId"],
+    }),
+    client.quoteItem.findMany({
+      where: {
+        productId: { in: ids },
+        quote: { accountId },
+      },
+      select: { productId: true },
+      distinct: ["productId"],
+    }),
+    client.productRecipeItem.findMany({
+      where: {
+        OR: [
+          { productId: { in: ids }, product: { accountId } },
+          { ingredientId: { in: ids }, ingredient: { accountId } },
+        ],
+      },
+      select: { productId: true, ingredientId: true },
+    }),
+    client.saleItemConsumption.findMany({
+      where: {
+        ingredientId: { in: ids },
+        ingredient: { accountId },
+      },
+      select: { ingredientId: true },
+      distinct: ["ingredientId"],
+    }),
+    client.saleItemRecipeAdjustment.findMany({
+      where: {
+        ingredientId: { in: ids },
+        ingredient: { accountId },
+      },
+      select: { ingredientId: true },
+      distinct: ["ingredientId"],
+    }),
+    client.quoteItemRecipeAdjustment.findMany({
+      where: {
+        ingredientId: { in: ids },
+        ingredient: { accountId },
+      },
+      select: { ingredientId: true },
+      distinct: ["ingredientId"],
+    }),
+  ])
+
+  for (const dep of saleDeps) dependencyIds.add(dep.productId)
+  for (const dep of purchaseDeps) dependencyIds.add(dep.productId)
+  for (const dep of returnDeps) dependencyIds.add(dep.productId)
+  for (const dep of quoteDeps) dependencyIds.add(dep.productId)
+  for (const dep of recipeDeps) {
+    if (ids.includes(dep.productId)) dependencyIds.add(dep.productId)
+    if (ids.includes(dep.ingredientId)) dependencyIds.add(dep.ingredientId)
+  }
+  for (const dep of saleConsumptionDeps) dependencyIds.add(dep.ingredientId)
+  for (const dep of saleAdjustmentDeps) dependencyIds.add(dep.ingredientId)
+  for (const dep of quoteAdjustmentDeps) dependencyIds.add(dep.ingredientId)
+
+  return dependencyIds
+}
+
+export async function startInventoryBulkOperation(input: StartInventoryBulkOperationInput) {
+  const user = input.user ?? (await getCurrentUser())
+  if (!user) throw new Error("No autenticado")
+
+  if (input.source === InventoryBulkSource.BULK_EXCEL) {
+    if (!user.canEditProducts && !user.isOwner) {
+      throw new Error("No tienes permiso para importar productos")
+    }
+  } else if (input.source === InventoryBulkSource.BULK_MANUAL) {
+    await ensurePermission(user, "canAdjustInventory", {
+      message: "No tienes permiso para ajustar inventario",
+      resourceType: "InventoryAdjustment",
+    })
+  } else {
+    throw new Error("Origen de operación masiva inválido")
+  }
+
+  const totalRows = Number.isFinite(Number(input.totalRows)) ? Math.max(0, Math.trunc(Number(input.totalRows))) : 0
+  const reason = sanitizeString(input.reason ?? "") || null
+
+  const operation = await prisma.inventoryBulkOperation.create({
+    data: {
+      accountId: user.accountId,
+      userId: user.id,
+      source: input.source,
+      status: InventoryBulkOperationStatus.IN_PROGRESS,
+      reason,
+      totalRows,
+    },
+    select: { id: true },
+  })
+
+  return { operationId: operation.id }
+}
+
+export async function finalizeInventoryBulkOperation(input: FinalizeInventoryBulkOperationInput) {
+  const user = input.user ?? (await getCurrentUser())
+  if (!user) throw new Error("No autenticado")
+
+  const operation = await prisma.inventoryBulkOperation.findFirst({
+    where: {
+      id: input.operationId,
+      accountId: user.accountId,
+    },
+    select: {
+      id: true,
+      userId: true,
+      status: true,
+      source: true,
+    },
+  })
+  if (!operation) throw new Error("Operación masiva no encontrada")
+  if (operation.userId && operation.userId !== user.id && !canManageBulkInventoryRecovery(user)) {
+    throw new Error("No tienes permiso para finalizar esta operación masiva")
+  }
+  if (operation.status === InventoryBulkOperationStatus.REVERTED) {
+    throw new Error("La operación masiva ya fue revertida")
+  }
+  if (operation.status !== InventoryBulkOperationStatus.IN_PROGRESS) {
+    return {
+      operationId: operation.id,
+      status: operation.status,
+    }
+  }
+
+  const nextStatus =
+    input.status === "FAILED"
+      ? InventoryBulkOperationStatus.FAILED
+      : InventoryBulkOperationStatus.COMPLETED
+
+  const totalRows = Number.isFinite(Number(input.totalRows)) ? Math.max(0, Math.trunc(Number(input.totalRows))) : undefined
+  const createdCount = Number.isFinite(Number(input.createdCount))
+    ? Math.max(0, Math.trunc(Number(input.createdCount)))
+    : undefined
+  const updatedCount = Number.isFinite(Number(input.updatedCount))
+    ? Math.max(0, Math.trunc(Number(input.updatedCount)))
+    : undefined
+  const failedCount = Number.isFinite(Number(input.failedCount))
+    ? Math.max(0, Math.trunc(Number(input.failedCount)))
+    : undefined
+  const errorMessage = sanitizeString(input.errorMessage ?? "") || null
+
+  const updated = await prisma.inventoryBulkOperation.update({
+    where: { id: operation.id },
+    data: {
+      status: nextStatus,
+      completedAt: new Date(),
+      ...(totalRows === undefined ? {} : { totalRows }),
+      ...(createdCount === undefined ? {} : { createdCount }),
+      ...(updatedCount === undefined ? {} : { updatedCount }),
+      ...(failedCount === undefined ? {} : { failedCount }),
+      errorMessage: nextStatus === InventoryBulkOperationStatus.FAILED ? errorMessage : null,
+    },
+    select: {
+      id: true,
+      status: true,
+    },
+  })
+
+  return {
+    operationId: updated.id,
+    status: updated.status,
+  }
+}
+
+export async function listInventoryBulkOperations(input?: { take?: number; user?: CurrentUser | null }): Promise<InventoryBulkOperationHistoryItem[]> {
+  const user = input?.user ?? (await getCurrentUser())
+  if (!user) throw new Error("No autenticado")
+  assertBulkInventoryRecoveryAccess(user)
+
+  const take = Math.min(Math.max(input?.take ?? 30, 1), 200)
+
+  const operations = await prisma.inventoryBulkOperation.findMany({
+    where: { accountId: user.accountId },
+    orderBy: { createdAt: "desc" },
+    take,
+    include: {
+      user: {
+        select: {
+          name: true,
+          username: true,
+        },
+      },
+      revertedBy: {
+        select: {
+          name: true,
+          username: true,
+        },
+      },
+      _count: {
+        select: {
+          snapshots: true,
+        },
+      },
+    },
+  })
+
+  return operations.map((operation) => ({
+    id: operation.id,
+    source: operation.source,
+    status: operation.status,
+    reason: operation.reason,
+    startedAt: operation.startedAt.toISOString(),
+    completedAt: operation.completedAt ? operation.completedAt.toISOString() : null,
+    revertedAt: operation.revertedAt ? operation.revertedAt.toISOString() : null,
+    totalRows: operation.totalRows,
+    createdCount: operation.createdCount,
+    updatedCount: operation.updatedCount,
+    failedCount: operation.failedCount,
+    snapshotsCount: operation._count.snapshots,
+    userName: operation.user?.name ?? null,
+    userUsername: operation.user?.username ?? null,
+    revertedByName: operation.revertedBy?.name ?? null,
+    revertedByUsername: operation.revertedBy?.username ?? null,
+  }))
+}
+
+export async function revertInventoryBulkOperation(input: { operationId: string; user?: CurrentUser | null }): Promise<InventoryBulkRevertResult> {
+  const user = input.user ?? (await getCurrentUser())
+  if (!user) throw new Error("No autenticado")
+  assertBulkInventoryRecoveryAccess(user)
+
+  const operation = await prisma.inventoryBulkOperation.findFirst({
+    where: {
+      id: input.operationId,
+      accountId: user.accountId,
+    },
+    include: {
+      snapshots: {
+        orderBy: { createdAt: "asc" },
+      },
+    },
+  })
+  if (!operation) {
+    throw new Error("Operación masiva no encontrada")
+  }
+  if (operation.status === InventoryBulkOperationStatus.REVERTED) {
+    return {
+      ok: false,
+      code: "ALREADY_REVERTED",
+      message: "Esta operación ya fue revertida",
+      conflicts: [],
+    }
+  }
+  if (operation.status !== InventoryBulkOperationStatus.COMPLETED || !operation.completedAt) {
+    return {
+      ok: false,
+      code: "NOT_COMPLETED",
+      message: "Solo se pueden revertir operaciones completadas",
+      conflicts: [],
+    }
+  }
+
+  const snapshotProductIds = operation.snapshots.map((snapshot) => snapshot.productId)
+  const currentProducts = snapshotProductIds.length === 0
+    ? []
+    : await prisma.product.findMany({
+        where: {
+          accountId: user.accountId,
+          id: { in: snapshotProductIds },
+        },
+        select: {
+          id: true,
+          productId: true,
+          name: true,
+          updatedAt: true,
+          stock: true,
+        },
+      })
+
+  const currentById = new Map(currentProducts.map((product) => [product.id, product]))
+  const conflicts: InventoryBulkRevertConflict[] = []
+  const conflictKeys = new Set<string>()
+  const addConflict = (conflict: InventoryBulkRevertConflict) => {
+    const key = `${conflict.productId}:${conflict.reason}`
+    if (conflictKeys.has(key)) return
+    conflictKeys.add(key)
+    conflicts.push(conflict)
+  }
+
+  const completedAt = operation.completedAt
+  for (const snapshot of operation.snapshots) {
+    const current = currentById.get(snapshot.productId) ?? null
+
+    if (snapshot.existedBefore && !current) {
+      addConflict({
+        productId: snapshot.productId,
+        productNumber: null,
+        productName: null,
+        reason: "MISSING_PRODUCT",
+        detail: "El producto original ya no existe en la base de datos.",
+      })
+      continue
+    }
+
+    if (current && current.updatedAt > completedAt) {
+      addConflict({
+        productId: snapshot.productId,
+        productNumber: current.productId,
+        productName: current.name,
+        reason: "MODIFIED_AFTER_COMPLETION",
+        detail: "El producto fue modificado después de completar la operación masiva.",
+      })
+    }
+
+    if (snapshot.existedBefore && snapshot.beforeState === null) {
+      addConflict({
+        productId: snapshot.productId,
+        productNumber: current?.productId ?? null,
+        productName: current?.name ?? null,
+        reason: "INVALID_SNAPSHOT",
+        detail: "No existe estado previo para restaurar este producto.",
+      })
+    }
+  }
+
+  const createdExistingIds = operation.snapshots
+    .filter((snapshot) => !snapshot.existedBefore && currentById.has(snapshot.productId))
+    .map((snapshot) => snapshot.productId)
+
+  if (createdExistingIds.length > 0) {
+    const dependencyIds = await collectProductDependencyIds(prisma, user.accountId, createdExistingIds)
+    for (const productId of dependencyIds) {
+      const product = currentById.get(productId)
+      addConflict({
+        productId,
+        productNumber: product?.productId ?? null,
+        productName: product?.name ?? null,
+        reason: "CREATED_PRODUCT_HAS_DEPENDENCIES",
+        detail: "El producto creado por este lote ya tiene movimientos o referencias y no se puede eliminar.",
+      })
+    }
+  }
+
+  if (conflicts.length > 0) {
+    return {
+      ok: false,
+      code: "CONFLICTS",
+      message: "No se puede revertir el lote porque existen conflictos.",
+      conflicts,
+    }
+  }
+
+  const result = await prisma.$transaction(async (tx) => {
+    const existingCreatedIds = operation.snapshots
+      .filter((snapshot) => !snapshot.existedBefore)
+      .map((snapshot) => snapshot.productId)
+
+    if (existingCreatedIds.length > 0) {
+      const dependencyIdsInTx = await collectProductDependencyIds(tx, user.accountId, existingCreatedIds)
+      if (dependencyIdsInTx.size > 0) {
+        throw new Error("Se detectaron dependencias nuevas durante la reversión. Intenta nuevamente.")
+      }
+    }
+
+    let revertedProducts = 0
+    let deletedProducts = 0
+
+    for (const snapshot of operation.snapshots) {
+      if (snapshot.existedBefore) {
+        const beforeState = parseBulkSnapshotState(snapshot.beforeState)
+
+        const current = await tx.product.findFirst({
+          where: {
+            id: snapshot.productId,
+            accountId: user.accountId,
+          },
+          select: {
+            id: true,
+            stock: true,
+            updatedAt: true,
+          },
+        })
+        if (!current) {
+          throw new Error("No se encontró un producto que debía existir para la reversión.")
+        }
+        if (current.updatedAt > completedAt) {
+          throw new Error("Un producto cambió luego de completar el lote. Revisión cancelada.")
+        }
+
+        await tx.product.update({
+          where: { id: current.id },
+          data: {
+            name: beforeState.name,
+            sku: beforeState.sku,
+            reference: beforeState.reference,
+            supplierId: beforeState.supplierId,
+            categoryId: beforeState.categoryId,
+            priceCents: beforeState.priceCents,
+            costCents: beforeState.costCents,
+            itbisRateBp: beforeState.itbisRateBp,
+            stock: beforeState.stock,
+            minStock: beforeState.minStock,
+            imageUrls: beforeState.imageUrls,
+            productKind: beforeState.productKind,
+            unit: beforeState.unit,
+            isActive: beforeState.isActive,
+            isAvailableForSale: beforeState.isAvailableForSale,
+          },
+        })
+
+        const currentStock = decimalToNumber(current.stock)
+        const stockDelta = roundRecipeQty(beforeState.stock - currentStock)
+        if (stockDelta !== 0) {
+          await tx.inventoryAdjustment.create({
+            data: {
+              accountId: user.accountId,
+              productId: current.id,
+              userId: user.id,
+              qtyDelta: new Decimal(stockDelta),
+              reason: BULK_REVERT_REASON,
+              note: `source:${BULK_REVERT_SOURCE};operation:${operation.id}`,
+              batchId: operation.id,
+            },
+          })
+
+          await logAuditEvent({
+            accountId: user.accountId,
+            userId: user.id,
+            userEmail: user.email ?? null,
+            userUsername: user.username ?? null,
+            action: "STOCK_ADJUSTED",
+            resourceType: "Product",
+            resourceId: current.id,
+            details: {
+              source: BULK_REVERT_SOURCE,
+              operationId: operation.id,
+              delta: stockDelta,
+              reason: BULK_REVERT_REASON,
+            },
+          }, tx)
+        }
+
+        revertedProducts += 1
+        continue
+      }
+
+      const createdProduct = await tx.product.findFirst({
+        where: {
+          id: snapshot.productId,
+          accountId: user.accountId,
+        },
+        select: {
+          id: true,
+          productId: true,
+          name: true,
+          updatedAt: true,
+        },
+      })
+      if (!createdProduct) continue
+      if (createdProduct.updatedAt > completedAt) {
+        throw new Error("Un producto creado por el lote cambió luego de completarse. Revisión cancelada.")
+      }
+
+      await tx.product.delete({
+        where: { id: createdProduct.id },
+      })
+
+      await logAuditEvent({
+        accountId: user.accountId,
+        userId: user.id,
+        userEmail: user.email ?? null,
+        userUsername: user.username ?? null,
+        action: "PRODUCT_DELETED",
+        resourceType: "Product",
+        resourceId: createdProduct.id,
+        details: {
+          source: BULK_REVERT_SOURCE,
+          operationId: operation.id,
+          productId: createdProduct.productId,
+          name: createdProduct.name,
+        },
+      }, tx)
+
+      deletedProducts += 1
+    }
+
+    await tx.inventoryBulkOperation.update({
+      where: { id: operation.id },
+      data: {
+        status: InventoryBulkOperationStatus.REVERTED,
+        revertedAt: new Date(),
+        revertedById: user.id,
+        errorMessage: null,
+      },
+    })
+
+    return {
+      revertedProducts,
+      deletedProducts,
+    }
+  })
+
+  safeRevalidate("/products")
+  safeRevalidate("/reports/inventory")
+  safeRevalidate("/settings")
+
+  return {
+    ok: true,
+    revertedProducts: result.revertedProducts,
+    deletedProducts: result.deletedProducts,
+  }
+}
+
 export async function importProductsChunk(input: BulkProductImportChunkInput): Promise<BulkProductImportChunkResult> {
   const user = (input.user as CurrentUser | null | undefined) ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -792,6 +1600,7 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
   if (rows.length > MAX_IMPORT_ROWS_PER_CHUNK) {
     throw new Error(`Máximo ${MAX_IMPORT_ROWS_PER_CHUNK} filas por lote`)
   }
+  await assertWritableBulkOperation(input.operationId, user, InventoryBulkSource.BULK_EXCEL)
 
   const reason = sanitizeString(input.reason ?? IMPORT_REASON_DEFAULT) || IMPORT_REASON_DEFAULT
   const shouldUseBatchId = rows.length > 1
@@ -918,11 +1727,14 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
       const categoryName = hasCategory ? String(row.categoria).trim() : ""
       const supplierName = hasSupplier ? String(row.proveedor).trim() : ""
 
-      if (hasPrice && (priceValue === null || priceValue <= 0)) {
-        throw new Error("precio_venta debe ser mayor que 0")
+      if (!hasName || !name) {
+        throw new Error("nombre es requerido")
       }
-      if (hasCost && (costValue === null || costValue <= 0)) {
-        throw new Error("costo debe ser mayor que 0")
+      if (!hasPrice || priceValue === null || priceValue <= 0) {
+        throw new Error("precio_venta es requerido y debe ser mayor que 0")
+      }
+      if (!hasCost || costValue === null || costValue <= 0) {
+        throw new Error("costo es requerido y debe ser mayor que 0")
       }
       if (hasMinStock && minStockValue !== null && minStockValue < 0) {
         throw new Error("stock_minimo no puede ser negativo")
@@ -991,6 +1803,14 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
         }
 
         await prisma.$transaction(async (tx) => {
+          await ensureBulkSnapshot(tx, {
+            operationId: input.operationId,
+            accountId: user.accountId,
+            productId: existing.id,
+            existedBefore: true,
+            beforeState: serializeBulkSnapshotState(existing),
+          })
+
           if (hasCategory) {
             updateData.categoryId = await resolveCategoryId(tx, categoryName)
           }
@@ -1075,16 +1895,6 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
         continue
       }
 
-      if (!name) {
-        throw new Error("nombre es requerido para crear productos")
-      }
-      if (priceValue === null || priceValue <= 0) {
-        throw new Error("precio_venta es requerido y debe ser mayor que 0")
-      }
-      if (costValue === null || costValue <= 0) {
-        throw new Error("costo es requerido y debe ser mayor que 0")
-      }
-
       const resolvedProductType = productType ?? "BASICO"
       const unit = resolvedProductType === "BASICO"
         ? "UNIDAD"
@@ -1126,6 +1936,14 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
             unit,
             isActive: true,
           },
+        })
+
+        await ensureBulkSnapshot(tx, {
+          operationId: input.operationId,
+          accountId: user.accountId,
+          productId: created.id,
+          existedBefore: false,
+          beforeState: null,
         })
 
         await safeCreateInventoryAdjustment(tx, {
@@ -1202,6 +2020,8 @@ export async function adjustManyStock(input: {
     message: "No tienes permiso para ajustar inventario",
     resourceType: "InventoryAdjustment",
   })
+  let operationId: string | null = null
+  let finalized = false
 
   try {
     const rawItems = input.items ?? []
@@ -1231,7 +2051,21 @@ export async function adjustManyStock(input: {
       select: {
         id: true,
         productId: true,
+        name: true,
+        sku: true,
+        reference: true,
+        supplierId: true,
+        categoryId: true,
+        priceCents: true,
+        costCents: true,
+        itbisRateBp: true,
+        stock: true,
+        minStock: true,
+        imageUrls: true,
+        productKind: true,
         unit: true,
+        isActive: true,
+        isAvailableForSale: true,
       },
     })
 
@@ -1262,6 +2096,13 @@ export async function adjustManyStock(input: {
     }
     const reason = sanitizeString(input.reason ?? "") || null
     const batchId = items.length > 1 ? randomUUID() : null
+    const startedOperation = await startInventoryBulkOperation({
+      source: InventoryBulkSource.BULK_MANUAL,
+      reason,
+      totalRows: items.length,
+      user,
+    })
+    operationId = startedOperation.operationId
 
     await prisma.$transaction(async (tx) => {
       for (const item of items) {
@@ -1269,6 +2110,14 @@ export async function adjustManyStock(input: {
         if (!product) {
           throw new Error(`Producto no encontrado: ${item.productId}`)
         }
+
+        await ensureBulkSnapshot(tx, {
+          operationId: startedOperation.operationId,
+          accountId: user.accountId,
+          productId: product.id,
+          existedBefore: true,
+          beforeState: serializeBulkSnapshotState(product),
+        })
 
         const allowsDecimals = unitAllowsDecimals(product.unit)
         const normalizedDelta = normalizeDelta(item.delta, allowsDecimals)
@@ -1315,11 +2164,35 @@ export async function adjustManyStock(input: {
       }
     })
 
+    await finalizeInventoryBulkOperation({
+      operationId,
+      status: "COMPLETED",
+      totalRows: items.length,
+      createdCount: 0,
+      updatedCount: items.length,
+      failedCount: 0,
+      user,
+    })
+    finalized = true
+
     safeRevalidate("/products")
     safeRevalidate("/reports/inventory")
 
-    return { count: items.length, batchId }
+    return { count: items.length, batchId, operationId }
   } catch (error) {
+    if (operationId && !finalized) {
+      try {
+        await finalizeInventoryBulkOperation({
+          operationId,
+          status: "FAILED",
+          errorMessage: error instanceof Error ? error.message : "Error al ajustar inventario",
+          user,
+        })
+      } catch {
+        // Ignore finalize failures; el error original se reporta debajo.
+      }
+    }
+
     await logError(error as Error, {
       code: ErrorCodes.INVENTORY_UPDATE_ERROR,
       severity: "MEDIUM",

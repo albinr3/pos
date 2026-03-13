@@ -157,6 +157,18 @@ enum ProductKind {
   RECIPE
 }
 
+enum InventoryBulkSource {
+  BULK_EXCEL
+  BULK_MANUAL
+}
+
+enum InventoryBulkOperationStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  REVERTED
+}
+
 enum RecipeAdjustmentType {
   SIN
   EXTRA
@@ -188,6 +200,8 @@ model Account {
   quotes               Quote[]
   auditLogs            AuditLog[]
   inventoryAdjustments InventoryAdjustment[]
+  inventoryBulkOperations InventoryBulkOperation[]
+  inventoryBulkSnapshots  InventoryBulkSnapshot[]
   invoiceSequences     InvoiceSequence[]
   returnSequence       ReturnSequence?
   quoteSequence        QuoteSequence?
@@ -274,6 +288,8 @@ model User {
   whatsappOtps         WhatsappOtp[]
   auditLogs            AuditLog[]
   inventoryAdjustments InventoryAdjustment[]
+  inventoryBulkOperations         InventoryBulkOperation[] @relation("InventoryBulkOperationUser")
+  revertedInventoryBulkOperations InventoryBulkOperation[] @relation("InventoryBulkOperationRevertedBy")
 
   // Username único dentro del mismo account
   @@unique([accountId, username])
@@ -604,6 +620,63 @@ model InventoryAdjustment {
   @@index([accountId, createdAt])
   @@index([productId, createdAt])
   @@index([batchId])
+}
+
+model InventoryBulkOperation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  source InventoryBulkSource
+  status InventoryBulkOperationStatus @default(IN_PROGRESS)
+  reason String?
+
+  userId String?
+  user   User?   @relation("InventoryBulkOperationUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  revertedById String?
+  revertedBy   User?   @relation("InventoryBulkOperationRevertedBy", fields: [revertedById], references: [id], onDelete: SetNull)
+
+  startedAt   DateTime @default(now())
+  completedAt DateTime?
+  revertedAt  DateTime?
+
+  totalRows    Int @default(0)
+  createdCount Int @default(0)
+  updatedCount Int @default(0)
+  failedCount  Int @default(0)
+
+  errorMessage String?
+
+  snapshots InventoryBulkSnapshot[]
+
+  @@index([accountId, createdAt])
+  @@index([accountId, status, createdAt])
+  @@index([userId, createdAt])
+}
+
+model InventoryBulkSnapshot {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  operationId String
+  operation   InventoryBulkOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+
+  productId String
+
+  existedBefore Boolean
+  beforeState   Json?
+
+  @@unique([operationId, productId])
+  @@index([accountId, createdAt])
+  @@index([operationId])
+  @@index([productId])
 }
 
 // ==========================================

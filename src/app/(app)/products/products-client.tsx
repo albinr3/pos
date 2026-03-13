@@ -29,10 +29,12 @@ import type { CurrentUser } from "@/lib/auth"
 import {
   adjustManyStock,
   deactivateProduct,
+  finalizeInventoryBulkOperation,
   importProductsChunk,
   listRecipeIngredientOptions,
   listProductMovements,
   listProducts,
+  startInventoryBulkOperation,
   type BulkProductImportRow,
   type BulkProductImportRowResult,
   upsertProduct,
@@ -57,6 +59,7 @@ const PAGE_SIZE = 50
 const INVENTORY_IMPORT_MAX_ROWS = 5000
 const INVENTORY_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024
 const INVENTORY_IMPORT_CHUNK_SIZE = 50
+const INVENTORY_PREVIEW_PAGE_SIZE = 20
 const NONE_SUPPLIER_OPTION = "__none_supplier__"
 const NONE_CATEGORY_OPTION = "__none_category__"
 const CREATE_SUPPLIER_OPTION = "__create_supplier__"
@@ -346,6 +349,16 @@ function mapExcelRowsToImportRows(rows: Record<string, unknown>[]) {
     const proveedor = getCellValue(normalized, ["proveedor", "supplier"])
     const imagenes = getCellValue(normalized, ["imagenes", "image_urls", "images"])
 
+    if (!hasCellValue(nombre)) {
+      throw new Error(`Línea ${index + 2}: nombre es requerido`)
+    }
+    if (!hasCellValue(precioVenta)) {
+      throw new Error(`Línea ${index + 2}: precio_venta es requerido`)
+    }
+    if (!hasCellValue(costo)) {
+      throw new Error(`Línea ${index + 2}: costo es requerido`)
+    }
+
     const parsed: BulkProductImportRow = {
       rowNumber: index + 2,
     }
@@ -384,6 +397,11 @@ function mapExcelRowsToImportRows(rows: Record<string, unknown>[]) {
   })
 }
 
+function formatInventoryPreviewValue(value: BulkProductImportRow[keyof BulkProductImportRow]) {
+  if (!hasCellValue(value)) return "—"
+  return String(value)
+}
+
 export function ProductsClient() {
   const router = useRouter()
   const [query, setQuery] = useState("")
@@ -408,6 +426,7 @@ export function ProductsClient() {
   const [inventoryProgress, setInventoryProgress] = useState(0)
   const [inventoryStatus, setInventoryStatus] = useState("Listo para cargar")
   const [inventorySummary, setInventorySummary] = useState<InventoryImportSummary | null>(null)
+  const [inventoryPreviewPage, setInventoryPreviewPage] = useState(0)
   const inventoryFileInputRef = useRef<HTMLInputElement>(null)
   const [movementsOpen, setMovementsOpen] = useState(false)
   const [movementsProduct, setMovementsProduct] = useState<Product | null>(null)
@@ -553,10 +572,24 @@ export function ProductsClient() {
 
   const title = useMemo(() => (editing ? "Editar producto" : "Nuevo producto"), [editing])
   const bulkParsed = useMemo(() => parseBulkLines(bulkLines), [bulkLines])
+  const inventoryPreviewPageCount = useMemo(
+    () => Math.max(Math.ceil(inventoryRows.length / INVENTORY_PREVIEW_PAGE_SIZE), 1),
+    [inventoryRows.length]
+  )
+  const inventoryPreviewRows = useMemo(() => {
+    const start = inventoryPreviewPage * INVENTORY_PREVIEW_PAGE_SIZE
+    return inventoryRows.slice(start, start + INVENTORY_PREVIEW_PAGE_SIZE)
+  }, [inventoryRows, inventoryPreviewPage])
   const availableIngredients = useMemo(
     () => ingredientOptions.filter((option) => option.id !== editing?.id),
     [editing?.id, ingredientOptions]
   )
+
+  useEffect(() => {
+    if (inventoryPreviewPage > inventoryPreviewPageCount - 1) {
+      setInventoryPreviewPage(0)
+    }
+  }, [inventoryPreviewPage, inventoryPreviewPageCount])
 
   function updateRecipeItem(rowId: string, field: "ingredientId" | "qty", value: string) {
     setRecipeItems((prev) => prev.map((row) => (row.id === rowId ? { ...row, [field]: value } : row)))
@@ -693,6 +726,7 @@ export function ProductsClient() {
     setInventoryProgress(0)
     setInventoryStatus("Listo para cargar")
     setInventorySummary(null)
+    setInventoryPreviewPage(0)
     setIsInventoryDragOver(false)
     setIsInventoryUploading(false)
     if (inventoryFileInputRef.current) {
@@ -776,6 +810,7 @@ export function ProductsClient() {
       const parsedRows = await parseInventoryFile(file)
       setInventoryFile(file)
       setInventoryRows(parsedRows)
+      setInventoryPreviewPage(0)
       setInventoryStatus(`${parsedRows.length} fila(s) lista(s) para importar`)
     } catch (error) {
       setInventoryFile(null)
@@ -836,8 +871,17 @@ export function ProductsClient() {
     let failed = 0
     let processed = 0
     const total = inventoryRows.length
+    let operationId: string | null = null
+    let finalized = false
 
     try {
+      const started = await startInventoryBulkOperation({
+        source: "BULK_EXCEL",
+        reason: "Importación masiva Excel",
+        totalRows: total,
+      })
+      operationId = started.operationId
+
       for (let start = 0; start < total; start += INVENTORY_IMPORT_CHUNK_SIZE) {
         const chunk = inventoryRows.slice(start, start + INVENTORY_IMPORT_CHUNK_SIZE)
         const chunkEnd = Math.min(start + chunk.length, total)
@@ -845,6 +889,7 @@ export function ProductsClient() {
 
         try {
           const result = await importProductsChunk({
+            operationId,
             rows: chunk,
             reason: "Importación masiva Excel",
           })
@@ -870,6 +915,16 @@ export function ProductsClient() {
         setInventoryProgress(Math.min(Math.round((processed / total) * 100), 100))
       }
 
+      await finalizeInventoryBulkOperation({
+        operationId,
+        status: "COMPLETED",
+        totalRows: total,
+        createdCount: created,
+        updatedCount: updated,
+        failedCount: failed,
+      })
+      finalized = true
+
       const summary: InventoryImportSummary = {
         total,
         created,
@@ -892,6 +947,29 @@ export function ProductsClient() {
           description: `Se procesaron ${total} fila(s) correctamente.`,
         })
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo completar la carga masiva"
+      setInventoryStatus("Carga fallida")
+      if (operationId && !finalized) {
+        try {
+          await finalizeInventoryBulkOperation({
+            operationId,
+            status: "FAILED",
+            totalRows: total,
+            createdCount: created,
+            updatedCount: updated,
+            failedCount: Math.max(failed, total - processed),
+            errorMessage: message,
+          })
+        } catch {
+          // Ignore finalize errors; el error principal se muestra al usuario.
+        }
+      }
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive",
+      })
     } finally {
       setIsInventoryUploading(false)
     }
@@ -962,6 +1040,8 @@ export function ProductsClient() {
   const movementPageCount = Math.max(Math.ceil(movementItems.length / movementPageSize), 1)
   const movementStart = movementsPage * movementPageSize
   const movementPageItems = movementItems.slice(movementStart, movementStart + movementPageSize)
+  const inventoryPreviewStart = inventoryRows.length ? inventoryPreviewPage * INVENTORY_PREVIEW_PAGE_SIZE + 1 : 0
+  const inventoryPreviewEnd = Math.min((inventoryPreviewPage + 1) * INVENTORY_PREVIEW_PAGE_SIZE, inventoryRows.length)
 
   useEffect(() => {
     if (movementsPage > movementPageCount - 1) {
@@ -1013,11 +1093,11 @@ export function ProductsClient() {
                     <p>Carga masiva desde Excel</p>
                   </TooltipContent>
                 </Tooltip>
-                <DialogContent className="sm:max-w-[780px]">
+                <DialogContent className="sm:max-w-[780px] max-h-[90vh] flex flex-col">
                   <DialogHeader>
                     <DialogTitle>Inventario masivo</DialogTitle>
                   </DialogHeader>
-                  <div className="grid gap-6">
+                  <div className="grid gap-6 overflow-y-auto pr-1">
                     <div className="grid gap-2">
                       <div className="text-sm font-medium">Primer paso: descargar plantilla</div>
                       <div className="text-xs text-muted-foreground">
@@ -1074,6 +1154,82 @@ export function ProductsClient() {
                         <div className="text-xs text-red-500">{inventoryParseError}</div>
                       )}
                     </div>
+
+                    {inventoryRows.length > 0 && (
+                      <div className="grid gap-2">
+                        <div className="text-sm font-medium">Vista previa del archivo</div>
+                        <div className="text-xs text-muted-foreground">
+                          Revisa los productos antes de confirmar la carga. Esta tabla es solo de lectura.
+                        </div>
+                        <div className="max-h-[320px] overflow-auto rounded-md border">
+                          <Table className="min-w-[1450px] text-xs">
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Fila</TableHead>
+                                <TableHead>Nombre</TableHead>
+                                <TableHead>SKU</TableHead>
+                                <TableHead>Referencia</TableHead>
+                                <TableHead>Tipo</TableHead>
+                                <TableHead>Unidad</TableHead>
+                                <TableHead className="text-right">Precio venta</TableHead>
+                                <TableHead className="text-right">Costo</TableHead>
+                                <TableHead className="text-right">ITBIS</TableHead>
+                                <TableHead className="text-right">Existencia</TableHead>
+                                <TableHead className="text-right">Existencia minima</TableHead>
+                                <TableHead>Categoria</TableHead>
+                                <TableHead>Proveedor</TableHead>
+                                <TableHead>Imagenes</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {inventoryPreviewRows.map((row) => (
+                                <TableRow key={row.rowNumber}>
+                                  <TableCell>{row.rowNumber}</TableCell>
+                                  <TableCell>{formatInventoryPreviewValue(row.nombre)}</TableCell>
+                                  <TableCell>{formatInventoryPreviewValue(row.sku)}</TableCell>
+                                  <TableCell>{formatInventoryPreviewValue(row.referencia)}</TableCell>
+                                  <TableCell>{formatInventoryPreviewValue(row.tipo_producto)}</TableCell>
+                                  <TableCell>{formatInventoryPreviewValue(row.unidad)}</TableCell>
+                                  <TableCell className="text-right">{formatInventoryPreviewValue(row.precio_venta)}</TableCell>
+                                  <TableCell className="text-right">{formatInventoryPreviewValue(row.costo)}</TableCell>
+                                  <TableCell className="text-right">{formatInventoryPreviewValue(row.itbis)}</TableCell>
+                                  <TableCell className="text-right">{formatInventoryPreviewValue(row.stock)}</TableCell>
+                                  <TableCell className="text-right">{formatInventoryPreviewValue(row.stock_minimo)}</TableCell>
+                                  <TableCell>{formatInventoryPreviewValue(row.categoria)}</TableCell>
+                                  <TableCell>{formatInventoryPreviewValue(row.proveedor)}</TableCell>
+                                  <TableCell className="max-w-[220px] truncate">{formatInventoryPreviewValue(row.imagenes)}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>
+                            Mostrando {inventoryPreviewStart}-{inventoryPreviewEnd} de {inventoryRows.length} fila(s)
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setInventoryPreviewPage((prev) => Math.max(prev - 1, 0))}
+                              disabled={inventoryPreviewPage === 0}
+                            >
+                              Anterior
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setInventoryPreviewPage((prev) => Math.min(prev + 1, inventoryPreviewPageCount - 1))}
+                              disabled={inventoryPreviewPage >= inventoryPreviewPageCount - 1}
+                            >
+                              Siguiente
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid gap-2">
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -1140,50 +1296,52 @@ export function ProductsClient() {
                     <p>Ajuste de inventario rápido</p>
                   </TooltipContent>
                 </Tooltip>
-                <DialogContent className="sm:max-w-[720px]">
+                <DialogContent className="sm:max-w-[720px] max-h-[90vh] flex flex-col">
                   <DialogHeader>
                     <DialogTitle>Ajuste masivo de inventario</DialogTitle>
                   </DialogHeader>
 
-                  <div className="text-sm text-muted-foreground bg-muted/50 p-4 rounded-md mb-2">
-                    <p className="font-medium text-foreground mb-1">¿Cómo funciona?</p>
-                    <ul className="list-disc pl-5 space-y-1">
-                      <li>Escribe el <strong>ID del producto</strong> seguido de un espacio o tabulación, y luego la <strong>cantidad</strong> a ajustar.</li>
-                      <li>Usa el signo <code className="bg-muted px-1 rounded text-primary">+</code> para aumentar la existencia o <code className="bg-muted px-1 rounded text-red-500">-</code> para disminuirla.</li>
-                      <li>Coloca un producto por línea.</li>
-                    </ul>
-                    <p className="mt-2 text-xs italic">Tip: Puedes copiar y pegar directamente desde dos columnas de Excel o Google Sheets.</p>
-                  </div>
+                  <div className="overflow-y-auto pr-1">
+                    <div className="text-sm text-muted-foreground bg-muted/50 p-4 rounded-md mb-2">
+                      <p className="font-medium text-foreground mb-1">¿Cómo funciona?</p>
+                      <ul className="list-disc pl-5 space-y-1">
+                        <li>Escribe el <strong>ID del producto</strong> seguido de un espacio o tabulación, y luego la <strong>cantidad</strong> a ajustar.</li>
+                        <li>Usa el signo <code className="bg-muted px-1 rounded text-primary">+</code> para aumentar la existencia o <code className="bg-muted px-1 rounded text-red-500">-</code> para disminuirla.</li>
+                        <li>Coloca un producto por línea.</li>
+                      </ul>
+                      <p className="mt-2 text-xs italic">Tip: Puedes copiar y pegar directamente desde dos columnas de Excel o Google Sheets.</p>
+                    </div>
 
-                  <div className="grid gap-4">
-                    <div className="grid gap-2">
-                      <Label>Motivo (opcional)</Label>
-                      <Input
-                        value={bulkReason}
-                        onChange={(e) => setBulkReason(e.target.value)}
-                        placeholder="Ej: Conteo físico"
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>IDs y cantidades (una línea por producto)</Label>
-                      <Textarea
-                        value={bulkLines}
-                        onChange={(e) => setBulkLines(e.target.value)}
-                        rows={8}
-                        placeholder={"101\t+5\n102\t-2"}
-                        className="font-mono"
-                      />
-                      <div className="text-xs text-muted-foreground">
-                        Formato: ID y cantidad (usa + o -). Puedes pegar desde Excel/Sheets (tabulado).
+                    <div className="grid gap-4">
+                      <div className="grid gap-2">
+                        <Label>Motivo (opcional)</Label>
+                        <Input
+                          value={bulkReason}
+                          onChange={(e) => setBulkReason(e.target.value)}
+                          placeholder="Ej: Conteo físico"
+                        />
                       </div>
+                      <div className="grid gap-2">
+                        <Label>IDs y cantidades (una línea por producto)</Label>
+                        <Textarea
+                          value={bulkLines}
+                          onChange={(e) => setBulkLines(e.target.value)}
+                          rows={8}
+                          placeholder={"101\t+5\n102\t-2"}
+                          className="font-mono"
+                        />
+                        <div className="text-xs text-muted-foreground">
+                          Formato: ID y cantidad (usa + o -). Puedes pegar desde Excel/Sheets (tabulado).
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Líneas válidas: {bulkParsed.items.length}
+                        {bulkParsed.errors.length > 0 ? ` · Errores: ${bulkParsed.errors.length}` : ""}
+                      </div>
+                      {bulkParsed.errors.length > 0 && (
+                        <div className="text-xs text-red-500">{bulkParsed.errors[0]}</div>
+                      )}
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      Líneas válidas: {bulkParsed.items.length}
-                      {bulkParsed.errors.length > 0 ? ` · Errores: ${bulkParsed.errors.length}` : ""}
-                    </div>
-                    {bulkParsed.errors.length > 0 && (
-                      <div className="text-xs text-red-500">{bulkParsed.errors[0]}</div>
-                    )}
                   </div>
                   <DialogFooter>
                     <Button variant="secondary" onClick={() => setBulkOpen(false)} type="button">Cancelar</Button>
