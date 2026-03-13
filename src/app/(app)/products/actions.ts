@@ -2098,7 +2098,7 @@ export async function adjustManyStock(input: {
     const batchId = items.length > 1 ? randomUUID() : null
     const startedOperation = await startInventoryBulkOperation({
       source: InventoryBulkSource.BULK_MANUAL,
-      reason,
+      reason: reason ?? undefined,
       totalRows: items.length,
       user,
     })
