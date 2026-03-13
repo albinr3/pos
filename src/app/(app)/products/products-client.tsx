@@ -1896,23 +1896,49 @@ export function ProductsClient() {
                 )
                 : availableIngredients
               if (filtered.length === 0) {
+                if (availableIngredients.length === 0) {
+                  return (
+                    <div className="p-6 text-center text-sm text-muted-foreground space-y-1">
+                      <p>No hay insumos disponibles.</p>
+                      <p>Primero debes crear los ingredientes que utilizarás.</p>
+                    </div>
+                  )
+                }
                 return (
                   <div className="p-6 text-center text-sm text-muted-foreground">
                     No se encontraron insumos.
                   </div>
                 )
               }
-              return filtered.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-accent transition-colors border-b last:border-b-0"
-                  onClick={() => onIngredientPicked(option.id)}
-                >
-                  <span className="font-medium text-muted-foreground min-w-[3rem]">{option.productId}</span>
-                  <span>{option.name}</span>
-                </button>
-              ))
+              return (
+                <>
+                  {filtered.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm hover:bg-accent transition-colors border-b"
+                      onClick={() => onIngredientPicked(option.id)}
+                    >
+                      <span className="font-medium text-muted-foreground min-w-[3rem]">{option.productId}</span>
+                      <span>{option.name}</span>
+                    </button>
+                  ))}
+                  <div className="border-t" />
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-primary hover:bg-accent transition-colors"
+                    onClick={() =>
+                      toast({
+                        title: "Crear insumo",
+                        description: "Si no existe, crea primero el ingrediente y luego vuelve a seleccionarlo.",
+                      })
+                    }
+                  >
+                    <Plus className="h-4 w-4" />
+                    Crear insumo
+                  </button>
+                </>
+              )
             })()}
           </div>
         </DialogContent>

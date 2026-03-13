@@ -179,9 +179,20 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   // Ref para rastrear el tiempo de la primera y última tecla (para detectar escaneo de código de barras)
   const firstKeyPressTime = useRef<number>(0)
   const lastKeyPressTime = useRef<number>(0)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   const router = useRouter()
   const pathname = usePathname()
+
+  useEffect(() => {
+    if (pathname !== "/sales") return
+
+    const timer = window.setTimeout(() => {
+      searchInputRef.current?.focus()
+    }, 0)
+
+    return () => window.clearTimeout(timer)
+  }, [pathname])
 
   useEffect(() => {
     // Obtener usuario actual con permisos
@@ -1061,6 +1072,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
                 <Input
+                  ref={searchInputRef}
                   value={query}
                   onChange={(e) => {
                     const now = Date.now()
