@@ -15,7 +15,10 @@ export type ErrorLogItem = {
   accountId: string | null
   accountName: string | null
   userId: string | null
+  userEmail: string | null
+  userPhone: string | null
   endpoint: string | null
+  urlPath: string | null
   method: string | null
   ipAddress: string | null
   userAgent: string | null
@@ -87,6 +90,9 @@ export async function getErrorLogs(params: GetErrorsParams = {}): Promise<{
       { message: { contains: search, mode: "insensitive" } },
       { code: { contains: search, mode: "insensitive" } },
       { endpoint: { contains: search, mode: "insensitive" } },
+      { urlPath: { contains: search, mode: "insensitive" } },
+      { userEmail: { contains: search, mode: "insensitive" } },
+      { userPhone: { contains: search, mode: "insensitive" } },
     ]
   }
 

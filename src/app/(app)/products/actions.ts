@@ -49,6 +49,18 @@ function roundRecipeQty(value: number) {
   return Math.round(value * 1000) / 1000
 }
 
+const DECIMAL_10_3_MAX_ABS = 9_999_999.999
+const DECIMAL_10_3_MAX_LABEL = "9,999,999.999"
+
+function assertDecimal10x3Range(value: number, fieldLabel: string) {
+  if (!Number.isFinite(value)) {
+    throw new Error(`${fieldLabel} inválido`)
+  }
+  if (Math.abs(value) > DECIMAL_10_3_MAX_ABS) {
+    throw new Error(`${fieldLabel} excede el máximo permitido (${DECIMAL_10_3_MAX_LABEL}).`)
+  }
+}
+
 function serializeProductRecord(product: any) {
   return {
     ...product,
@@ -318,8 +330,17 @@ export async function upsertProduct(input: {
     if (productKind === ProductKind.MEASURED && finalUnit === UnitType.UNIDAD) {
       throw new Error("Los productos con medidas deben usar una unidad distinta de UNIDAD")
     }
-    const finalStock = productKind === ProductKind.RECIPE ? 0 : input.stock
-    const finalMinStock = productKind === ProductKind.RECIPE ? 0 : input.minStock
+    const finalStock =
+      productKind === ProductKind.RECIPE
+        ? 0
+        : normalizeQtyForUnit(Number(input.stock ?? 0), finalUnit, "Existencia")
+    const finalMinStock =
+      productKind === ProductKind.RECIPE
+        ? 0
+        : normalizeQtyForUnit(Number(input.minStock ?? 0), finalUnit, "Existencia mínima")
+    if (productKind !== ProductKind.RECIPE && finalMinStock < 0) {
+      throw new Error("Existencia mínima no puede ser negativa")
+    }
 
     await prisma.$transaction(async (tx) => {
       if (productKind === ProductKind.RECIPE) {
@@ -742,10 +763,14 @@ function normalizeDelta(delta: number, allowsDecimals: boolean) {
     throw new Error("Este producto solo permite cantidades enteras.")
   }
   if (!allowsDecimals) {
-    return Math.trunc(delta)
+    const normalized = Math.trunc(delta)
+    assertDecimal10x3Range(normalized, "Cantidad")
+    return normalized
   }
   // Redondear a 2 decimales para mantener consistencia con UI
-  return Math.round(delta * 100) / 100
+  const normalized = Math.round(delta * 100) / 100
+  assertDecimal10x3Range(normalized, "Cantidad")
+  return normalized
 }
 
 export type BulkProductImportRow = {
@@ -970,18 +995,22 @@ function parseImportProductType(value: unknown): "BASICO" | "MEDIDO" | null {
   return null
 }
 
-function normalizeQtyForUnit(value: number, unit: UnitType) {
+function normalizeQtyForUnit(value: number, unit: UnitType, fieldLabel = "Cantidad") {
   if (!Number.isFinite(value)) {
-    throw new Error("Cantidad inválida")
+    throw new Error(`${fieldLabel} inválido`)
   }
   const allowsDecimals = unitAllowsDecimals(unit)
   if (!allowsDecimals && !Number.isInteger(value)) {
-    throw new Error("Este producto solo permite cantidades enteras")
+    throw new Error(`${fieldLabel}: este producto solo permite cantidades enteras`)
   }
   if (!allowsDecimals) {
-    return Math.trunc(value)
+    const normalized = Math.trunc(value)
+    assertDecimal10x3Range(normalized, fieldLabel)
+    return normalized
   }
-  return Math.round(value * 100) / 100
+  const normalized = Math.round(value * 100) / 100
+  assertDecimal10x3Range(normalized, fieldLabel)
+  return normalized
 }
 
 function parseImageUrls(value: unknown) {
@@ -1715,9 +1744,9 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
       const hasCost = hasImportValue(row.costo)
       const costValue = parseImportNumber(row.costo, "Costo")
       const hasStock = hasImportValue(row.stock)
-      const stockValue = parseImportNumber(row.stock, "Stock")
+      const stockValue = parseImportNumber(row.stock, "Existencia")
       const hasMinStock = hasImportValue(row.stock_minimo)
-      const minStockValue = parseImportNumber(row.stock_minimo, "Stock mínimo")
+      const minStockValue = parseImportNumber(row.stock_minimo, "Existencia mínima")
       const hasItbis = hasImportValue(row.itbis)
       const itbisRateBp = parseImportItbisBp(row.itbis)
       const images = parseImageUrls(row.imagenes)
@@ -1737,7 +1766,7 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
         throw new Error("costo es requerido y debe ser mayor que 0")
       }
       if (hasMinStock && minStockValue !== null && minStockValue < 0) {
-        throw new Error("stock_minimo no puede ser negativo")
+        throw new Error("existencia_minima no puede ser negativa")
       }
 
       const existing = sku
@@ -1779,7 +1808,7 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
         const nextItbisRateBp = hasItbis && itbisRateBp !== null ? itbisRateBp : Number(existing.itbisRateBp)
 
         const nextMinStock = hasMinStock && minStockValue !== null
-          ? normalizeQtyForUnit(minStockValue, nextUnit)
+          ? normalizeQtyForUnit(minStockValue, nextUnit, "Existencia mínima")
           : decimalToNumber(existing.minStock)
 
         const nextReference = hasReference ? (reference || null) : existing.reference
@@ -1825,6 +1854,9 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
 
           if (hasStock && stockValue !== null && stockValue !== 0) {
             const stockDelta = normalizeDelta(stockValue, unitAllowsDecimals(nextUnit))
+            const currentStock = decimalToNumber(existing.stock)
+            const nextStock = roundRecipeQty(currentStock + stockDelta)
+            assertDecimal10x3Range(nextStock, "Existencia")
             const stockUpdate = stockDelta >= 0
               ? { increment: stockDelta }
               : { decrement: Math.abs(stockDelta) }
@@ -1904,8 +1936,8 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
       }
 
       const initialStockRaw = stockValue ?? 0
-      const initialStock = normalizeQtyForUnit(initialStockRaw, unit)
-      const minStock = minStockValue === null ? 0 : normalizeQtyForUnit(minStockValue, unit)
+      const initialStock = normalizeQtyForUnit(initialStockRaw, unit, "Existencia")
+      const minStock = minStockValue === null ? 0 : normalizeQtyForUnit(minStockValue, unit, "Existencia mínima")
 
       const createdProduct = await prisma.$transaction(async (tx) => {
         const seq = await tx.productSequence.upsert({
@@ -2076,6 +2108,9 @@ export async function adjustManyStock(input: {
     }
 
     const byProductId = new Map(products.map((p) => [p.productId, p]))
+    const currentStockByProductId = new Map(
+      products.map((p) => [p.productId, decimalToNumber(p.stock)])
+    )
     const aggregated = new Map<number, number>()
     for (const item of parsedItems) {
       const product = byProductId.get(item.productId)
@@ -2094,6 +2129,16 @@ export async function adjustManyStock(input: {
     if (!items.length) {
       throw new Error("No hay ajustes para aplicar")
     }
+
+    for (const item of items) {
+      const currentStock = currentStockByProductId.get(item.productId)
+      if (currentStock === undefined) {
+        throw new Error(`Producto no encontrado: ${item.productId}`)
+      }
+      const nextStock = roundRecipeQty(currentStock + item.delta)
+      assertDecimal10x3Range(nextStock, "Existencia")
+    }
+
     const reason = sanitizeString(input.reason ?? "") || null
     const batchId = items.length > 1 ? randomUUID() : null
     const startedOperation = await startInventoryBulkOperation({

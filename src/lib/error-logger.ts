@@ -83,6 +83,67 @@ function determineSeverity(error: Error, code?: string): ErrorSeverity {
   return "LOW"
 }
 
+function normalizePathOnly(path: string): string {
+  const trimmed = path.trim()
+  if (!trimmed) return "/"
+  if (trimmed.startsWith("/")) return trimmed
+  return `/${trimmed}`
+}
+
+function extractPathFromUrl(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined
+  const value = raw.trim()
+  if (!value) return undefined
+
+  if (value.startsWith("/")) {
+    return normalizePathOnly(value.split("?")[0]?.split("#")[0] ?? value)
+  }
+
+  try {
+    const parsed = new URL(value)
+    return normalizePathOnly(parsed.pathname || "/")
+  } catch {
+    return undefined
+  }
+}
+
+async function inferUrlPathFromServerContext(): Promise<string | undefined> {
+  try {
+    const { headers } = await import("next/headers")
+    const headerStore = await headers()
+    const refererPath = extractPathFromUrl(headerStore.get("referer"))
+    if (refererPath) return refererPath
+  } catch {
+    // Contexto sin headers() disponible (p. ej. tareas en background).
+  }
+  return undefined
+}
+
+async function resolveUserContext(options: LogErrorOptions): Promise<{
+  userEmail?: string
+  userPhone?: string
+}> {
+  if (options.userEmail || options.userPhone || !options.userId) {
+    return {
+      userEmail: options.userEmail ?? undefined,
+      userPhone: options.userPhone ?? undefined,
+    }
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: options.userId },
+    select: {
+      email: true,
+      whatsappNumber: true,
+    },
+  })
+
+  return {
+    userEmail: options.userEmail ?? user?.email ?? undefined,
+    userPhone: options.userPhone ?? user?.whatsappNumber ?? undefined,
+  }
+}
+
 export interface LogErrorOptions {
   /** Código de error personalizado (ej: "PAYMENT_FAILED") */
   code?: string
@@ -92,8 +153,14 @@ export interface LogErrorOptions {
   accountId?: string
   /** ID del usuario que causó el error */
   userId?: string
+  /** Email del usuario que causó el error */
+  userEmail?: string
+  /** Telefono del usuario que causó el error (whatsappNumber) */
+  userPhone?: string
   /** Endpoint donde ocurrió el error */
   endpoint?: string
+  /** Ruta interna donde ocurrió el error (solo path, sin dominio/query) */
+  urlPath?: string
   /** Método HTTP */
   method?: string
   /** Body del request (será sanitizado) */
@@ -133,6 +200,12 @@ export async function logError(
 ): Promise<string | null> {
   try {
     const severity = options.severity ?? determineSeverity(error, options.code)
+    const userContext = await resolveUserContext(options)
+    const inferredUrlPath = await inferUrlPathFromServerContext()
+    const urlPath =
+      extractPathFromUrl(options.urlPath) ??
+      inferredUrlPath ??
+      extractPathFromUrl(options.endpoint)
     const sanitizedMetadata = options.metadata
       ? (sanitizeObject(options.metadata) as Prisma.InputJsonValue)
       : undefined
@@ -145,7 +218,10 @@ export async function logError(
         severity,
         accountId: options.accountId,
         userId: options.userId,
+        userEmail: userContext.userEmail,
+        userPhone: userContext.userPhone,
         endpoint: options.endpoint,
+        urlPath,
         method: options.method,
         requestBody: options.requestBody
           ? (sanitizeObject(options.requestBody) as object)
@@ -175,7 +251,10 @@ export async function logError(
           severity,
           accountId: options.accountId,
           userId: options.userId,
+          userEmail: userContext.userEmail,
+          userPhone: userContext.userPhone,
           endpoint: options.endpoint,
+          urlPath,
           method: options.method,
           metadata: options.metadata,
         })
@@ -241,9 +320,11 @@ export function withErrorLogging<T extends (...args: unknown[]) => Promise<unkno
  */
 export function getRequestInfo(request: Request): Pick<
   LogErrorOptions,
-  "endpoint" | "method" | "ipAddress" | "userAgent" | "queryParams"
+  "endpoint" | "method" | "ipAddress" | "userAgent" | "queryParams" | "urlPath"
 > {
   const url = new URL(request.url)
+  const referer = request.headers.get("referer")
+  const refererPath = extractPathFromUrl(referer)
   const queryParams: Record<string, string> = {}
   url.searchParams.forEach((value, key) => {
     queryParams[key] = value
@@ -251,6 +332,7 @@ export function getRequestInfo(request: Request): Pick<
 
   return {
     endpoint: url.pathname,
+    urlPath: refererPath ?? url.pathname,
     method: request.method,
     ipAddress:
       request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||

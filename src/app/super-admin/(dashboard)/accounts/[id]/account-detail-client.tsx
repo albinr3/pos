@@ -242,6 +242,7 @@ type BillingPlanOption = {
 export function AccountDetailClient({ account }: { account: AccountDetail }) {
   const router = useRouter()
   const { toast } = useToast()
+  const accountPhone = account.companyPhone || account.billingPhone || null
   const [isLoading, setIsLoading] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showStatusDialog, setShowStatusDialog] = useState(false)
@@ -607,12 +608,13 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                   <p className="text-sm text-muted-foreground">Nombre</p>
                   <p className="font-medium">{account.companyName || account.name}</p>
                 </div>
-                {account.companyPhone && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Teléfono</p>
                   <div className="flex items-center gap-2">
                     <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{account.companyPhone}</span>
+                    <span>{accountPhone || "No registrado"}</span>
                   </div>
-                )}
+                </div>
                 {account.companyAddress && (
                   <div className="flex items-center gap-2 md:col-span-2">
                     <MapPin className="h-4 w-4 text-muted-foreground" />

@@ -3,7 +3,7 @@
 import { useState, useTransition, useEffect } from "react"
 import { UploadButton } from "@uploadthing/react"
 import type { OurFileRouter } from "@/app/api/uploadthing/core"
-import { User, Lock, Loader2, Building2, ChevronRight, UserPlus, Image as ImageIcon, Upload, X } from "lucide-react"
+import { User, Lock, Loader2, Building2, ChevronRight, UserPlus, Image as ImageIcon, Upload, X, MessageCircle } from "lucide-react"
 import { UserButton } from "@clerk/nextjs"
 
 import { Button } from "@/components/ui/button"
@@ -88,6 +88,7 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
   const isOnboarding = users.length === 0
   const [onboardingStep, setOnboardingStep] = useState(isOnboarding ? 1 : 0)
   const [businessName, setBusinessName] = useState(account.name || "")
+  const [whatsappPhone, setWhatsappPhone] = useState("")
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [newUsername, setNewUsername] = useState("ADMIN")
   const [newUserPassword, setNewUserPassword] = useState("")
@@ -102,6 +103,10 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
   const handleNextStep = () => {
     if (!businessName.trim()) {
       setError("El nombre del negocio es requerido")
+      return
+    }
+    if (!whatsappPhone.trim()) {
+      setError("El número con WhatsApp es requerido")
       return
     }
     setError("")
@@ -203,6 +208,10 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
       setError("El nombre del negocio es requerido")
       return
     }
+    if (!whatsappPhone.trim()) {
+      setError("El número con WhatsApp es requerido")
+      return
+    }
 
     if (!newUsername.trim()) {
       setError("El usuario es requerido")
@@ -226,6 +235,7 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
     formData.set("accountId", account.id)
     formData.set("password", newUserPassword)
     formData.set("businessName", businessName.trim())
+    formData.set("whatsappPhone", whatsappPhone.trim())
     formData.set("username", newUsername.trim())
     if (logoUrl) {
       formData.set("logoUrl", logoUrl)
@@ -282,7 +292,7 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
           <CardDescription>
             {isOnboarding
               ? onboardingStep === 1
-                ? "Ingresa el nombre de tu negocio y agrega un logo opcional."
+                ? "Ingresa el nombre de tu negocio, tu número con WhatsApp y agrega un logo opcional."
                 : "El usuario predeterminado es ADMIN. Puedes cambiarlo y crear una contraseña de 4 dígitos."
               : selectedUser
                 ? `Ingresa la contraseña para ${selectedUser.name}`
@@ -305,6 +315,20 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
                       disabled={isPending}
                       autoFocus
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="whatsapp-phone">Numero con Whatsapp</Label>
+                    <div className="relative">
+                      <MessageCircle className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-green-600" />
+                      <Input
+                        id="whatsapp-phone"
+                        value={whatsappPhone}
+                        onChange={(e) => setWhatsappPhone(e.target.value)}
+                        placeholder="Ej: +1 809 000 0000"
+                        className="pl-10"
+                        disabled={isPending}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -382,6 +406,9 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
                   <div className="text-sm font-medium mb-2">Paso 2 de 2</div>
                   <div className="text-sm text-muted-foreground">
                     Negocio: <span className="font-medium text-foreground">{businessName}</span>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    Numero con Whatsapp: <span className="font-medium text-foreground">{whatsappPhone}</span>
                   </div>
                 </div>
 

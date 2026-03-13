@@ -1427,7 +1427,10 @@ model ErrorLog {
   // Contexto
   accountId String? // Cuenta afectada (si aplica)
   userId    String? // Usuario que causó el error (si aplica)
+  userEmail String? // Email del usuario que causó el error (si aplica)
+  userPhone String? // Telefono (whatsappNumber) del usuario que causó el error (si aplica)
   endpoint  String? // Ruta/endpoint donde ocurrió
+  urlPath   String? // Ruta interna del frontend donde ocurrió (sin dominio/query)
   method    String? // GET, POST, etc.
 
   // Request info
@@ -1451,6 +1454,7 @@ model ErrorLog {
   @@index([accountId])
   @@index([code])
   @@index([endpoint])
+  @@index([urlPath])
 }
 
 // ==========================================

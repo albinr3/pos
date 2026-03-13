@@ -382,7 +382,10 @@ type ErrorNotificationTemplateData = {
   severity: string
   accountId?: string
   userId?: string
+  userEmail?: string
+  userPhone?: string
   endpoint?: string
+  urlPath?: string
   method?: string
   metadata?: Record<string, unknown>
 }
@@ -405,6 +408,9 @@ export async function renderErrorNotification(data: ErrorNotificationTemplateDat
     method: data.method || "N/A",
     accountId: data.accountId || "N/A",
     userId: data.userId || "N/A",
+    userEmail: data.userEmail || "N/A",
+    userPhone: data.userPhone || "N/A",
+    urlPath: data.urlPath || "N/A",
     stackTrace: data.error.stack || "No stack trace available",
     metadataHtml, // Usamos {{{ metadataHtml }}} en el template para que no se escape
     year: new Date().getFullYear().toString(),

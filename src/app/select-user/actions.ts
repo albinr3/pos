@@ -112,11 +112,12 @@ export async function createFirstUser(formData: FormData) {
   const accountId = formData.get("accountId") as string
   const password = formData.get("password") as string
   const businessName = formData.get("businessName") as string
+  const whatsappPhone = formData.get("whatsappPhone") as string
   const username = formData.get("username") as string
   const logoUrlRaw = (formData.get("logoUrl") as string) || ""
   const logoUrl = logoUrlRaw.trim() || null
 
-  if (!accountId || !password || !businessName || !username) {
+  if (!accountId || !password || !businessName || !whatsappPhone || !username) {
     return { error: "Todos los campos son requeridos" }
   }
 
@@ -149,6 +150,11 @@ export async function createFirstUser(formData: FormData) {
   const trimmedBusinessName = businessName.trim()
   if (!trimmedBusinessName) {
     return { error: "El nombre del negocio es requerido" }
+  }
+
+  const trimmedWhatsappPhone = whatsappPhone.trim()
+  if (!trimmedWhatsappPhone) {
+    return { error: "El número con WhatsApp es requerido" }
   }
 
   const trimmedUsername = username.trim().toLowerCase().replace(/\s/g, "")
@@ -185,12 +191,13 @@ export async function createFirstUser(formData: FormData) {
     where: { accountId },
     update: {
       name: trimmedBusinessName,
+      phone: trimmedWhatsappPhone,
       ...(logoUrl !== null && { logoUrl }),
     },
     create: {
       accountId,
       name: trimmedBusinessName,
-      phone: "",
+      phone: trimmedWhatsappPhone,
       address: "",
       logoUrl,
       allowNegativeStock: false,

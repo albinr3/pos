@@ -489,6 +489,9 @@ export function ErrorsClient({ initialErrors, initialTotal, initialStats }: Prop
                         {error.accountName && (
                           <span>Cuenta: {error.accountName}</span>
                         )}
+                        {error.userEmail && <span>Email: {error.userEmail}</span>}
+                        {error.userPhone && <span>Tel: {error.userPhone}</span>}
+                        {error.urlPath && <span>URL: {error.urlPath}</span>}
                         {error.ipAddress && <span>IP: {error.ipAddress}</span>}
                       </div>
 
@@ -513,6 +516,19 @@ export function ErrorsClient({ initialErrors, initialTotal, initialStats }: Prop
                               <pre className="mt-1 p-3 bg-muted rounded text-xs overflow-x-auto">
                                 {metadataString}
                               </pre>
+                            </div>
+                          )}
+                          {(error.userId || error.userEmail || error.userPhone || error.urlPath) && (
+                            <div>
+                              <label className="font-medium text-xs uppercase text-muted-foreground">
+                                Contexto de usuario
+                              </label>
+                              <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                                {error.userId && <p>User ID: {error.userId}</p>}
+                                {error.userEmail && <p>Email: {error.userEmail}</p>}
+                                {error.userPhone && <p>Teléfono: {error.userPhone}</p>}
+                                {error.urlPath && <p>URL interna: {error.urlPath}</p>}
+                              </div>
                             </div>
                           )}
                           {error.userAgent && (
