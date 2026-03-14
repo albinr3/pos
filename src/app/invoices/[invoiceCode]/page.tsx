@@ -179,8 +179,8 @@ export default async function InvoicePrintPage({
       <table className="mt-6 w-full border-collapse text-sm">
         <thead>
           <tr className="border-b">
-            <th className="py-2 text-left">Descripción</th>
             <th className="py-2 text-left">Código</th>
+            <th className="py-2 text-left">Descripción</th>
             <th className="py-2 text-left">Referencia</th>
             <th className="py-2 text-right">Cant.</th>
             <th className="py-2 text-right">Precio</th>
@@ -190,6 +190,7 @@ export default async function InvoicePrintPage({
         <tbody>
           {sale.items.map((it) => (
             <tr key={it.id} className="border-b align-top">
+              <td className="py-2 pr-2">{it.product.sku ?? "—"}</td>
               <td className="py-2 pr-2">
                 <div>{it.product.name}</div>
                 {it.recipeAdjustments.length > 0 && (
@@ -201,7 +202,6 @@ export default async function InvoicePrintPage({
                   </div>
                 )}
               </td>
-              <td className="py-2 pr-2">{it.product.sku ?? "—"}</td>
               <td className="py-2 pr-2">{it.product.reference ?? "—"}</td>
               <td className="py-2 text-right">{decimalToNumber(it.qty)}</td>
               <td className="py-2 text-right">{formatRD(it.unitPriceCents)}</td>

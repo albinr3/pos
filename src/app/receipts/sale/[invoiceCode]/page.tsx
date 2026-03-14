@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation"
+import Link from "next/link"
 import { PaymentMethod } from "@prisma/client"
 
 import { getCurrentUser } from "@/lib/auth"
@@ -6,6 +7,7 @@ import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
 import { PrintButton } from "@/components/app/print-button"
+import { Button } from "@/components/ui/button"
 import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
 
 // Evitar prerender durante el build
@@ -104,8 +106,12 @@ export default async function SaleReceiptPage({
           <DownloadReceiptPdfButton
             filename={`recibo-venta-${sale.invoiceCode}`}
           />
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/invoices/${sale.invoiceCode}`} target="_blank" rel="noopener noreferrer">
+              Factura carta
+            </Link>
+          </Button>
         </div>
-        {/* Formato carta temporalmente fuera del flujo; mantener solo ticket */}
       </div>
 
       <div className="text-center">
