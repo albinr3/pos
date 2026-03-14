@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
+import { formatDateTimeDO } from "@/lib/date-time"
 
 import { listAuditLogs, type AuditLogItem } from "./audit-actions"
 import { listAccountUsers } from "./users-actions"
@@ -151,10 +152,7 @@ type UserOption = {
 }
 
 function formatDate(date: Date) {
-  return new Date(date).toLocaleString("es-DO", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  })
+  return formatDateTimeDO(date, { dateStyle: "medium", timeStyle: "short" })
 }
 
 function getActionLabel(action: AuditActionOption) {

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
+import { formatDateDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 
 import { createReturn, getSaleForReturn, searchSalesForReturn } from "./actions"
@@ -242,7 +243,7 @@ export function ReturnsClient() {
                       <TableRow key={sale.id}>
                         <TableCell className="font-medium">{sale.invoiceCode}</TableCell>
                         <TableCell>{sale.customer?.name ?? "Cliente general"}</TableCell>
-                        <TableCell>{new Date(sale.soldAt).toLocaleDateString("es-DO")}</TableCell>
+                        <TableCell>{formatDateDO(sale.soldAt)}</TableCell>
                         <TableCell className="text-right">{formatRD(sale.totalCents)}</TableCell>
                         <TableCell className="text-right">
                           <Button onClick={() => selectSale(sale)} size="sm">
@@ -279,7 +280,7 @@ export function ReturnsClient() {
                 </div>
                 <div>
                   <span className="font-semibold">Fecha:</span>{" "}
-                  {new Date(selectedSale.soldAt).toLocaleDateString("es-DO")}
+                  {formatDateDO(selectedSale.soldAt)}
                 </div>
                 <div>
                   <span className="font-semibold">Total:</span> {formatRD(selectedSale.totalCents)}

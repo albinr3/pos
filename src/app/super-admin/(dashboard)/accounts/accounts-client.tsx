@@ -2,8 +2,9 @@
 
 import { useState, useMemo } from "react"
 import Link from "next/link"
-import { formatDistanceToNow, format } from "date-fns"
+import { formatDistanceToNow } from "date-fns"
 import { es } from "date-fns/locale"
+import { formatDateDO } from "@/lib/date-time"
 import {
   Building2,
   Search,
@@ -233,7 +234,7 @@ export function AccountsClient({ initialAccounts }: { initialAccounts: AccountLi
                             )}
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Calendar className="h-3 w-3" />
-                              {format(new Date(account.createdAt), "dd/MM/yyyy")}
+                              {formatDateDO(account.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}
                             </div>
                           </div>
                         </TableCell>

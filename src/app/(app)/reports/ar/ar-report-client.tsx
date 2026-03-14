@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { dateKeyDO, formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -111,7 +112,7 @@ export function ARReportClient({
       const link = document.createElement("a")
       const url = URL.createObjectURL(blob)
       link.setAttribute("href", url)
-      link.setAttribute("download", `cuentas-por-cobrar-${new Date().toISOString().split('T')[0]}.csv`)
+      link.setAttribute("download", `cuentas-por-cobrar-${dateKeyDO()}.csv`)
       link.style.visibility = "hidden"
       document.body.appendChild(link)
       link.click()
@@ -144,7 +145,7 @@ export function ARReportClient({
       doc.setFontSize(9)
       let yPos = 30
       doc.text(`Generado por: ${data.generatedBy}`, 14, yPos)
-      doc.text(`Fecha: ${new Date(data.generatedAt).toLocaleString("es-DO")}`, 14, yPos + 5)
+      doc.text(`Fecha: ${formatDateTimeDO(data.generatedAt)}`, 14, yPos + 5)
 
       // Estadísticas
       yPos += 15
@@ -171,7 +172,7 @@ export function ARReportClient({
         
         return [
           ar.sale.invoiceCode,
-          new Date(ar.sale.soldAt).toLocaleDateString("es-DO"),
+          formatDateDO(ar.sale.soldAt),
           ar.customer.name.substring(0, 20),
           formatRD(ar.totalCents),
           formatRD(ar.balanceCents),
@@ -211,7 +212,7 @@ export function ARReportClient({
         },
       })
 
-      const fileName = `cuentas-por-cobrar-${new Date().toISOString().split('T')[0]}.pdf`
+      const fileName = `cuentas-por-cobrar-${dateKeyDO()}.pdf`
       doc.save(fileName)
     } catch (error) {
       console.error("Error al generar PDF:", error)
@@ -222,11 +223,11 @@ export function ARReportClient({
   }
 
   const fmtDate = (d: Date) => {
-    return new Intl.DateTimeFormat("es-DO", {
+    return formatDateDO(d, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-    }).format(new Date(d))
+    })
   }
 
   const getDiasVencido = (dueDate: Date | null) => {

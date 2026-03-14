@@ -37,14 +37,13 @@ import {
   submitPaymentProof,
   getUsdCheckoutUrl,
 } from "./actions"
+import { formatDateDO } from "@/lib/date-time"
 import type {
   BillingSubscription,
   BillingProfile,
   BillingPayment,
 } from "@prisma/client"
 import type { BillingState, BankAccountInfo } from "@/lib/billing"
-import { format } from "date-fns"
-import { es } from "date-fns/locale"
 
 type BillingData = {
   subscription: BillingSubscription | null
@@ -262,7 +261,7 @@ export function BillingClient({ initialData }: BillingClientProps) {
 
   const latestPayment = payments[0]
   const nextBillingDate = state.currentPeriodEndsAt
-    ? format(new Date(state.currentPeriodEndsAt), "dd/MM/yyyy", { locale: es })
+    ? formatDateDO(state.currentPeriodEndsAt, { day: "2-digit", month: "2-digit", year: "numeric" })
     : null
 
   const formatMoney = (cents: number, currency: string) => {
@@ -859,7 +858,7 @@ export function BillingClient({ initialData }: BillingClientProps) {
                       {formatMoney(payment.amountCents, payment.currency)}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {format(new Date(payment.createdAt), "d MMM yyyy", { locale: es })}
+                      {formatDateDO(payment.createdAt, { day: "numeric", month: "short", year: "numeric" })}
                     </p>
                     {payment.status === "REJECTED" && payment.rejectionReason && (
                       <p className="text-xs text-red-600 mt-1">

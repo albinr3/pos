@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/hooks/use-toast"
+import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD, toCents } from "@/lib/money"
 import { UNIT_OPTIONS, formatQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { BarcodeLabel } from "@/components/app/barcode-label"
@@ -129,10 +130,7 @@ function getProductTypeLabel(productType: ProductFormType) {
 }
 
 function formatMovementDate(value: string) {
-  return new Date(value).toLocaleString("es-DO", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  })
+  return formatDateTimeDO(value, { dateStyle: "medium", timeStyle: "short" })
 }
 
 type BulkParseResult = {

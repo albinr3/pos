@@ -5,8 +5,7 @@
  */
 
 import { prisma } from "@/lib/db"
-import { format } from "date-fns"
-import { es } from "date-fns/locale"
+import { formatDateDO } from "@/lib/date-time"
 import type { BillingPayment, BillingProfile, BillingReceipt } from "@prisma/client"
 
 // ==========================================
@@ -231,14 +230,14 @@ export function generateReceiptHtml(
             <div class="section">
               <div class="section-title">Fecha de emisión</div>
               <div class="section-content">
-                ${format(new Date(receipt.issuedAt), "d 'de' MMMM, yyyy", { locale: es })}
+                ${formatDateDO(receipt.issuedAt, { day: "numeric", month: "long", year: "numeric" })}
               </div>
             </div>
 
             <div class="section">
               <div class="section-title">Fecha de pago</div>
               <div class="section-content">
-                ${payment.paidAt ? format(new Date(payment.paidAt), "d 'de' MMMM, yyyy", { locale: es }) : "-"}
+                ${payment.paidAt ? formatDateDO(payment.paidAt, { day: "numeric", month: "long", year: "numeric" }) : "-"}
               </div>
             </div>
           </div>
@@ -258,8 +257,8 @@ export function generateReceiptHtml(
               Suscripción mensual MOVOPos - ${companyName}
               ${payment.periodStartsAt && payment.periodEndsAt ? `<br>
               <small style="color: #666;">
-                Período: ${format(new Date(payment.periodStartsAt), "d MMM yyyy", { locale: es })} - 
-                ${format(new Date(payment.periodEndsAt), "d MMM yyyy", { locale: es })}
+                Período: ${formatDateDO(payment.periodStartsAt, { day: "numeric", month: "short", year: "numeric" })} - 
+                ${formatDateDO(payment.periodEndsAt, { day: "numeric", month: "short", year: "numeric" })}
               </small>` : ""}
             </div>
           </div>

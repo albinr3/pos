@@ -1,8 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { format } from "date-fns"
-import { es } from "date-fns/locale"
+import { formatDateTimeDO } from "@/lib/date-time"
 import {
   AlertTriangle,
   Bug,
@@ -482,8 +481,13 @@ export function ErrorsClient({ initialErrors, initialTotal, initialStats }: Prop
 
                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         <span>
-                          {format(new Date(error.createdAt), "dd MMM yyyy HH:mm:ss", {
-                            locale: es,
+                          {formatDateTimeDO(error.createdAt, {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
                           })}
                         </span>
                         {error.accountName && (
@@ -550,11 +554,13 @@ export function ErrorsClient({ initialErrors, initialTotal, initialStats }: Prop
                               {error.resolvedAt && (
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   Resuelto el{" "}
-                                  {format(
-                                    new Date(error.resolvedAt),
-                                    "dd MMM yyyy HH:mm",
-                                    { locale: es }
-                                  )}
+                                  {formatDateTimeDO(error.resolvedAt, {
+                                    day: "2-digit",
+                                    month: "short",
+                                    year: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
                                 </p>
                               )}
                             </div>

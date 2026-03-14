@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
+import { dateKeyDO, formatDateDO } from "@/lib/date-time"
 import { endOfDay, startOfDay } from "@/lib/dates"
 
 export async function getSalesChartData(days: number = 7) {
@@ -36,13 +37,13 @@ export async function getSalesChartData(days: number = 7) {
   for (let i = 0; i < days; i++) {
     const date = new Date(from)
     date.setDate(date.getDate() + i)
-    const key = date.toISOString().split("T")[0]
+    const key = dateKeyDO(date)
     salesByDay.set(key, { total: 0, cash: 0, credit: 0 })
   }
 
   // Agregar ventas
   for (const sale of sales) {
-    const key = sale.soldAt.toISOString().split("T")[0]
+    const key = dateKeyDO(sale.soldAt)
     // Obtener o crear datos del día
     let dayData = salesByDay.get(key)
     if (!dayData) {
@@ -70,7 +71,7 @@ export async function getSalesChartData(days: number = 7) {
   const result = Array.from(salesByDay.entries())
     .map(([date, data]) => ({
       date,
-      label: new Date(date).toLocaleDateString("es-DO", { day: "numeric", month: "short" }),
+      label: formatDateDO(date, { day: "numeric", month: "short" }),
       total: data.total,
       cash: data.cash,
       credit: data.credit,

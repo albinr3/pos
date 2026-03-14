@@ -176,14 +176,33 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   const from = startOfDay(fromDate)
   const to = endOfDay(toDate)
 
-  // 1. INGRESOS/VENTAS: Ventas al contado + pagos recibidos - devoluciones contado
-  const [cashSales, payments, cashReturns, allSales] = await Promise.all([
+  // 1. INGRESOS/VENTAS (base devengado):
+  // Ventas del período (contado + crédito) - devoluciones del período.
+  // Los cobros a crédito no son ingresos; solo reducen cuentas por cobrar.
+  const [allSales, payments, periodReturns] = await Promise.all([
+    // 2. COSTO DE VENTAS: Obtener ventas del período con sus items/consumos
     prisma.sale.findMany({
       where: {
         accountId: user.accountId,
-        type: "CONTADO",
         soldAt: { gte: from, lte: to },
         cancelledAt: null, // Excluir canceladas
+      },
+      include: {
+        items: {
+          include: {
+            consumptions: {
+              select: {
+                ingredientId: true,
+                qty: true,
+                ingredient: {
+                  select: {
+                    costCents: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     }),
     prisma.payment.findMany({
@@ -203,7 +222,6 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
         returnedAt: { gte: from, lte: to },
         cancelledAt: null,
         sale: {
-          type: "CONTADO",
           cancelledAt: null,
         },
       },
@@ -235,44 +253,18 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
         },
       },
     }),
-    // 2. COSTO DE VENTAS: Costo de los productos vendidos en el período
-    // Obtener todas las ventas del período (contado y crédito) con sus items
-    prisma.sale.findMany({
-      where: {
-        accountId: user.accountId,
-        soldAt: { gte: from, lte: to },
-        cancelledAt: null, // Excluir canceladas
-      },
-      include: {
-        items: {
-          include: {
-            consumptions: {
-              select: {
-                ingredientId: true,
-                qty: true,
-                ingredient: {
-                  select: {
-                    costCents: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    }),
   ])
 
-  const grossCashSalesTotalCents = cashSales.reduce((sum, sale) => sum + sale.totalCents, 0)
-  const cashReturnsTotalCents = cashReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
-  const salesTotalCents = grossCashSalesTotalCents - cashReturnsTotalCents
+  const grossSalesTotalCents = allSales.reduce((sum, sale) => sum + sale.totalCents, 0)
+  const returnsTotalCents = periodReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
+  const salesTotalCents = grossSalesTotalCents - returnsTotalCents
   const paymentsTotalCents = payments.reduce((sum, payment) => sum + payment.amountCents, 0)
-  const totalRevenueCents = salesTotalCents + paymentsTotalCents
-  const cashReturnsItbisCents = cashReturns.reduce((sum, ret) => sum + ret.itbisCents, 0)
+  const totalRevenueCents = salesTotalCents
+  const returnsItbisCents = periodReturns.reduce((sum, ret) => sum + ret.itbisCents, 0)
 
   const soldDatesForCost = [
     ...allSales.map((sale) => sale.soldAt),
-    ...cashReturns.map((ret) => ret.sale.soldAt),
+    ...periodReturns.map((ret) => ret.sale.soldAt),
   ]
   const maxSoldAt = soldDatesForCost.length > 0
     ? soldDatesForCost.reduce((latest, soldAt) => (soldAt > latest ? soldAt : latest))
@@ -282,7 +274,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
       ...allSales.flatMap((sale) =>
         sale.items.flatMap((item) => item.consumptions.map((consumption) => consumption.ingredientId))
       ),
-      ...cashReturns.flatMap((ret) =>
+      ...periodReturns.flatMap((ret) =>
         ret.items.flatMap((item) =>
           item.saleItem?.consumptions.map((consumption) => consumption.ingredientId) ?? []
         )
@@ -337,7 +329,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     return total + saleCost
   }, 0)
 
-  const cashReturnsCostCents = cashReturns.reduce((total, ret) => {
+  const returnsCostCents = periodReturns.reduce((total, ret) => {
     const returnCost = ret.items.reduce((itemTotal, item) => {
       const soldQty = item.saleItem ? toQty(item.saleItem.qty) : 0
       if (!item.saleItem || soldQty <= 0) return itemTotal
@@ -361,7 +353,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     return total + returnCost
   }, 0)
 
-  const costOfSalesCents = grossCostOfSalesCents - cashReturnsCostCents
+  const costOfSalesCents = grossCostOfSalesCents - returnsCostCents
   const purchasesCount = allSales.length
 
   // 3. UTILIDAD BRUTA: Ventas - Costo de ventas
@@ -385,7 +377,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
 
   // 7. IMPUESTOS (ITBIS neto): ITBIS cobrado en ventas - ITBIS pagado en compras
   const grossSalesItbisCents = allSales.reduce((sum, sale) => sum + sale.itbisCents, 0)
-  const salesItbisCents = grossSalesItbisCents - cashReturnsItbisCents
+  const salesItbisCents = grossSalesItbisCents - returnsItbisCents
   const purchases = await prisma.purchase.findMany({
     where: {
       accountId: user.accountId,
@@ -435,16 +427,18 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     from,
     to,
     // Ingresos/Ventas
+    grossSalesTotalCents,
     salesTotalCents,
-    salesCount: cashSales.length,
-    cashReturnsCount: cashReturns.length,
-    cashReturnsTotalCents,
+    salesCount: allSales.length,
+    returnsCount: periodReturns.length,
+    returnsTotalCents,
     paymentsTotalCents,
     paymentsCount: payments.length,
     totalRevenueCents,
     // Costo de ventas
+    grossCostOfSalesCents,
     costOfSalesCents,
-    cashReturnsCostCents,
+    returnsCostCents,
     purchasesCount, // Número de ventas (no compras)
     // Utilidad bruta
     grossProfitCents,
@@ -456,8 +450,9 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     // Otros ingresos y gastos
     otherIncomeExpensesCents,
     // Impuestos
+    grossSalesItbisCents,
     salesItbisCents,
-    cashReturnsItbisCents,
+    returnsItbisCents,
     purchasesItbisCents,
     taxesCents,
     // Utilidad neta

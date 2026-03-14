@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
+import { formatDateDO } from "@/lib/date-time"
 
 export interface ARFilters {
   status?: string // PENDIENTE, PARCIAL, PAGADA, ALL
@@ -221,8 +222,8 @@ export async function exportARToCSV(filters: ARFilters = {}) {
     
     return [
       ar.sale.invoiceCode,
-      new Date(ar.sale.soldAt).toLocaleDateString("es-DO"),
-      ar.dueDate ? new Date(ar.dueDate).toLocaleDateString("es-DO") : "N/A",
+      formatDateDO(ar.sale.soldAt),
+      ar.dueDate ? formatDateDO(ar.dueDate) : "N/A",
       ar.customer.name,
       ar.customer.phone || "",
       (ar.totalCents / 100).toFixed(2),

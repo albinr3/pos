@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
+import { formatDateDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
 import type { CurrentUser } from "@/lib/auth"
@@ -114,7 +115,7 @@ export function PaymentsListClient() {
                       <div className="font-mono font-bold text-sm">{p.receiptCode}</div>
                     </TableCell>
                     <TableCell>
-                      {new Date(p.paidAt).toLocaleDateString("es-DO")}
+                      {formatDateDO(p.paidAt)}
                       {p.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADO</div>}
                     </TableCell>
                     <TableCell className="font-medium">{p.ar.sale.invoiceCode}</TableCell>
@@ -142,7 +143,7 @@ export function PaymentsListClient() {
                           </Link>
                         </Button>
                         {p.cancelledAt && (
-                          <span className="text-xs text-red-600">Cancelado {new Date(p.cancelledAt).toLocaleDateString("es-DO")}</span>
+                          <span className="text-xs text-red-600">Cancelado {formatDateDO(p.cancelledAt)}</span>
                         )}
                       </div>
                     </TableCell>

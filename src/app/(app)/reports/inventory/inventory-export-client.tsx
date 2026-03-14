@@ -5,6 +5,7 @@ import { FileSpreadsheet, FileText } from "lucide-react"
 import * as XLSX from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import { dateKeyDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 
 interface Product {
@@ -69,7 +70,7 @@ export function InventoryExportClient({
     XLSX.utils.book_append_sheet(wb, ws, "Inventario")
 
     // Generar nombre de archivo con fecha
-    const date = new Date().toISOString().split("T")[0]
+    const date = dateKeyDO()
     const fileName = `inventario_${date}.xlsx`
 
     // Descargar archivo
@@ -89,6 +90,7 @@ export function InventoryExportClient({
       year: "numeric",
       month: "long",
       day: "numeric",
+      timeZone: "America/Santo_Domingo",
     })
     doc.text(`Fecha: ${date}`, 14, 28)
 
@@ -136,7 +138,7 @@ export function InventoryExportClient({
     )
 
     // Generar nombre de archivo con fecha
-    const dateStr = new Date().toISOString().split("T")[0]
+    const dateStr = dateKeyDO()
     const fileName = `inventario_${dateStr}.pdf`
 
     // Descargar archivo

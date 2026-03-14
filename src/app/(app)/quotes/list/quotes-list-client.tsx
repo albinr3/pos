@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
+import { formatDateDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 
 import { listQuotes, deleteQuote } from "../actions"
@@ -17,11 +18,11 @@ import { listQuotes, deleteQuote } from "../actions"
 type Quote = Awaited<ReturnType<typeof listQuotes>>[number]
 
 function fmtDate(d: Date) {
-  return new Intl.DateTimeFormat("es-DO", {
+  return formatDateDO(d, {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(new Date(d))
+  })
 }
 
 export function QuotesListClient() {

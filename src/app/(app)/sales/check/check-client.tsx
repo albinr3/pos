@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { formatDateDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { checkSaleExists, getAllSalesForDiagnosis } from "../check-sale"
 import { diagnoseDatabase } from "../diagnose-db"
@@ -91,7 +92,7 @@ export function CheckSaleClient() {
                       <span className="font-medium">Código:</span> {result.sale.invoiceCode}
                     </div>
                     <div>
-                      <span className="font-medium">Fecha:</span> {new Date(result.sale.soldAt).toLocaleDateString("es-DO")}
+                      <span className="font-medium">Fecha:</span> {formatDateDO(result.sale.soldAt)}
                     </div>
                     <div>
                       <span className="font-medium">Cliente:</span> {result.sale.customer}
@@ -101,7 +102,7 @@ export function CheckSaleClient() {
                     </div>
                     {result.sale.cancelledAt && (
                       <div className="font-semibold text-red-600">
-                        ⚠ Esta factura está CANCELADA (fecha: {new Date(result.sale.cancelledAt).toLocaleDateString("es-DO")})
+                        ⚠ Esta factura está CANCELADA (fecha: {formatDateDO(result.sale.cancelledAt)})
                       </div>
                     )}
                   </div>
@@ -168,7 +169,7 @@ export function CheckSaleClient() {
                       <div className="space-y-1 text-sm">
                         {diagnosis.lastSales.map((s) => (
                           <div key={s.id} className="flex justify-between">
-                            <span>{s.invoiceCode} - {new Date(s.soldAt).toLocaleDateString("es-DO")}</span>
+                            <span>{s.invoiceCode} - {formatDateDO(s.soldAt)}</span>
                             <span>{formatRD(s.totalCents)}</span>
                           </div>
                         ))}
@@ -193,7 +194,7 @@ export function CheckSaleClient() {
                         <div>
                           <span className="font-medium">{s.invoiceCode}</span>
                           <span className="text-muted-foreground ml-2">
-                            {new Date(s.soldAt).toLocaleDateString("es-DO")} - {formatRD(s.totalCents)}
+                            {formatDateDO(s.soldAt)} - {formatRD(s.totalCents)}
                           </span>
                           {s.cancelledAt && (
                             <span className="ml-2 text-xs text-red-600 font-semibold">[CANCELADA]</span>
@@ -212,4 +213,3 @@ export function CheckSaleClient() {
     </div>
   )
 }
-

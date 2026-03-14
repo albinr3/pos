@@ -24,6 +24,7 @@ import {
   type InventoryBulkOperationHistoryItem,
   type InventoryBulkRevertConflict,
 } from "@/app/(app)/products/actions"
+import { formatDateTimeDO } from "@/lib/date-time"
 
 const SOURCE_LABELS: Record<InventoryBulkOperationHistoryItem["source"], string> = {
   BULK_EXCEL: "Inventario masivo",
@@ -48,13 +49,7 @@ function formatDate(value: string | null) {
   if (!value) return "—"
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return "—"
-  return new Intl.DateTimeFormat("es-DO", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date)
+  return formatDateTimeDO(date)
 }
 
 function formatOperator(name: string | null, username: string | null) {

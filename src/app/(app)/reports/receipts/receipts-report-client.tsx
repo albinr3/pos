@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { dateKeyDO, formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { Button } from "@/components/ui/button"
@@ -113,7 +114,7 @@ export function ReceiptsReportClient({
       const link = document.createElement("a")
       const url = URL.createObjectURL(blob)
       link.setAttribute("href", url)
-      link.setAttribute("download", `recibos-${new Date().toISOString().split('T')[0]}.csv`)
+      link.setAttribute("download", `recibos-${dateKeyDO()}.csv`)
       link.style.visibility = "hidden"
       document.body.appendChild(link)
       link.click()
@@ -154,7 +155,7 @@ export function ReceiptsReportClient({
       doc.setFont("helvetica", "normal")
       let yPos = 35
       doc.text(`Generado por: ${data.generatedBy}`, 14, yPos)
-      doc.text(`Fecha: ${new Date(data.generatedAt).toLocaleString("es-DO")}`, 14, yPos + 5)
+      doc.text(`Fecha: ${formatDateTimeDO(data.generatedAt)}`, 14, yPos + 5)
       
       if (filters.startDate || filters.endDate) {
         yPos += 10
@@ -184,7 +185,7 @@ export function ReceiptsReportClient({
       
       const tableData = data.payments.map(p => [
         p.receiptCode,
-        new Date(p.paidAt).toLocaleDateString("es-DO"),
+        formatDateDO(p.paidAt),
         p.ar.customer.name.substring(0, 25),
         p.ar.sale.invoiceCode,
         formatRD(p.amountCents),
@@ -235,7 +236,7 @@ export function ReceiptsReportClient({
       })
 
       // Guardar el PDF
-      const fileName = `recibos-${new Date().toISOString().split('T')[0]}.pdf`
+      const fileName = `recibos-${dateKeyDO()}.pdf`
       doc.save(fileName)
     } catch (error) {
       console.error("Error al generar PDF:", error)
@@ -246,21 +247,15 @@ export function ReceiptsReportClient({
   }
 
   const fmtDate = (d: Date) => {
-    return new Intl.DateTimeFormat("es-DO", {
+    return formatDateDO(d, {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
-    }).format(new Date(d))
+    })
   }
 
   const fmtDateTime = (d: Date) => {
-    return new Intl.DateTimeFormat("es-DO", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(d))
+    return formatDateTimeDO(d)
   }
 
   return (

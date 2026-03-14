@@ -2,6 +2,7 @@
 import { notFound } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/auth"
+import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatQty } from "@/lib/units"
 import { DownloadInvoicePdfButton } from "@/components/app/download-invoice-pdf-button"
@@ -11,13 +12,7 @@ import { QuoteShareButton } from "@/components/app/quote-share-button"
 export const dynamic = "force-dynamic"
 
 function fmtDate(d: Date) {
-  return new Intl.DateTimeFormat("es-DO", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(d))
+  return formatDateTimeDO(d)
 }
 
 export default async function QuotePage({

@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { format, formatDistanceToNow } from "date-fns"
+import { formatDistanceToNow } from "date-fns"
 import { es } from "date-fns/locale"
+import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import {
   ArrowLeft,
   Building2,
@@ -570,7 +571,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                   <div>
                     <p className="text-sm text-muted-foreground">Trial termina</p>
                     <p className="font-medium">
-                      {format(new Date(account.trialEndsAt), "dd/MM/yyyy HH:mm")}
+                      {formatDateTimeDO(account.trialEndsAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   </div>
                 )}
@@ -578,7 +579,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                   <div>
                     <p className="text-sm text-muted-foreground">Período actual termina</p>
                     <p className="font-medium">
-                      {format(new Date(account.currentPeriodEndsAt), "dd/MM/yyyy HH:mm")}
+                      {formatDateTimeDO(account.currentPeriodEndsAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   </div>
                 )}
@@ -586,7 +587,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                   <div>
                     <p className="text-sm text-muted-foreground">Gracia termina</p>
                     <p className="font-medium text-yellow-600">
-                      {format(new Date(account.graceEndsAt), "dd/MM/yyyy HH:mm")}
+                      {formatDateTimeDO(account.graceEndsAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </p>
                   </div>
                 )}
@@ -623,7 +624,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                 )}
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
-                  <span>Registrado {format(new Date(account.createdAt), "dd/MM/yyyy")}</span>
+                  <span>Registrado {formatDateDO(account.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
                 </div>
               </div>
             </CardContent>
@@ -703,7 +704,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                     {account.payments.map((payment) => (
                       <TableRow key={payment.id}>
                         <TableCell>
-                          {format(new Date(payment.createdAt), "dd/MM/yyyy HH:mm")}
+                          {formatDateTimeDO(payment.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                         </TableCell>
                         <TableCell>{formatMoney(payment.amountCents, payment.currency)}</TableCell>
                         <TableCell>

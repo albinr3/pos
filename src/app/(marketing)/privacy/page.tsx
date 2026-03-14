@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { formatDateDO } from "@/lib/date-time"
 
 export const metadata: Metadata = {
   title: "Política de Privacidad | MOVOPos",
@@ -73,7 +74,7 @@ export default function PrivacyPage() {
           </section>
 
           <p className="text-sm text-muted-foreground mt-12">
-            Última actualización: {new Date().toLocaleDateString("es-DO", { year: "numeric", month: "long", day: "numeric" })}
+            Última actualización: {formatDateDO(new Date(), { year: "numeric", month: "long", day: "numeric" })}
           </p>
         </div>
       </div>

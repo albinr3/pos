@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { PriceInput } from "@/components/app/price-input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
+import { formatDateDO } from "@/lib/date-time"
 import { formatRD, calcItbisIncluded } from "@/lib/money"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { cn } from "@/lib/utils"
@@ -399,7 +400,7 @@ export function SalesListClient() {
                       {s.invoiceCode}
                       {s.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADA</div>}
                     </TableCell>
-                    <TableCell>{new Date(s.soldAt).toLocaleDateString("es-DO")}</TableCell>
+                    <TableCell>{formatDateDO(s.soldAt)}</TableCell>
                     <TableCell>{s.customer?.name ?? "Cliente"}</TableCell>
                     <TableCell>
                       <Badge
@@ -452,7 +453,7 @@ export function SalesListClient() {
                           </>
                         )}
                         {s.cancelledAt && (
-                          <span className="text-xs text-red-600">Cancelada {new Date(s.cancelledAt).toLocaleDateString("es-DO")}</span>
+                          <span className="text-xs text-red-600">Cancelada {formatDateDO(s.cancelledAt)}</span>
                         )}
                       </div>
                     </TableCell>

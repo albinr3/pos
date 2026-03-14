@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Download, Printer, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { dateKeyDO } from "@/lib/date-time"
 import jsPDF from "jspdf"
 import html2canvas from "html2canvas"
 
@@ -49,7 +50,7 @@ export function DownloadPdfButton() {
       }
 
       // Descargar PDF con nombre dinámico basado en la fecha
-      const timestamp = new Date().toISOString().split("T")[0]
+      const timestamp = dateKeyDO()
       pdf.save(`reporte-${timestamp}.pdf`)
     } catch (error) {
       console.error("Error generando PDF:", error)

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getReceiptsReportForPDF, type ReceiptFilters } from "@/app/(app)/reports/receipts/actions"
+import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 
 export async function GET(request: NextRequest) {
@@ -20,21 +21,15 @@ export async function GET(request: NextRequest) {
     const data = await getReceiptsReportForPDF(filters)
 
     const fmtDate = (d: Date) => {
-      return new Intl.DateTimeFormat("es-DO", {
+      return formatDateDO(d, {
         year: "numeric",
         month: "2-digit",
         day: "2-digit",
-      }).format(new Date(d))
+      })
     }
 
     const fmtDateTime = (d: Date) => {
-      return new Intl.DateTimeFormat("es-DO", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-      }).format(new Date(d))
+      return formatDateTimeDO(d)
     }
 
     // Generar HTML para el PDF

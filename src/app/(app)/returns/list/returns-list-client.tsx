@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/hooks/use-toast"
+import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import type { CurrentUser } from "@/lib/auth"
 
@@ -163,7 +164,7 @@ export function ReturnsListClient() {
                       </TableCell>
                       <TableCell>{r.sale.customer?.name ?? "Cliente general"}</TableCell>
                       <TableCell>
-                        {new Date(r.returnedAt).toLocaleString("es-DO", {
+                        {formatDateTimeDO(r.returnedAt, {
                           year: "numeric",
                           month: "2-digit",
                           day: "2-digit",

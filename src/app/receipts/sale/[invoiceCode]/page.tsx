@@ -3,6 +3,7 @@ import Link from "next/link"
 import { PaymentMethod } from "@prisma/client"
 
 import { getCurrentUser } from "@/lib/auth"
+import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
@@ -23,13 +24,7 @@ function decimalToNumber(decimal: unknown): number {
 }
 
 function fmtDate(d: Date) {
-  return new Intl.DateTimeFormat("es-DO", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d)
+  return formatDateTimeDO(d)
 }
 
 export default async function SaleReceiptPage({
@@ -226,13 +221,20 @@ export default async function SaleReceiptPage({
           <div className="text-center">
             <div className="text-[14.5px] font-semibold">⏰ VENTA A CRÉDITO</div>
             <div className="text-[14.5px]">
-              Vence: {new Intl.DateTimeFormat("es-DO", {
+              Vence: {formatDateDO(sale.ar.dueDate, {
                 year: "numeric",
                 month: "2-digit",
                 day: "2-digit",
-              }).format(new Date(sale.ar.dueDate))}
+              })}
             </div>
           </div>
+        </div>
+      )}
+
+      {sale.type === "CREDITO" && (
+        <div className="mt-4 pt-3">
+          <div className="mx-auto w-[70mm] border-t border-black" />
+          <div className="mt-1 text-center text-[13px]">Firma del cliente</div>
         </div>
       )}
 

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 
 import { getCurrentUser } from "@/lib/auth"
+import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
@@ -12,13 +13,7 @@ import { Button } from "@/components/ui/button"
 export const dynamic = "force-dynamic"
 
 function fmtDate(d: Date) {
-  return new Intl.DateTimeFormat("es-DO", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d)
+  return formatDateTimeDO(d)
 }
 
 export default async function PaymentReceiptPage({

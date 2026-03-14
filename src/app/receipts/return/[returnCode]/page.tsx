@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
-import { format } from "date-fns"
-import { es } from "date-fns/locale"
+import { formatDateTimeDO } from "@/lib/date-time"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
 import { PrintButton } from "@/components/app/print-button"
 import { formatRD } from "@/lib/money"
@@ -20,7 +19,7 @@ function decimalToNumber(decimal: unknown): number {
 }
 
 function fmtDate(d: Date) {
-  return format(d, "dd/MM/yyyy HH:mm", { locale: es })
+  return formatDateTimeDO(d)
 }
 
 export default async function ReturnReceiptPage({
@@ -183,7 +182,6 @@ export default async function ReturnReceiptPage({
     </div>
   )
 }
-
 
 
 

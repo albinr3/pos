@@ -118,6 +118,10 @@ Notas de autorización:
 ### Correcciones
 - **Página offline**: Se corrige el CTA para permitir **cobrar** (CxC) en lugar de **comprar**, con enlace directo a `/ar`.
 - **Service Worker**: Se incrementa la versión de cache para asegurar que se sirvan los recursos actualizados.
+- **Estado de Resultados (devengado)**:
+  - Los ingresos ahora reconocen **ventas del período (contado + crédito)** menos devoluciones del período.
+  - Los **cobros de CxC** se mantienen como dato informativo y **ya no se suman** al total de ingresos.
+  - Se evita la pérdida artificial cuando existían ventas a crédito con costo de ventas reconocido.
 
 ### API móvil (autenticación por request)
 - Se corrigió el uso mixto de autenticación en endpoints API que usaban `getCurrentUserFromRequest(...)` pero luego llamaban actions que internamente volvían a usar `getCurrentUser()` (cookies web), causando `No autenticado` en móvil.
@@ -337,7 +341,8 @@ Ruta: `/reports`
 - **Reporte de ganancia (Estado de Resultados)**: `/reports/profit`
   - Por rango de fecha
   - Desglose completo:
-    - Ingresos/Ventas (contado y pagos recibidos)
+    - Ingresos/Ventas (ventas contado + crédito, netas de devoluciones)
+    - Cobros de crédito (informativo, no suma ingresos)
     - Costo de ventas
     - Utilidad bruta
     - Gastos operativos

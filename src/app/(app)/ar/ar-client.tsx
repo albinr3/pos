@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
+import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatPaymentWithBank, getPaymentMethodLabel } from "@/lib/payment-methods"
 import { toast } from "@/hooks/use-toast"
 import { formatRD } from "@/lib/money"
@@ -364,11 +365,11 @@ export function ARClient() {
                       {ar.dueDate ? (
                         <div className="text-sm">
                           <div className={isOverdue ? "font-semibold text-red-600" : daysUntilDue !== null && daysUntilDue <= 7 ? "font-semibold text-amber-600" : ""}>
-                            {new Intl.DateTimeFormat("es-DO", {
+                            {formatDateDO(ar.dueDate, {
                               year: "numeric",
                               month: "2-digit",
                               day: "2-digit",
-                            }).format(new Date(ar.dueDate))}
+                            })}
                           </div>
                           {isOverdue && (
                             <div className="text-xs text-red-500">Vencida</div>
@@ -486,11 +487,11 @@ export function ARClient() {
                           ? "font-semibold text-red-600" 
                           : "font-semibold"
                       }>
-                        {new Intl.DateTimeFormat("es-DO", {
+                        {formatDateDO(selected.dueDate, {
                           year: "numeric",
                           month: "2-digit",
                           day: "2-digit",
-                        }).format(new Date(selected.dueDate))}
+                        })}
                       </span>
                     </div>
                     {new Date(selected.dueDate) < new Date() && (
@@ -570,7 +571,7 @@ export function ARClient() {
                     {selected.payments?.map((p) => (
                       <div key={p.id} className="flex items-center justify-between rounded-md border p-2">
                         <div className="text-xs text-muted-foreground">
-                          {new Date(p.paidAt).toLocaleString("es-DO")}
+                          {formatDateTimeDO(p.paidAt)}
                         </div>
                         <div className="flex items-center gap-2">
                           <div className="text-sm font-semibold">{formatRD(p.amountCents)}</div>
@@ -637,11 +638,11 @@ export function ARClient() {
                           ? "font-semibold text-red-600" 
                           : "font-semibold"
                       }>
-                        {new Intl.DateTimeFormat("es-DO", {
+                        {formatDateDO(selectedForReceipts.dueDate, {
                           year: "numeric",
                           month: "2-digit",
                           day: "2-digit",
-                        }).format(new Date(selectedForReceipts.dueDate))}
+                        })}
                       </span>
                     </div>
                   </>
@@ -658,7 +659,7 @@ export function ARClient() {
                           <div className="grid gap-1">
                             <div className="text-sm font-medium">{formatRD(p.amountCents)}</div>
                             <div className="text-xs text-muted-foreground">
-                              {new Date(p.paidAt).toLocaleString("es-DO", {
+                              {formatDateTimeDO(p.paidAt, {
                                 year: "numeric",
                                 month: "long",
                                 day: "numeric",

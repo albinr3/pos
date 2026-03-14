@@ -4,6 +4,7 @@ import { FileSpreadsheet } from "lucide-react"
 import * as XLSX from "xlsx"
 
 import { Button } from "@/components/ui/button"
+import { dateKeyDO } from "@/lib/date-time"
 
 interface ExpenseRow {
   id: string
@@ -54,7 +55,7 @@ export function OperatingExpensesExportClient({
 
     XLSX.utils.book_append_sheet(wb, ws, "Gastos")
 
-    const date = new Date().toISOString().split("T")[0]
+    const date = dateKeyDO()
     XLSX.writeFile(wb, `gastos_operativos_${date}.xlsx`)
   }
 

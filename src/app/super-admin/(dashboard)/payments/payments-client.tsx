@@ -3,8 +3,9 @@
 import { useState, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { format, formatDistanceToNow } from "date-fns"
+import { formatDistanceToNow } from "date-fns"
 import { es } from "date-fns/locale"
+import { formatDateTimeDO } from "@/lib/date-time"
 import {
   CreditCard,
   Search,
@@ -300,7 +301,7 @@ export function PaymentsClient({ initialPayments }: { initialPayments: PaymentLi
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          {format(new Date(payment.createdAt), "dd/MM/yyyy HH:mm")}
+                          {formatDateTimeDO(payment.createdAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                           <div className="text-xs text-muted-foreground">
                             {formatDistanceToNow(new Date(payment.createdAt), {
                               addSuffix: true,
@@ -371,7 +372,7 @@ export function PaymentsClient({ initialPayments }: { initialPayments: PaymentLi
                 <div className="flex items-center justify-between">
                   <span className="font-medium">Comprobante {index + 1}</span>
                   <span className="text-sm text-muted-foreground">
-                    {format(new Date(proof.uploadedAt), "dd/MM/yyyy HH:mm")}
+                    {formatDateTimeDO(proof.uploadedAt, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
                 <div className="relative aspect-video bg-muted rounded-lg overflow-hidden">

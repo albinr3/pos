@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
+import { formatDateDO } from "@/lib/date-time"
 import { formatRD, toCents } from "@/lib/money"
 import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
 
@@ -358,7 +359,7 @@ export function PurchasesListClient() {
                 {filteredPurchases.map((p) => (
                   <TableRow key={p.id} className={p.cancelledAt ? "bg-red-50" : ""}>
                     <TableCell>
-                      {new Date(p.purchasedAt).toLocaleDateString("es-DO")}
+                      {formatDateDO(p.purchasedAt)}
                       {p.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADA</div>}
                     </TableCell>
                     <TableCell>{p.supplierName ?? "-"}</TableCell>
@@ -399,7 +400,7 @@ export function PurchasesListClient() {
                           </>
                         )}
                         {p.cancelledAt && (
-                          <span className="text-xs text-red-600">Cancelada {new Date(p.cancelledAt).toLocaleDateString("es-DO")}</span>
+                          <span className="text-xs text-red-600">Cancelada {formatDateDO(p.cancelledAt)}</span>
                         )}
                       </div>
                     </TableCell>

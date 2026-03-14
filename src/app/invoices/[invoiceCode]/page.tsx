@@ -2,6 +2,7 @@
 import { notFound } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/auth"
+import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { PrintButton } from "@/components/app/print-button"
@@ -20,13 +21,7 @@ function decimalToNumber(decimal: unknown): number {
 }
 
 function fmtDate(d: Date) {
-  return new Intl.DateTimeFormat("es-DO", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d)
+  return formatDateTimeDO(d)
 }
 
 export default async function InvoicePrintPage({
@@ -109,9 +104,9 @@ export default async function InvoicePrintPage({
       <header className="flex items-start justify-between gap-6">
         <div className="flex items-start gap-4">
           {logoUrl && (
-            <div className="max-h-16 w-auto overflow-hidden">
+            <div className="max-h-20 w-auto overflow-hidden">
               {/* Using <img> keeps local placeholder simple and avoids Next/Image constraints in print mode */}
-              <img src={logoUrl} alt="Logo" className="h-16 w-auto object-contain" />
+              <img src={logoUrl} alt="Logo" className="h-20 w-auto object-contain" />
             </div>
           )}
           <div>
@@ -172,11 +167,11 @@ export default async function InvoicePrintPage({
             <div className="font-semibold text-amber-900">⏰ Venta a Crédito</div>
             <div className="mt-1 text-amber-800">
               <span className="font-semibold">Fecha de vencimiento:</span>{" "}
-              {new Intl.DateTimeFormat("es-DO", {
+              {formatDateDO(sale.ar.dueDate, {
                 year: "numeric",
                 month: "2-digit",
                 day: "2-digit",
-              }).format(new Date(sale.ar.dueDate))}
+              })}
             </div>
           </div>
         )}
@@ -247,6 +242,15 @@ export default async function InvoicePrintPage({
           </div>
         </div>
       </div>
+
+      {sale.type === "CREDITO" && (
+        <div className="mt-12 pt-6">
+          <div className="mx-auto w-full max-w-md text-center">
+            <div className="border-t border-black" />
+            <div className="mt-2 text-sm font-medium">Firma del cliente</div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
