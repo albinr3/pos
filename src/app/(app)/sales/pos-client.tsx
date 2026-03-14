@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { SaleType, PaymentMethod, UnitType } from "@prisma/client"
 import { Plus, Search, Trash2, Grid3x3, List, AlertCircle, X, WifiOff, ChevronDown, ChevronUp } from "lucide-react"
 import Link from "next/link"
@@ -71,6 +71,7 @@ type PaymentSplit = {
 }
 
 const USER_CACHE_KEY = "tejada-pos-user"
+const POS_FORCE_RESET_KEY = "tejada-pos-force-reset-after-print"
 
 function buildCartLineId(productId: string, recipeAdjustments: RecipeAdjustment[]) {
   const adjustmentsKey = recipeAdjustments
@@ -184,6 +185,23 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
   const router = useRouter()
   const pathname = usePathname()
 
+  const resetSaleFormState = useCallback(() => {
+    setCart([])
+    setCustomerId("generic")
+    setSaleType(SaleType.CONTADO)
+    setShippingInput("")
+    setQuery("")
+    setResults([])
+    setShowChangeDialog(false)
+    setShowSplitPaymentDialog(false)
+    setAmountPaidInput("")
+    setPaymentSplits([])
+    setTransferBankName("")
+    setEditingPaymentAmounts({})
+    setPaymentMethod(PaymentMethod.EFECTIVO)
+    localStorage.removeItem("posCartState")
+  }, [])
+
   useEffect(() => {
     if (pathname !== "/sales") return
 
@@ -193,6 +211,22 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
 
     return () => window.clearTimeout(timer)
   }, [pathname])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const resetIfNeeded = () => {
+      const shouldReset = sessionStorage.getItem(POS_FORCE_RESET_KEY) === "1"
+      if (!shouldReset) return
+      sessionStorage.removeItem(POS_FORCE_RESET_KEY)
+      resetSaleFormState()
+    }
+
+    resetIfNeeded()
+    window.addEventListener("pageshow", resetIfNeeded)
+
+    return () => window.removeEventListener("pageshow", resetIfNeeded)
+  }, [resetSaleFormState])
 
   useEffect(() => {
     // Obtener usuario actual con permisos
@@ -866,6 +900,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             })
 
             toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
+            sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
 
             // Autoimpresión térmica por navegador/OS (impresora predeterminada del sistema).
             const receiptUrl = `/receipts/sale/${sale.invoiceCode}?autoprint=1`
@@ -888,21 +923,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           }
         }
 
-        setCart([])
-        setShippingInput("")
-        setQuery("")
-        setResults([])
-        setShowChangeDialog(false)
-        setShowSplitPaymentDialog(false)
-        setAmountPaidInput("")
-        setPaymentSplits([])
-        setTransferBankName("")
-        setEditingPaymentAmounts({})
-        // Limpiar el estado guardado al completar la venta
-        localStorage.removeItem("posCartState")
-        if (saleType === SaleType.CONTADO) {
-          setPaymentMethod(PaymentMethod.EFECTIVO)
-        }
+        resetSaleFormState()
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Error guardando venta"
         toast({ title: "No se pudo guardar", description: msg })
@@ -1568,25 +1589,72 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                                 variant="secondary"
                                 size="sm"
                                 className="h-8 w-8 p-0"
-                                onClick={() =>
+                                onClick={() => {
+                                  setEditingQuantities((prev) => {
+                                    const next = { ...prev }
+                                    delete next[c.lineId]
+                                    return next
+                                  })
                                   setCart((p) =>
                                     p.map((x) =>
                                       x.lineId === c.lineId ? { ...x, qty: Math.max(minQty, x.qty - increment) } : x
                                     )
                                   )
-                                }
+                                }}
                               >
                                 -
                               </Button>
-                              <div className="w-12 text-center text-sm font-semibold">{formatQty(c.qty, c.unit)}</div>
+                              <Input
+                                type="text"
+                                inputMode={allowsDecimals ? "decimal" : "numeric"}
+                                className="h-8 w-16 text-center text-sm font-semibold"
+                                value={editingQuantities[c.lineId] ?? formatQtyNumber(c.qty, c.unit)}
+                                onChange={(e) => {
+                                  let rawValue = e.target.value
+                                  if (!allowsDecimals && rawValue.includes(".")) {
+                                    rawValue = rawValue.replace(".", "")
+                                  }
+                                  if (!allowsDecimals) {
+                                    rawValue = rawValue.replace(/[^\d]/g, "")
+                                  }
+                                  setEditingQuantities((prev) => ({ ...prev, [c.lineId]: rawValue }))
+                                }}
+                                onBlur={(e) => {
+                                  const rawValue = e.target.value.trim()
+                                  const newQty = parseQty(rawValue, c.unit)
+                                  const finalQty = newQty < (allowsDecimals ? 0.01 : 1) ? (allowsDecimals ? 0.5 : 1) : newQty
+
+                                  setCart((p) =>
+                                    p.map((x) =>
+                                      x.lineId === c.lineId ? { ...x, qty: finalQty } : x
+                                    )
+                                  )
+
+                                  setEditingQuantities((prev) => {
+                                    const next = { ...prev }
+                                    delete next[c.lineId]
+                                    return next
+                                  })
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.currentTarget.blur()
+                                  }
+                                }}
+                              />
                               <Button
                                 type="button"
                                 variant="secondary"
                                 size="sm"
                                 className="h-8 w-8 p-0"
-                                onClick={() =>
+                                onClick={() => {
+                                  setEditingQuantities((prev) => {
+                                    const next = { ...prev }
+                                    delete next[c.lineId]
+                                    return next
+                                  })
                                   setCart((p) => p.map((x) => (x.lineId === c.lineId ? { ...x, qty: x.qty + increment } : x)))
-                                }
+                                }}
                               >
                                 +
                               </Button>

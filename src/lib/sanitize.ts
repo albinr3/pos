@@ -5,7 +5,8 @@ import validator from "validator"
  */
 export function sanitizeString(input: string): string {
   if (!input) return ""
-  return validator.escape(input.trim())
+  // validator.escape convierte "/" a "&#x2F;"; lo revertimos para conservar nombres comerciales válidos.
+  return validator.escape(input.trim()).replace(/&#x2F;/g, "/")
 }
 
 /**
@@ -21,11 +22,11 @@ export function sanitizeEmail(email: string): string | null {
 }
 
 /**
- * Sanitiza números de teléfono (solo números, +, espacios, guiones, paréntesis)
+ * Sanitiza números de teléfono (solo números, +, espacios, guiones, paréntesis y /)
  */
 export function sanitizePhone(phone: string): string {
   if (!phone) return ""
-  return phone.replace(/[^0-9+\s()-]/g, "").trim()
+  return phone.replace(/[^0-9+\s()/-]/g, "").trim()
 }
 
 /**

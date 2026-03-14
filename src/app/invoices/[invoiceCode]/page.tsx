@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
+import { PrintButton } from "@/components/app/print-button"
 import { PaymentMethod } from "@prisma/client"
 
 // Evitar prerender y forzar evaluación dinámica (requiere autenticación y DB)
@@ -92,7 +93,7 @@ export default async function InvoicePrintPage({
 
       <div className="no-print mb-6 flex items-center justify-between">
         <div className="text-sm text-neutral-600">Factura {sale.invoiceCode}</div>
-        {/* Formato carta temporalmente fuera del flujo principal */}
+        <PrintButton />
       </div>
 
       {sale.cancelledAt && (
@@ -137,6 +138,11 @@ export default async function InvoicePrintPage({
         <div className="text-sm">
           <span className="font-semibold">Cliente:</span> {sale.customer?.name ?? "Cliente"}
         </div>
+        {sale.customer?.address && (
+          <div className="mt-2 text-sm">
+            <span className="font-semibold">Dirección:</span> {sale.customer.address}
+          </div>
+        )}
         <div className="mt-2 text-sm">
           <span className="font-semibold">Tipo de venta:</span> {formatSaleType(sale.type)}
         </div>
