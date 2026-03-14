@@ -87,7 +87,7 @@ export async function getDashboardStats() {
   const from = startOfDay()
   const to = endOfDay()
 
-  const [salesToday, salesCash, salesCredit, arOpen, paymentsToday, lowStockCountRow] = await Promise.all([
+  const [salesToday, salesCash, salesCredit, arOpen, paymentsToday, operatingExpensesToday, lowStockCountRow] = await Promise.all([
     prisma.sale.aggregate({
       where: {
         accountId: user.accountId,
@@ -141,6 +141,14 @@ export async function getDashboardStats() {
       _sum: { amountCents: true },
       _count: true,
     }),
+    prisma.operatingExpense.aggregate({
+      where: {
+        accountId: user.accountId,
+        expenseDate: { gte: from, lte: to },
+      },
+      _sum: { amountCents: true },
+      _count: true,
+    }),
     prisma.$queryRaw<{ count: bigint }[]>`
       SELECT COUNT(*)::bigint as count
       FROM "Product"
@@ -162,6 +170,8 @@ export async function getDashboardStats() {
     salesCreditCount: salesCredit._count ?? 0,
     paymentsTodayCents: paymentsToday._sum.amountCents ?? 0,
     paymentsTodayCount: paymentsToday._count ?? 0,
+    operatingExpensesTodayCents: operatingExpensesToday._sum.amountCents ?? 0,
+    operatingExpensesTodayCount: operatingExpensesToday._count ?? 0,
     arOpenCents: arOpen._sum.balanceCents ?? 0,
     arOpenCount: arOpen._count ?? 0,
     lowStockCount,

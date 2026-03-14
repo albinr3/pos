@@ -61,9 +61,7 @@ export default async function SalesReportPage({
                         <Button asChild size="sm" variant="secondary">
                           <Link href={`/receipts/sale/${s.invoiceCode}`} target="_blank">Ticket</Link>
                         </Button>
-                        <Button asChild size="sm" variant="ghost">
-                          <Link href={`/invoices/${s.invoiceCode}`} target="_blank">Carta</Link>
-                        </Button>
+                        {/* Formato carta oculto temporalmente en la UI */}
                       </div>
                     </TableCell>
                   </TableRow>

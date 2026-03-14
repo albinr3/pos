@@ -4,7 +4,6 @@ import { notFound } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
-import { DownloadInvoicePdfButton } from "@/components/app/download-invoice-pdf-button"
 import { PaymentMethod } from "@prisma/client"
 
 // Evitar prerender y forzar evaluación dinámica (requiere autenticación y DB)
@@ -93,7 +92,7 @@ export default async function InvoicePrintPage({
 
       <div className="no-print mb-6 flex items-center justify-between">
         <div className="text-sm text-neutral-600">Factura {sale.invoiceCode}</div>
-        <DownloadInvoicePdfButton filename={`factura-${sale.invoiceCode}`} />
+        {/* Formato carta temporalmente fuera del flujo principal */}
       </div>
 
       {sale.cancelledAt && (

@@ -867,8 +867,18 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
 
             toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
 
-            // Thermal receipt by default
-            window.open(`/receipts/sale/${sale.invoiceCode}`, "_blank")
+            // Autoimpresión térmica por navegador/OS (impresora predeterminada del sistema).
+            const receiptUrl = `/receipts/sale/${sale.invoiceCode}?autoprint=1`
+            const popup = window.open(receiptUrl, "_blank")
+
+            // Fallback cuando el navegador bloquea popups.
+            if (!popup || popup.closed || typeof popup.closed === "undefined") {
+              toast({
+                title: "Popup bloqueado",
+                description: "Se abrirá el ticket en esta pestaña para continuar con la impresión.",
+              })
+              router.push(receiptUrl)
+            }
           } catch (e) {
             if (isLikelyOfflineError(e)) {
               await saveSaleOffline()
@@ -902,6 +912,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
 
   const amountPaidCents = useMemo(() => toCents(amountPaidInput), [amountPaidInput])
   const changeCents = useMemo(() => amountPaidCents - totalCents, [amountPaidCents, totalCents])
+  const exactAmountInput = useMemo(() => (totalCents / 100).toFixed(2), [totalCents])
 
   // Función helper para obtener la cantidad de un producto en el carrito
   function getCartQuantity(productId: string): number {
@@ -1772,9 +1783,20 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             </div>
             <div className="grid gap-2">
               <Label>Valor a devolver</Label>
-              <div className={`text-2xl font-semibold ${changeCents < 0 ? "text-destructive" : "text-foreground"}`}>
-                {changeCents < 0 ? `Falta: ${formatRD(Math.abs(changeCents))}` : formatRD(changeCents)}
-              </div>
+              {changeCents < 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setAmountPaidInput(exactAmountInput)}
+                  className="text-left text-2xl font-semibold text-destructive underline-offset-2 hover:underline"
+                  title="Haz clic para usar el monto exacto de la factura"
+                >
+                  {`Falta: ${formatRD(Math.abs(changeCents))}`}
+                </button>
+              ) : (
+                <div className="text-2xl font-semibold text-foreground">
+                  {formatRD(changeCents)}
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

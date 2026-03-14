@@ -6,6 +6,7 @@ import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
 import { PrintButton } from "@/components/app/print-button"
+import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -31,10 +32,14 @@ function fmtDate(d: Date) {
 
 export default async function SaleReceiptPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ invoiceCode: string }>
+  searchParams: Promise<{ autoprint?: string }>
 }) {
   const { invoiceCode } = await params
+  const sp = await searchParams
+  const shouldAutoPrint = sp.autoprint === "1"
 
   // Lazy import de Prisma para evitar inicialización durante el build
   const { prisma } = await import("@/lib/db")
@@ -76,6 +81,7 @@ export default async function SaleReceiptPage({
 
   return (
     <div className="mx-auto w-[80mm] bg-white p-3 text-[15.5px] leading-4 text-black print-content">
+      <AutoPrintOnLoad enabled={shouldAutoPrint} />
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -99,16 +105,14 @@ export default async function SaleReceiptPage({
             filename={`recibo-venta-${sale.invoiceCode}`}
           />
         </div>
-        <a className="text-xs text-neutral-600 hover:text-neutral-800" href={`/invoices/${sale.invoiceCode}`} target="_blank" rel="noopener noreferrer">
-          Ver carta
-        </a>
+        {/* Formato carta temporalmente fuera del flujo; mantener solo ticket */}
       </div>
 
       <div className="text-center">
         {company?.logoUrl && (
           <div className="mb-2 flex justify-center">
-            <div className="max-h-12 w-auto overflow-hidden">
-              <img src={company.logoUrl} alt="Logo" className="h-12 w-auto object-contain" />
+            <div className="max-h-14 w-auto overflow-hidden">
+              <img src={company.logoUrl} alt="Logo" className="h-14 w-auto object-contain" />
             </div>
           </div>
         )}
@@ -146,7 +150,7 @@ export default async function SaleReceiptPage({
 
       <div className="space-y-2">
         {sale.items.map((it) => (
-          <div key={it.id} className="border-b border-dashed pb-2">
+          <div key={it.id} className="border-b border-dashed border-neutral-600 pb-2">
             <div className="font-semibold">{it.product.name}</div>
             <div className="text-[14.5px] text-neutral-700">Cod: {it.product.sku ?? "—"} · Ref: {it.product.reference ?? "—"}</div>
             {it.recipeAdjustments.length > 0 && (

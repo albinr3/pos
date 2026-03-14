@@ -34,6 +34,16 @@ export default async function ReportsPage() {
         </Card>
         <Card>
           <CardHeader>
+            <CardTitle>Gastos operativos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link href="/reports/operating-expenses">Ver reporte de gastos</Link>
+            </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
             <CardTitle>Cuentas por Cobrar</CardTitle>
           </CardHeader>
           <CardContent>

@@ -6,6 +6,16 @@ import { useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 
+const BUSINESS_TZ_OFFSET_MS = -4 * 60 * 60 * 1000
+
+function toBusinessDateInputValue(d: Date) {
+  const shifted = new Date(d.getTime() + BUSINESS_TZ_OFFSET_MS)
+  const y = shifted.getUTCFullYear()
+  const m = String(shifted.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(shifted.getUTCDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
 export function ReportDateRangeFilter({ basePath, defaultLastDays }: { basePath: string; defaultLastDays?: number }) {
   const router = useRouter()
   const sp = useSearchParams()
@@ -17,8 +27,8 @@ export function ReportDateRangeFilter({ basePath, defaultLastDays }: { basePath:
       const from = new Date()
       from.setDate(from.getDate() - (defaultLastDays ?? 0))
       return {
-        from: from.toISOString().split("T")[0],
-        to: to.toISOString().split("T")[0],
+        from: toBusinessDateInputValue(from),
+        to: toBusinessDateInputValue(to),
       }
     }
     return { from: "", to: "" }
@@ -36,8 +46,8 @@ export function ReportDateRangeFilter({ basePath, defaultLastDays }: { basePath:
       const to = new Date()
       const from = new Date()
       from.setDate(from.getDate() - (defaultLastDays ?? 0))
-      const fromStr = from.toISOString().split("T")[0]
-      const toStr = to.toISOString().split("T")[0]
+      const fromStr = toBusinessDateInputValue(from)
+      const toStr = toBusinessDateInputValue(to)
       router.replace(`${basePath}?from=${fromStr}&to=${toStr}`)
     }
   }, [hasDefaultRange, defaultLastDays, basePath, router, sp])

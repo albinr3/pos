@@ -69,6 +69,20 @@ export default async function DashboardPage() {
             <div className="mt-1 text-xs text-muted-foreground">{stats.paymentsTodayCount} pagos</div>
           </CardContent>
         </Card>
+        <Card className="border-l-4 border-l-orange-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Gastos operativos</CardTitle>
+            <DollarSign className="h-5 w-5 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-orange-500">
+              {stats.operatingExpensesTodayCents > 0
+                ? `-${formatRD(stats.operatingExpensesTodayCents)}`
+                : formatRD(stats.operatingExpensesTodayCents)}
+            </div>
+            <div className="mt-1 text-xs text-muted-foreground">{stats.operatingExpensesTodayCount} gastos hoy</div>
+          </CardContent>
+        </Card>
         <Card className="border-l-4 border-l-red-600">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Cuentas por cobrar</CardTitle>

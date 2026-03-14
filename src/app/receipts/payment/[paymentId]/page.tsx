@@ -85,6 +85,7 @@ export default async function PaymentReceiptPage({
         <DownloadReceiptPdfButton
           filename={`recibo-${payment.receiptCode}`}
         />
+        {/* Formato carta temporalmente fuera del flujo */}
       </div>
 
       <div className="text-center">

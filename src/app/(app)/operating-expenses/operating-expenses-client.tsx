@@ -15,6 +15,21 @@ import { formatRD, toCents } from "@/lib/money"
 import { createOperatingExpense, deleteOperatingExpense, listOperatingExpenses, updateOperatingExpense } from "./actions"
 
 type Expense = Awaited<ReturnType<typeof listOperatingExpenses>>[number]
+const BUSINESS_TZ_OFFSET_MS = -4 * 60 * 60 * 1000
+
+function toInputDateValue(value: Date | string) {
+  const d = new Date(value)
+  const shifted = new Date(d.getTime() + BUSINESS_TZ_OFFSET_MS)
+  const y = shifted.getUTCFullYear()
+  const m = String(shifted.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(shifted.getUTCDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
+}
+
+function fromInputDateValue(value: string) {
+  const [y, m, day] = value.split("-").map((x) => Number(x))
+  return new Date(Date.UTC(y, m - 1, day, 0, 0, 0, 0) - BUSINESS_TZ_OFFSET_MS)
+}
 
 export function OperatingExpensesClient() {
   const [query, setQuery] = useState("")
@@ -51,7 +66,7 @@ export function OperatingExpensesClient() {
     setDescription(x?.description ?? "")
     setAmount(((x?.amountCents ?? 0) / 100).toFixed(2))
     setCategory(x?.category ?? "")
-    setExpenseDate(x?.expenseDate ? new Date(x.expenseDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
+    setExpenseDate(x?.expenseDate ? toInputDateValue(x.expenseDate) : toInputDateValue(new Date()))
     setNotes(x?.notes ?? "")
   }
 
@@ -61,7 +76,7 @@ export function OperatingExpensesClient() {
     startSaving(async () => {
       try {
         const amountCents = toCents(amount)
-        const date = expenseDate ? new Date(expenseDate) : new Date()
+        const date = expenseDate ? fromInputDateValue(expenseDate) : new Date()
 
         if (editing) {
           await updateOperatingExpense({
@@ -193,7 +208,7 @@ export function OperatingExpensesClient() {
               <TableBody>
                 {filteredItems.map((item) => (
                   <TableRow key={item.id}>
-                    <TableCell>{new Date(item.expenseDate).toLocaleDateString("es-DO")}</TableCell>
+                    <TableCell>{new Date(item.expenseDate).toLocaleDateString("es-DO", { timeZone: "America/Santo_Domingo" })}</TableCell>
                     <TableCell className="font-medium">{item.description}</TableCell>
                     <TableCell>{item.category ?? "—"}</TableCell>
                     <TableCell className="text-right">{formatRD(item.amountCents)}</TableCell>

@@ -80,6 +80,7 @@ export async function createOperatingExpense(input: {
 
   revalidatePath("/operating-expenses")
   revalidatePath("/reports/profit")
+  revalidatePath("/dashboard")
 }
 
 export async function updateOperatingExpense(input: {
@@ -136,6 +137,7 @@ export async function updateOperatingExpense(input: {
 
   revalidatePath("/operating-expenses")
   revalidatePath("/reports/profit")
+  revalidatePath("/dashboard")
 }
 
 export async function deleteOperatingExpense(id: string) {
@@ -172,6 +174,7 @@ export async function deleteOperatingExpense(id: string) {
 
   revalidatePath("/operating-expenses")
   revalidatePath("/reports/profit")
+  revalidatePath("/dashboard")
 }
 
 export async function getOperatingExpensesTotal(input?: { from?: string; to?: string }) {

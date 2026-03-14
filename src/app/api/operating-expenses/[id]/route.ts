@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
+import { parseDateParam } from "@/lib/dates"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -13,9 +14,7 @@ function getErrorMessage(error: unknown) {
 
 function normalizeDateInput(value: unknown): Date | null {
   if (!value) return null
-  const date = new Date(String(value))
-  if (Number.isNaN(date.getTime())) return null
-  return date
+  return parseDateParam(String(value))
 }
 
 // GET /api/operating-expenses/:id - Obtener gasto operativo

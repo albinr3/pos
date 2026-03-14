@@ -91,6 +91,35 @@ export async function getSalesReport(input: { from?: string; to?: string }) {
   return { from, to, totalCents, count: sales.length, sales }
 }
 
+export async function getOperatingExpensesReport(input: { from?: string; to?: string }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const fromDate = parseDateParam(input.from) ?? new Date()
+  const toDate = parseDateParam(input.to) ?? fromDate
+
+  const from = startOfDay(fromDate)
+  const to = endOfDay(toDate)
+
+  const expenses = await prisma.operatingExpense.findMany({
+    where: {
+      accountId: user.accountId,
+      expenseDate: { gte: from, lte: to },
+    },
+    orderBy: { expenseDate: "desc" },
+    include: {
+      user: {
+        select: { name: true, username: true },
+      },
+    },
+    take: 500,
+  })
+
+  const totalCents = expenses.reduce((sum, item) => sum + item.amountCents, 0)
+
+  return { from, to, totalCents, count: expenses.length, expenses }
+}
+
 export async function getPaymentsReport(input: { from?: string; to?: string }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")

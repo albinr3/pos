@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
+import { endOfDay, parseDateParam, startOfDay } from "@/lib/dates"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -13,21 +14,7 @@ function getErrorMessage(error: unknown) {
 
 function normalizeDateInput(value: unknown): Date | null {
   if (!value) return null
-  const date = new Date(String(value))
-  if (Number.isNaN(date.getTime())) return null
-  return date
-}
-
-function startOfDay(date: Date): Date {
-  const value = new Date(date)
-  value.setHours(0, 0, 0, 0)
-  return value
-}
-
-function endOfDay(date: Date): Date {
-  const value = new Date(date)
-  value.setHours(23, 59, 59, 999)
-  return value
+  return parseDateParam(String(value))
 }
 
 // GET /api/operating-expenses - Listar gastos operativos
