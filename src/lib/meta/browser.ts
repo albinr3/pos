@@ -11,6 +11,7 @@ export type MetaBrowserUserData = {
   email?: string | null
   firstName?: string | null
   lastName?: string | null
+  phone?: string | null
   externalId?: string | null
   country?: string | null
 }
@@ -44,6 +45,11 @@ function normalizeAdvancedMatchingValue(value?: string | null) {
   return normalized ? normalized : undefined
 }
 
+function normalizePhoneForAdvancedMatching(value?: string | null) {
+  const digits = value?.replace(/\D/g, "") ?? ""
+  return digits || undefined
+}
+
 export function initMetaPixel(pixelId: string, userData?: MetaBrowserUserData) {
   if (typeof window === "undefined" || typeof window.fbq !== "function") {
     return false
@@ -53,6 +59,7 @@ export function initMetaPixel(pixelId: string, userData?: MetaBrowserUserData) {
     em: normalizeAdvancedMatchingValue(userData?.email)?.toLowerCase(),
     fn: normalizeAdvancedMatchingValue(userData?.firstName)?.toLowerCase(),
     ln: normalizeAdvancedMatchingValue(userData?.lastName)?.toLowerCase(),
+    ph: normalizePhoneForAdvancedMatching(userData?.phone),
     external_id: normalizeAdvancedMatchingValue(userData?.externalId),
     country: normalizeAdvancedMatchingValue(userData?.country)?.toLowerCase(),
   }

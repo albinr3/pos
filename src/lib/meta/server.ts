@@ -31,6 +31,7 @@ type MetaSendResult = {
   skipped?: boolean
   status?: number
   body?: unknown
+  reason?: string
 }
 
 function getMetaPixelId() {
@@ -43,6 +44,22 @@ function getMetaApiVersion() {
 
 function getMetaAccessToken() {
   return process.env.META_ACCESS_TOKEN?.trim() || null
+}
+
+function isMetaDebugEnabled() {
+  const value = process.env.META_DEBUG?.trim().toLowerCase()
+  return value === "1" || value === "true" || value === "yes"
+}
+
+function metaDebugLog(message: string, payload?: Record<string, unknown>) {
+  if (!isMetaDebugEnabled()) return
+
+  if (payload) {
+    console.log(`[Meta][Debug] ${message}`, payload)
+    return
+  }
+
+  console.log(`[Meta][Debug] ${message}`)
 }
 
 function normalizePlain(value?: string | null) {
@@ -109,8 +126,22 @@ export async function sendMetaEvent(input: MetaEventInput): Promise<MetaSendResu
   const pixelId = getMetaPixelId()
   const accessToken = getMetaAccessToken()
 
+  metaDebugLog("sendMetaEvent() invocado", {
+    eventName: input.eventName,
+    eventId: input.eventId,
+    hasPixelId: !!pixelId,
+    hasAccessToken: !!accessToken,
+    hasTestEventCode: !!input.testEventCode,
+    hasUserData: !!input.userData,
+    customDataKeys: Object.keys(input.customData || {}),
+  })
+
   if (!pixelId || !accessToken) {
-    return { ok: false, skipped: true }
+    metaDebugLog("Evento omitido por configuración faltante", {
+      missingPixelId: !pixelId,
+      missingAccessToken: !accessToken,
+    })
+    return { ok: false, skipped: true, reason: "missing_config" }
   }
 
   const endpoint = `https://graph.facebook.com/${getMetaApiVersion()}/${pixelId}/events?access_token=${encodeURIComponent(accessToken)}`
@@ -141,13 +172,38 @@ export async function sendMetaEvent(input: MetaEventInput): Promise<MetaSendResu
     test_event_code: input.testEventCode,
   }
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+  metaDebugLog("Payload listo para enviar", {
+    eventName: input.eventName,
+    eventSourceUrl: input.eventSourceUrl,
+    hasEmail: !!normalizePlain(input.userData?.email),
+    hasFirstName: !!normalizePlain(input.userData?.firstName),
+    hasLastName: !!normalizePlain(input.userData?.lastName),
+    hasPhone: !!normalizePlain(input.userData?.phone),
+    hasCountry: !!normalizePlain(input.userData?.country),
+    hasExternalId: !!normalizePlain(input.userData?.externalId),
+    hasClientIp: !!normalizePlain(input.userData?.clientIpAddress),
+    hasClientUserAgent: !!normalizePlain(input.userData?.clientUserAgent),
+    hasFbc: !!normalizePlain(input.userData?.fbc),
+    hasFbp: !!normalizePlain(input.userData?.fbp),
   })
+
+  let response: Response
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+  } catch (error) {
+    metaDebugLog("Error de red al llamar Conversions API", {
+      eventName: input.eventName,
+      eventId: input.eventId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+    throw error
+  }
 
   let body: unknown = null
 
@@ -157,9 +213,18 @@ export async function sendMetaEvent(input: MetaEventInput): Promise<MetaSendResu
     body = null
   }
 
+  metaDebugLog("Respuesta recibida de Meta", {
+    eventName: input.eventName,
+    eventId: input.eventId,
+    ok: response.ok,
+    status: response.status,
+    body,
+  })
+
   return {
     ok: response.ok,
     status: response.status,
     body,
+    reason: response.ok ? undefined : "meta_api_error",
   }
 }

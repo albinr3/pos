@@ -27,6 +27,7 @@ export function MetaPixelProvider() {
       email: user?.primaryEmailAddress?.emailAddress ?? null,
       firstName: user?.firstName ?? null,
       lastName: user?.lastName ?? null,
+      phone: user?.primaryPhoneNumber?.phoneNumber ?? user?.phoneNumbers?.[0]?.phoneNumber ?? null,
       externalId: user?.id ?? null,
       country: "DO",
     }),
@@ -36,21 +37,25 @@ export function MetaPixelProvider() {
   useEffect(() => {
     if (!pixelId || !isLoaded || initDoneRef.current) return
 
-    let attempts = 0
     const interval = window.setInterval(() => {
       const initialized = initMetaPixel(pixelId, advancedMatching)
-      attempts += 1
 
-      if (initialized || attempts >= 20) {
-        if (initialized) {
-          initDoneRef.current = true
-          setPixelReady(true)
-        }
+      if (initialized) {
+        initDoneRef.current = true
+        setPixelReady(true)
         window.clearInterval(interval)
       }
     }, 250)
 
-    return () => window.clearInterval(interval)
+    // Avoid infinite polling if the script is blocked (adblock/privacy settings).
+    const timeout = window.setTimeout(() => {
+      window.clearInterval(interval)
+    }, 30000)
+
+    return () => {
+      window.clearInterval(interval)
+      window.clearTimeout(timeout)
+    }
   }, [advancedMatching, isLoaded, pixelId])
 
   useEffect(() => {

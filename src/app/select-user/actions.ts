@@ -20,6 +20,22 @@ import { sendResendEmail } from "@/lib/resend"
 import { renderSubUserTemporaryCodeEmail } from "@/lib/resend/templates"
 import { randomInt } from "crypto"
 
+function isMetaDebugEnabled() {
+  const value = process.env.META_DEBUG?.trim().toLowerCase()
+  return value === "1" || value === "true" || value === "yes"
+}
+
+function metaDebugLog(message: string, payload?: Record<string, unknown>) {
+  if (!isMetaDebugEnabled()) return
+
+  if (payload) {
+    console.log(`[Meta][Debug] ${message}`, payload)
+    return
+  }
+
+  console.log(`[Meta][Debug] ${message}`)
+}
+
 async function authenticateSubUser(
   accountId: string,
   username: string,
@@ -140,7 +156,14 @@ export async function createFirstUser(formData: FormData) {
 
   // Verificar que no existan usuarios
   const users = await listSubUsers(accountId)
+  metaDebugLog("createFirstUser: resultado de listSubUsers", {
+    accountId,
+    usersCount: users.length,
+  })
   if (users.length > 0) {
+    metaDebugLog("createFirstUser abortado: ya existen usuarios", {
+      accountId,
+    })
     return { error: "Ya existen usuarios en esta cuenta" }
   }
 
@@ -248,14 +271,40 @@ export async function createFirstUser(formData: FormData) {
     const existingSubscription = await prisma.billingSubscription.findUnique({
       where: { accountId },
     })
+    metaDebugLog("createFirstUser: verificación de suscripción", {
+      accountId,
+      hasExistingSubscription: !!existingSubscription,
+      existingSubscriptionId: existingSubscription?.id ?? null,
+      existingSubscriptionStatus: existingSubscription?.status ?? null,
+    })
+
     if (!existingSubscription) {
       const subscription = await createBillingSubscription({ accountId })
       const headersList = await headers()
       const cookieStore = await cookies()
       const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com").replace(/\/$/, "")
+      const fbc = cookieStore.get("_fbc")?.value ?? null
+      const fbp = cookieStore.get("_fbp")?.value ?? null
+      const clientIpAddress = getClientIpFromHeaders(headersList)
+      const clientUserAgent = headersList.get("user-agent")
+      const metaTestEventCode = process.env.META_TEST_EVENT_CODE?.trim() || undefined
+
+      metaDebugLog("createFirstUser: StartTrial listo para enviar", {
+        accountId,
+        subscriptionId: subscription.id,
+        eventId: `trial-${subscription.id}`,
+        eventSourceUrl: `${appUrl}/select-user`,
+        hasEmail: !!email,
+        hasPhone: !!trimmedWhatsappPhone,
+        hasClientIpAddress: !!clientIpAddress,
+        hasClientUserAgent: !!clientUserAgent,
+        hasFbc: !!fbc,
+        hasFbp: !!fbp,
+        hasMetaTestEventCode: !!metaTestEventCode,
+      })
 
       try {
-        await sendMetaEvent({
+        const metaResult = await sendMetaEvent({
           eventName: "StartTrial",
           eventId: `trial-${subscription.id}`,
           eventSourceUrl: `${appUrl}/select-user`,
@@ -263,22 +312,49 @@ export async function createFirstUser(formData: FormData) {
             email,
             firstName: clerkUser.firstName ?? null,
             lastName: clerkUser.lastName ?? null,
+            phone: trimmedWhatsappPhone,
             country: "DO",
             externalId: accountId,
-            clientIpAddress: getClientIpFromHeaders(headersList),
-            clientUserAgent: headersList.get("user-agent"),
-            fbc: cookieStore.get("_fbc")?.value ?? null,
-            fbp: cookieStore.get("_fbp")?.value ?? null,
+            clientIpAddress,
+            clientUserAgent,
+            fbc,
+            fbp,
           },
           customData: {
             currency: "DOP",
             value: Number((subscription.priceDopCents / 100).toFixed(2)),
             predicted_ltv: Number((subscription.priceDopCents / 100).toFixed(2)),
           },
+          testEventCode: metaTestEventCode,
         })
+
+        metaDebugLog("createFirstUser: resultado StartTrial", {
+          accountId,
+          ok: metaResult.ok,
+          skipped: metaResult.skipped ?? false,
+          status: metaResult.status ?? null,
+          reason: metaResult.reason ?? null,
+          body: metaResult.body ?? null,
+        })
+
+        if (!metaResult.ok) {
+          console.error("[Meta] StartTrial no se envio correctamente", {
+            accountId,
+            status: metaResult.status ?? null,
+            skipped: metaResult.skipped ?? false,
+            reason: metaResult.reason ?? null,
+            body: metaResult.body ?? null,
+          })
+        }
       } catch (metaError) {
         console.error("[Meta] Error enviando evento StartTrial:", metaError)
       }
+    } else {
+      metaDebugLog("createFirstUser: StartTrial no enviado porque ya existe suscripción", {
+        accountId,
+        existingSubscriptionId: existingSubscription.id,
+        existingSubscriptionStatus: existingSubscription.status,
+      })
     }
   } catch (error) {
     console.error("Error creating billing subscription:", error)

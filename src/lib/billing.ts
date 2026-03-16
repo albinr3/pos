@@ -549,6 +549,7 @@ export async function processLemonPayment(
       email: billingProfile?.email || ownerUser?.email || null,
       firstName: ownerNameParts.firstName,
       lastName: ownerNameParts.lastName,
+      phone: billingProfile?.phone || null,
       country: "DO",
       externalId: accountId,
       clientIpAddress: tracking?.clientIpAddress,
