@@ -26,14 +26,23 @@ export function Hero() {
               Prueba gratis 15 días y administra ventas en RD$ desde cualquier
               dispositivo.
             </p>
-            <div className="mt-10 flex items-center justify-center lg:justify-start gap-x-6">
-              <Button asChild size="lg" className="bg-white text-gray-900 hover:bg-gray-100 font-semibold">
+            <div className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-start gap-3 sm:gap-x-6 px-4 sm:px-0">
+              <Button
+                asChild
+                size="lg"
+                className="bg-white text-gray-900 hover:bg-gray-100 font-semibold h-14 sm:h-12 text-base sm:text-lg w-full sm:w-auto"
+              >
                 <Link href="/app">
                   Comenzar prueba gratis
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="lg" className="border-2 border-white text-white bg-transparent hover:bg-white/10 hover:text-white">
+              <Button
+                asChild
+                variant="outline"
+                size="lg"
+                className="border-2 border-white text-white bg-transparent hover:bg-white/10 hover:text-white w-full sm:w-auto"
+              >
                 <Link href="/sistema-pos">Ver sistema POS</Link>
               </Button>
             </div>

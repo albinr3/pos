@@ -155,7 +155,7 @@ export function PaymentsListClient() {
                     <TableCell colSpan={8} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
-                          src="/lupa.png"
+                          src="/lupa.webp"
                           alt="No hay resultados"
                           width={192}
                           height={192}
@@ -177,6 +177,7 @@ export function PaymentsListClient() {
     </div>
   )
 }
+
 
 
 

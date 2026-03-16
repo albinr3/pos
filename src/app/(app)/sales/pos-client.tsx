@@ -1790,7 +1790,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             <CardContent className="py-6">
               <div className="flex flex-col items-center text-center space-y-3">
                 <img
-                  src="/barcodereader.png"
+                  src="/barcodereader.webp"
                   alt="Lector de código de barras"
                   className="w-32 h-32 object-contain"
                 />
@@ -2219,7 +2219,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex flex-col items-center gap-4">
-              <img src="/pausa.png" alt="Pausa" className="h-64 w-64 object-contain" />
+              <img src="/pausa.webp" alt="Pausa" className="h-64 w-64 object-contain" />
               <p className="text-base font-medium text-center">
                 Tienes {cart.length} producto{cart.length !== 1 ? "s" : ""} en tu carrito.
               </p>
@@ -2287,3 +2287,4 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
     </div>
   )
 }
+

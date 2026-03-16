@@ -28,7 +28,7 @@ export default function AboutPage() {
           <section>
             <div className="mb-8 rounded-lg overflow-hidden">
               <Image
-                src="/person-working-html-computer.jpg"
+                src="/person-working-html-computer.webp"
                 alt="Equipo de MOVOPos trabajando"
                 width={1200}
                 height={600}
@@ -99,5 +99,6 @@ export default function AboutPage() {
     </div>
   )
 }
+
 
 

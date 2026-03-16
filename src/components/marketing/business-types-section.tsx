@@ -70,7 +70,7 @@ export function BusinessTypesSection() {
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border-2 border-white/20 bg-white transform transition-transform duration-300 group-hover:scale-[1.02] group-hover:shadow-3xl">
                 <div className="absolute inset-0 bg-gradient-to-br from-purple-500/10 via-transparent to-blue-500/10 pointer-events-none z-0"></div>
                 <img
-                  src="/colmadero.png"
+                  src="/colmadero.webp"
                   alt="Colmadero usando MOVOPos en laptop para gestionar su negocio"
                   className="w-full h-auto relative z-10"
                   decoding="async"
@@ -92,7 +92,7 @@ export function BusinessTypesSection() {
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border-2 border-white/20 bg-white transform transition-transform duration-300 group-hover:scale-[1.02] group-hover:shadow-3xl">
                 <div className="absolute inset-0 bg-gradient-to-br from-pink-500/10 via-transparent to-purple-500/10 pointer-events-none z-0"></div>
                 <img
-                  src="/autoadorno.png"
+                  src="/autoadorno.webp"
                   alt="Dueño de auto adorno utilizando MOVOPos para administrar su tienda"
                   className="w-full h-auto relative z-10"
                   decoding="async"
@@ -113,3 +113,4 @@ export function BusinessTypesSection() {
     </section>
   )
 }
+

@@ -214,7 +214,7 @@ export function ReturnsClient() {
             {!isSearching && saleSearchResults.length === 0 && !saleSearchQuery.trim() && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <img
-                  src="/lupaok.png"
+                  src="/lupaok.webp"
                   alt="Buscar venta"
                   width={200}
                   height={200}
@@ -493,6 +493,7 @@ export function ReturnsClient() {
     </div>
   )
 }
+
 
 
 

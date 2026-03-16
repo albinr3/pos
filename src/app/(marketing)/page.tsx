@@ -7,6 +7,7 @@ import { CTASection } from "@/components/marketing/cta-section"
 import { FAQSection } from "@/components/marketing/faq-section"
 import { faqItems } from "@/components/marketing/faq-data"
 import { PricingCard } from "@/components/marketing/pricing-card"
+import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { ArrowRight } from "lucide-react"
 
@@ -109,6 +110,34 @@ const solutionPages = [
   },
 ]
 
+function DesktopSectionCTA() {
+  return (
+    <div className="hidden md:block py-6 bg-white">
+      <div className="container flex justify-center">
+        <Button asChild size="lg" className="font-semibold">
+          <Link href="/app">
+            Comenzar prueba gratis
+            <ArrowRight className="ml-2 h-4 w-4" />
+          </Link>
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function MobileStickyCTA() {
+  return (
+    <div className="fixed inset-x-4 bottom-4 z-50 md:hidden">
+      <Button asChild size="lg" className="w-full h-12 text-base font-semibold shadow-lg">
+        <Link href="/app">
+          Comenzar prueba gratis
+          <ArrowRight className="ml-2 h-4 w-4" />
+        </Link>
+      </Button>
+    </div>
+  )
+}
+
 export default function LandingPage() {
   return (
     <>
@@ -119,7 +148,9 @@ export default function LandingPage() {
       <Hero />
       <Features />
       <BusinessTypesSection />
+      <DesktopSectionCTA />
       <POSDemoSection />
+      <DesktopSectionCTA />
 
       <section className="py-12 sm:py-16 bg-slate-50">
         <div className="container">
@@ -175,8 +206,11 @@ export default function LandingPage() {
       </section>
 
       <FAQSection />
+      <DesktopSectionCTA />
 
       <CTASection />
+      <div className="h-20 md:hidden" />
+      <MobileStickyCTA />
     </>
   )
 }

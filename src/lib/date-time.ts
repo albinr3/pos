@@ -6,10 +6,17 @@ function toDate(value: Date | string | number) {
 
 export function formatDateDO(value: Date | string | number, options?: Intl.DateTimeFormatOptions) {
   const date = toDate(value)
+  const hasStyleOptions = Boolean(options?.dateStyle || options?.timeStyle)
+  const defaultOptions: Intl.DateTimeFormatOptions = hasStyleOptions
+    ? {}
+    : {
+        year: "2-digit",
+        month: "2-digit",
+        day: "2-digit",
+      }
+
   return new Intl.DateTimeFormat("es-DO", {
-    year: "2-digit",
-    month: "2-digit",
-    day: "2-digit",
+    ...defaultOptions,
     timeZone: SANTO_DOMINGO_TZ,
     ...options,
   }).format(date)
@@ -17,12 +24,19 @@ export function formatDateDO(value: Date | string | number, options?: Intl.DateT
 
 export function formatDateTimeDO(value: Date | string | number, options?: Intl.DateTimeFormatOptions) {
   const date = toDate(value)
+  const hasStyleOptions = Boolean(options?.dateStyle || options?.timeStyle)
+  const defaultOptions: Intl.DateTimeFormatOptions = hasStyleOptions
+    ? {}
+    : {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      }
+
   return new Intl.DateTimeFormat("es-DO", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+    ...defaultOptions,
     timeZone: SANTO_DOMINGO_TZ,
     ...options,
   }).format(date)
