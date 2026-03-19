@@ -29,7 +29,7 @@ import {
   saveARCache,
 } from "@/lib/indexed-db"
 
-import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings } from "./actions"
+import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings, updatePrintFormats } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
@@ -74,6 +74,12 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
   const [defaultViewMode, setDefaultViewMode] = useState("list")
   const [defaultProfitMargin, setDefaultProfitMargin] = useState("30.00")
   const [showItbisOnReceipts, setShowItbisOnReceipts] = useState(true)
+
+  const [salePrintFormat, setSalePrintFormat] = useState("80mm")
+  const [quotePrintFormat, setQuotePrintFormat] = useState("80mm")
+  const [paymentPrintFormat, setPaymentPrintFormat] = useState("80mm")
+  const [returnPrintFormat, setReturnPrintFormat] = useState("80mm")
+
   const [isSaving, startSaving] = useTransition()
   const isOnline = useOnlineStatus()
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
@@ -97,6 +103,10 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
       setDefaultViewMode(s.defaultViewMode)
       setDefaultProfitMargin((s.defaultProfitMarginBp / 100).toFixed(2))
       setShowItbisOnReceipts(s.showItbisOnReceipts)
+      setSalePrintFormat(s.salePrintFormat ?? "80mm")
+      setQuotePrintFormat(s.quotePrintFormat ?? "80mm")
+      setPaymentPrintFormat(s.paymentPrintFormat ?? "80mm")
+      setReturnPrintFormat(s.returnPrintFormat ?? "80mm")
     })
 
     // Actualizar contadores de pendientes
@@ -319,11 +329,118 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
 
       <Card>
         <CardHeader>
-          <CardTitle>Etiquetas de Impresión</CardTitle>
+          <CardTitle>Impresión y Etiquetas</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="text-sm text-muted-foreground">Configura los tamaños de las etiquetas para impresión.</div>
+          <div className="text-sm text-muted-foreground">Configura los formatos por defecto y tamaños de etiquetas para impresión.</div>
           <Separator />
+          
+          <div className="text-sm font-semibold">Formatos de Impresión por Defecto</div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid gap-2">
+              <Label>Ventas (Facturas)</Label>
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+                value={salePrintFormat}
+                onChange={(e) => {
+                  if (!canEditSettings) return
+                  const newValue = e.target.value
+                  setSalePrintFormat(newValue)
+                  startSaving(async () => {
+                    try {
+                      await updatePrintFormats({ sale: newValue, quote: quotePrintFormat, payment: paymentPrintFormat, returnFormat: returnPrintFormat })
+                      toast({ title: "Formato guardado" })
+                    } catch (err) {
+                      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" })
+                    }
+                  })
+                }}
+                disabled={!canEditSettings || isSaving}
+              >
+                <option value="80mm">80mm</option>
+                <option value="CARTA">Hoja Carta (A4)</option>
+              </select>
+            </div>
+            
+            <div className="grid gap-2">
+              <Label>Cotizaciones</Label>
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+                value={quotePrintFormat}
+                onChange={(e) => {
+                  if (!canEditSettings) return
+                  const newValue = e.target.value
+                  setQuotePrintFormat(newValue)
+                  startSaving(async () => {
+                    try {
+                      await updatePrintFormats({ sale: salePrintFormat, quote: newValue, payment: paymentPrintFormat, returnFormat: returnPrintFormat })
+                      toast({ title: "Formato guardado" })
+                    } catch (err) {
+                      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" })
+                    }
+                  })
+                }}
+                disabled={!canEditSettings || isSaving}
+              >
+                <option value="80mm">80mm</option>
+                <option value="CARTA">Hoja Carta (A4)</option>
+              </select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Recibos de Pago</Label>
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+                value={paymentPrintFormat}
+                onChange={(e) => {
+                  if (!canEditSettings) return
+                  const newValue = e.target.value
+                  setPaymentPrintFormat(newValue)
+                  startSaving(async () => {
+                    try {
+                      await updatePrintFormats({ sale: salePrintFormat, quote: quotePrintFormat, payment: newValue, returnFormat: returnPrintFormat })
+                      toast({ title: "Formato guardado" })
+                    } catch (err) {
+                      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" })
+                    }
+                  })
+                }}
+                disabled={!canEditSettings || isSaving}
+              >
+                <option value="80mm">80mm</option>
+                <option value="CARTA">Hoja Carta (A4)</option>
+              </select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Devoluciones</Label>
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+                value={returnPrintFormat}
+                onChange={(e) => {
+                  if (!canEditSettings) return
+                  const newValue = e.target.value
+                  setReturnPrintFormat(newValue)
+                  startSaving(async () => {
+                    try {
+                      await updatePrintFormats({ sale: salePrintFormat, quote: quotePrintFormat, payment: paymentPrintFormat, returnFormat: newValue })
+                      toast({ title: "Formato guardado" })
+                    } catch (err) {
+                      toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" })
+                    }
+                  })
+                }}
+                disabled={!canEditSettings || isSaving}
+              >
+                <option value="80mm">80mm</option>
+                <option value="CARTA">Hoja Carta (A4)</option>
+              </select>
+            </div>
+          </div>
+          <Separator />
+          
+          <div className="text-sm font-semibold">Tamaños de Etiquetas</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label>Etiqueta de Código de Barras</Label>
@@ -429,6 +546,8 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
               disabled={isSaving || !canEditSettings}
             />
           </div>
+
+
           <div className="grid gap-2">
             <Label>% ganancia por defecto en compras</Label>
             <div className="flex items-center gap-2">

@@ -27,6 +27,10 @@ export async function getSettings() {
     defaultViewMode: s?.defaultViewMode ?? "list",
     defaultProfitMarginBp: s?.defaultProfitMarginBp ?? 3000,
     showItbisOnReceipts: s?.showItbisOnReceipts ?? true,
+    salePrintFormat: s?.salePrintFormat ?? "80mm",
+    quotePrintFormat: s?.quotePrintFormat ?? "80mm",
+    paymentPrintFormat: s?.paymentPrintFormat ?? "80mm",
+    returnPrintFormat: s?.returnPrintFormat ?? "80mm",
   }
 }
 
@@ -219,3 +223,56 @@ export async function updatePurchasePricingSettings(defaultProfitMarginBp: numbe
   revalidatePath("/settings")
   revalidatePath("/purchases")
 }
+
+export async function updatePrintFormats(formats: {
+  sale: string
+  quote: string
+  payment: string
+  returnFormat: string
+}) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSettings", {
+    allowAdminBypass: false,
+    message: "No tienes permiso para modificar ajustes",
+    resourceType: "CompanySettings",
+  })
+
+  await prisma.companySettings.upsert({
+    where: { accountId: user.accountId },
+    update: { 
+      salePrintFormat: formats.sale,
+      quotePrintFormat: formats.quote,
+      paymentPrintFormat: formats.payment,
+      returnPrintFormat: formats.returnFormat,
+    },
+    create: {
+      accountId: user.accountId,
+      name: "Mi Negocio",
+      phone: "",
+      address: "",
+      allowNegativeStock: false,
+      itbisRateBp: 1800,
+      defaultProfitMarginBp: 3000,
+      salePrintFormat: formats.sale,
+      quotePrintFormat: formats.quote,
+      paymentPrintFormat: formats.payment,
+      returnPrintFormat: formats.returnFormat,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    action: "SETTINGS_CHANGED",
+    resourceType: "CompanySettings",
+    details: formats,
+  })
+
+  revalidatePath("/settings")
+  // Revalidate relevant features
+  revalidatePath("/sales")
+  revalidatePath("/quotes")
+  revalidatePath("/ar")
+}
+

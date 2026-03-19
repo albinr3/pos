@@ -186,7 +186,7 @@ export function ReturnsListClient() {
                           <Button
                             className="bg-blue-500 hover:bg-blue-600 text-white"
                             size="icon"
-                            onClick={() => window.open(`/receipts/return/${r.returnCode}`, "_blank")}
+                            onClick={() => window.open(`/api/print/return/${r.returnCode}`, "_blank")}
                             title="Ver recibo"
                           >
                             <Receipt className="h-4 w-4" />

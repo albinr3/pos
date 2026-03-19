@@ -144,7 +144,7 @@ export function QuotesListClient() {
                             </Link>
                           </Button>
                           <Button asChild className="bg-blue-500 hover:bg-blue-600 text-white" size="sm" title="Ver PDF">
-                            <Link href={`/quotes/${quote.quoteCode}`} target="_blank">
+                            <Link href={`/api/print/quote/${quote.quoteCode}`} target="_blank">
                               <FileText className="mr-2 h-4 w-4" /> Ver PDF
                             </Link>
                           </Button>

@@ -61,7 +61,7 @@ export default async function PaymentsReportPage({
                     <TableCell className="text-right">{formatRD(p.amountCents)}</TableCell>
                     <TableCell className="text-right">
                       <Button asChild size="sm" variant="secondary">
-                        <Link href={`/receipts/payment/${p.id}`} target="_blank">Recibo</Link>
+                        <Link href={`/api/print/payment/${p.id}`} target="_blank">Recibo</Link>
                       </Button>
                     </TableCell>
                   </TableRow>

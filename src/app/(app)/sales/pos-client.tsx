@@ -903,7 +903,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
 
             // Autoimpresión térmica por navegador/OS (impresora predeterminada del sistema).
-            const receiptUrl = `/receipts/sale/${sale.invoiceCode}?autoprint=1`
+            const receiptUrl = `/api/print/sale/${sale.invoiceCode}?autoprint=1`
             const popup = window.open(receiptUrl, "_blank")
 
             // Fallback cuando el navegador bloquea popups.
@@ -1242,6 +1242,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                           </div>
                           <div className="p-3 space-y-1">
                             <div className="font-medium text-sm truncate">{p.name}</div>
+                            <div className="text-xs text-muted-foreground truncate">{p.reference ?? "—"}</div>
                             <div className="text-sm font-semibold text-purple-primary">{formatRD(p.priceCents)}</div>
                             <div className="text-xs text-muted-foreground">
                               {p.productKind === "RECIPE"
@@ -1307,6 +1308,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                             </div>
                             <div className="p-3 space-y-1">
                               <div className="font-medium text-sm truncate">{p.name}</div>
+                              <div className="text-xs text-muted-foreground truncate">{p.reference ?? "—"}</div>
                               <div className="text-sm font-semibold text-purple-primary">{formatRD(p.priceCents)}</div>
                               <div className="text-xs text-muted-foreground">
                                 {p.productKind === "RECIPE"

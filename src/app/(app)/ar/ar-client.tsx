@@ -275,7 +275,7 @@ export function ARClient() {
               note: note || null,
             })
             toast({ title: "Pago registrado", description: "Abono aplicado correctamente" })
-            window.open(`/receipts/payment/${result.paymentId}`, "_blank")
+            window.open(`/api/print/payment/${result.paymentId}`, "_blank")
           } catch (e) {
             if (isLikelyOfflineError(e)) {
               await savePaymentOffline(finalAmount)
@@ -406,7 +406,7 @@ export function ARClient() {
                           </Button>
                         )}
                         <Button size="sm" asChild className="bg-blue-500 hover:bg-blue-600 text-white" title="Reimprimir">
-                          <Link href={`/receipts/sale/${ar.sale.invoiceCode}`} target="_blank">
+                          <Link href={`/api/print/sale/${ar.sale.invoiceCode}`} target="_blank">
                             <Printer className="h-4 w-4 sm:mr-2" />
                             <span className="hidden sm:inline">Reimprimir</span>
                           </Link>
@@ -576,7 +576,7 @@ export function ARClient() {
                         <div className="flex items-center gap-2">
                           <div className="text-sm font-semibold">{formatRD(p.amountCents)}</div>
                           <Button asChild size="sm" variant="ghost">
-                            <Link href={`/receipts/payment/${p.id}`} target="_blank">
+                            <Link href={`/api/print/payment/${p.id}`} target="_blank">
                               <Printer className="mr-2 h-4 w-4" /> Reimprimir
                             </Link>
                           </Button>
@@ -673,7 +673,7 @@ export function ARClient() {
                             {p.note && <div className="text-xs text-muted-foreground">Nota: {p.note}</div>}
                           </div>
                           <Button asChild size="sm" variant="secondary">
-                            <Link href={`/receipts/payment/${p.id}`} target="_blank">
+                            <Link href={`/api/print/payment/${p.id}`} target="_blank">
                               <Printer className="mr-2 h-4 w-4" /> Ver Recibo
                             </Link>
                           </Button>

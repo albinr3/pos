@@ -59,7 +59,7 @@ export default async function SalesReportPage({
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button asChild size="sm" variant="secondary">
-                          <Link href={`/receipts/sale/${s.invoiceCode}`} target="_blank">Ticket</Link>
+                          <Link href={`/api/print/sale/${s.invoiceCode}`} target="_blank">Ticket</Link>
                         </Button>
                         {/* Formato carta oculto temporalmente en la UI */}
                       </div>

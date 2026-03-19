@@ -7,6 +7,7 @@ import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { PrintButton } from "@/components/app/print-button"
 import { PaymentMethod } from "@prisma/client"
+import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
 
 // Evitar prerender y forzar evaluación dinámica (requiere autenticación y DB)
 export const dynamic = "force-dynamic"
@@ -26,13 +27,17 @@ function fmtDate(d: Date) {
 
 export default async function InvoicePrintPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ invoiceCode: string }>
+  searchParams: Promise<{ autoprint?: string }>
 }) {
   // Lazy import de Prisma para evitar inicialización durante el build
   const { prisma } = await import("@/lib/db")
 
   const { invoiceCode } = await params
+  const sp = await searchParams
+  const shouldAutoPrint = sp.autoprint === "1"
 
   // Obtener usuario actual para filtrar por accountId
   const user = await getCurrentUser()
@@ -75,6 +80,7 @@ export default async function InvoicePrintPage({
 
   return (
     <div className="mx-auto max-w-[850px] bg-white p-10 text-black print-content">
+      <AutoPrintOnLoad enabled={shouldAutoPrint} />
       <style
         dangerouslySetInnerHTML={{
           __html: `

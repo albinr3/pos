@@ -975,9 +975,7 @@ export async function createSale(input: {
         })
       }
 
-      revalidatePath("/sales")
-      revalidatePath("/ar")
-      revalidatePath("/dashboard")
+      revalidatePath("/", "layout")
 
       return sale
     }, TRANSACTION_OPTIONS)
@@ -1151,12 +1149,7 @@ export async function cancelSale(id: string, username: string, currentUserArg?: 
         },
       }, tx)
 
-      revalidatePath("/sales")
-      revalidatePath("/sales/list")
-      revalidatePath("/ar")
-      revalidatePath("/dashboard")
-      revalidatePath("/reports/sales")
-      revalidatePath("/reports/profit")
+      revalidatePath("/", "layout")
 
       return { success: true }
     }, TRANSACTION_OPTIONS)
@@ -1455,10 +1448,6 @@ export async function updateSale(input: {
       if (deleted.count === 0) throw new Error("Cuenta por cobrar no encontrada")
     }
 
-    revalidatePath("/sales")
-    revalidatePath("/ar")
-    revalidatePath("/dashboard")
-    revalidatePath("/reports/sales")
-    revalidatePath("/reports/profit")
+    revalidatePath("/", "layout")
   }, TRANSACTION_OPTIONS)
 }

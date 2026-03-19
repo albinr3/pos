@@ -138,7 +138,7 @@ export function PaymentsListClient() {
                           </Button>
                         )}
                         <Button asChild size="icon" className="bg-blue-500 hover:bg-blue-600 text-white" title="Ver recibo">
-                          <Link href={`/receipts/payment/${p.id}`} target="_blank" aria-label="Ver recibo">
+                          <Link href={`/api/print/payment/${p.id}`} target="_blank" aria-label="Ver recibo">
                             <Printer className="h-4 w-4" />
                           </Link>
                         </Button>

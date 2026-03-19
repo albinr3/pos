@@ -341,6 +341,11 @@ model CompanySettings {
   barcodeLabelSize  String @default("4x2")
   shippingLabelSize String @default("4x6")
   defaultViewMode   String @default("list")
+  
+  salePrintFormat    String @default("80mm")
+  quotePrintFormat   String @default("80mm")
+  paymentPrintFormat String @default("80mm")
+  returnPrintFormat  String @default("80mm")
 
   @@index([accountId])
 }

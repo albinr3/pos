@@ -404,7 +404,7 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
           })
 
           if (editingQuoteCode) {
-            router.replace(`/quotes/${editingQuoteCode}`)
+            router.replace(`/api/print/quote/${editingQuoteCode}`)
           } else {
             router.push("/quotes/list")
           }
@@ -430,7 +430,7 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
 
         toast({ title: "Cotización guardada", description: `Cotización ${quote.quoteCode}` })
         resetForm()
-        router.push(`/quotes/${quote.quoteCode}`)
+        router.push(`/api/print/quote/${quote.quoteCode}`)
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Error guardando cotización"
         toast({ title: "No se pudo guardar", description: msg })

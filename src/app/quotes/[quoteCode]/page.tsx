@@ -6,6 +6,8 @@ import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatQty } from "@/lib/units"
 import { DownloadInvoicePdfButton } from "@/components/app/download-invoice-pdf-button"
+import { PrintButton } from "@/components/app/print-button"
+import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
 import { QuoteShareButton } from "@/components/app/quote-share-button"
 
 // Evitar prerender y forzar evaluación dinámica (requiere autenticación y DB)
@@ -15,15 +17,19 @@ function fmtDate(d: Date) {
   return formatDateTimeDO(d)
 }
 
-export default async function QuotePage({
+export default async function QuotePrintPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ quoteCode: string }>
+  searchParams: Promise<{ autoprint?: string }>
 }) {
+  const { quoteCode } = await params
+  const sp = await searchParams
+  const shouldAutoPrint = sp.autoprint === "1"
   // Lazy import de Prisma para evitar inicialización durante el build
   const { prisma } = await import("@/lib/db")
 
-  const { quoteCode } = await params
 
   // Obtener usuario actual para filtrar por accountId
   const user = await getCurrentUser()
@@ -59,13 +65,15 @@ export default async function QuotePage({
   const itbisLabel = `ITBIS (${((company?.itbisRateBp ?? 1800) / 100).toFixed(2)}% incluido)`
 
   return (
-    <div className="mx-auto max-w-[850px] bg-white p-10 text-black">
+    <div className="mx-auto max-w-[850px] bg-white p-10 text-black print-content">
+      <AutoPrintOnLoad enabled={shouldAutoPrint} />
       <style
         dangerouslySetInnerHTML={{
           __html: `
           @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
             .no-print { display: none !important; }
+            @page { size: letter; }
           }
         `,
         }}

@@ -424,7 +424,7 @@ export function SalesListClient() {
                           className="bg-green-500 hover:bg-green-600 text-white"
                           title="Reimprimir"
                         >
-                          <Link href={`/receipts/sale/${s.invoiceCode}`} target="_blank" aria-label="Reimprimir">
+                          <Link href={`/api/print/sale/${s.invoiceCode}`} target="_blank" aria-label="Reimprimir">
                             <Printer className="h-4 w-4" />
                           </Link>
                         </Button>

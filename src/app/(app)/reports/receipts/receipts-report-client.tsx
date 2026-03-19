@@ -484,7 +484,7 @@ export function ReceiptsReportClient({
                       )}
                     </td>
                     <td className="p-3">
-                      <Link href={`/receipts/payment/${payment.id}`} target="_blank">
+                      <Link href={`/api/print/payment/${payment.id}`} target="_blank">
                         <Button size="sm" variant="outline">
                           Ver Recibo
                         </Button>
