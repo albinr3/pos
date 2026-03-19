@@ -13,7 +13,7 @@
     "start": "next start",
     "postinstall": "prisma generate",
     "lint": "eslint",
-    "migrate:prod": "powershell -ExecutionPolicy Bypass -File scripts/migrate-prod.ps1",
+    "migrate:prod": "pwsh -ExecutionPolicy Bypass -File scripts/migrate-prod.ps1",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
