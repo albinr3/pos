@@ -291,6 +291,97 @@ type NewUserSignupNotificationData = {
   registrationDate: string
 }
 
+type ManualPaymentPendingAlertTemplateData = {
+  accountName: string
+  amountLabel: string
+  bankName: string
+  userName: string
+  userEmail: string
+  userUsername: string
+  createdAtLabel: string
+  paymentId: string
+}
+
+export async function renderManualPaymentPendingAlertEmail(
+  data: ManualPaymentPendingAlertTemplateData
+) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const superAdminPaymentsUrl = `${appUrl}/super-admin/payments`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+
+  const html = await renderTemplate("manual-payment-pending-alert.html", {
+    brandName,
+    accountName: data.accountName,
+    amountLabel: data.amountLabel,
+    bankName: data.bankName,
+    userName: data.userName,
+    userEmail: data.userEmail,
+    userUsername: data.userUsername,
+    createdAtLabel: data.createdAtLabel,
+    paymentId: data.paymentId,
+    superAdminPaymentsUrl,
+    appUrl,
+    supportEmail,
+    year: new Date().getFullYear().toString(),
+  })
+
+  const subject = `Pago por transferencia pendiente: ${data.accountName}`
+
+  return { subject, html }
+}
+
+type CardPaymentEventAlertTemplateData = {
+  accountName: string
+  amountLabel: string
+  statusLabel: string
+  createdAtLabel: string
+  paymentId: string
+  eventType: "success" | "failed"
+}
+
+export async function renderCardPaymentEventAlertEmail(
+  data: CardPaymentEventAlertTemplateData
+) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const superAdminPaymentsUrl = `${appUrl}/super-admin/payments`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+
+  const titleText =
+    data.eventType === "success"
+      ? "Pago con tarjeta confirmado"
+      : "Pago con tarjeta fallido"
+  const introText =
+    data.eventType === "success"
+      ? "Se registró un pago exitoso de suscripción mediante Lemon Squeezy."
+      : "Se registró un intento fallido de cobro mediante Lemon Squeezy."
+
+  const html = await renderTemplate("card-payment-event-alert.html", {
+    brandName,
+    titleText,
+    introText,
+    accountName: data.accountName,
+    amountLabel: data.amountLabel,
+    statusLabel: data.statusLabel,
+    createdAtLabel: data.createdAtLabel,
+    paymentId: data.paymentId,
+    superAdminPaymentsUrl,
+    appUrl,
+    supportEmail,
+    year: new Date().getFullYear().toString(),
+  })
+
+  const subject =
+    data.eventType === "success"
+      ? `Pago con tarjeta exitoso: ${data.accountName}`
+      : `Pago con tarjeta fallido: ${data.accountName}`
+
+  return { subject, html }
+}
+
 export async function renderNewUserSignupNotification(
   data: NewUserSignupNotificationData
 ) {

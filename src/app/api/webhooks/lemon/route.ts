@@ -4,6 +4,8 @@ import { processLemonPayment } from "@/lib/billing"
 import { prisma } from "@/lib/db"
 import { checkRateLimit, getClientIdentifier, RateLimitError } from "@/lib/rate-limit"
 import { logError, ErrorCodes, getRequestInfo } from "@/lib/error-logger"
+import { notifyCardPaymentFailed, notifyCardPaymentSuccess } from "@/lib/super-admin-notifications"
+import { notifyCardPaymentEventEmail } from "@/lib/billing-card-payment-alert"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -245,6 +247,11 @@ async function handlePaymentSuccess(
   // For USD subscriptions, we use our configured price
   const subscription = await prisma.billingSubscription.findUnique({
     where: { accountId },
+    include: {
+      account: {
+        select: { name: true },
+      },
+    },
   })
 
   if (!subscription) {
@@ -258,7 +265,7 @@ async function handlePaymentSuccess(
   const renewsAt = renewsAtRaw ? new Date(renewsAtRaw) : undefined
   const validRenewsAt = renewsAt && !Number.isNaN(renewsAt.getTime()) ? renewsAt : undefined
 
-  await processLemonPayment(
+  const payment = await processLemonPayment(
     accountId,
     externalId,
     amountCents,
@@ -274,6 +281,19 @@ async function handlePaymentSuccess(
       fbp: payload.meta.custom_data?.meta_fbp,
     }
   )
+
+  await notifyCardPaymentSuccess({
+    sourceId: payment.id,
+    accountName: subscription.account.name,
+    amountCents,
+  })
+  await notifyCardPaymentEventEmail({
+    accountId: subscription.accountId,
+    paymentId: payment.id,
+    accountName: subscription.account.name,
+    amountCents,
+    eventType: "success",
+  })
 
   console.log(`Processed payment success for account ${accountId}`)
 }
@@ -299,11 +319,16 @@ async function handlePaymentFailed(
   // Create a failed payment record
   const subscription = await prisma.billingSubscription.findUnique({
     where: { accountId },
+    include: {
+      account: {
+        select: { name: true },
+      },
+    },
   })
 
   if (!subscription) return
 
-  await prisma.billingPayment.create({
+  const failedPayment = await prisma.billingPayment.create({
     data: {
       subscriptionId: subscription.id,
       amountCents: subscription.priceUsdCents,
@@ -312,6 +337,19 @@ async function handlePaymentFailed(
       status: "FAILED",
       externalId: payload.data.id,
     },
+  })
+
+  await notifyCardPaymentFailed({
+    sourceId: failedPayment.id,
+    accountName: subscription.account.name,
+    amountCents: subscription.priceUsdCents,
+  })
+  await notifyCardPaymentEventEmail({
+    accountId: subscription.accountId,
+    paymentId: failedPayment.id,
+    accountName: subscription.account.name,
+    amountCents: subscription.priceUsdCents,
+    eventType: "failed",
   })
 
   console.log(`Recorded failed payment for account ${accountId}`)

@@ -4,7 +4,6 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { PropsWithChildren, useMemo } from "react"
 import { useTheme } from "next-themes"
-import { useEffect, useState } from "react"
 import type { SuperAdminUser } from "@/lib/super-admin-auth"
 import {
   BarChart3,
@@ -12,9 +11,7 @@ import {
   CreditCard,
   Settings,
   Menu,
-  Users,
   LogOut,
-  DollarSign,
   FileText,
   Landmark,
   Shield,
@@ -36,6 +33,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { SuperAdminNotificationsDropdown } from "./super-admin-notifications-dropdown"
 
 type NavItem = {
   href: string
@@ -62,7 +60,6 @@ export function SuperAdminShell({
   const pathname = usePathname()
   const router = useRouter()
   const { theme, resolvedTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
 
   const handleLogout = async () => {
     await fetch("/api/super-admin/logout", { method: "POST" })
@@ -94,10 +91,6 @@ export function SuperAdminShell({
     })
   }, [admin])
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
   const currentTheme = resolvedTheme || theme || "light"
   const logoPath = currentTheme === "light" ? "/movoLogoDark.png" : "/movoLogo.png"
 
@@ -108,7 +101,7 @@ export function SuperAdminShell({
           <div className="flex h-dvh flex-col">
             <div className="px-6 py-5">
               <div className="flex items-center justify-center gap-2">
-                {mounted && <img src={logoPath} alt="Logo" className="h-auto w-full max-h-12 object-contain" />}
+                <img src={logoPath} alt="Logo" className="h-auto w-full max-h-12 object-contain" />
               </div>
               <div className="flex items-center justify-center mt-2">
                 <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">
@@ -160,7 +153,7 @@ export function SuperAdminShell({
                   <SheetTitle className="sr-only">Menú de navegación</SheetTitle>
                   <div className="px-6 py-5 flex-shrink-0">
                     <div className="flex items-center justify-center">
-                      {mounted && <img src={logoPath} alt="Logo" className="h-auto w-full max-h-12 object-contain" />}
+                      <img src={logoPath} alt="Logo" className="h-auto w-full max-h-12 object-contain" />
                     </div>
                     <div className="flex items-center justify-center mt-2">
                       <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">
@@ -208,6 +201,7 @@ export function SuperAdminShell({
 
               <div className="ml-auto flex items-center gap-3">
                 <ThemeToggle />
+                <SuperAdminNotificationsDropdown />
 
                 {/* Admin dropdown */}
                 <DropdownMenu>

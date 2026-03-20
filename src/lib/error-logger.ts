@@ -5,6 +5,7 @@
 
 import { prisma } from "@/lib/db"
 import type { ErrorSeverity, Prisma } from "@prisma/client"
+import { notifyHighOrCriticalError } from "@/lib/super-admin-notifications"
 
 // Campos sensibles que no deben guardarse
 const SENSITIVE_FIELDS = [
@@ -236,6 +237,17 @@ export async function logError(
     // También loguear a consola en desarrollo
     if (process.env.NODE_ENV === "development") {
       console.error(`[ErrorLog ${severity}] ${options.code ?? "UNKNOWN"}:`, error.message)
+    }
+
+    if (severity === "HIGH" || severity === "CRITICAL") {
+      await notifyHighOrCriticalError({
+        errorLogId: errorLog.id,
+        severity,
+        code: options.code ?? null,
+        message: error.message,
+      }).catch((notifyError) => {
+        console.error("[ErrorLogger] Failed to create super admin notification:", notifyError)
+      })
     }
 
     // Enviar notificación por correo si no es un error de email

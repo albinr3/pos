@@ -24,6 +24,9 @@ import { logAuditEvent } from "@/lib/audit-log"
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { getClientIpFromHeaders } from "@/lib/meta/server"
+import { notifyManualPaymentPending } from "@/lib/billing-manual-payment-alert"
+import { notifyTransferPendingReview } from "@/lib/super-admin-notifications"
+import { prisma } from "@/lib/db"
 import type {
   BillingSubscription,
   BillingProfile,
@@ -186,6 +189,17 @@ export async function createDopPayment(bankAccountId: string): Promise<{
       },
     })
 
+    await notifyManualPaymentPending({
+      accountId: user.accountId,
+      paymentId: payment.id,
+      amountCents: subscription.priceDopCents,
+      bankName: bankAccount.bankName,
+      userId: user.id,
+      userName: user.name,
+      userUsername: user.username,
+      userEmail: user.email ?? null,
+    })
+
     return { success: true, paymentId: payment.id }
   } catch (error) {
     console.error("Error creating DOP payment:", error)
@@ -263,6 +277,31 @@ export async function submitPaymentProof(
         resourceType: "BillingSubscription",
         details: { newStatus: "ACTIVE", reason: "first_proof_uploaded" },
       })
+
+      const paymentData = await prisma.billingPayment.findUnique({
+        where: { id: paymentId },
+        select: {
+          id: true,
+          amountCents: true,
+          currency: true,
+          subscription: {
+            select: {
+              account: {
+                select: { name: true },
+              },
+            },
+          },
+        },
+      })
+
+      if (paymentData && (paymentData.currency === "DOP" || paymentData.currency === "USD")) {
+        await notifyTransferPendingReview({
+          paymentId: paymentData.id,
+          accountName: paymentData.subscription.account.name,
+          amountCents: paymentData.amountCents,
+          currency: paymentData.currency,
+        })
+      }
     }
 
     return { success: true }

@@ -4,6 +4,7 @@ import { getCurrentUserFromRequest } from "../../../../_helpers/auth"
 import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 import { uploadPaymentProof } from "@/lib/billing"
 import { logAuditEvent } from "@/lib/audit-log"
+import { notifyTransferPendingReview } from "@/lib/super-admin-notifications"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -33,6 +34,17 @@ export async function POST(
       },
       select: {
         id: true,
+        amountCents: true,
+        currency: true,
+        subscription: {
+          select: {
+            account: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
       },
     })
 
@@ -98,13 +110,23 @@ export async function POST(
         resourceType: "BillingSubscription",
         details: { newStatus: "ACTIVE", reason: "first_proof_uploaded" },
       })
+
+      if (payment.currency === "DOP" || payment.currency === "USD") {
+        await notifyTransferPendingReview({
+          paymentId: payment.id,
+          accountName: payment.subscription.account.name,
+          amountCents: payment.amountCents,
+          currency: payment.currency,
+        })
+      }
     }
 
     return NextResponse.json({ success: true })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en POST /api/billing/payments/[paymentId]/proof:", error)
+    const errorMessage = error instanceof Error ? error.message : "Error al subir el comprobante"
     return NextResponse.json(
-      { success: false, error: error?.message || "Error al subir el comprobante" },
+      { success: false, error: errorMessage },
       { status: 500 }
     )
   }

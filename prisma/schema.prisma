@@ -1367,6 +1367,14 @@ enum SuperAdminRole {
   SUPPORT // Solo puede ver información, no modificar
 }
 
+enum SuperAdminNotificationType {
+  TRANSFER_PENDING_REVIEW
+  CARD_PAYMENT_SUCCESS
+  CARD_PAYMENT_FAILED
+  ERROR_HIGH
+  ERROR_CRITICAL
+}
+
 model SuperAdmin {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -1389,6 +1397,7 @@ model SuperAdmin {
   canViewFinancials  Boolean @default(true)
 
   auditLogs SuperAdminAuditLog[]
+  notificationsRead SuperAdminNotification[] @relation("NotificationReadBy")
 
   @@index([email])
   @@index([isActive])
@@ -1414,6 +1423,29 @@ model SuperAdminAuditLog {
   @@index([superAdminId])
   @@index([createdAt])
   @@index([action])
+}
+
+model SuperAdminNotification {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  type    SuperAdminNotificationType
+  title   String
+  message String
+  href    String
+
+  metadata Json?
+  sourceId String
+
+  isRead Boolean   @default(false)
+  readAt DateTime?
+  readBySuperAdminId String?
+  readBySuperAdmin   SuperAdmin? @relation("NotificationReadBy", fields: [readBySuperAdminId], references: [id], onDelete: SetNull)
+
+  @@unique([type, sourceId])
+  @@index([createdAt])
+  @@index([isRead])
+  @@index([type])
 }
 
 // ==========================================
