@@ -50,6 +50,7 @@ function calculatePricing(input: {
   purchaseItbisRateBp: number
   productItbisRateBp: number
   defaultMarginBp: number
+  salePricesIncludeItbis: boolean
   saleMarginBp?: number
   salePriceCents?: number
 }) {
@@ -60,6 +61,7 @@ function calculatePricing(input: {
     purchaseItbisRateBp: input.purchaseItbisRateBp,
     productItbisRateBp: input.productItbisRateBp,
     defaultSaleMarginBp: input.defaultMarginBp,
+    salePricesIncludeItbis: input.salePricesIncludeItbis,
     saleMarginBp: input.saleMarginBp,
     salePriceCents: input.salePriceCents,
   })
@@ -72,6 +74,7 @@ export function PurchasesClient() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [defaultProfitMarginBp, setDefaultProfitMarginBp] = useState(3000)
   const [itbisRateBp, setItbisRateBp] = useState(1800)
+  const [salePricesIncludeItbis, setSalePricesIncludeItbis] = useState(true)
 
   const [query, setQuery] = useState("")
   const [results, setResults] = useState<ProductResult[]>([])
@@ -121,6 +124,7 @@ export function PurchasesClient() {
       purchaseItbisRateBp,
       productItbisRateBp: nextItem.productItbisRateBp,
       defaultMarginBp: defaultProfitMarginBp,
+      salePricesIncludeItbis,
       saleMarginBp: overrides && "salePriceCents" in overrides ? undefined : nextItem.saleMarginBp,
       salePriceCents: overrides?.salePriceCents,
     })
@@ -143,6 +147,7 @@ export function PurchasesClient() {
         setSuppliers(supplierList)
         setDefaultProfitMarginBp(settings.defaultProfitMarginBp)
         setItbisRateBp(settings.itbisRateBp)
+        setSalePricesIncludeItbis(settings.salePricesIncludeItbis)
       })
       .catch(() => { })
   }, [])
@@ -217,6 +222,7 @@ export function PurchasesClient() {
         purchaseItbisRateBp,
         productItbisRateBp: p.itbisRateBp ?? 0,
         defaultMarginBp: defaultProfitMarginBp,
+        salePricesIncludeItbis,
       })
 
       return [

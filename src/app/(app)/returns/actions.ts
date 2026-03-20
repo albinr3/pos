@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { calcItbisIncluded } from "@/lib/money"
+import { calcLineTotalsByTaxMode } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
@@ -303,9 +303,6 @@ export async function createReturn(input: {
   })
   if (!dbUser) throw new Error("Usuario inválido")
 
-  const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
-  const itbisRateBp = settings?.itbisRateBp ?? 1800
-
   return prisma.$transaction(async (tx) => {
     // Verificar que la venta existe, pertenece al account y no está cancelada
     const sale = await tx.sale.findFirst({
@@ -360,7 +357,35 @@ export async function createReturn(input: {
       }
     }
 
-    const totalCents = input.items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
+    const documentSalePricesIncludeItbis = sale.salePricesIncludeItbis ?? true
+    const returnItemsWithSnapshot = input.items.map((item) => {
+      const saleItem = saleItemsById.get(item.saleItemId)
+      if (!saleItem) {
+        throw new Error("Item de venta no encontrado")
+      }
+      const itbisRateBp = saleItem.itbisRateBp ?? 1800
+      const lineTotals = calcLineTotalsByTaxMode(
+        saleItem.unitPriceCents,
+        item.qty,
+        itbisRateBp,
+        documentSalePricesIncludeItbis
+      )
+      return {
+        saleItemId: item.saleItemId,
+        productId: item.productId,
+        qty: item.qty,
+        unitPriceCents: saleItem.unitPriceCents,
+        itbisRateBp,
+        lineTotalCents: Math.round(saleItem.unitPriceCents * item.qty),
+        subtotalCents: lineTotals.subtotalCents,
+        itbisCents: lineTotals.itbisCents,
+        totalCents: lineTotals.totalCents,
+      }
+    })
+
+    const subtotalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.subtotalCents, 0)
+    const itbisCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.itbisCents, 0)
+    const totalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.totalCents, 0)
     let creditAr: { id: string; totalCents: number; balanceCents: number; status: string } | null = null
 
     if (sale.type === "CREDITO") {
@@ -390,9 +415,6 @@ export async function createReturn(input: {
     const number = seq.lastNumber
     const code = returnCode(number)
 
-    // Calcular totales
-    const { subtotalCents, itbisCents } = calcItbisIncluded(totalCents, itbisRateBp)
-
     // Crear devolución
     const returnRecord = await tx.return.create({
       data: {
@@ -404,14 +426,16 @@ export async function createReturn(input: {
         subtotalCents,
         itbisCents,
         totalCents,
+        salePricesIncludeItbis: documentSalePricesIncludeItbis,
         notes: input.notes?.trim() || null,
         items: {
-          create: input.items.map((i) => ({
+          create: returnItemsWithSnapshot.map((i) => ({
             saleItemId: i.saleItemId,
             productId: i.productId,
             qty: i.qty,
             unitPriceCents: i.unitPriceCents,
-            lineTotalCents: i.unitPriceCents * i.qty,
+            itbisRateBp: i.itbisRateBp,
+            lineTotalCents: i.lineTotalCents,
           })),
         },
       },

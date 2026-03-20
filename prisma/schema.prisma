@@ -335,6 +335,7 @@ model CompanySettings {
 
   allowNegativeStock    Boolean @default(false)
   itbisRateBp           Int     @default(1800)
+  salePricesIncludeItbis Boolean @default(true)
   defaultProfitMarginBp Int     @default(3000)
   showItbisOnReceipts   Boolean @default(true)
 
@@ -716,6 +717,7 @@ model Sale {
   itbisCents    Int
   shippingCents Int @default(0)
   totalCents    Int
+  salePricesIncludeItbis Boolean @default(true)
 
   notes String?
 
@@ -751,6 +753,7 @@ model SaleItem {
 
   unitPriceCents     Int
   wasPriceOverridden Boolean @default(false)
+  itbisRateBp        Int     @default(1800)
 
   lineTotalCents Int
 
@@ -992,6 +995,7 @@ model Return {
   subtotalCents Int
   itbisCents    Int
   totalCents    Int
+  salePricesIncludeItbis Boolean @default(true)
 
   notes String?
 
@@ -1026,6 +1030,7 @@ model ReturnItem {
   qty Decimal @db.Decimal(10, 3)
 
   unitPriceCents Int
+  itbisRateBp    Int @default(1800)
   lineTotalCents Int
 }
 
@@ -1056,6 +1061,7 @@ model Quote {
   itbisCents    Int
   shippingCents Int @default(0)
   totalCents    Int
+  salePricesIncludeItbis Boolean @default(true)
 
   notes String?
 
@@ -1084,6 +1090,7 @@ model QuoteItem {
 
   unitPriceCents     Int
   wasPriceOverridden Boolean @default(false)
+  itbisRateBp        Int     @default(1800)
 
   lineTotalCents Int
 

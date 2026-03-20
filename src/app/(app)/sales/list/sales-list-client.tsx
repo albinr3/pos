@@ -16,7 +16,7 @@ import { PriceInput } from "@/components/app/price-input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
-import { formatRD, calcItbisIncluded } from "@/lib/money"
+import { formatRD, calcLineTotalsByTaxMode } from "@/lib/money"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { cn } from "@/lib/utils"
 import type { CurrentUser } from "@/lib/auth"
@@ -84,6 +84,7 @@ export function SalesListClient() {
 
   const [openEdit, setOpenEdit] = useState(false)
   const [editingSale, setEditingSale] = useState<SaleDetail | null>(null)
+  const [documentSalePricesIncludeItbis, setDocumentSalePricesIncludeItbis] = useState(true)
   const [customerId, setCustomerId] = useState<string | null>(null)
   const [saleType, setSaleType] = useState<SaleType>(SaleType.CONTADO)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
@@ -184,6 +185,7 @@ export function SalesListClient() {
         return
       }
       setEditingSale(sale)
+      setDocumentSalePricesIncludeItbis(sale.salePricesIncludeItbis ?? true)
       setCustomerId(sale.customerId)
       setSaleType(sale.type)
       setPaymentMethod(sale.paymentMethod || PaymentMethod.EFECTIVO)
@@ -205,7 +207,7 @@ export function SalesListClient() {
           qty: item.qty,
           unitPriceCents: item.unitPriceCents,
           wasPriceOverridden: item.wasPriceOverridden,
-          itbisRateBp: (item.product as any).itbisRateBp ?? 1800,
+          itbisRateBp: item.itbisRateBp ?? item.product.itbisRateBp ?? 1800,
           recipeItems: item.product.recipeItems ?? [],
           recipeAdjustments: (item.recipeAdjustments ?? []).map((adjustment) => ({
             ingredientId: adjustment.ingredientId,
@@ -343,23 +345,30 @@ export function SalesListClient() {
       } else {
         toast({ title: "No se pudo cancelar", description: result.error })
       }
-    } catch (e) {
+    } catch {
       toast({ title: "Error", description: "Error de comunicación con el servidor" })
     }
   }
 
-  const totalCents = cart.reduce((s, i) => s + i.unitPriceCents * i.qty, 0)
-  const { subtotalCents, itbisCents } = useMemo(() => {
+  const { subtotalCents, itbisCents, itemsTotalCents } = useMemo(() => {
     let totalSubtotal = 0
     let totalItbis = 0
+    let totalItems = 0
     for (const item of cart) {
-      const lineTotal = item.unitPriceCents * item.qty
-      const { subtotalCents: lineSub, itbisCents: lineItbis } = calcItbisIncluded(lineTotal, item.itbisRateBp)
-      totalSubtotal += lineSub
-      totalItbis += lineItbis
+      const lineTotals = calcLineTotalsByTaxMode(
+        item.unitPriceCents,
+        item.qty,
+        item.itbisRateBp,
+        documentSalePricesIncludeItbis
+      )
+      totalSubtotal += lineTotals.subtotalCents
+      totalItbis += lineTotals.itbisCents
+      totalItems += lineTotals.totalCents
     }
-    return { subtotalCents: totalSubtotal, itbisCents: totalItbis }
-  }, [cart])
+    return { subtotalCents: totalSubtotal, itbisCents: totalItbis, itemsTotalCents: totalItems }
+  }, [cart, documentSalePricesIncludeItbis])
+  const shippingCents = editingSale?.shippingCents ?? 0
+  const totalCents = itemsTotalCents + shippingCents
 
   return (
     <div className="grid gap-6">
@@ -645,9 +654,15 @@ export function SalesListClient() {
                   <span className="font-semibold">{formatRD(subtotalCents)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span>ITBIS:</span>
+                  <span>ITBIS {documentSalePricesIncludeItbis ? "(incluido)" : "(no incluido)"}:</span>
                   <span className="font-semibold">{formatRD(itbisCents)}</span>
                 </div>
+                {shippingCents > 0 && (
+                  <div className="flex justify-between">
+                    <span>Flete:</span>
+                    <span className="font-semibold">{formatRD(shippingCents)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between border-t pt-1">
                   <span className="font-semibold">Total:</span>
                   <span className="text-lg font-bold">{formatRD(totalCents)}</span>

@@ -29,7 +29,7 @@ import {
   saveARCache,
 } from "@/lib/indexed-db"
 
-import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings, updatePrintFormats } from "./actions"
+import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings, updatePrintFormats, updateSalePriceTaxMode } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
@@ -73,6 +73,7 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
   const [shippingLabelSize, setShippingLabelSize] = useState("4x6")
   const [defaultViewMode, setDefaultViewMode] = useState("list")
   const [defaultProfitMargin, setDefaultProfitMargin] = useState("30.00")
+  const [salePricesIncludeItbis, setSalePricesIncludeItbis] = useState(true)
   const [showItbisOnReceipts, setShowItbisOnReceipts] = useState(true)
 
   const [salePrintFormat, setSalePrintFormat] = useState("80mm")
@@ -102,6 +103,7 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
       setShippingLabelSize(s.shippingLabelSize)
       setDefaultViewMode(s.defaultViewMode)
       setDefaultProfitMargin((s.defaultProfitMarginBp / 100).toFixed(2))
+      setSalePricesIncludeItbis(s.salePricesIncludeItbis)
       setShowItbisOnReceipts(s.showItbisOnReceipts)
       setSalePrintFormat(s.salePrintFormat ?? "80mm")
       setQuotePrintFormat(s.quotePrintFormat ?? "80mm")
@@ -521,6 +523,30 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
               <option value="list">Lista (texto y campos compactos)</option>
               <option value="grid">Imágenes (cuadrícula con fotos)</option>
             </select>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <Label className="text-base">Precio de venta incluye ITBIS</Label>
+              <div className="text-sm text-muted-foreground">
+                Si se desactiva, el precio de venta será base sin ITBIS y el total sumará el impuesto.
+              </div>
+            </div>
+            <Switch
+              checked={salePricesIncludeItbis}
+              onCheckedChange={(checked) => {
+                if (!canEditSettings) return
+                setSalePricesIncludeItbis(checked)
+                startSaving(async () => {
+                  try {
+                    await updateSalePriceTaxMode(checked)
+                    toast({ title: "Preferencia guardada" })
+                  } catch (e) {
+                    toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
+                  }
+                })
+              }}
+              disabled={isSaving || !canEditSettings}
+            />
           </div>
           <div className="flex items-center justify-between rounded-lg border p-4">
             <div className="space-y-0.5">

@@ -73,6 +73,11 @@ export default async function InvoicePrintPage({
     payments?: Array<{ id: string; method: PaymentMethod; amountCents: number; transferBankName?: string | null }>
   }
   const splitPayments = saleWithPayments.payments ?? []
+  const itbisModeLabel = sale.salePricesIncludeItbis ? "incluido" : "no incluido"
+  const uniqueItbisRates = Array.from(new Set(sale.items.map((item) => item.itbisRateBp ?? (company?.itbisRateBp ?? 1800))))
+  const itbisLabel = uniqueItbisRates.length === 1
+    ? `ITBIS (${(uniqueItbisRates[0] / 100).toFixed(2)}% ${itbisModeLabel})`
+    : `ITBIS (${itbisModeLabel})`
 
   function formatSaleType(type: string) {
     return type === "CREDITO" ? "Credito" : "Contado"
@@ -221,7 +226,7 @@ export default async function InvoicePrintPage({
       <div className="mt-6 grid grid-cols-2 gap-6">
         <div className="text-sm text-neutral-700">
           <div className="font-semibold">Nota</div>
-          <div>Precios incluyen ITBIS.</div>
+          <div>{sale.salePricesIncludeItbis ? "Precios con ITBIS incluido." : "Precios con ITBIS no incluido."}</div>
           <div className="mt-4 font-semibold">Gracias por su compra</div>
         </div>
 
@@ -232,7 +237,7 @@ export default async function InvoicePrintPage({
           </div>
           {(company?.showItbisOnReceipts ?? true) && (
             <div className="mt-1 flex items-center justify-between">
-              <span>ITBIS (18% incluido)</span>
+              <span>{itbisLabel}</span>
               <span>{formatRD(sale.itbisCents)}</span>
             </div>
           )}

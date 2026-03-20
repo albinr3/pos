@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation"
-import { Decimal } from "@prisma/client/runtime/library"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatDateTimeDO } from "@/lib/date-time"
@@ -61,6 +60,13 @@ export default async function ReturnCartaPrintPage({
   if (!returnRecord) return notFound()
 
   const logoUrl = company?.logoUrl
+  const itbisModeLabel = returnRecord.salePricesIncludeItbis ? "incluido" : "no incluido"
+  const uniqueItbisRates = Array.from(
+    new Set(returnRecord.items.map((item) => item.itbisRateBp ?? (company?.itbisRateBp ?? 1800)))
+  )
+  const itbisLabel = uniqueItbisRates.length === 1
+    ? `ITBIS (${(uniqueItbisRates[0] / 100).toFixed(2)}% ${itbisModeLabel})`
+    : `ITBIS (${itbisModeLabel})`
 
   return (
     <div className="mx-auto max-w-[850px] bg-white p-10 text-black print-content">
@@ -174,7 +180,7 @@ export default async function ReturnCartaPrintPage({
             <span>{formatRD(returnRecord.subtotalCents)}</span>
           </div>
           <div className="mt-1 flex items-center justify-between">
-            <span>ITBIS (18%)</span>
+            <span>{itbisLabel}</span>
             <span>{formatRD(returnRecord.itbisCents)}</span>
           </div>
           <div className="mt-3 flex items-center justify-between border-t pt-3 text-base font-bold">

@@ -439,6 +439,7 @@ export function ProductsClient() {
   const [price, setPrice] = useState("0")
   const [cost, setCost] = useState("0")
   const [itbisRateBp, setItbisRateBp] = useState(1800) // 18% por defecto
+  const [salePricesIncludeItbis, setSalePricesIncludeItbis] = useState(true)
   const [isAvailableForSale, setIsAvailableForSale] = useState(true)
   const [stock, setStock] = useState("0")
   const [minStock, setMinStock] = useState("0")
@@ -506,7 +507,12 @@ export function ProductsClient() {
     getAllSuppliers().then(setSuppliers).catch(() => setSuppliers([]))
     getAllCategories().then(setCategories).catch(() => setCategories([]))
     listRecipeIngredientOptions().then(setIngredientOptions).catch(() => setIngredientOptions([]))
-    getSettings().then((s) => setBarcodeLabelSize(s.barcodeLabelSize)).catch(() => { })
+    getSettings()
+      .then((s) => {
+        setBarcodeLabelSize(s.barcodeLabelSize)
+        setSalePricesIncludeItbis(s.salePricesIncludeItbis)
+      })
+      .catch(() => { })
   }, [])
 
   useEffect(() => {
@@ -1472,7 +1478,7 @@ export function ProductsClient() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="grid gap-2">
                               <Label>
-                                Precio de venta por ({getUnitInfo("UNIDAD").abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
+                                Precio de venta por ({getUnitInfo("UNIDAD").abbr}) (RD$, {salePricesIncludeItbis ? "ITBIS incluido" : "ITBIS no incluido"}) <span className="text-red-500">*</span>
                               </Label>
                               <Input
                                 value={price}
@@ -1554,7 +1560,7 @@ export function ProductsClient() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="grid gap-2">
                               <Label>
-                                Precio de venta por ({getUnitInfo(unit).abbr}) (RD$, ITBIS incluido) <span className="text-red-500">*</span>
+                                Precio de venta por ({getUnitInfo(unit).abbr}) (RD$, {salePricesIncludeItbis ? "ITBIS incluido" : "ITBIS no incluido"}) <span className="text-red-500">*</span>
                               </Label>
                               <Input
                                 value={price}
@@ -1613,7 +1619,7 @@ export function ProductsClient() {
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div className="grid gap-2">
                               <Label>
-                                Precio de venta por unidad (RD$, ITBIS incluido) <span className="text-red-500">*</span>
+                                Precio de venta por unidad (RD$, {salePricesIncludeItbis ? "ITBIS incluido" : "ITBIS no incluido"}) <span className="text-red-500">*</span>
                               </Label>
                               <Input
                                 value={price}
@@ -1746,7 +1752,9 @@ export function ProductsClient() {
 
                         <Separator />
                         <div className="text-xs text-muted-foreground">
-                          Tip: el precio es el precio final al público (incluye ITBIS).
+                          {salePricesIncludeItbis
+                            ? "Tip: el precio es el precio final al público (incluye ITBIS)."
+                            : "Tip: el precio es base (sin ITBIS); al vender se sumará el ITBIS según la tasa del producto."}
                           {itbisRateBp === 0 ? " En este caso, estará excento." : ""}
                         </div>
                       </div>

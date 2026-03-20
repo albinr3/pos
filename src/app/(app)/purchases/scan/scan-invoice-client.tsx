@@ -48,6 +48,7 @@ export function ScanInvoiceClient() {
   const [updatePrice, setUpdatePrice] = useState(true)
   const [defaultProfitMarginBp, setDefaultProfitMarginBp] = useState(3000)
   const [itbisRateBp, setItbisRateBp] = useState(1800)
+  const [salePricesIncludeItbis, setSalePricesIncludeItbis] = useState(true)
   // Estado para los valores de los inputs de costo unitario mientras se escriben
   const [unitPriceInputs, setUnitPriceInputs] = useState<Record<number, string>>({})
   const [saleMarginInputs, setSaleMarginInputs] = useState<Record<number, string>>({})
@@ -71,6 +72,7 @@ export function ScanInvoiceClient() {
         setSuppliers(supplierList)
         setDefaultProfitMarginBp(settings.defaultProfitMarginBp)
         setItbisRateBp(settings.itbisRateBp)
+        setSalePricesIncludeItbis(settings.salePricesIncludeItbis)
       })
       .catch(() => {})
   }, [])
@@ -91,6 +93,7 @@ export function ScanInvoiceClient() {
       purchaseItbisRateBp,
       productItbisRateBp: saleItbisRateBp,
       defaultSaleMarginBp: defaultProfitMarginBp,
+      salePricesIncludeItbis,
       saleMarginBp: overrides && "salePriceCents" in overrides ? undefined : (overrides?.saleMarginBp ?? product.saleMarginBp),
       salePriceCents: overrides?.salePriceCents,
     })

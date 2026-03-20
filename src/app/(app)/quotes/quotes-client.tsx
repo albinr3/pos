@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
-import { formatRD, calcItbisIncluded, toCents } from "@/lib/money"
+import { formatRD, calcLineTotalsByTaxMode, toCents } from "@/lib/money"
 import { formatQty, formatQtyNumber, parseQty, unitAllowsDecimals } from "@/lib/units"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { toast } from "@/hooks/use-toast"
@@ -79,7 +79,15 @@ function formatQtyBadge(value: number) {
   return value.toFixed(2).replace(/\.?0+$/, "")
 }
 
-export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: { defaultViewMode?: string; itbisRateBp?: number }) {
+export function QuotesClient({
+  defaultViewMode = "list",
+  itbisRateBp = 1800,
+  salePricesIncludeItbis = true,
+}: {
+  defaultViewMode?: string
+  itbisRateBp?: number
+  salePricesIncludeItbis?: boolean
+}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const editQuoteId = searchParams.get("edit")
@@ -107,6 +115,7 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
   const [isSaving, startSave] = useTransition()
   const [isLoadingQuote, startLoadingQuote] = useTransition()
   const [editingQuoteCode, setEditingQuoteCode] = useState<string | null>(null)
+  const [activeSalePricesIncludeItbis, setActiveSalePricesIncludeItbis] = useState(salePricesIncludeItbis)
   const [recipeDialogLineId, setRecipeDialogLineId] = useState<string | null>(null)
   const [recipeDialogMode, setRecipeDialogMode] = useState<"SIN" | "EXTRA" | null>(null)
   const [recipeApplyScope, setRecipeApplyScope] = useState<RecipeApplyScope>("ONE")
@@ -124,6 +133,7 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
     setNotes("")
     setQuery("")
     setResults([])
+    setActiveSalePricesIncludeItbis(salePricesIncludeItbis)
   }
 
   useEffect(() => {
@@ -185,7 +195,7 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
               unitPriceCents: item.unitPriceCents,
               wasPriceOverridden: item.wasPriceOverridden,
               unit: (item.product?.unit as UnitType) ?? UnitType.UNIDAD,
-              itbisRateBp: item.product?.itbisRateBp ?? itbisRateBp,
+              itbisRateBp: item.itbisRateBp ?? item.product?.itbisRateBp ?? itbisRateBp,
               productKind: (item.product?.productKind as ProductKind) ?? ProductKind.BASIC,
               recipeItems: (item.product?.recipeItems ?? []).map((recipeItem) => {
                 const ingredientNameValue =
@@ -210,6 +220,7 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
         setShippingInput(quote.shippingCents > 0 ? (quote.shippingCents / 100).toFixed(2) : "")
         setValidUntilInput(quote.validUntil ? new Date(quote.validUntil).toISOString().slice(0, 10) : "")
         setNotes(quote.notes ?? "")
+        setActiveSalePricesIncludeItbis(quote.salePricesIncludeItbis ?? salePricesIncludeItbis)
         setQuery("")
         setResults([])
         setEditingQuoteCode(quote.quoteCode)
@@ -217,7 +228,7 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
         toast({ title: "Error", description: "No se pudo cargar la cotización para editar" })
       }
     })
-  }, [editQuoteId, router, itbisRateBp])
+  }, [editQuoteId, router, itbisRateBp, salePricesIncludeItbis])
 
   useEffect(() => {
     // Cargar todos los productos cuando se cambia a vista de grid
@@ -268,33 +279,36 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
     return () => clearTimeout(handle)
   }, [query, viewMode])
 
-  const itemsTotalCents = useMemo(
-    () => cart.reduce((s, i) => s + Math.round(i.unitPriceCents * i.qty), 0),
-    [cart]
-  )
-  const { subtotalCents, itbisCents } = useMemo(() => {
+  const { subtotalCents, itbisCents, itemsTotalCents } = useMemo(() => {
     let totalSubtotal = 0
     let totalItbis = 0
+    let totalItems = 0
     for (const item of cart) {
-      const lineTotal = Math.round(item.unitPriceCents * item.qty)
-      const { subtotalCents: lineSub, itbisCents: lineItbis } = calcItbisIncluded(lineTotal, item.itbisRateBp)
-      totalSubtotal += lineSub
-      totalItbis += lineItbis
+      const lineTotals = calcLineTotalsByTaxMode(
+        item.unitPriceCents,
+        item.qty,
+        item.itbisRateBp,
+        activeSalePricesIncludeItbis
+      )
+      totalSubtotal += lineTotals.subtotalCents
+      totalItbis += lineTotals.itbisCents
+      totalItems += lineTotals.totalCents
     }
-    return { subtotalCents: totalSubtotal, itbisCents: totalItbis }
-  }, [cart])
+    return { subtotalCents: totalSubtotal, itbisCents: totalItbis, itemsTotalCents: totalItems }
+  }, [cart, activeSalePricesIncludeItbis])
   const shippingCents = useMemo(() => toCents(shippingInput), [shippingInput])
   const totalCents = useMemo(() => itemsTotalCents + shippingCents, [itemsTotalCents, shippingCents])
   const itbisLabel = useMemo(() => {
+    const modeLabel = activeSalePricesIncludeItbis ? "incluido" : "no incluido"
     if (cart.length === 0) {
-      return `ITBIS (${(itbisRateBp / 100).toFixed(2)}% incluido)`
+      return `ITBIS (${(itbisRateBp / 100).toFixed(2)}% ${modeLabel})`
     }
     const uniqueRates = Array.from(new Set(cart.map((item) => item.itbisRateBp)))
     if (uniqueRates.length === 1) {
-      return `ITBIS (${(uniqueRates[0] / 100).toFixed(2)}% incluido)`
+      return `ITBIS (${(uniqueRates[0] / 100).toFixed(2)}% ${modeLabel})`
     }
-    return "ITBIS (incluido)"
-  }, [cart, itbisRateBp])
+    return `ITBIS (${modeLabel})`
+  }, [cart, itbisRateBp, activeSalePricesIncludeItbis])
 
   function addToCart(p: ProductResult, recipeAdjustments: RecipeAdjustment[] = []) {
     const productUnit = (p.unit as UnitType) ?? UnitType.UNIDAD
@@ -394,6 +408,7 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
               })),
             })),
             shippingCents: shippingCents > 0 ? shippingCents : undefined,
+            salePricesIncludeItbis: activeSalePricesIncludeItbis,
             validUntil,
             notes: notes || undefined,
           })
@@ -424,6 +439,7 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
             })),
           })),
           shippingCents: shippingCents > 0 ? shippingCents : undefined,
+          salePricesIncludeItbis: activeSalePricesIncludeItbis,
           validUntil,
           notes: notes || undefined,
         })
@@ -949,7 +965,9 @@ export function QuotesClient({ defaultViewMode = "list", itbisRateBp = 1800 }: {
               {isSaving ? "Guardando…" : editQuoteId ? "Guardar cambios" : "Guardar y generar PDF"}
             </Button>
             <div className="text-xs text-muted-foreground">
-              Precios incluyen ITBIS según la configuración actual. Se generará un PDF para compartir.
+              {activeSalePricesIncludeItbis
+                ? "Precios con ITBIS incluido según la configuración del documento."
+                : "Precios sin ITBIS incluido según la configuración del documento."} Se generará un PDF para compartir.
             </div>
           </CardContent>
         </Card>

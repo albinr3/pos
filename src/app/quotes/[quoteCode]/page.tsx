@@ -6,7 +6,6 @@ import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatQty } from "@/lib/units"
 import { DownloadInvoicePdfButton } from "@/components/app/download-invoice-pdf-button"
-import { PrintButton } from "@/components/app/print-button"
 import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
 import { QuoteShareButton } from "@/components/app/quote-share-button"
 
@@ -62,7 +61,11 @@ export default async function QuotePrintPage({
   if (!quote) return notFound()
 
   const logoUrl = company?.logoUrl || "/movoLogo.png"
-  const itbisLabel = `ITBIS (${((company?.itbisRateBp ?? 1800) / 100).toFixed(2)}% incluido)`
+  const itbisModeLabel = quote.salePricesIncludeItbis ? "incluido" : "no incluido"
+  const uniqueItbisRates = Array.from(new Set(quote.items.map((item) => item.itbisRateBp ?? (company?.itbisRateBp ?? 1800))))
+  const itbisLabel = uniqueItbisRates.length === 1
+    ? `ITBIS (${(uniqueItbisRates[0] / 100).toFixed(2)}% ${itbisModeLabel})`
+    : `ITBIS (${itbisModeLabel})`
 
   return (
     <div className="mx-auto max-w-[850px] bg-white p-10 text-black print-content">
@@ -179,7 +182,9 @@ export default async function QuotePrintPage({
               <div className="mt-1">{quote.notes}</div>
             </>
           )}
-          <div className="mt-4 font-semibold">Precios incluyen ITBIS.</div>
+          <div className="mt-4 font-semibold">
+            {quote.salePricesIncludeItbis ? "Precios con ITBIS incluido." : "Precios con ITBIS no incluido."}
+          </div>
           <div className="mt-2">Gracias por su interés</div>
           {quote.user && (
             <div className="mt-4 text-xs text-neutral-500">Preparado por: {quote.user.name}</div>

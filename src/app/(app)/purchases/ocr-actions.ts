@@ -236,11 +236,12 @@ export async function createPurchaseFromOCR(input: {
 
     const settings = await tx.companySettings.findFirst({
       where: { accountId: currentUser.accountId },
-      select: { itbisRateBp: true, defaultProfitMarginBp: true },
+      select: { itbisRateBp: true, defaultProfitMarginBp: true, salePricesIncludeItbis: true },
     })
 
     const purchaseItbisRateBp = settings?.itbisRateBp ?? 1800
     const defaultProfitMarginBp = settings?.defaultProfitMarginBp ?? 3000
+    const salePricesIncludeItbis = settings?.salePricesIncludeItbis ?? true
     const purchaseIncludesItbis = supplier ? (supplier.chargesItbis ?? false) : true
     const supplierPurchaseItbisRateBp = supplier?.chargesItbis
       ? (supplier.itbisRateBp ?? purchaseItbisRateBp)
@@ -297,6 +298,7 @@ export async function createPurchaseFromOCR(input: {
         defaultSaleMarginBp: defaultProfitMarginBp,
         saleMarginBp: p.saleMarginBp,
         salePriceCents: p.sellPriceCents,
+        salePricesIncludeItbis,
       })
 
       // Si es producto nuevo y se debe crear

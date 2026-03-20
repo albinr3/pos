@@ -38,11 +38,12 @@ async function buildPurchaseItems(params: {
 }) {
   const settings = await params.tx.companySettings.findFirst({
     where: { accountId: params.accountId },
-    select: { itbisRateBp: true, defaultProfitMarginBp: true },
+    select: { itbisRateBp: true, defaultProfitMarginBp: true, salePricesIncludeItbis: true },
   })
 
   const purchaseItbisRateBp = settings?.itbisRateBp ?? 1800
   const defaultProfitMarginBp = settings?.defaultProfitMarginBp ?? 3000
+  const salePricesIncludeItbis = settings?.salePricesIncludeItbis ?? true
   const supplierPurchaseItbisRateBp = params.supplier?.chargesItbis
     ? (params.supplier.itbisRateBp ?? purchaseItbisRateBp)
     : purchaseItbisRateBp
@@ -74,6 +75,7 @@ async function buildPurchaseItems(params: {
       defaultSaleMarginBp: defaultProfitMarginBp,
       saleMarginBp: item.saleMarginBp,
       salePriceCents: item.salePriceCents,
+      salePricesIncludeItbis,
     })
 
     return {

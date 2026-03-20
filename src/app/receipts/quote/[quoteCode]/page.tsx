@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation"
-import Link from "next/link"
 
 import { getCurrentUser } from "@/lib/auth"
-import { formatDateTimeDO, formatDateDO } from "@/lib/date-time"
+import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatQty } from "@/lib/units"
 import { PrintButton } from "@/components/app/print-button"
@@ -51,6 +50,11 @@ export default async function QuoteReceiptPage({
   ])
 
   if (!quote) return notFound()
+  const itbisModeLabel = quote.salePricesIncludeItbis ? "incluido" : "no incluido"
+  const uniqueItbisRates = Array.from(new Set(quote.items.map((item) => item.itbisRateBp ?? (company?.itbisRateBp ?? 1800))))
+  const itbisLabel = uniqueItbisRates.length === 1
+    ? `ITBIS (${(uniqueItbisRates[0] / 100).toFixed(2)}% ${itbisModeLabel})`
+    : `ITBIS (${itbisModeLabel})`
 
   return (
     <div className="mx-auto w-[80mm] bg-white p-3 text-[15.5px] leading-4 text-black print-content">
@@ -138,7 +142,7 @@ export default async function QuoteReceiptPage({
           <span>{formatRD(quote.subtotalCents)}</span>
         </div>
         <div className="flex justify-between">
-          <span>ITBIS (18% incluido)</span>
+          <span>{itbisLabel}</span>
           <span>{formatRD(quote.itbisCents)}</span>
         </div>
         {quote.shippingCents > 0 && (
@@ -159,7 +163,9 @@ export default async function QuoteReceiptPage({
             <span className="font-semibold">Notas:</span> {quote.notes}
           </div>
         )}
-        <div className="text-center font-semibold">Precios incluyen ITBIS.</div>
+        <div className="text-center font-semibold">
+          {quote.salePricesIncludeItbis ? "Precios con ITBIS incluido." : "Precios con ITBIS no incluido."}
+        </div>
       </div>
 
       <div className="mt-3 text-center">

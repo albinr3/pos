@@ -86,14 +86,16 @@ export function computeSalePriceFromMargin(input: {
   purchaseNoItbisCents: number
   saleMarginBp?: number | null
   saleItbisRateBp?: number | null
+  salePricesIncludeItbis?: boolean
 }): SalePriceResult {
   const purchaseNoItbisCents = Math.max(0, toSafeInt(input.purchaseNoItbisCents, 0))
   const saleMarginBp = normalizeMarginBp(input.saleMarginBp)
   const saleItbisRateBp = normalizeItbisRateBp(input.saleItbisRateBp)
   const appliedItbisRateBp = saleItbisRateBp > 0 ? saleItbisRateBp : 0
+  const salePricesIncludeItbis = input.salePricesIncludeItbis ?? true
 
   const saleNoItbisCents = Math.round(purchaseNoItbisCents * (1 + saleMarginBp / 10000))
-  const salePriceCents = appliedItbisRateBp > 0
+  const salePriceCents = salePricesIncludeItbis && appliedItbisRateBp > 0
     ? Math.round(saleNoItbisCents * (1 + appliedItbisRateBp / 10000))
     : saleNoItbisCents
 
@@ -109,13 +111,15 @@ export function computeMarginFromSalePrice(input: {
   purchaseNoItbisCents: number
   salePriceCents: number
   saleItbisRateBp?: number | null
+  salePricesIncludeItbis?: boolean
 }): SalePriceResult {
   const purchaseNoItbisCents = Math.max(0, toSafeInt(input.purchaseNoItbisCents, 0))
   const salePriceCents = Math.max(0, toSafeInt(input.salePriceCents, 0))
   const saleItbisRateBp = normalizeItbisRateBp(input.saleItbisRateBp)
   const appliedItbisRateBp = saleItbisRateBp > 0 ? saleItbisRateBp : 0
+  const salePricesIncludeItbis = input.salePricesIncludeItbis ?? true
 
-  const saleNoItbisCents = appliedItbisRateBp > 0
+  const saleNoItbisCents = salePricesIncludeItbis && appliedItbisRateBp > 0
     ? Math.round(salePriceCents / (1 + appliedItbisRateBp / 10000))
     : salePriceCents
 
@@ -142,6 +146,7 @@ export function resolvePurchaseSalePricing(input: {
   defaultSaleMarginBp?: number | null
   saleMarginBp?: number | null
   salePriceCents?: number | null
+  salePricesIncludeItbis?: boolean
 }) {
   const purchase = computePurchaseCostBreakdown({
     unitCostCents: input.unitCostCents,
@@ -158,6 +163,7 @@ export function resolvePurchaseSalePricing(input: {
       purchaseNoItbisCents: purchase.purchaseNoItbisCents,
       salePriceCents: input.salePriceCents,
       saleItbisRateBp: effectiveSaleItbisRateBp,
+      salePricesIncludeItbis: input.salePricesIncludeItbis,
     })
     return {
       ...purchase,
@@ -169,6 +175,7 @@ export function resolvePurchaseSalePricing(input: {
     purchaseNoItbisCents: purchase.purchaseNoItbisCents,
     saleMarginBp: input.saleMarginBp ?? input.defaultSaleMarginBp ?? DEFAULT_MARGIN_BP,
     saleItbisRateBp: effectiveSaleItbisRateBp,
+    salePricesIncludeItbis: input.salePricesIncludeItbis,
   })
 
   return {

@@ -39,6 +39,9 @@ type SaleCreateBody = {
   customerId?: string | null
   soldAt?: string | number | null
   createdAt?: string | number | null
+  salePricesIncludeItbis?: boolean
+  preciosIncluyenItbis?: boolean
+  precioVentaIncluyeItbis?: boolean
 }
 
 const methodMap: Record<string, PaymentMethod> = {
@@ -63,6 +66,21 @@ type CartItemInput = {
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message
   return fallback
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase()
+    if (!trimmed) return undefined
+    if (["1", "true", "si", "sí", "yes", "on"].includes(trimmed)) return true
+    if (["0", "false", "no", "off"].includes(trimmed)) return false
+  }
+  if (typeof value === "number") {
+    if (value === 1) return true
+    if (value === 0) return false
+  }
+  return undefined
 }
 
 function parseOptionalSaleDate(value: unknown): Date | undefined {
@@ -117,7 +135,16 @@ export async function GET(request: NextRequest) {
       orderBy: { soldAt: "desc" },
       include: {
         customer: { select: { id: true, name: true } },
-        items: { select: { id: true } },
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            qty: true,
+            unitPriceCents: true,
+            lineTotalCents: true,
+            itbisRateBp: true,
+          },
+        },
       },
       take: 300,
     })
@@ -137,8 +164,17 @@ export async function GET(request: NextRequest) {
         itbisCents: sale.itbisCents,
         shippingCents: sale.shippingCents,
         totalCents: sale.totalCents,
+        salePricesIncludeItbis: sale.salePricesIncludeItbis,
         cancelledAt: sale.cancelledAt ? sale.cancelledAt.toISOString() : null,
         itemsCount: sale.items.length,
+        items: sale.items.map((item) => ({
+          id: item.id,
+          productId: item.productId,
+          qty: Number(item.qty),
+          unitPriceCents: item.unitPriceCents,
+          lineTotalCents: item.lineTotalCents,
+          itbisRateBp: item.itbisRateBp,
+        })),
       })),
     })
   } catch (error: unknown) {
@@ -160,6 +196,10 @@ export async function POST(request: NextRequest) {
 
     const body = (await request.json()) as SaleCreateBody
     const soldAt = parseOptionalSaleDate(body.soldAt ?? body.createdAt)
+    const salePricesIncludeItbis =
+      readBoolean(body.salePricesIncludeItbis) ??
+      readBoolean(body.preciosIncluyenItbis) ??
+      readBoolean(body.precioVentaIncluyeItbis)
 
     if ((body.items ?? []).some((item) => Array.isArray(item.selectedModifierIds))) {
       return NextResponse.json(
@@ -221,6 +261,7 @@ export async function POST(request: NextRequest) {
       paymentSplits: paymentSplits && paymentSplits.length > 0 ? paymentSplits : undefined,
       items,
       shippingCents,
+      salePricesIncludeItbis,
       soldAt,
       username: user.username,
       user,
@@ -233,6 +274,7 @@ export async function POST(request: NextRequest) {
       soldAt: sale.soldAt.toISOString(),
       createdAt: sale.soldAt.toISOString(),
       transferBankName: sale.transferBankName ?? null,
+      salePricesIncludeItbis: sale.salePricesIncludeItbis ?? true,
     }, { status: 201 })
   } catch (error: unknown) {
     console.error("Error en POST /api/sales:", error)

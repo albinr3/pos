@@ -5,7 +5,7 @@ App web SaaS para **ventas**, **inventario**, **compras**, **cuentas por cobrar 
 - **Multi-tenant**: Cada cuenta es un negocio aislado con sus propios datos
 - **Autenticación**: Clerk (Google/Email) + Subusuarios con contraseña
 - Moneda: **RD$ (DOP)**
-- ITBIS: **18% incluido en el precio** (se desglosa en subtotal/itbis/total)
+- ITBIS: **configurable por cuenta (incluido o no incluido en precio de venta)**; tasa estándar 18%
 - Facturación:
   - **Ticket térmico 80mm** (por defecto)
   - Factura **carta** (opcional)
@@ -71,6 +71,24 @@ Notas de autorización:
 ---
 
 ## ✅ Implementaciones y correcciones recientes (enero-marzo 2026)
+
+### Preferencia fiscal por cuenta: precio de venta con ITBIS incluido/no incluido (marzo 2026)
+- Se agregó la preferencia global `salePricesIncludeItbis` en Ajustes de Ventas.
+- Modo `true` (default): el precio de venta guardado incluye ITBIS; total de línea/documento ya lo contiene.
+- Modo `false`: el precio de venta guardado es base sin ITBIS; total se calcula como base + ITBIS.
+- Se conserva historial por documento:
+  - Ventas, cotizaciones y devoluciones guardan snapshot de modo (`salePricesIncludeItbis`) para no reinterpretar documentos antiguos cuando el ajuste cambia.
+  - Ítems transaccionales guardan snapshot de tasa (`itbisRateBp`) para cálculos consistentes en edición, reportes, devoluciones e impresión.
+- Se actualizó UI y textos para reflejar el modo activo:
+  - Creación/edición de productos.
+  - Desglose de carrito en POS/cotizaciones.
+  - Recibos/facturas/PDFs y etiquetas de impuestos dinámicas.
+- API y offline actualizados para mantener consistencia:
+  - `/api/company-settings` expone y acepta `salePricesIncludeItbis`.
+  - Payloads de ventas/cotizaciones incluyen modo del documento y tasa snapshot por ítem.
+  - Ventas offline persisten el modo al momento de crear y lo envían en sincronización.
+- Compras integradas al nuevo modo:
+  - El precio de venta sugerido/guardado desde compras respeta si la cuenta trabaja con ITBIS incluido o no incluido.
 
 ### Permisos modulares y hardening de acceso (marzo 2026)
 - Se agregaron permisos modulares por categoría en `User`:
@@ -172,7 +190,7 @@ Ruta: `/products`
 - Crear/editar productos:
   - **ID incremental** (productId) - generado automáticamente
   - Descripción, SKU, Referencia
-  - Precio (ITBIS incluido)
+  - Precio de venta (según ajuste de cuenta: ITBIS incluido o no incluido)
   - Costo
   - Stock y Stock mínimo
   - **Unidad de medida única**: cada producto usa un solo campo `unit`
@@ -1004,7 +1022,9 @@ npx prisma generate
 
 ### Almacenamiento de Datos
 - **Dinero**: Se guarda en centavos (ej. RD$ 100.00 => `10000`)
-- **ITBIS**: Siempre 18% incluido en el precio (se desglosa en subtotal/itbis/total)
+- **ITBIS**: Tasa estándar 18% con modo configurable por cuenta (`salePricesIncludeItbis`):
+  - `true`: precio incluye ITBIS
+  - `false`: precio no incluye ITBIS (se suma en el total)
 - **Porcentajes**: Se almacenan en basis points (1000 = 10%, 1800 = 18%)
 
 ### Secuencias y Códigos

@@ -71,6 +71,11 @@ export default async function SaleReceiptPage({
     payments?: Array<{ id: string; method: PaymentMethod; amountCents: number; transferBankName?: string | null }>
   }
   const splitPayments = saleWithPayments.payments ?? []
+  const itbisModeLabel = sale.salePricesIncludeItbis ? "incluido" : "no incluido"
+  const uniqueItbisRates = Array.from(new Set(sale.items.map((item) => item.itbisRateBp ?? (company?.itbisRateBp ?? 1800))))
+  const itbisLabel = uniqueItbisRates.length === 1
+    ? `ITBIS (${(uniqueItbisRates[0] / 100).toFixed(2)}% ${itbisModeLabel})`
+    : `ITBIS (${itbisModeLabel})`
 
   function formatSaleType(type: string) {
     return type === "CREDITO" ? "Credito" : "Contado"
@@ -179,7 +184,7 @@ export default async function SaleReceiptPage({
         </div>
         {(company?.showItbisOnReceipts ?? true) && (
           <div className="flex justify-between">
-            <span>ITBIS (18% incluido)</span>
+            <span>{itbisLabel}</span>
             <span>{formatRD(sale.itbisCents)}</span>
           </div>
         )}

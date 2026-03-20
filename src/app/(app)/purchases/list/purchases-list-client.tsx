@@ -67,6 +67,7 @@ export function PurchasesListClient() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [defaultProfitMarginBp, setDefaultProfitMarginBp] = useState(3000)
   const [itbisRateBp, setItbisRateBp] = useState(1800)
+  const [salePricesIncludeItbis, setSalePricesIncludeItbis] = useState(true)
 
   const [discountInputs, setDiscountInputs] = useState<Record<string, string>>({})
   const [saleMarginInputs, setSaleMarginInputs] = useState<Record<string, string>>({})
@@ -93,6 +94,7 @@ export function PurchasesListClient() {
       purchaseItbisRateBp,
       productItbisRateBp: nextItem.productItbisRateBp,
       defaultSaleMarginBp: defaultProfitMarginBp,
+      salePricesIncludeItbis,
       saleMarginBp: overrides && "salePriceCents" in overrides ? undefined : nextItem.saleMarginBp,
       salePriceCents: overrides?.salePriceCents,
     })
@@ -126,6 +128,7 @@ export function PurchasesListClient() {
         setSuppliers(supplierList)
         setDefaultProfitMarginBp(settings.defaultProfitMarginBp)
         setItbisRateBp(settings.itbisRateBp)
+        setSalePricesIncludeItbis(settings.salePricesIncludeItbis)
       })
       .catch(() => {})
   }, [])
@@ -194,6 +197,7 @@ export function PurchasesListClient() {
           purchaseItbisRateBp: purchaseItbisForSupplier,
           productItbisRateBp: item.product.itbisRateBp,
           defaultSaleMarginBp: defaultProfitMarginBp,
+          salePricesIncludeItbis,
           saleMarginBp: item.saleMarginBp ?? undefined,
           salePriceCents: item.salePriceCents ?? undefined,
         })
@@ -248,6 +252,7 @@ export function PurchasesListClient() {
         purchaseItbisRateBp,
         productItbisRateBp: p.itbisRateBp ?? 0,
         defaultSaleMarginBp: defaultProfitMarginBp,
+        salePricesIncludeItbis,
       })
 
       return [

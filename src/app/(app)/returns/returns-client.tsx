@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
-import { formatRD } from "@/lib/money"
+import { calcLineTotalsByTaxMode, formatRD } from "@/lib/money"
 
 import { createReturn, getSaleForReturn, searchSalesForReturn } from "./actions"
 
@@ -27,6 +27,7 @@ type ReturnItem = {
   qty: number
   availableQty: number
   unitPriceCents: number
+  itbisRateBp: number
 }
 
 export function ReturnsClient() {
@@ -116,6 +117,7 @@ export function ReturnsClient() {
           qty: 1,
           availableQty: item.availableQty,
           unitPriceCents: item.unitPriceCents,
+          itbisRateBp: item.itbisRateBp ?? 1800,
         },
       ]
     })
@@ -137,7 +139,21 @@ export function ReturnsClient() {
     setReturnItems((prev) => prev.filter((x) => x.saleItemId !== saleItemId))
   }
 
-  const totalCents = returnItems.reduce((sum, item) => sum + item.unitPriceCents * item.qty, 0)
+  const { subtotalCents, itbisCents, totalCents } = returnItems.reduce(
+    (acc, item) => {
+      const lineTotals = calcLineTotalsByTaxMode(
+        item.unitPriceCents,
+        item.qty,
+        item.itbisRateBp,
+        selectedSale?.salePricesIncludeItbis ?? true
+      )
+      acc.subtotalCents += lineTotals.subtotalCents
+      acc.itbisCents += lineTotals.itbisCents
+      acc.totalCents += lineTotals.totalCents
+      return acc
+    },
+    { subtotalCents: 0, itbisCents: 0, totalCents: 0 }
+  )
   const maxReturnCents = selectedSale?.returnPolicy.maxReturnCents ?? null
   const isReturnBlocked = selectedSale ? !selectedSale.returnPolicy.canCreateReturn : false
   const exceedsCreditLimit = maxReturnCents !== null && totalCents > maxReturnCents
@@ -438,6 +454,20 @@ export function ReturnsClient() {
                       ))}
                     </TableBody>
                     <TableHeader>
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-right">
+                          Subtotal:
+                        </TableCell>
+                        <TableCell className="text-right">{formatRD(subtotalCents)}</TableCell>
+                        <TableCell></TableCell>
+                      </TableRow>
+                      <TableRow>
+                        <TableCell colSpan={3} className="text-right">
+                          ITBIS ({selectedSale?.salePricesIncludeItbis ? "incluido" : "no incluido"}):
+                        </TableCell>
+                        <TableCell className="text-right">{formatRD(itbisCents)}</TableCell>
+                        <TableCell></TableCell>
+                      </TableRow>
                       <TableRow>
                         <TableCell colSpan={3} className="text-right font-semibold">
                           Total:

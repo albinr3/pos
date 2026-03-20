@@ -375,7 +375,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
             </nav>
             <Separator />
             <div className="px-6 py-4 text-xs text-muted-foreground">
-              Local (1 PC) · RD$ · ITBIS incluido
+              Local (1 PC) · RD$
             </div>
           </div>
         </aside>
@@ -463,7 +463,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
                   </Button>
                 </nav>
                 <Separator className="flex-shrink-0" />
-                <div className="px-6 py-4 text-xs text-muted-foreground flex-shrink-0">Local (1 PC) · RD$ · ITBIS incluido</div>
+                <div className="px-6 py-4 text-xs text-muted-foreground flex-shrink-0">Local (1 PC) · RD$</div>
               </SheetContent>
             </Sheet>
 

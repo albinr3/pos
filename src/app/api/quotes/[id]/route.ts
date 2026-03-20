@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
-import { calcItbisIncluded } from "@/lib/money"
+import { calcLineTotalsByTaxMode } from "@/lib/money"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
@@ -26,6 +26,9 @@ type UpdateQuoteBody = {
   shipping?: number
   validUntil?: string | null
   notes?: string | null
+  salePricesIncludeItbis?: boolean
+  preciosIncluyenItbis?: boolean
+  precioVentaIncluyeItbis?: boolean
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -44,6 +47,21 @@ function decimalToNumber(value: unknown): number {
     return Number((value as { toNumber: () => number }).toNumber())
   }
   return Number(value || 0)
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase()
+    if (!trimmed) return undefined
+    if (["1", "true", "si", "sí", "yes", "on"].includes(trimmed)) return true
+    if (["0", "false", "no", "off"].includes(trimmed)) return false
+  }
+  if (typeof value === "number") {
+    if (value === 1) return true
+    if (value === 0) return false
+  }
+  return undefined
 }
 
 // GET /api/quotes/:id - Obtener cotización
@@ -85,6 +103,7 @@ export async function GET(
       itbisCents: quote.itbisCents,
       shippingCents: quote.shippingCents,
       totalCents: quote.totalCents,
+      salePricesIncludeItbis: quote.salePricesIncludeItbis,
       notes: quote.notes || null,
       items: quote.items.map((item) => ({
         id: item.id,
@@ -94,6 +113,7 @@ export async function GET(
         reference: item.product?.reference || null,
         qty: decimalToNumber(item.qty),
         unitPriceCents: item.unitPriceCents,
+        itbisRateBp: item.itbisRateBp,
         lineTotalCents: item.lineTotalCents,
         wasPriceOverridden: item.wasPriceOverridden,
       })),
@@ -169,9 +189,12 @@ export async function PUT(
 
     const settings = await prisma.companySettings.findFirst({
       where: { accountId: user.accountId },
-      select: { itbisRateBp: true },
+      select: { salePricesIncludeItbis: true },
     })
-    const itbisRateBp = settings?.itbisRateBp ?? 1800
+    const requestedSalePricesIncludeItbis =
+      readBoolean(body.salePricesIncludeItbis) ??
+      readBoolean(body.preciosIncluyenItbis) ??
+      readBoolean(body.precioVentaIncluyeItbis)
 
     const updatedQuote = await prisma.$transaction(async (tx) => {
       const products = await tx.product.findMany({
@@ -179,7 +202,7 @@ export async function PUT(
           accountId: user.accountId,
           id: { in: items.map((i) => i.productId) },
         },
-        select: { id: true, isActive: true },
+        select: { id: true, isActive: true, itbisRateBp: true },
       })
       const byId = new Map(products.map((p) => [p.id, p]))
 
@@ -190,8 +213,27 @@ export async function PUT(
         }
       }
 
-      const itemsTotalCents = items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
-      const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
+      const documentSalePricesIncludeItbis =
+        existing.salePricesIncludeItbis ?? requestedSalePricesIncludeItbis ?? (settings?.salePricesIncludeItbis ?? true)
+      const itemsWithTax = items.map((item) => ({
+        ...item,
+        itbisRateBp: byId.get(item.productId)?.itbisRateBp ?? 1800,
+      }))
+      const { subtotalCents, itbisCents, itemsTotalCents } = itemsWithTax.reduce(
+        (acc, item) => {
+          const lineTotals = calcLineTotalsByTaxMode(
+            item.unitPriceCents,
+            item.qty,
+            item.itbisRateBp ?? 1800,
+            documentSalePricesIncludeItbis
+          )
+          acc.subtotalCents += lineTotals.subtotalCents
+          acc.itbisCents += lineTotals.itbisCents
+          acc.itemsTotalCents += lineTotals.totalCents
+          return acc
+        },
+        { subtotalCents: 0, itbisCents: 0, itemsTotalCents: 0 }
+      )
       const shippingCents = Number(body.shippingCents ?? (body.shipping ? Math.round(body.shipping * 100) : existing.shippingCents))
       const totalCents = itemsTotalCents + shippingCents
 
@@ -206,17 +248,19 @@ export async function PUT(
           itbisCents,
           shippingCents,
           totalCents,
+          salePricesIncludeItbis: documentSalePricesIncludeItbis,
           items: {
-            create: items.map((i) => ({
+            create: itemsWithTax.map((i) => ({
               productId: i.productId,
               qty: i.qty,
               unitPriceCents: i.unitPriceCents,
               wasPriceOverridden: i.wasPriceOverridden,
-              lineTotalCents: i.unitPriceCents * i.qty,
+              itbisRateBp: i.itbisRateBp ?? 1800,
+              lineTotalCents: Math.round(i.unitPriceCents * i.qty),
             })),
           },
         },
-        select: { id: true, quoteCode: true, totalCents: true },
+        select: { id: true, quoteCode: true, totalCents: true, salePricesIncludeItbis: true },
       })
 
       await logAuditEvent(
@@ -245,6 +289,7 @@ export async function PUT(
       id: updatedQuote.id,
       quoteCode: updatedQuote.quoteCode,
       totalCents: updatedQuote.totalCents,
+      salePricesIncludeItbis: updatedQuote.salePricesIncludeItbis,
     })
   } catch (error: unknown) {
     console.error("Error en PUT /api/quotes/[id]:", error)

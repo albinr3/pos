@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { calcItbisIncluded } from "@/lib/money"
+import { calcLineTotalsByTaxMode } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
 import { ProductKind, RecipeAdjustmentType, type Prisma } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
@@ -381,6 +381,7 @@ type ResolvedQuoteLine = {
     id: string
     name: string
     priceCents: number
+    itbisRateBp: number | null
     isActive: boolean
     isAvailableForSale: boolean
     productKind: ProductKind
@@ -406,6 +407,7 @@ async function loadProductsForQuoteResolution(
       id: true,
       name: true,
       priceCents: true,
+      itbisRateBp: true,
       isActive: true,
       isAvailableForSale: true,
       productKind: true,
@@ -475,6 +477,7 @@ async function resolveQuoteLines(
           id: product.id,
           name: product.name,
           priceCents: product.priceCents,
+          itbisRateBp: product.itbisRateBp,
           isActive: product.isActive,
           isAvailableForSale: product.isAvailableForSale,
           productKind: product.productKind,
@@ -515,6 +518,7 @@ async function resolveQuoteLines(
         id: product.id,
         name: product.name,
         priceCents: product.priceCents,
+        itbisRateBp: product.itbisRateBp,
         isActive: product.isActive,
         isAvailableForSale: product.isAvailableForSale,
         productKind: product.productKind,
@@ -534,10 +538,32 @@ function quoteCode(number: number) {
   return `COT-${number.toString().padStart(5, "0")}`
 }
 
+function calculateQuoteTotalsFromResolvedLines(
+  lines: ResolvedQuoteLine[],
+  salePricesIncludeItbis: boolean
+) {
+  return lines.reduce(
+    (acc, line) => {
+      const lineTotals = calcLineTotalsByTaxMode(
+        line.item.unitPriceCents,
+        line.item.qty,
+        line.product.itbisRateBp ?? 1800,
+        salePricesIncludeItbis
+      )
+      acc.subtotalCents += lineTotals.subtotalCents
+      acc.itbisCents += lineTotals.itbisCents
+      acc.itemsTotalCents += lineTotals.totalCents
+      return acc
+    },
+    { subtotalCents: 0, itbisCents: 0, itemsTotalCents: 0 }
+  )
+}
+
 export async function createQuote(input: {
   customerId: string | null
   items: CartItemInput[]
   shippingCents?: number
+  salePricesIncludeItbis?: boolean
   validUntil?: Date | null
   notes?: string
 }) {
@@ -552,7 +578,7 @@ export async function createQuote(input: {
   validateQuoteItems(normalizedItems)
 
   const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
-  const itbisRateBp = settings?.itbisRateBp ?? 1800
+  const salePricesIncludeItbis = input.salePricesIncludeItbis ?? (settings?.salePricesIncludeItbis ?? true)
 
   return prisma.$transaction(async (tx) => {
     // Quote sequence por account
@@ -591,11 +617,10 @@ export async function createQuote(input: {
       }
     }
 
-    const itemsTotalCents = resolvedLines.reduce(
-      (sum, line) => sum + Math.round(line.item.unitPriceCents * line.item.qty),
-      0
+    const { subtotalCents, itbisCents, itemsTotalCents } = calculateQuoteTotalsFromResolvedLines(
+      resolvedLines,
+      salePricesIncludeItbis
     )
-    const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
     const shippingCents = input.shippingCents ?? 0
     const totalCents = itemsTotalCents + shippingCents
 
@@ -611,6 +636,7 @@ export async function createQuote(input: {
         itbisCents,
         shippingCents,
         totalCents,
+        salePricesIncludeItbis,
         notes: input.notes || null,
         items: {
           create: resolvedLines.map((line) => ({
@@ -618,6 +644,7 @@ export async function createQuote(input: {
             qty: line.item.qty,
             unitPriceCents: line.item.unitPriceCents,
             wasPriceOverridden: line.item.wasPriceOverridden,
+            itbisRateBp: line.product.itbisRateBp ?? 1800,
             lineTotalCents: Math.round(line.item.unitPriceCents * line.item.qty),
             recipeAdjustments: line.recipeAdjustments.length
               ? {
@@ -631,7 +658,7 @@ export async function createQuote(input: {
           })),
         },
       },
-      select: { id: true, quoteCode: true },
+      select: { id: true, quoteCode: true, salePricesIncludeItbis: true },
     })
 
     await logAuditEvent({
@@ -662,6 +689,7 @@ export async function updateQuote(input: {
   customerId: string | null
   items: CartItemInput[]
   shippingCents?: number
+  salePricesIncludeItbis?: boolean
   validUntil?: Date | null
   notes?: string
 }) {
@@ -677,7 +705,7 @@ export async function updateQuote(input: {
   validateQuoteItems(normalizedItems)
 
   const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
-  const itbisRateBp = settings?.itbisRateBp ?? 1800
+  const accountSalePricesIncludeItbis = settings?.salePricesIncludeItbis ?? true
 
   return prisma.$transaction(async (tx) => {
     const existingQuote = await tx.quote.findFirst({
@@ -727,12 +755,13 @@ export async function updateQuote(input: {
       where: { quoteId: input.id, quote: { accountId: currentUser.accountId } },
     })
 
-    // Calcular nuevos totales
-    const itemsTotalCents = resolvedLines.reduce(
-      (sum, line) => sum + Math.round(line.item.unitPriceCents * line.item.qty),
-      0
+    // Calcular nuevos totales con el modo histórico del documento
+    const documentSalePricesIncludeItbis =
+      existingQuote.salePricesIncludeItbis ?? input.salePricesIncludeItbis ?? accountSalePricesIncludeItbis
+    const { subtotalCents, itbisCents, itemsTotalCents } = calculateQuoteTotalsFromResolvedLines(
+      resolvedLines,
+      documentSalePricesIncludeItbis
     )
-    const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
     const shippingCents = input.shippingCents ?? 0
     const totalCents = itemsTotalCents + shippingCents
 
@@ -746,6 +775,7 @@ export async function updateQuote(input: {
         itbisCents,
         shippingCents,
         totalCents,
+        salePricesIncludeItbis: documentSalePricesIncludeItbis,
         notes: input.notes || null,
       },
     })
@@ -759,6 +789,7 @@ export async function updateQuote(input: {
           qty: line.item.qty,
           unitPriceCents: line.item.unitPriceCents,
           wasPriceOverridden: line.item.wasPriceOverridden,
+          itbisRateBp: line.product.itbisRateBp ?? 1800,
           lineTotalCents: Math.round(line.item.unitPriceCents * line.item.qty),
           recipeAdjustments: line.recipeAdjustments.length
             ? {

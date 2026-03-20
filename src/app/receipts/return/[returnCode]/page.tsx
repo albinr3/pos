@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation"
-import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { formatDateTimeDO } from "@/lib/date-time"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
@@ -71,6 +70,13 @@ export default async function ReturnReceiptPage({
   ])
 
   if (!returnRecord) return notFound()
+  const itbisModeLabel = returnRecord.salePricesIncludeItbis ? "incluido" : "no incluido"
+  const uniqueItbisRates = Array.from(
+    new Set(returnRecord.items.map((item) => item.itbisRateBp ?? (company?.itbisRateBp ?? 1800)))
+  )
+  const itbisLabel = uniqueItbisRates.length === 1
+    ? `ITBIS (${(uniqueItbisRates[0] / 100).toFixed(2)}% ${itbisModeLabel})`
+    : `ITBIS (${itbisModeLabel})`
 
   return (
     <div className="mx-auto w-[80mm] bg-white p-3 text-[12px] leading-4 text-black">
@@ -139,7 +145,7 @@ export default async function ReturnReceiptPage({
       </div>
 
       <div className="space-y-2">
-        {returnRecord.items.map((item, idx) => (
+        {returnRecord.items.map((item) => (
           <div key={item.id} className="border-b border-dashed pb-1">
             <div className="flex justify-between">
               <span className="font-semibold">{item.product.name}</span>
@@ -160,7 +166,7 @@ export default async function ReturnReceiptPage({
           <span>{formatRD(returnRecord.subtotalCents)}</span>
         </div>
         <div className="flex justify-between">
-          <span>ITBIS (18%):</span>
+          <span>{itbisLabel}:</span>
           <span>{formatRD(returnRecord.itbisCents)}</span>
         </div>
         <div className="mt-1 flex justify-between border-t border-dashed pt-1 text-[14px] font-bold">
@@ -182,7 +188,5 @@ export default async function ReturnReceiptPage({
     </div>
   )
 }
-
-
 
 

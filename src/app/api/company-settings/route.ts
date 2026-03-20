@@ -13,6 +13,7 @@ type CompanySettingsRecord = {
   phone: string
   defaultViewMode: string
   showItbisOnReceipts: boolean
+  salePricesIncludeItbis: boolean
   defaultProfitMarginBp: number
 }
 
@@ -29,6 +30,7 @@ function toCompanyPayload(company: CompanySettingsRecord | null) {
     salesSettings: {
       defaultViewMode: company?.defaultViewMode ?? "list",
       showItbisOnReceipts: company?.showItbisOnReceipts ?? true,
+      salePricesIncludeItbis: company?.salePricesIncludeItbis ?? true,
       defaultProfitMarginBp: company?.defaultProfitMarginBp ?? 3000,
     },
     // Compatibilidad con consumidores existentes
@@ -38,6 +40,7 @@ function toCompanyPayload(company: CompanySettingsRecord | null) {
     phone: company?.phone || "",
     defaultViewMode: company?.defaultViewMode ?? "list",
     showItbisOnReceipts: company?.showItbisOnReceipts ?? true,
+    salePricesIncludeItbis: company?.salePricesIncludeItbis ?? true,
     defaultProfitMarginBp: company?.defaultProfitMarginBp ?? 3000,
   }
 }
@@ -112,6 +115,10 @@ export async function POST(request: NextRequest) {
     const rawShowItbisOnReceipts =
       readBoolean((body as Record<string, unknown>).showItbisOnReceipts) ??
       readBoolean((body as Record<string, unknown>).desglosarItbisEnRecibos)
+    const rawSalePricesIncludeItbis =
+      readBoolean((body as Record<string, unknown>).salePricesIncludeItbis) ??
+      readBoolean((body as Record<string, unknown>).preciosIncluyenItbis) ??
+      readBoolean((body as Record<string, unknown>).precioVentaIncluyeItbis)
 
     const name = sanitizeString(rawName)
     if (!name) {
@@ -123,6 +130,7 @@ export async function POST(request: NextRequest) {
     const logoUrl = typeof rawLogo === "string" ? rawLogo.trim() || null : null
     const defaultViewMode = rawDefaultViewMode === "grid" ? "grid" : "list"
     const showItbisOnReceipts = rawShowItbisOnReceipts ?? true
+    const salePricesIncludeItbis = rawSalePricesIncludeItbis ?? true
 
     const created = await prisma.companySettings.upsert({
       where: { accountId: user.accountId },
@@ -133,6 +141,7 @@ export async function POST(request: NextRequest) {
         logoUrl,
         defaultViewMode,
         showItbisOnReceipts,
+        salePricesIncludeItbis,
       },
       create: {
         accountId: user.accountId,
@@ -142,6 +151,7 @@ export async function POST(request: NextRequest) {
         logoUrl,
         defaultViewMode,
         showItbisOnReceipts,
+        salePricesIncludeItbis,
         defaultProfitMarginBp: 3000,
       },
     })
@@ -188,6 +198,10 @@ export async function PUT(request: NextRequest) {
     const rawLogo = bodyObj.logo ?? bodyObj.logoUrl
     const rawDefaultViewMode = readString(bodyObj.defaultViewMode) ?? readString(bodyObj.modoVistaPorDefecto)
     const rawShowItbisOnReceipts = readBoolean(bodyObj.showItbisOnReceipts) ?? readBoolean(bodyObj.desglosarItbisEnRecibos)
+    const rawSalePricesIncludeItbis =
+      readBoolean(bodyObj.salePricesIncludeItbis) ??
+      readBoolean(bodyObj.preciosIncluyenItbis) ??
+      readBoolean(bodyObj.precioVentaIncluyeItbis)
 
     const name = rawName !== null ? sanitizeString(rawName) : current?.name ?? "Mi Negocio"
     if (!name) {
@@ -200,6 +214,7 @@ export async function PUT(request: NextRequest) {
       ? (rawDefaultViewMode === "grid" ? "grid" : "list")
       : (current?.defaultViewMode ?? "list")
     const showItbisOnReceipts = rawShowItbisOnReceipts ?? (current?.showItbisOnReceipts ?? true)
+    const salePricesIncludeItbis = rawSalePricesIncludeItbis ?? (current?.salePricesIncludeItbis ?? true)
 
     let logoUrl = current?.logoUrl ?? null
     if (rawLogo === null) {
@@ -217,6 +232,7 @@ export async function PUT(request: NextRequest) {
         logoUrl,
         defaultViewMode,
         showItbisOnReceipts,
+        salePricesIncludeItbis,
       },
       create: {
         accountId: user.accountId,
@@ -226,6 +242,7 @@ export async function PUT(request: NextRequest) {
         logoUrl,
         defaultViewMode,
         showItbisOnReceipts,
+        salePricesIncludeItbis,
         defaultProfitMarginBp: 3000,
       },
     })

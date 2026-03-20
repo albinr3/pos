@@ -21,7 +21,11 @@ export default async function SalesPage() {
           </Button>
         </div>
       </div>
-      <PosClient defaultViewMode={settings.defaultViewMode} showItbisOnReceipts={settings.showItbisOnReceipts} />
+      <PosClient
+        defaultViewMode={settings.defaultViewMode}
+        showItbisOnReceipts={settings.showItbisOnReceipts}
+        salePricesIncludeItbis={settings.salePricesIncludeItbis}
+      />
     </div>
   )
 }

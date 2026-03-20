@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { calcItbisIncluded, invoiceCode } from "@/lib/money"
+import { calcLineTotalsByTaxMode, invoiceCode } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
 import { ProductKind, RecipeAdjustmentType, SaleType, PaymentMethod, type Prisma } from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
@@ -367,6 +367,30 @@ function validatePaymentSplits(paymentSplits: PaymentSplitInput[] | undefined, t
   }
 }
 
+function calculateSaleTotalsFromResolvedLines(
+  lines: Array<{
+    item: { qty: number; unitPriceCents: number }
+    product: { itbisRateBp: number | null }
+  }>,
+  salePricesIncludeItbis: boolean
+) {
+  return lines.reduce(
+    (acc, line) => {
+      const lineTotals = calcLineTotalsByTaxMode(
+        line.item.unitPriceCents,
+        line.item.qty,
+        line.product.itbisRateBp ?? 1800,
+        salePricesIncludeItbis
+      )
+      acc.subtotalCents += lineTotals.subtotalCents
+      acc.itbisCents += lineTotals.itbisCents
+      acc.itemsTotalCents += lineTotals.totalCents
+      return acc
+    },
+    { subtotalCents: 0, itbisCents: 0, itemsTotalCents: 0 }
+  )
+}
+
 function parseOptionalDateInput(value: unknown): Date | undefined {
   if (value === undefined || value === null || value === "") return undefined
 
@@ -404,6 +428,7 @@ type ResolvedSaleLine = {
     id: string
     name: string
     priceCents: number
+    itbisRateBp: number | null
     stock: number
     isActive: boolean
     isAvailableForSale: boolean
@@ -467,6 +492,7 @@ async function loadProductsForSaleResolution(
       id: true,
       name: true,
       priceCents: true,
+      itbisRateBp: true,
       stock: true,
       isActive: true,
       isAvailableForSale: true,
@@ -553,6 +579,7 @@ async function resolveSaleLines(
           id: product.id,
           name: product.name,
           priceCents: product.priceCents,
+          itbisRateBp: product.itbisRateBp,
           stock: product.stock,
           isActive: product.isActive,
           isAvailableForSale: product.isAvailableForSale,
@@ -622,6 +649,7 @@ async function resolveSaleLines(
         id: product.id,
         name: product.name,
         priceCents: product.priceCents,
+        itbisRateBp: product.itbisRateBp,
         stock: product.stock,
         isActive: product.isActive,
         isAvailableForSale: product.isAvailableForSale,
@@ -704,6 +732,7 @@ export async function createSale(input: {
   paymentSplits?: PaymentSplitInput[]
   items: CartItemInput[]
   shippingCents?: number
+  salePricesIncludeItbis?: boolean
   soldAt?: Date | string | number | null
   username: string
   user?: any
@@ -734,7 +763,7 @@ export async function createSale(input: {
   const settings = await prisma.companySettings.findFirst({
     where: { accountId: user.accountId },
   })
-  const itbisRateBp = settings?.itbisRateBp ?? 1800
+  const salePricesIncludeItbis = input.salePricesIncludeItbis ?? (settings?.salePricesIncludeItbis ?? true)
 
   try {
     return await prisma.$transaction(async (tx) => {
@@ -833,8 +862,10 @@ export async function createSale(input: {
         })
       }
 
-      const itemsTotalCents = input.items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
-      const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
+      const { subtotalCents, itbisCents, itemsTotalCents } = calculateSaleTotalsFromResolvedLines(
+        resolvedLines,
+        salePricesIncludeItbis
+      )
       const shippingCents = input.shippingCents ?? 0
       const totalCents = itemsTotalCents + shippingCents
       const paymentSplits = input.paymentSplits ?? []
@@ -885,13 +916,15 @@ export async function createSale(input: {
           itbisCents,
           shippingCents,
           totalCents,
+          salePricesIncludeItbis,
           items: {
             create: resolvedLines.map((line) => ({
               productId: line.item.productId,
               qty: line.item.qty,
               unitPriceCents: line.item.unitPriceCents,
               wasPriceOverridden: line.item.wasPriceOverridden,
-              lineTotalCents: line.item.unitPriceCents * line.item.qty,
+              itbisRateBp: line.product.itbisRateBp ?? 1800,
+              lineTotalCents: Math.round(line.item.unitPriceCents * line.item.qty),
               recipeAdjustments: line.recipeAdjustments.length
                 ? {
                     create: line.recipeAdjustments.map((adjustment) => ({
@@ -917,7 +950,14 @@ export async function createSale(input: {
             })),
           } : undefined,
         },
-        select: { id: true, invoiceCode: true, type: true, soldAt: true, transferBankName: true },
+        select: {
+          id: true,
+          invoiceCode: true,
+          type: true,
+          soldAt: true,
+          transferBankName: true,
+          salePricesIncludeItbis: true,
+        },
       })
 
       await logAuditEvent({
@@ -1015,6 +1055,7 @@ export async function getSaleById(id: string) {
               sku: true,
               reference: true,
               priceCents: true,
+              itbisRateBp: true,
               stock: true,
               unit: true,
               productKind: true,
@@ -1187,7 +1228,7 @@ export async function updateSale(input: {
   const settings = await prisma.companySettings.findFirst({
     where: { accountId: user.accountId },
   })
-  const itbisRateBp = settings?.itbisRateBp ?? 1800
+  const salePricesIncludeItbis = settings?.salePricesIncludeItbis ?? true
 
   // Verificar permiso para editar ventas
   if (!user.canEditSales && !user.isOwner) {
@@ -1290,8 +1331,13 @@ export async function updateSale(input: {
     })
 
     // Calcular nuevos totales
-    const totalCents = input.items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
-    const { subtotalCents, itbisCents } = calcItbisIncluded(totalCents, itbisRateBp)
+    const documentSalePricesIncludeItbis = existingSale.salePricesIncludeItbis ?? salePricesIncludeItbis
+    const { subtotalCents, itbisCents, itemsTotalCents } = calculateSaleTotalsFromResolvedLines(
+      resolvedLines,
+      documentSalePricesIncludeItbis
+    )
+    const shippingCents = existingSale.shippingCents ?? 0
+    const totalCents = itemsTotalCents + shippingCents
     const hasPaymentSplits = Boolean(input.paymentSplits && input.paymentSplits.length > 0)
 
     validateTransferBankName(input.paymentMethod, input.transferBankName)
@@ -1317,7 +1363,9 @@ export async function updateSale(input: {
         customerId: input.customerId || null,
         subtotalCents,
         itbisCents,
+        shippingCents,
         totalCents,
+        salePricesIncludeItbis: documentSalePricesIncludeItbis,
       },
     })
     if (updatedSale.count === 0) throw new Error("Venta no encontrada")
@@ -1344,7 +1392,8 @@ export async function updateSale(input: {
           qty: line.item.qty,
           unitPriceCents: line.item.unitPriceCents,
           wasPriceOverridden: line.item.wasPriceOverridden,
-          lineTotalCents: line.item.unitPriceCents * line.item.qty,
+          itbisRateBp: line.product.itbisRateBp ?? 1800,
+          lineTotalCents: Math.round(line.item.unitPriceCents * line.item.qty),
           recipeAdjustments: line.recipeAdjustments.length
             ? {
                 create: line.recipeAdjustments.map((adjustment) => ({

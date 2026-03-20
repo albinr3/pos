@@ -25,6 +25,27 @@ export function calcItbisIncluded(totalCents: number, itbisRateBp = 1800) {
   return { subtotalCents, itbisCents, totalCents }
 }
 
+export function calcItbisExcluded(subtotalCents: number, itbisRateBp = 1800) {
+  // subtotal does not include ITBIS. itbisRateBp=1800 means 18.00%
+  const rate = itbisRateBp / 10000
+  const itbisCents = Math.round(subtotalCents * rate)
+  const totalCents = subtotalCents + itbisCents
+  return { subtotalCents, itbisCents, totalCents }
+}
+
+export function calcLineTotalsByTaxMode(
+  unitPriceCents: number,
+  qty: number,
+  itbisRateBp = 1800,
+  priceIncludesItbis = true
+) {
+  const lineBaseCents = Math.round(unitPriceCents * qty)
+  if (priceIncludesItbis) {
+    return calcItbisIncluded(lineBaseCents, itbisRateBp)
+  }
+  return calcItbisExcluded(lineBaseCents, itbisRateBp)
+}
+
 export function invoiceCode(series: string, number: number) {
   return `${series}-${number.toString().padStart(5, "0")}`
 }

@@ -42,6 +42,9 @@ type UpdateSaleBody = {
   paymentSplits?: UpdateSalePaymentSplitBody[]
   soldAt?: string | number | null
   createdAt?: string | number | null
+  salePricesIncludeItbis?: boolean
+  preciosIncluyenItbis?: boolean
+  precioVentaIncluyeItbis?: boolean
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -168,6 +171,7 @@ export async function GET(
       itbisCents: sale.itbisCents,
       shippingCents: sale.shippingCents,
       totalCents: sale.totalCents,
+      salePricesIncludeItbis: sale.salePricesIncludeItbis,
       cancelledAt: sale.cancelledAt ? sale.cancelledAt.toISOString() : null,
       items: sale.items.map((item) => ({
         id: item.id,
@@ -177,6 +181,7 @@ export async function GET(
         reference: item.product?.reference || null,
         qty: decimalToNumber(item.qty),
         unitPriceCents: item.unitPriceCents,
+        itbisRateBp: item.itbisRateBp,
         lineTotalCents: item.lineTotalCents,
         recipeAdjustments: item.recipeAdjustments.map((adjustment) => ({
           ingredientId: adjustment.ingredientId,
@@ -330,6 +335,7 @@ export async function PUT(
       customerId: updatedSale?.customerId,
       customerName: updatedSale?.customer?.name || null,
       totalCents: updatedSale?.totalCents,
+      salePricesIncludeItbis: updatedSale?.salePricesIncludeItbis ?? true,
       soldAt: updatedSale?.soldAt ? updatedSale.soldAt.toISOString() : null,
       createdAt: updatedSale?.soldAt ? updatedSale.soldAt.toISOString() : null,
       cancelledAt: updatedSale?.cancelledAt ? updatedSale.cancelledAt.toISOString() : null,

@@ -105,6 +105,7 @@ export async function savePendingSale(sale: {
     }>
   }>
   shippingCents?: number
+  salePricesIncludeItbis?: boolean
   username: string
   createdAt: number
 }) {

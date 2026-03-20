@@ -33,6 +33,7 @@ async function main() {
       logoUrl: null,
       allowNegativeStock: false,
       itbisRateBp: 1800,
+      salePricesIncludeItbis: true,
     },
     create: {
       id: "company",
@@ -43,6 +44,7 @@ async function main() {
       logoUrl: null,
       allowNegativeStock: false,
       itbisRateBp: 1800,
+      salePricesIncludeItbis: true,
     },
   })
 

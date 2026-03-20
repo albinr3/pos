@@ -72,6 +72,8 @@ export async function syncPendingData() {
               : [],
           })),
           shippingCents: sale.shippingCents || 0,
+          salePricesIncludeItbis:
+            typeof sale.salePricesIncludeItbis === "boolean" ? sale.salePricesIncludeItbis : undefined,
           soldAt: sale.createdAt,
           username: sale.username,
         })

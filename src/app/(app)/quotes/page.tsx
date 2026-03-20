@@ -33,7 +33,11 @@ export default async function QuotesPage() {
           </Button>
         </div>
       </div>
-      <QuotesClient defaultViewMode={settings.defaultViewMode} itbisRateBp={settings.itbisRateBp} />
+      <QuotesClient
+        defaultViewMode={settings.defaultViewMode}
+        itbisRateBp={settings.itbisRateBp}
+        salePricesIncludeItbis={settings.salePricesIncludeItbis}
+      />
     </div>
   )
 }

@@ -225,6 +225,7 @@ export async function createFirstUser(formData: FormData) {
       logoUrl,
       allowNegativeStock: false,
       itbisRateBp: 1800,
+      salePricesIncludeItbis: true,
     },
   })
 

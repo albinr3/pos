@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { prisma } from "@/lib/db"
-import { calcItbisIncluded } from "@/lib/money"
+import { calcLineTotalsByTaxMode } from "@/lib/money"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
@@ -14,6 +14,7 @@ type QuoteItemInput = {
   qty: number
   unitPriceCents: number
   wasPriceOverridden: boolean
+  itbisRateBp?: number
 }
 
 function quoteCode(number: number) {
@@ -23,6 +24,21 @@ function quoteCode(number: number) {
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message
   return fallback
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase()
+    if (!trimmed) return undefined
+    if (["1", "true", "si", "sí", "yes", "on"].includes(trimmed)) return true
+    if (["0", "false", "no", "off"].includes(trimmed)) return false
+  }
+  if (typeof value === "number") {
+    if (value === 1) return true
+    if (value === 0) return false
+  }
+  return undefined
 }
 
 function decimalToNumber(value: unknown): number {
@@ -64,7 +80,16 @@ export async function GET(request: NextRequest) {
       orderBy: { quotedAt: "desc" },
       include: {
         customer: { select: { id: true, name: true } },
-        items: { select: { id: true, qty: true } },
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            qty: true,
+            unitPriceCents: true,
+            lineTotalCents: true,
+            itbisRateBp: true,
+          },
+        },
       },
       take: 300,
     })
@@ -81,9 +106,18 @@ export async function GET(request: NextRequest) {
         itbisCents: quote.itbisCents,
         shippingCents: quote.shippingCents,
         totalCents: quote.totalCents,
+        salePricesIncludeItbis: quote.salePricesIncludeItbis,
         notes: quote.notes || null,
         itemsCount: quote.items.length,
         qtyTotal: quote.items.reduce((sum, item) => sum + decimalToNumber(item.qty), 0),
+        items: quote.items.map((item) => ({
+          id: item.id,
+          productId: item.productId,
+          qty: decimalToNumber(item.qty),
+          unitPriceCents: item.unitPriceCents,
+          lineTotalCents: item.lineTotalCents,
+          itbisRateBp: item.itbisRateBp,
+        })),
       })),
     })
   } catch (error: unknown) {
@@ -121,6 +155,9 @@ export async function POST(request: NextRequest) {
       customerId?: string | null
       validUntil?: string | null
       notes?: string | null
+      salePricesIncludeItbis?: boolean
+      preciosIncluyenItbis?: boolean
+      precioVentaIncluyeItbis?: boolean
     }
 
     const items: QuoteItemInput[] = (body.items || []).map((item) => ({
@@ -140,9 +177,13 @@ export async function POST(request: NextRequest) {
 
     const settings = await prisma.companySettings.findFirst({
       where: { accountId: user.accountId },
-      select: { itbisRateBp: true },
+      select: { salePricesIncludeItbis: true },
     })
-    const itbisRateBp = settings?.itbisRateBp ?? 1800
+    const salePricesIncludeItbis =
+      readBoolean(body.salePricesIncludeItbis) ??
+      readBoolean(body.preciosIncluyenItbis) ??
+      readBoolean(body.precioVentaIncluyeItbis) ??
+      (settings?.salePricesIncludeItbis ?? true)
 
     const quote = await prisma.$transaction(async (tx) => {
       const seq = await tx.quoteSequence.upsert({
@@ -159,7 +200,7 @@ export async function POST(request: NextRequest) {
           accountId: user.accountId,
           id: { in: items.map((i) => i.productId) },
         },
-        select: { id: true, isActive: true },
+        select: { id: true, isActive: true, itbisRateBp: true },
       })
       const byId = new Map(products.map((p) => [p.id, p]))
 
@@ -170,8 +211,25 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const itemsTotalCents = items.reduce((sum, i) => sum + i.unitPriceCents * i.qty, 0)
-      const { subtotalCents, itbisCents } = calcItbisIncluded(itemsTotalCents, itbisRateBp)
+      const itemsWithTax = items.map((item) => ({
+        ...item,
+        itbisRateBp: byId.get(item.productId)?.itbisRateBp ?? 1800,
+      }))
+      const { subtotalCents, itbisCents, itemsTotalCents } = itemsWithTax.reduce(
+        (acc, item) => {
+          const lineTotals = calcLineTotalsByTaxMode(
+            item.unitPriceCents,
+            item.qty,
+            item.itbisRateBp ?? 1800,
+            salePricesIncludeItbis
+          )
+          acc.subtotalCents += lineTotals.subtotalCents
+          acc.itbisCents += lineTotals.itbisCents
+          acc.itemsTotalCents += lineTotals.totalCents
+          return acc
+        },
+        { subtotalCents: 0, itbisCents: 0, itemsTotalCents: 0 }
+      )
       const shippingCents = Number(body.shippingCents ?? (body.shipping ? Math.round(body.shipping * 100) : 0))
       const totalCents = itemsTotalCents + shippingCents
 
@@ -187,18 +245,20 @@ export async function POST(request: NextRequest) {
           itbisCents,
           shippingCents,
           totalCents,
+          salePricesIncludeItbis,
           notes: body.notes || null,
           items: {
-            create: items.map((i) => ({
+            create: itemsWithTax.map((i) => ({
               productId: i.productId,
               qty: i.qty,
               unitPriceCents: i.unitPriceCents,
               wasPriceOverridden: i.wasPriceOverridden,
-              lineTotalCents: i.unitPriceCents * i.qty,
+              itbisRateBp: i.itbisRateBp ?? 1800,
+              lineTotalCents: Math.round(i.unitPriceCents * i.qty),
             })),
           },
         },
-        select: { id: true, quoteCode: true },
+        select: { id: true, quoteCode: true, salePricesIncludeItbis: true },
       })
 
       await logAuditEvent(
@@ -227,6 +287,7 @@ export async function POST(request: NextRequest) {
       {
         id: quote.id,
         quoteCode: quote.quoteCode,
+        salePricesIncludeItbis: quote.salePricesIncludeItbis,
       },
       { status: 201 }
     )

@@ -15,7 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Switch } from "@/components/ui/switch"
-import { formatRD, calcItbisIncluded, toCents } from "@/lib/money"
+import { formatRD, calcLineTotalsByTaxMode, toCents } from "@/lib/money"
 import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
 import { formatQty, formatQtyNumber, parseQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
@@ -129,7 +129,15 @@ function getCachedUser(): CurrentUser | null {
   }
 }
 
-export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true }: { defaultViewMode?: string, showItbisOnReceipts?: boolean }) {
+export function PosClient({
+  defaultViewMode = "list",
+  showItbisOnReceipts = true,
+  salePricesIncludeItbis = true,
+}: {
+  defaultViewMode?: string
+  showItbisOnReceipts?: boolean
+  salePricesIncludeItbis?: boolean
+}) {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState("")
@@ -654,19 +662,23 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
     return () => clearTimeout(handle)
   }, [query, viewMode, isOnline])
 
-  const itemsTotalCents = useMemo(() => cart.reduce((s, i) => s + i.unitPriceCents * i.qty, 0), [cart])
-  // Calcular ITBIS por línea basado en el itbisRateBp de cada producto
-  const { subtotalCents, itbisCents } = useMemo(() => {
-    let totalSubtotal = 0
-    let totalItbis = 0
-    for (const item of cart) {
-      const lineTotal = item.unitPriceCents * item.qty
-      const { subtotalCents: lineSub, itbisCents: lineItbis } = calcItbisIncluded(lineTotal, item.itbisRateBp)
-      totalSubtotal += lineSub
-      totalItbis += lineItbis
-    }
-    return { subtotalCents: totalSubtotal, itbisCents: totalItbis }
-  }, [cart])
+  const { subtotalCents, itbisCents, itemsTotalCents } = useMemo(() => {
+    return cart.reduce(
+      (acc, item) => {
+        const lineTotals = calcLineTotalsByTaxMode(
+          item.unitPriceCents,
+          item.qty,
+          item.itbisRateBp,
+          salePricesIncludeItbis
+        )
+        acc.subtotalCents += lineTotals.subtotalCents
+        acc.itbisCents += lineTotals.itbisCents
+        acc.itemsTotalCents += lineTotals.totalCents
+        return acc
+      },
+      { subtotalCents: 0, itbisCents: 0, itemsTotalCents: 0 }
+    )
+  }, [cart, salePricesIncludeItbis])
   const shippingCents = useMemo(() => toCents(shippingInput), [shippingInput])
   const totalCents = useMemo(() => itemsTotalCents + shippingCents, [itemsTotalCents, shippingCents])
 
@@ -857,6 +869,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
           })),
         })),
         shippingCents: shippingCents > 0 ? shippingCents : undefined,
+        salePricesIncludeItbis,
         username: user.username,
         createdAt: Date.now(),
       })
@@ -896,6 +909,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
                 })),
               })),
               shippingCents: shippingCents > 0 ? shippingCents : undefined,
+              salePricesIncludeItbis,
               username: user.username,
             })
 
@@ -1752,7 +1766,7 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
             <div className="space-y-1.5 text-sm">
               <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span>{formatRD(showItbisOnReceipts ? subtotalCents : totalCents)}</span>
+                <span>{formatRD(showItbisOnReceipts ? subtotalCents : itemsTotalCents)}</span>
               </div>
               {!showItbisOnReceipts ? null : (
                 <div className="flex justify-between text-muted-foreground">
@@ -1782,7 +1796,9 @@ export function PosClient({ defaultViewMode = "list", showItbisOnReceipts = true
               {isSaving ? "Guardando…" : "Guardar e imprimir"}
             </Button>
             <div className="text-xs text-muted-foreground">
-              Precios incluyen ITBIS. Factura tamaño carta con serie A.
+              {salePricesIncludeItbis
+                ? "Precios incluyen ITBIS. Factura tamaño carta con serie A."
+                : "Precios no incluyen ITBIS. Factura tamaño carta con serie A."}
             </div>
           </CardContent>
         </Card>

@@ -42,6 +42,7 @@ export async function updateCompanyInfo(input: {
       logoUrl: input.logoUrl || null,
       allowNegativeStock: false,
       itbisRateBp: 1800,
+      salePricesIncludeItbis: true,
       defaultProfitMarginBp: 3000,
     },
   })
