@@ -36,7 +36,7 @@ export const DEFAULT_PRICE_DOP_CENTS = 130000 // RD$1,300 DOP
 // Días antes de vencimiento para enviar notificaciones
 export const NOTIFICATION_DAYS = {
   trial: [7, 3, 1, 0],
-  due: [3, 2, 1, 0],
+  due: [2, 1, 0],
   grace: [2, 1, 0],
 }
 
@@ -466,7 +466,7 @@ export async function processLemonPayment(
   const prisma = await getPrisma()
   const now = new Date()
 
-  let subscription = await prisma.billingSubscription.findUnique({
+  const subscription = await prisma.billingSubscription.findUnique({
     where: { accountId },
     include: {
       account: {

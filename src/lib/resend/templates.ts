@@ -382,6 +382,41 @@ export async function renderCardPaymentEventAlertEmail(
   return { subject, html }
 }
 
+type CardChargeSuccessCustomerTemplateData = {
+  accountName: string
+  amountLabel: string
+  chargedAtLabel: string
+  nextChargeAtLabel: string
+}
+
+export async function renderCardChargeSuccessCustomerEmail(
+  data: CardChargeSuccessCustomerTemplateData
+) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const billingUrl = `${appUrl}/billing`
+  const logoUrl = `${appUrl}/movoLogoDark.png`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+
+  const html = await renderTemplate("card-charge-success-customer.html", {
+    brandName,
+    logoUrl,
+    accountName: data.accountName,
+    amountLabel: data.amountLabel,
+    chargedAtLabel: data.chargedAtLabel,
+    nextChargeAtLabel: data.nextChargeAtLabel,
+    billingUrl,
+    appUrl,
+    supportEmail,
+    year: new Date().getFullYear().toString(),
+  })
+
+  const subject = `Cargo de suscripción confirmado: ${data.amountLabel}`
+
+  return { subject, html }
+}
+
 export async function renderNewUserSignupNotification(
   data: NewUserSignupNotificationData
 ) {

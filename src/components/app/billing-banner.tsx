@@ -11,6 +11,7 @@ interface BillingBannerProps {
 export function BillingBanner({ billingState }: BillingBannerProps) {
   const {
     status,
+    provider,
     isTrialing,
     isGrace,
     isBlocked,
@@ -20,8 +21,14 @@ export function BillingBanner({ billingState }: BillingBannerProps) {
     needsPayment,
   } = billingState
 
+  const shouldShowManualDueBanner =
+    status === "ACTIVE" &&
+    provider === "MANUAL" &&
+    daysRemaining !== null &&
+    daysRemaining <= 2
+
   // No mostrar banner si está activo y no necesita pago
-  if (status === "ACTIVE" && !needsPayment) {
+  if (status === "ACTIVE" && !needsPayment && !shouldShowManualDueBanner) {
     return null
   }
 
@@ -104,18 +111,18 @@ export function BillingBanner({ billingState }: BillingBannerProps) {
     )
   }
 
-  // Banner cuando el período está por vencer (últimos 3 días)
-  if (status === "ACTIVE" && daysRemaining !== null && daysRemaining <= 3) {
+  // Banner cuando el período manual está por vencer (2, 1, 0 días)
+  if (shouldShowManualDueBanner) {
     return (
       <div className="bg-yellow-500 text-yellow-950 px-4 py-2 text-center text-sm">
         <div className="flex items-center justify-center gap-2">
           <Clock className="h-4 w-4" />
           <span>
             {daysRemaining === 0
-              ? "Tu suscripción vence hoy."
+              ? "Recuerda: el pago de tu suscripción vence hoy."
               : daysRemaining === 1
-              ? "Tu suscripción vence mañana."
-              : `Tu suscripción vence en ${daysRemaining} días.`}
+              ? "Recuerda: el pago de tu suscripción vence mañana."
+              : `Recuerda: el pago de tu suscripción vence en ${daysRemaining} días.`}
           </span>
           <Link
             href="/billing"

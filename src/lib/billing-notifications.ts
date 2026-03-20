@@ -2,9 +2,9 @@
  * Sistema de notificaciones de billing
  * 
  * Envía emails y notificaciones in-app según el calendario:
- * - Trial: 7, 3, 2, 1 días antes
- * - Vencimiento: 3, 2, 1 días antes
- * - Gracia: 2, 1 días antes
+ * - Trial: 7, 3, 1 y 0 días antes
+ * - Vencimiento (solo transferencia/manual): 2, 1 y 0 días antes
+ * - Gracia: 2, 1 y 0 días antes
  */
 
 import { differenceInDays } from "date-fns"
@@ -158,8 +158,12 @@ export async function sendBillingNotifications(): Promise<{
         }
       }
 
-      // Check due notifications (active subscriptions nearing end)
-      if (subscription.status === "ACTIVE" && subscription.currentPeriodEndsAt) {
+      // Check due notifications (solo para pagos manuales/transferencia)
+      if (
+        subscription.status === "ACTIVE" &&
+        subscription.provider === "MANUAL" &&
+        subscription.currentPeriodEndsAt
+      ) {
         const daysRemaining = differenceInDays(subscription.currentPeriodEndsAt, now)
 
         for (const day of NOTIFICATION_DAYS.due) {

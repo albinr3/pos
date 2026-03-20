@@ -468,9 +468,10 @@ Ruta: `/billing`
   - `GRACE`: Período de gracia (3 días después del vencimiento)
   - `BLOCKED`: Bloqueado por falta de pago
 - **Notificaciones automáticas** por email:
-  - Trial: 7, 3, 2, 1 días antes
-  - Vencimiento: 3, 2, 1 días antes
-  - Gracia: 2, 1 días antes
+  - Trial: 7, 3, 1 y 0 días antes
+  - Vencimiento (`ACTIVE`) solo para pagos por transferencia/manual: 2, 1 y 0 días antes
+  - Gracia: 2, 1 y 0 días antes
+  - Tarjeta (`LEMON`): no se envía recordatorio previo de vencimiento; se envía correo cuando se confirma el cobro mensual
 - **Banner de aviso** en la app según estado
 - **Perfil de facturación**: Datos para generar recibos (nombre, RNC/cédula, dirección)
 - **Historial de pagos** con comprobantes
@@ -492,7 +493,7 @@ flowchart LR
   I --> D
 ```
 
-El cron job de billing (ver más abajo) ejecuta esta lógica cada noche: detecta trials vencidos, mueve cuentas a `GRACE`, bloquea las que expiraron sin pago y dispara los correos programados (7/3/2/1 días de trial, vencimiento y gracia). Desde el panel de cuentas del super admin se pueden cambiar estados, extender trials o desbloquear cuentas sin necesidad de cancelar la suscripción.
+El cron job de billing (ver más abajo) ejecuta esta lógica cada noche: detecta trials vencidos, mueve cuentas a `GRACE`, bloquea las que expiraron sin pago y dispara los correos programados según estado/proveedor (trial 7/3/1/0, vencimiento `ACTIVE` manual 2/1/0, gracia 2/1/0). Desde el panel de cuentas del super admin se pueden cambiar estados, extender trials o desbloquear cuentas sin necesidad de cancelar la suscripción.
 
 ---
 

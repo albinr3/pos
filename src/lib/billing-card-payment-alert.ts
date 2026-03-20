@@ -1,5 +1,8 @@
 import { sendResendEmail } from "@/lib/resend"
-import { renderCardPaymentEventAlertEmail } from "@/lib/resend/templates"
+import {
+  renderCardChargeSuccessCustomerEmail,
+  renderCardPaymentEventAlertEmail,
+} from "@/lib/resend/templates"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 
 type NotifyCardPaymentEventInput = {
@@ -8,6 +11,15 @@ type NotifyCardPaymentEventInput = {
   accountName: string
   amountCents: number
   eventType: "success" | "failed"
+}
+
+type NotifyCustomerCardChargeInput = {
+  accountId: string
+  toEmail: string
+  accountName: string
+  amountCents: number
+  chargedAt?: Date
+  nextChargeAt?: Date
 }
 
 function resolveRecipientEmail() {
@@ -79,6 +91,52 @@ export async function notifyCardPaymentEventEmail(
       metadata: {
         paymentId: input.paymentId,
         eventType: input.eventType,
+      },
+    })
+    return false
+  }
+}
+
+export async function notifyCustomerCardChargeEmail(
+  input: NotifyCustomerCardChargeInput
+) {
+  const to = input.toEmail.trim()
+  if (!to) return false
+
+  const chargedAt = input.chargedAt ?? new Date()
+  const nextChargeAtLabel = input.nextChargeAt
+    ? formatCreatedAt(input.nextChargeAt)
+    : "Se mostrará en tu panel de facturación"
+
+  try {
+    const { subject, html } = await renderCardChargeSuccessCustomerEmail({
+      accountName: input.accountName,
+      amountLabel: formatAmountUsd(input.amountCents),
+      chargedAtLabel: formatCreatedAt(chargedAt),
+      nextChargeAtLabel,
+    })
+
+    const sent = await sendResendEmail({
+      to,
+      subject,
+      html,
+      accountId: input.accountId,
+    })
+
+    if (!sent) {
+      console.warn("[BillingCardPaymentAlert] Failed to send customer charge email.")
+    }
+
+    return sent
+  } catch (error) {
+    await logError(error as Error, {
+      code: ErrorCodes.EXTERNAL_EMAIL_ERROR,
+      severity: "MEDIUM",
+      accountId: input.accountId,
+      endpoint: "/billing/card-payment/customer-charge",
+      method: "POST",
+      metadata: {
+        to,
       },
     })
     return false

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cargo de suscripción confirmado</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;color:#18181b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #e4e4e7;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="padding:20px 24px;background:#14532d;color:#ffffff;">
+              <img
+                src="{{logoUrl}}"
+                alt="{{brandName}}"
+                style="display:block;max-width:180px;height:auto;background:#ffffff;border-radius:8px;padding:8px;"
+              />
+              <p style="margin:0;font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85;">{{brandName}}</p>
+              <h1 style="margin:8px 0 0;font-size:22px;line-height:1.3;">Pago mensual procesado</h1>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:24px;">
+              <p style="margin:0 0 14px;font-size:15px;line-height:1.6;">
+                Hola <strong>{{accountName}}</strong>, registramos correctamente el cobro automático de tu suscripción.
+              </p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin:0 0 18px;">
+                <tr>
+                  <td style="padding:10px 0;border-bottom:1px solid #e4e4e7;color:#71717a;width:42%;">Monto cobrado</td>
+                  <td style="padding:10px 0;border-bottom:1px solid #e4e4e7;font-weight:600;">{{amountLabel}}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 0;border-bottom:1px solid #e4e4e7;color:#71717a;">Fecha del cargo</td>
+                  <td style="padding:10px 0;border-bottom:1px solid #e4e4e7;">{{chargedAtLabel}}</td>
+                </tr>
+                <tr>
+                  <td style="padding:10px 0;color:#71717a;">Próximo cobro estimado</td>
+                  <td style="padding:10px 0;">{{nextChargeAtLabel}}</td>
+                </tr>
+              </table>
+              <a
+                href="{{billingUrl}}"
+                style="display:inline-block;background:#14532d;color:#ffffff;text-decoration:none;padding:12px 16px;border-radius:8px;font-weight:600;font-size:14px;"
+              >
+                Ver facturación
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px;background:#fafafa;border-top:1px solid #e4e4e7;">
+              <p style="margin:0 0 6px;font-size:12px;color:#71717a;">
+                Notificación automática de {{brandName}}.
+              </p>
+              <p style="margin:0;font-size:12px;color:#71717a;">
+                Soporte: <a href="mailto:{{supportEmail}}" style="color:#18181b;">{{supportEmail}}</a> · © {{year}}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

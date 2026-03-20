@@ -5,7 +5,10 @@ import { prisma } from "@/lib/db"
 import { checkRateLimit, getClientIdentifier, RateLimitError } from "@/lib/rate-limit"
 import { logError, ErrorCodes, getRequestInfo } from "@/lib/error-logger"
 import { notifyCardPaymentFailed, notifyCardPaymentSuccess } from "@/lib/super-admin-notifications"
-import { notifyCardPaymentEventEmail } from "@/lib/billing-card-payment-alert"
+import {
+  notifyCardPaymentEventEmail,
+  notifyCustomerCardChargeEmail,
+} from "@/lib/billing-card-payment-alert"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -249,7 +252,16 @@ async function handlePaymentSuccess(
     where: { accountId },
     include: {
       account: {
-        select: { name: true },
+        include: {
+          billingProfile: {
+            select: { email: true },
+          },
+          users: {
+            where: { isOwner: true },
+            select: { email: true },
+            take: 1,
+          },
+        },
       },
     },
   })
@@ -294,6 +306,22 @@ async function handlePaymentSuccess(
     amountCents,
     eventType: "success",
   })
+
+  const customerEmail =
+    subscription.account.billingProfile?.email?.trim() ||
+    subscription.account.users[0]?.email?.trim() ||
+    ""
+
+  if (customerEmail) {
+    await notifyCustomerCardChargeEmail({
+      accountId: subscription.accountId,
+      toEmail: customerEmail,
+      accountName: subscription.account.name,
+      amountCents,
+      chargedAt: payment.paidAt || new Date(),
+      nextChargeAt: payment.periodEndsAt || undefined,
+    })
+  }
 
   console.log(`Processed payment success for account ${accountId}`)
 }
