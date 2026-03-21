@@ -17,8 +17,9 @@ type AuthActor = {
 
 function assertAuthActor(actor: unknown): asserts actor is AuthActor {
   if (!actor || typeof actor !== "object") throw new Error("No autenticado")
-  if (typeof actor.id !== "string" || actor.id.length === 0) throw new Error("No autenticado")
-  if (typeof actor.accountId !== "string" || actor.accountId.length === 0) throw new Error("No autenticado")
+  const candidate = actor as { id?: unknown; accountId?: unknown }
+  if (typeof candidate.id !== "string" || candidate.id.length === 0) throw new Error("No autenticado")
+  if (typeof candidate.accountId !== "string" || candidate.accountId.length === 0) throw new Error("No autenticado")
 }
 
 export async function listCustomers(query?: string, user?: AuthActor) {
