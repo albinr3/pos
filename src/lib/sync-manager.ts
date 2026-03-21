@@ -4,11 +4,13 @@ import { toast } from "@/hooks/use-toast"
 import {
   getPendingSales,
   getPendingPayments,
+  getPendingBatchPayments,
   deletePendingSale,
   deletePendingPayment,
+  deletePendingBatchPayment,
 } from "./indexed-db"
 import { createSale } from "@/app/(app)/sales/actions"
-import { addPayment } from "@/app/(app)/ar/actions"
+import { addBatchPayment, addPayment } from "@/app/(app)/ar/actions"
 
 let isSyncing = false
 let syncListeners: Array<(syncing: boolean) => void> = []
@@ -88,10 +90,39 @@ export async function syncPendingData() {
       }
     }
 
-    // Luego sincronizar pagos
-    const pendingPayments = await getPendingPayments()
+    // Luego sincronizar pagos batch (para conservar un solo recibo por lote)
+    const pendingBatchPayments = await getPendingBatchPayments()
     let paymentsSynced = 0
     let paymentsErrors = 0
+
+    for (const batchPayment of pendingBatchPayments) {
+      try {
+        const arIds = Array.isArray(batchPayment.arIds)
+          ? batchPayment.arIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
+          : []
+        if (arIds.length === 0) {
+          throw new Error("Pago batch inválido: sin facturas")
+        }
+
+        await addBatchPayment({
+          arIds,
+          amountCents: Number(batchPayment.amountCents ?? 0),
+          method: batchPayment.method as any,
+          transferBankName: batchPayment.transferBankName || undefined,
+          note: batchPayment.note || undefined,
+        })
+
+        await deletePendingBatchPayment(batchPayment.tempId)
+        paymentsSynced++
+      } catch (error) {
+        console.error("Error sincronizando pago batch:", error)
+        paymentsErrors++
+        // Continuar con los demás pagos batch
+      }
+    }
+
+    // Luego sincronizar pagos individuales
+    const pendingPayments = await getPendingPayments()
 
     for (const payment of pendingPayments) {
       try {

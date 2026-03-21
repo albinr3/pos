@@ -58,6 +58,30 @@ export default async function PaymentReceiptPage({
   ])
 
   if (!payment) return notFound()
+  const receiptPayments = await prisma.payment.findMany({
+    where: {
+      receiptCode: payment.receiptCode,
+      cancelledAt: null,
+      ar: {
+        sale: {
+          accountId: user.accountId,
+        },
+      },
+    },
+    include: {
+      ar: {
+        include: {
+          customer: true,
+          sale: true,
+        },
+      },
+    },
+    orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }],
+  })
+  const visibleReceiptPayments = receiptPayments.length > 0 ? receiptPayments : [payment]
+  const isBatchReceipt = visibleReceiptPayments.length > 1
+  const totalReceiptCents = visibleReceiptPayments.reduce((sum, p) => sum + p.amountCents, 0)
+  const totalRemainingCents = visibleReceiptPayments.reduce((sum, p) => sum + p.ar.balanceCents, 0)
 
   return (
     <div className="mx-auto w-[80mm] bg-white p-3 text-[15.5px] leading-4 text-black print-content">
@@ -122,10 +146,17 @@ export default async function PaymentReceiptPage({
           <span>Fecha:</span>
           <span>{fmtDate(payment.paidAt)}</span>
         </div>
-        <div className="flex justify-between mt-1">
-          <span>Factura:</span>
-          <span className="font-semibold">{payment.ar.sale.invoiceCode}</span>
-        </div>
+        {isBatchReceipt ? (
+          <div className="flex justify-between mt-1">
+            <span>Facturas:</span>
+            <span className="font-semibold">{visibleReceiptPayments.length}</span>
+          </div>
+        ) : (
+          <div className="flex justify-between mt-1">
+            <span>Factura:</span>
+            <span className="font-semibold">{payment.ar.sale.invoiceCode}</span>
+          </div>
+        )}
         <div className="mt-2">
           <span className="font-semibold">Cliente:</span> {payment.ar.customer.name}
         </div>
@@ -133,18 +164,36 @@ export default async function PaymentReceiptPage({
 
       <div className="space-y-3 pb-2">
         <div className="flex justify-between">
-          <span>Monto pagado</span>
-          <span className="font-semibold">{formatRD(payment.amountCents)}</span>
+          <span>{isBatchReceipt ? "Monto total pagado" : "Monto pagado"}</span>
+          <span className="font-semibold">{formatRD(isBatchReceipt ? totalReceiptCents : payment.amountCents)}</span>
         </div>
         <div className="flex justify-between">
           <span>Método</span>
           <span className="font-semibold">{formatPaymentWithBank(payment.method, payment.transferBankName)}</span>
         </div>
         <div className="flex justify-between">
-          <span>Pendiente</span>
-          <span className="font-semibold">{formatRD(payment.ar.balanceCents)}</span>
+          <span>{isBatchReceipt ? "Pendiente combinado" : "Pendiente"}</span>
+          <span className="font-semibold">{formatRD(isBatchReceipt ? totalRemainingCents : payment.ar.balanceCents)}</span>
         </div>
       </div>
+
+      {isBatchReceipt && (
+        <div className="mt-4 border-t border-dashed pt-3">
+          <div className="mb-2 font-semibold">Desglose por factura</div>
+          <div className="space-y-1 text-[14.5px]">
+            {visibleReceiptPayments.map((p) => (
+              <div key={p.id} className="flex justify-between gap-2">
+                <span className="truncate">{p.ar.sale.invoiceCode}</span>
+                <span className="font-semibold">{formatRD(p.amountCents)}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 flex justify-between border-t border-dashed pt-2">
+            <span className="font-semibold">Total combinado</span>
+            <span className="font-semibold">{formatRD(totalReceiptCents)}</span>
+          </div>
+        </div>
+      )}
 
       {payment.note && (
         <div className="mt-4 border-t border-dashed pt-3 text-[14.5px] text-neutral-700">

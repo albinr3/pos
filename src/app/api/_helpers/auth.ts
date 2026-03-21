@@ -7,15 +7,6 @@ import { getCurrentUser, getClerkUserIdFromToken, getSubUserSession } from "@/li
  * Para móvil, también verifica el token de Clerk desde Authorization o X-Clerk-Authorization
  */
 export async function getCurrentUserFromRequest(request: NextRequest) {
-  console.log("🔍 [getCurrentUserFromRequest] Iniciando validación de request...")
-  
-  // Log de TODOS los headers para debugging
-  const allHeaders: any = {}
-  request.headers.forEach((value, key) => {
-    allHeaders[key] = value
-  })
-  console.log("📋 [getCurrentUserFromRequest] TODOS los headers recibidos:", JSON.stringify(allHeaders, null, 2))
-  
   const subUserToken = request.headers.get("X-SubUser-Token")
   
   // Si hay token de subusuario pero no hay sesión de Clerk activa,
@@ -25,29 +16,19 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
     request.headers.get("x-clerk-authorization") ||
     request.headers.get("Authorization") || 
     request.headers.get("authorization")
-  
-  console.log("🔍 Headers recibidos:", {
-    subUserToken: subUserToken ? "PRESENTE (" + subUserToken.substring(0, 20) + "...)" : "AUSENTE",
-    authorization: authHeader ? "PRESENTE (" + authHeader.substring(0, 27) + "...)" : "AUSENTE"
-  })
-  
+
   // Si hay authHeader, verificar el clerkUserId
   if (authHeader && subUserToken) {
-    console.log("🔍 Validando tokens de Clerk y SubUser...")
     const clerkUserId = await getClerkUserIdFromToken(authHeader)
-    console.log("🔍 ClerkUserId obtenido:", clerkUserId ? clerkUserId : "NULL - Error al validar token de Clerk")
-    
+
     if (!clerkUserId) {
-      console.error("❌ No se pudo obtener clerkUserId del token de Clerk")
       return null
     }
     
     // Validar que el subUserToken corresponde a una cuenta válida
     const session = await getSubUserSession(subUserToken)
-    console.log("🔍 Sesión de subuser:", session ? "accountId: " + session.accountId + ", userId: " + session.userId : "NULL - Token JWT inválido o expirado")
-    
+
     if (!session) {
-      console.error("❌ No se pudo validar el token JWT del subusuario")
       return null
     }
     
@@ -60,14 +41,10 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
       },
     })
     
-    console.log("🔍 Usuario encontrado en DB:", user ? user.username + " (" + user.id + ")" : "NULL - Usuario no existe en DB")
-    
     if (!user) {
-      console.error("❌ Usuario no encontrado en la base de datos")
       return null
     }
-    
-    console.log("✅ Autenticación exitosa para:", user.username)
+
     return {
       id: user.id,
       accountId: user.accountId,
@@ -103,8 +80,6 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
       canManageSettings: user.canManageSettings,
     }
   }
-  
-  console.log("🔍 Fallback a getCurrentUser con método normal (web)")
   // Si no hay headers de Clerk, usar el método normal (para web)
   return await getCurrentUser(subUserToken)
 }

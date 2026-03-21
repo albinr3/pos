@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 
-import { CreditCard, HandCoins, Printer, Receipt, Search, WifiOff } from "lucide-react"
+import { CheckSquare, CreditCard, HandCoins, Printer, Receipt, Search, WifiOff } from "lucide-react"
 import { PaymentMethod } from "@prisma/client"
 
 import { Button } from "@/components/ui/button"
@@ -22,13 +22,14 @@ import { PriceInput } from "@/components/app/price-input"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import {
   savePendingPayment,
+  savePendingBatchPayment,
   getARCache,
   getPendingCounts,
 } from "@/lib/indexed-db"
 import { syncARToIndexedDB } from "@/app/(app)/sync/actions"
 import { saveARCache } from "@/lib/indexed-db"
 
-import { addPayment, listOpenAR } from "./actions"
+import { addPayment, addBatchPayment, listOpenAR } from "./actions"
 
 type AR = Awaited<ReturnType<typeof listOpenAR>>[number]
 
@@ -62,6 +63,15 @@ export function ARClient() {
 
   const [openReceipts, setOpenReceipts] = useState(false)
   const [selectedForReceipts, setSelectedForReceipts] = useState<AR | null>(null)
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [openBatch, setOpenBatch] = useState(false)
+  const [batchAmountCents, setBatchAmountCents] = useState(0)
+  const [batchMethod, setBatchMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
+  const [batchTransferBankName, setBatchTransferBankName] = useState("")
+  const [batchNote, setBatchNote] = useState("")
+  const [isBatchSaving, startBatchSaving] = useTransition()
   const paymentMethods = [
     PaymentMethod.EFECTIVO,
     PaymentMethod.TRANSFERENCIA,
@@ -182,6 +192,122 @@ export function ARClient() {
   }, [query, isOnline])
 
   const totalBalance = useMemo(() => items.reduce((s, i) => s + i.balanceCents, 0), [items])
+
+  // Multi-select helpers
+  const selectedItems = useMemo(() => items.filter((i) => selectedIds.has(i.id)), [items, selectedIds])
+  const selectedCustomerId = selectedItems.length > 0 ? selectedItems[0].customerId : null
+  const selectedTotalBalance = useMemo(() => selectedItems.reduce((s, i) => s + i.balanceCents, 0), [selectedItems])
+  const selectablePageIds = useMemo(() => {
+    const targetCustomerId = selectedCustomerId ?? items[0]?.customerId
+    if (!targetCustomerId) return [] as string[]
+    return items.filter((i) => i.customerId === targetCustomerId).map((i) => i.id)
+  }, [items, selectedCustomerId])
+  const isPageSelectionComplete = useMemo(
+    () => selectablePageIds.length > 0 && selectablePageIds.every((id) => selectedIds.has(id)),
+    [selectablePageIds, selectedIds]
+  )
+
+  const toggleSelect = useCallback((ar: AR) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(ar.id)) {
+        next.delete(ar.id)
+        return next
+      }
+      // Verificar que es del mismo cliente
+      if (next.size > 0) {
+        const firstSelected = items.find((i) => next.has(i.id))
+        if (firstSelected && firstSelected.customerId !== ar.customerId) {
+          toast({
+            title: "Cliente diferente",
+            description: "Solo puedes seleccionar facturas del mismo cliente",
+            variant: "destructive",
+          })
+          return prev
+        }
+      }
+      next.add(ar.id)
+      return next
+    })
+  }, [items])
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectablePageIds.length === 0) return
+
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (isPageSelectionComplete) {
+        for (const id of selectablePageIds) next.delete(id)
+      } else {
+        for (const id of selectablePageIds) next.add(id)
+      }
+      return next
+    })
+  }, [isPageSelectionComplete, selectablePageIds])
+
+  function openBatchPayment() {
+    if (selectedItems.length === 0) return
+    setBatchAmountCents(selectedTotalBalance)
+    setBatchMethod(PaymentMethod.EFECTIVO)
+    setBatchTransferBankName("")
+    setBatchNote("")
+    setOpenBatch(true)
+  }
+
+  async function onBatchPay() {
+    if (selectedItems.length === 0) return
+
+    if (batchAmountCents <= 0) {
+      toast({ title: "Error", description: "El monto debe ser mayor a cero", variant: "destructive" })
+      return
+    }
+    if (batchAmountCents > selectedTotalBalance) {
+      toast({ title: "Error", description: `No puedes pagar más del balance pendiente (${formatRD(selectedTotalBalance)})`, variant: "destructive" })
+      return
+    }
+    if (batchMethod === PaymentMethod.TRANSFERENCIA && !batchTransferBankName) {
+      toast({ title: "Banco requerido", description: "Debes seleccionar el banco de la transferencia", variant: "destructive" })
+      return
+    }
+
+    startBatchSaving(async () => {
+      try {
+        if (!isOnline) {
+          const sortedItems = [...selectedItems].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+          const tempId = `temp_batch_payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+          await savePendingBatchPayment({
+            tempId,
+            arIds: sortedItems.map((i) => i.id),
+            amountCents: batchAmountCents,
+            method: batchMethod as string,
+            transferBankName: batchMethod === PaymentMethod.TRANSFERENCIA ? batchTransferBankName : null,
+            note: batchNote || null,
+            username: "admin",
+            createdAt: Date.now(),
+          })
+          toast({ title: "Pago múltiple guardado (offline)", description: "Se sincronizará cuando vuelva la conexión" })
+          const counts = await getPendingCounts()
+          setPendingCounts(counts)
+        } else {
+          const result = await addBatchPayment({
+            arIds: selectedItems.map((i) => i.id),
+            amountCents: batchAmountCents,
+            method: batchMethod,
+            transferBankName: batchMethod === PaymentMethod.TRANSFERENCIA ? batchTransferBankName : null,
+            note: batchNote || null,
+          })
+          toast({ title: "Pago registrado", description: `${selectedItems.length} factura(s) cobradas correctamente` })
+          window.open(`/api/print/payment/${result.paymentIds[0]}`, "_blank")
+        }
+
+        setOpenBatch(false)
+        setSelectedIds(new Set())
+        refresh()
+      } catch (e) {
+        toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo registrar el pago", variant: "destructive" })
+      }
+    })
+  }
 
   function openPayment(ar: AR) {
     setSelected(ar)
@@ -338,10 +464,50 @@ export function ARClient() {
             />
           </div>
 
+          {/* Barra de acciones batch */}
+          {selectedIds.size > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-green-500 bg-green-50 p-3 text-sm dark:bg-green-900/20">
+              <div className="flex items-center gap-2">
+                <CheckSquare className="h-4 w-4 text-green-600" />
+                <span className="font-semibold text-green-800 dark:text-green-200">
+                  {selectedIds.size} factura(s) seleccionada(s)
+                </span>
+                <span className="text-green-700 dark:text-green-300">
+                  — Total: {formatRD(selectedTotalBalance)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSelectedIds(new Set())}
+                >
+                  Deseleccionar
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-green-500 hover:bg-green-600 text-white"
+                  onClick={openBatchPayment}
+                >
+                  <HandCoins className="h-4 w-4 mr-2" />
+                  Cobrar seleccionadas
+                </Button>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-md border overflow-x-auto">
             <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded accent-green-500 cursor-pointer"
+                      checked={isPageSelectionComplete}
+                      onChange={toggleSelectAll}
+                    />
+                  </TableHead>
                   <TableHead>Factura</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Vence</TableHead>
@@ -357,8 +523,21 @@ export function ARClient() {
                     ? Math.ceil((new Date(ar.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
                     : null
                   
+                  const isChecked = selectedIds.has(ar.id)
+                  const isDisabled = selectedCustomerId !== null && ar.customerId !== selectedCustomerId && !isChecked
+                  const disableIndividualPay = selectedIds.size > 1 && isChecked
+
                   return (
-                  <TableRow key={ar.id}>
+                  <TableRow key={ar.id} className={isChecked ? "bg-green-50/50 dark:bg-green-900/10" : ""}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded accent-green-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        checked={isChecked}
+                        disabled={isDisabled}
+                        onChange={() => toggleSelect(ar)}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">{ar.sale.invoiceCode}</TableCell>
                     <TableCell>{ar.customer.name}</TableCell>
                     <TableCell>
@@ -386,7 +565,13 @@ export function ARClient() {
                     <TableCell className="text-right">{formatRD(ar.balanceCents)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex flex-wrap justify-end gap-2">
-                        <Button size="sm" className="bg-green-500 hover:bg-green-600 text-white" onClick={() => openPayment(ar)} title="Abonar / Saldar">
+                        <Button
+                          size="sm"
+                          className="bg-green-500 hover:bg-green-600 text-white"
+                          onClick={() => openPayment(ar)}
+                          title="Abonar / Saldar"
+                          disabled={disableIndividualPay}
+                        >
                           <HandCoins className="h-4 w-4 sm:mr-2" />
                           <span className="hidden sm:inline">Abonar</span>
                         </Button>
@@ -411,6 +596,7 @@ export function ARClient() {
                             <span className="hidden sm:inline">Reimprimir</span>
                           </Link>
                         </Button>
+
                       </div>
                     </TableCell>
                   </TableRow>
@@ -419,7 +605,7 @@ export function ARClient() {
 
                 {!isLoading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-12">
+                    <TableCell colSpan={7} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
                           src="/lupa.webp"
@@ -693,6 +879,116 @@ export function ARClient() {
           <DialogFooter>
             <Button variant="secondary" type="button" onClick={() => setOpenReceipts(false)}>
               Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Batch payment dialog */}
+      <Dialog open={openBatch} onOpenChange={setOpenBatch}>
+        <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>Cobrar {selectedItems.length} factura(s)</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-3 overflow-y-auto pr-1">
+            {/* Cliente */}
+            {selectedItems.length > 0 && (
+              <div className="rounded-md border p-3 text-sm">
+                <div className="flex items-center gap-2 font-semibold">
+                  <CreditCard className="h-4 w-4" /> {selectedItems[0].customer.name}
+                </div>
+                <Separator className="my-2" />
+                {selectedItems
+                  .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+                  .map((ar) => (
+                  <div key={ar.id} className="flex items-center justify-between py-1">
+                    <span className="text-muted-foreground">{ar.sale.invoiceCode}</span>
+                    <span className="font-semibold">{formatRD(ar.balanceCents)}</span>
+                  </div>
+                ))}
+                <Separator className="my-2" />
+                <div className="flex items-center justify-between font-semibold">
+                  <span>Total pendiente</span>
+                  <span>{formatRD(selectedTotalBalance)}</span>
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label>Monto a pagar</Label>
+              <PriceInput
+                valueCents={batchAmountCents}
+                onChangeCents={setBatchAmountCents}
+                maxCents={selectedTotalBalance}
+              />
+              {batchAmountCents > selectedTotalBalance && (
+                <div className="text-xs font-medium text-destructive">
+                  El monto no puede exceder el balance pendiente ({formatRD(selectedTotalBalance)})
+                </div>
+              )}
+              {batchAmountCents < selectedTotalBalance && batchAmountCents > 0 && (
+                <div className="text-xs text-muted-foreground">
+                  Se aplicará desde la factura más antigua
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Método</Label>
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+                value={batchMethod}
+                onChange={(e) => {
+                  const nextMethod = e.target.value as PaymentMethod
+                  setBatchMethod(nextMethod)
+                  if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
+                    setBatchTransferBankName("")
+                  }
+                }}
+              >
+                {paymentMethods.map((m) => (
+                  <option key={m} value={m}>
+                    {methodLabel(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {batchMethod === PaymentMethod.TRANSFERENCIA && (
+              <div className="grid gap-2">
+                <Label>Banco de la transferencia</Label>
+                <select
+                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  value={batchTransferBankName}
+                  onChange={(e) => setBatchTransferBankName(e.target.value)}
+                >
+                  <option value="">Selecciona un banco</option>
+                  {DOMINICAN_BANKS.map((bankName) => (
+                    <option key={bankName} value={bankName}>
+                      {bankName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label>Nota (opcional)</Label>
+              <Input value={batchNote} onChange={(e) => setBatchNote(e.target.value)} />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="secondary" type="button" onClick={() => setOpenBatch(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={onBatchPay}
+              disabled={isBatchSaving || selectedItems.length === 0 || batchAmountCents <= 0 || batchAmountCents > selectedTotalBalance}
+            >
+              {isBatchSaving ? "Guardando…" : "Guardar pago"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -280,3 +280,156 @@ export async function addPayment(input: {
     }
   }, TRANSACTION_OPTIONS)
 }
+
+export async function addBatchPayment(input: {
+  arIds: string[]
+  amountCents: number
+  method: PaymentMethod
+  transferBankName?: string | null
+  note?: string | null
+}) {
+  const currentUser = await getCurrentUser()
+  assertAuthActor(currentUser)
+
+  if (!input.arIds.length) throw new Error("Debes seleccionar al menos una factura")
+  if (input.amountCents <= 0) throw new Error("El abono debe ser mayor a 0")
+  const uniqueArIds = Array.from(new Set(input.arIds))
+  if (uniqueArIds.length !== input.arIds.length) {
+    throw new Error("Hay facturas duplicadas en la selección")
+  }
+  if (input.method === PaymentMethod.DIVIDIR_PAGO) {
+    throw new Error("Dividir pago no es un método válido para registrar un cobro.")
+  }
+  if (input.method === PaymentMethod.TRANSFERENCIA) {
+    const trimmedBankName = input.transferBankName?.trim()
+    if (!trimmedBankName) {
+      throw new Error("Debes seleccionar el banco de la transferencia.")
+    }
+    if (!isDominicanBankName(trimmedBankName)) {
+      throw new Error("El banco de transferencia seleccionado no es válido.")
+    }
+  }
+
+  // Si solo es una factura, delegar al flujo individual
+  if (uniqueArIds.length === 1) {
+    const result = await addPayment({
+      arId: uniqueArIds[0],
+      amountCents: input.amountCents,
+      method: input.method,
+      transferBankName: input.transferBankName,
+      note: input.note,
+    })
+    return {
+      receiptCode: result.receiptCode,
+      paymentIds: [result.paymentId],
+    }
+  }
+
+  return prisma.$transaction(async (tx) => {
+    // Cargar todos los AR dentro de la transacción
+    const ars = await tx.accountReceivable.findMany({
+      where: {
+        id: { in: uniqueArIds },
+        sale: { accountId: currentUser.accountId },
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    })
+
+    if (ars.length !== uniqueArIds.length) {
+      throw new Error("Algunas cuentas por cobrar no fueron encontradas")
+    }
+
+    // Verificar que todas pertenecen al mismo cliente
+    const customerIds = new Set(ars.map((ar) => ar.customerId))
+    if (customerIds.size > 1) {
+      throw new Error("Todas las facturas deben ser del mismo cliente")
+    }
+
+    // Verificar que ninguna está pagada
+    for (const ar of ars) {
+      if (ar.status === "PAGADA" || ar.balanceCents <= 0) {
+        throw new Error(`La factura ya está pagada`)
+      }
+    }
+
+    const totalBalance = ars.reduce((sum, ar) => sum + ar.balanceCents, 0)
+    const totalToApply = Math.min(input.amountCents, totalBalance)
+
+    // Obtener un solo receiptCode para todo el batch
+    const seq = await tx.paymentSequence.upsert({
+      where: { accountId: currentUser.accountId },
+      update: { lastNumber: { increment: 1 } },
+      create: { accountId: currentUser.accountId, lastNumber: 1 },
+    })
+    const receiptNumber = seq.lastNumber
+    const receiptCode = `R-${String(receiptNumber).padStart(6, "0")}`
+
+    let remaining = totalToApply
+    const paymentIds: string[] = []
+
+    for (const ar of ars) {
+      if (remaining <= 0) break
+
+      const amount = Math.min(remaining, ar.balanceCents)
+      remaining -= amount
+
+      const payment = await tx.payment.create({
+        data: {
+          arId: ar.id,
+          userId: currentUser.id,
+          receiptNumber,
+          receiptCode,
+          amountCents: amount,
+          method: input.method,
+          transferBankName:
+            input.method === PaymentMethod.TRANSFERENCIA
+              ? input.transferBankName?.trim() ?? null
+              : null,
+          note: input.note || null,
+        },
+        select: { id: true },
+      })
+
+      paymentIds.push(payment.id)
+
+      const newBalance = ar.balanceCents - amount
+      await tx.accountReceivable.updateMany({
+        where: { id: ar.id, sale: { accountId: currentUser.accountId } },
+        data: {
+          balanceCents: newBalance,
+          status: newBalance === 0 ? "PAGADA" : "PARCIAL",
+        },
+      })
+
+      await logAuditEvent(
+        {
+          accountId: currentUser.accountId,
+          userId: currentUser.id,
+          userEmail: currentUser.email ?? null,
+          userUsername: currentUser.username ?? null,
+          action: "PAYMENT_CREATED",
+          resourceType: "Payment",
+          resourceId: payment.id,
+          details: {
+            amountCents: amount,
+            method: input.method,
+            transferBankName:
+              input.method === PaymentMethod.TRANSFERENCIA
+                ? input.transferBankName?.trim() ?? null
+                : null,
+            arId: ar.id,
+            receiptCode,
+            batchPayment: true,
+          },
+        },
+        tx
+      )
+    }
+
+    revalidatePath("/ar")
+    revalidatePath("/dashboard")
+    revalidatePath("/daily-close")
+
+    return { receiptCode, paymentIds }
+  }, TRANSACTION_OPTIONS)
+}

@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation"
-import Link from "next/link"
 
 import { getCurrentUser } from "@/lib/auth"
-import { formatDateTimeDO, formatDateDO } from "@/lib/date-time"
+import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
 import { PrintButton } from "@/components/app/print-button"
@@ -52,6 +51,27 @@ export default async function PaymentCartaPrintPage({
   ])
 
   if (!payment) return notFound()
+  const receiptPayments = await prisma.payment.findMany({
+    where: {
+      receiptCode: payment.receiptCode,
+      cancelledAt: null,
+      ar: {
+        sale: {
+          accountId: user.accountId,
+        },
+      },
+    },
+    include: {
+      ar: {
+        include: { customer: true, sale: true },
+      },
+    },
+    orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }],
+  })
+  const visibleReceiptPayments = receiptPayments.length > 0 ? receiptPayments : [payment]
+  const isBatchReceipt = visibleReceiptPayments.length > 1
+  const totalReceiptCents = visibleReceiptPayments.reduce((sum, p) => sum + p.amountCents, 0)
+  const totalRemainingCents = visibleReceiptPayments.reduce((sum, p) => sum + p.ar.balanceCents, 0)
 
   const logoUrl = company?.logoUrl
 
@@ -107,9 +127,15 @@ export default async function PaymentCartaPrintPage({
             <div>
               <span className="font-semibold">Fecha:</span> {fmtDate(payment.paidAt)}
             </div>
-            <div className="mt-1">
-              <span className="font-semibold">Factura:</span> {payment.ar.sale.invoiceCode}
-            </div>
+            {isBatchReceipt ? (
+              <div className="mt-1">
+                <span className="font-semibold">Facturas:</span> {visibleReceiptPayments.length}
+              </div>
+            ) : (
+              <div className="mt-1">
+                <span className="font-semibold">Factura:</span> {payment.ar.sale.invoiceCode}
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -128,19 +154,51 @@ export default async function PaymentCartaPrintPage({
       <div className="mt-6 rounded-md border p-4">
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div>
-            <div className="font-semibold text-neutral-500">Monto pagado</div>
-            <div className="text-xl font-bold">{formatRD(payment.amountCents)}</div>
+            <div className="font-semibold text-neutral-500">
+              {isBatchReceipt ? "Monto total pagado" : "Monto pagado"}
+            </div>
+            <div className="text-xl font-bold">{formatRD(isBatchReceipt ? totalReceiptCents : payment.amountCents)}</div>
           </div>
           <div>
             <div className="font-semibold text-neutral-500">Método de pago</div>
             <div className="text-lg">{formatPaymentWithBank(payment.method, payment.transferBankName)}</div>
           </div>
           <div>
-            <div className="font-semibold text-neutral-500">Balance restante en factura</div>
-            <div className="text-lg">{formatRD(payment.ar.balanceCents)}</div>
+            <div className="font-semibold text-neutral-500">
+              {isBatchReceipt ? "Balance restante combinado" : "Balance restante en factura"}
+            </div>
+            <div className="text-lg">{formatRD(isBatchReceipt ? totalRemainingCents : payment.ar.balanceCents)}</div>
           </div>
         </div>
       </div>
+
+      {isBatchReceipt && (
+        <div className="mt-6 rounded-md border p-4">
+          <div className="mb-3 text-sm font-semibold text-neutral-500">Desglose por factura</div>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="pb-2 text-left font-semibold">Factura</th>
+                <th className="pb-2 text-right font-semibold">Monto aplicado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleReceiptPayments.map((p) => (
+                <tr key={p.id} className="border-b last:border-b-0">
+                  <td className="py-2">{p.ar.sale.invoiceCode}</td>
+                  <td className="py-2 text-right font-semibold">{formatRD(p.amountCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td className="pt-3 font-semibold">Total combinado</td>
+                <td className="pt-3 text-right font-semibold">{formatRD(totalReceiptCents)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-2 gap-6">
         <div className="text-sm text-neutral-700">

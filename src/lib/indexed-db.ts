@@ -1,12 +1,13 @@
 "use client"
 
 const DB_NAME = "tejada-pos-offline"
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 // Store names
 const STORES = {
   PENDING_SALES: "pendingSales",
   PENDING_PAYMENTS: "pendingPayments",
+  PENDING_BATCH_PAYMENTS: "pendingBatchPayments",
   PRODUCTS_CACHE: "productsCache",
   CUSTOMERS_CACHE: "customersCache",
   AR_CACHE: "arCache",
@@ -46,6 +47,13 @@ function openDB(): Promise<IDBDatabase> {
         })
         paymentsStore.createIndex("createdAt", "createdAt", { unique: false })
         paymentsStore.createIndex("arId", "arId", { unique: false })
+      }
+
+      if (!db.objectStoreNames.contains(STORES.PENDING_BATCH_PAYMENTS)) {
+        const batchPaymentsStore = db.createObjectStore(STORES.PENDING_BATCH_PAYMENTS, {
+          keyPath: "tempId",
+        })
+        batchPaymentsStore.createIndex("createdAt", "createdAt", { unique: false })
       }
 
       if (!db.objectStoreNames.contains(STORES.PRODUCTS_CACHE)) {
@@ -164,6 +172,40 @@ export async function deletePendingPayment(tempId: string) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_PAYMENTS, "readwrite")
   await tx.objectStore(STORES.PENDING_PAYMENTS).delete(tempId)
+}
+
+// Pending Batch Payments
+export async function savePendingBatchPayment(payment: {
+  tempId: string
+  arIds: string[]
+  amountCents: number
+  method: string
+  transferBankName?: string | null
+  note?: string | null
+  username: string
+  createdAt: number
+}) {
+  const db = await openDB()
+  const tx = db.transaction(STORES.PENDING_BATCH_PAYMENTS, "readwrite")
+  await tx.objectStore(STORES.PENDING_BATCH_PAYMENTS).put(payment)
+}
+
+export async function getPendingBatchPayments(): Promise<any[]> {
+  const db = await openDB()
+  const tx = db.transaction(STORES.PENDING_BATCH_PAYMENTS, "readonly")
+  const store = tx.objectStore(STORES.PENDING_BATCH_PAYMENTS)
+  const index = store.index("createdAt")
+  return new Promise((resolve, reject) => {
+    const request = index.getAll()
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+export async function deletePendingBatchPayment(tempId: string) {
+  const db = await openDB()
+  const tx = db.transaction(STORES.PENDING_BATCH_PAYMENTS, "readwrite")
+  await tx.objectStore(STORES.PENDING_BATCH_PAYMENTS).delete(tempId)
 }
 
 // Products Cache
@@ -322,6 +364,9 @@ export async function clearSyncedData() {
   
   const paymentsTx = db.transaction(STORES.PENDING_PAYMENTS, "readwrite")
   await paymentsTx.objectStore(STORES.PENDING_PAYMENTS).clear()
+
+  const batchPaymentsTx = db.transaction(STORES.PENDING_BATCH_PAYMENTS, "readwrite")
+  await batchPaymentsTx.objectStore(STORES.PENDING_BATCH_PAYMENTS).clear()
 }
 
 // Limpiar todo el cache (productos, clientes, AR) - útil después de restaurar un backup
@@ -347,12 +392,13 @@ export async function clearAllCache() {
 }
 
 export async function getPendingCounts() {
-  const [sales, payments] = await Promise.all([
+  const [sales, payments, batchPayments] = await Promise.all([
     getPendingSales(),
     getPendingPayments(),
+    getPendingBatchPayments(),
   ])
   return {
     sales: sales.length,
-    payments: payments.length,
+    payments: payments.length + batchPayments.length,
   }
 }
