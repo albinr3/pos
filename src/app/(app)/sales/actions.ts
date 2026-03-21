@@ -10,6 +10,7 @@ import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { isDominicanBankName } from "@/lib/dominican-banks"
+import { ensureGenericCustomer } from "@/lib/customer-helpers"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -193,36 +194,12 @@ export async function listCustomers() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  // Asegurar que el cliente general existe (con manejo de condiciones de carrera)
-  try {
-    const existingGeneric = await prisma.customer.findFirst({
-      where: {
-        accountId: user.accountId,
-        isGeneric: true,
-      },
-    })
-
-    if (!existingGeneric) {
-      await prisma.customer.create({
-        data: {
-          accountId: user.accountId,
-          name: "Cliente general",
-          isGeneric: true,
-          isActive: true,
-        },
-      })
-    }
-  } catch (error: any) {
-    // Si ya existe por condición de carrera, ignorar silenciosamente
-    if (error?.code !== "P2002") {
-      console.error("Error asegurando cliente genérico:", error)
-    }
-  }
+  await ensureGenericCustomer(prisma, user.accountId)
 
   return prisma.customer.findMany({
     where: { accountId: user.accountId, isActive: true },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, isGeneric: true },
+    select: { id: true, visualId: true, name: true, isGeneric: true },
     take: 50,
   })
 }
@@ -232,6 +209,8 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
   if (!user) throw new Error("No autenticado")
 
   const q = options?.query?.trim()
+  const normalizedVisualQuery = q ? q.replace(/^#/, "") : ""
+  const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
   const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
 
   const sales = await prisma.sale.findMany({
@@ -242,6 +221,7 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
           OR: [
             { invoiceCode: { contains: q, mode: "insensitive" } },
             { customer: { name: { contains: q, mode: "insensitive" } } },
+            ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
             { items: { some: { product: { name: { contains: q, mode: "insensitive" } } } } },
           ],
         }
@@ -258,7 +238,7 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
       type: true,
       totalCents: true,
       cancelledAt: true,
-      customer: { select: { name: true } },
+      customer: { select: { name: true, visualId: true } },
     },
   })
 
@@ -844,23 +824,7 @@ export async function createSale(input: {
       )
 
       // Asegurar que el cliente genérico existe
-      let genericCustomer = await tx.customer.findFirst({
-        where: {
-          accountId: user.accountId,
-          isGeneric: true,
-        },
-      })
-
-      if (!genericCustomer) {
-        genericCustomer = await tx.customer.create({
-          data: {
-            accountId: user.accountId,
-            name: "Cliente general",
-            isGeneric: true,
-            isActive: true,
-          },
-        })
-      }
+      const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
 
       const { subtotalCents, itbisCents, itemsTotalCents } = calculateSaleTotalsFromResolvedLines(
         resolvedLines,

@@ -153,12 +153,20 @@ export function CustomersClient() {
                 <Plus className="mr-2 h-4 w-4" /> Nuevo
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editing ? "Editar cliente" : "Nuevo cliente"}</DialogTitle>
               </DialogHeader>
 
               <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label>ID</Label>
+                  <Input
+                    value={editing ? `#${editing.visualId}` : "Se asigna automáticamente"}
+                    disabled
+                    readOnly
+                  />
+                </div>
                 <div className="grid gap-2">
                   <Label>Nombre</Label>
                   <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -252,6 +260,7 @@ export function CustomersClient() {
             <Table className="min-w-[800px]">
               <TableHeader>
                 <TableRow>
+                  <TableHead>ID</TableHead>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Teléfono</TableHead>
                   <TableHead>Cédula</TableHead>
@@ -263,6 +272,7 @@ export function CustomersClient() {
               <TableBody>
                 {items.map((c) => (
                   <TableRow key={c.id}>
+                    <TableCell className="font-mono">#{c.visualId}</TableCell>
                     <TableCell className="font-medium">
                       {c.isGeneric ? "(General) " : ""}{c.name}
                     </TableCell>
@@ -302,7 +312,7 @@ export function CustomersClient() {
 
                 {!isLoading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-12">
+                    <TableCell colSpan={7} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
                           src="/lupa.webp"

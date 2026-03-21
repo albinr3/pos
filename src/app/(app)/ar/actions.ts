@@ -21,11 +21,25 @@ function assertAuthActor(actor: any): asserts actor is AuthActor {
   if (typeof actor.accountId !== "string" || actor.accountId.length === 0) throw new Error("No autenticado")
 }
 
+function parseVisualIdQuery(rawQuery: string | undefined): number | null {
+  if (!rawQuery) return null
+  const trimmed = rawQuery.trim()
+  if (!trimmed) return null
+
+  // Acepta formatos: 12, #12, (12)
+  if (!/^[#(]?\s*\d+\s*\)?$/.test(trimmed)) return null
+  const digits = trimmed.replace(/\D/g, "")
+  if (!digits) return null
+
+  return Number(digits)
+}
+
 export async function listOpenAR(options?: { query?: string; skip?: number; take?: number }, actor?: AuthActor) {
   const user = actor ?? await getCurrentUser()
   assertAuthActor(user)
 
   const query = options?.query?.trim()
+  const visualIdQuery = parseVisualIdQuery(query)
   const skip = options?.skip ?? 0
   const take = options?.take ?? 10
 
@@ -41,6 +55,7 @@ export async function listOpenAR(options?: { query?: string; skip?: number; take
     where.OR = [
       { sale: { invoiceCode: { contains: query, mode: "insensitive" }, cancelledAt: null } },
       { customer: { name: { contains: query, mode: "insensitive" } } },
+      ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
     ]
   }
 

@@ -1026,7 +1026,9 @@ export function PosClient({
                   >
                     {customers.map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.isGeneric ? "(General) " : ""}{c.name}
+                        {c.isGeneric ? "(General) " : ""}
+                        {typeof c.visualId === "number" ? `#${c.visualId} ` : ""}
+                        {c.name}
                       </option>
                     ))}
                   </select>
@@ -1104,7 +1106,11 @@ export function PosClient({
                   className="flex w-full items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/60 hover:border-foreground/20 transition-colors cursor-pointer text-left"
                 >
                   <span>
-                    {customers.find((c) => c.id === customerId)?.name ?? "Cliente general"} ·{" "}
+                    {(() => {
+                      const selectedCustomer = customers.find((c) => c.id === customerId)
+                      if (!selectedCustomer) return "Cliente general"
+                      return `${typeof selectedCustomer.visualId === "number" ? `#${selectedCustomer.visualId} ` : ""}${selectedCustomer.name}`
+                    })()} ·{" "}
                     {saleType === SaleType.CONTADO ? "Contado" : "Crédito"}
                     {saleType === SaleType.CONTADO && paymentMethod ? ` · ${paymentMethod.toLowerCase().replace("_", " ")}` : ""}
                   </span>

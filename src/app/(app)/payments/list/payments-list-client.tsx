@@ -75,6 +75,7 @@ export function PaymentsListClient() {
       p.receiptCode.toLowerCase().includes(q) ||
       p.ar.sale.invoiceCode.toLowerCase().includes(q) ||
       p.ar.customer.name.toLowerCase().includes(q) ||
+      String(p.ar.customer.visualId ?? "").includes(q) ||
       methodLabel(p.method).toLowerCase().includes(q) ||
       (p.transferBankName || "").toLowerCase().includes(q)
     )

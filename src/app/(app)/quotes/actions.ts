@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { ensurePermission } from "@/lib/permission-guard"
+import { ensureGenericCustomer } from "@/lib/customer-helpers"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -172,38 +173,12 @@ export async function listCustomers() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  // Asegurar que el cliente general existe (con manejo de condiciones de carrera)
-  try {
-    const existingGeneric = await prisma.customer.findFirst({
-      where: {
-        accountId: user.accountId,
-        isGeneric: true,
-      },
-    })
-
-    if (!existingGeneric) {
-      await prisma.customer.create({
-        data: {
-          accountId: user.accountId,
-          name: "Cliente general",
-          isGeneric: true,
-          isActive: true,
-        },
-      })
-    }
-  } catch (error: unknown) {
-    const code = typeof error === "object" && error !== null && "code" in error
-      ? String((error as { code?: unknown }).code)
-      : null
-    if (code !== "P2002") {
-      console.error("Error asegurando cliente genérico:", error)
-    }
-  }
+  await ensureGenericCustomer(prisma, user.accountId)
 
   return prisma.customer.findMany({
     where: { accountId: user.accountId, isActive: true },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, isGeneric: true },
+    select: { id: true, visualId: true, name: true, isGeneric: true },
     take: 50,
   })
 }

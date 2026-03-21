@@ -16,6 +16,7 @@ import type { UserRole } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
 import { createBillingSubscription, getBillingState, type BillingState } from "@/lib/billing"
 import { logError, ErrorCodes } from "@/lib/error-logger"
+import { ensureGenericCustomer } from "@/lib/customer-helpers"
 
 // Función helper para obtener prisma de forma segura
 async function getPrisma() {
@@ -332,52 +333,12 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
           },
         })
 
-        // Crear cliente genérico
-        try {
-          await prisma.customer.create({
-            data: {
-              accountId: account.id,
-              name: "Cliente general",
-              isGeneric: true,
-              isActive: true,
-            },
-          })
-        } catch (error: any) {
-          // Si ya existe (error de constraint o condición de carrera), ignorar
-          if (error?.code !== "P2002") {
-            throw error
-          }
-        }
+        await ensureGenericCustomer(prisma, account.id)
       }
     }
 
-    // Asegurarse de que el cliente genérico exista (verificación final)
-    // Usar findFirst para evitar crear duplicados en condiciones de carrera
-    const existingGeneric = await prisma.customer.findFirst({
-      where: {
-        accountId: account.id,
-        isGeneric: true,
-      },
-    })
-
-    // Solo crear si realmente no existe
-    if (!existingGeneric) {
-      try {
-        await prisma.customer.create({
-          data: {
-            accountId: account.id,
-            name: "Cliente general",
-            isGeneric: true,
-            isActive: true,
-          },
-        })
-      } catch (error: any) {
-        // Si ya existe por condición de carrera, ignorar silenciosamente
-        if (error?.code !== "P2002") {
-          console.error("Error creando cliente genérico:", error)
-        }
-      }
-    }
+    // Verificación final idempotente para asegurar invariantes del cliente genérico.
+    await ensureGenericCustomer(prisma, account.id)
 
     return {
       id: account.id,

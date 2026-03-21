@@ -1,5 +1,6 @@
 import { PrismaClient, SuperAdminRole, UserRole } from "@prisma/client"
 import bcrypt from "bcryptjs"
+import { ensureGenericCustomer } from "../src/lib/customer-helpers"
 
 const prisma = new PrismaClient()
 
@@ -69,35 +70,8 @@ async function main() {
     create: { accountId: account.id, lastNumber: 0 },
   })
 
-  // Generic customer (Cliente general)
-  const existingGeneric = await prisma.customer.findFirst({
-    where: {
-      accountId: account.id,
-      isGeneric: true,
-    },
-  })
-
-  if (!existingGeneric) {
-    await prisma.customer.create({
-      data: {
-        accountId: account.id,
-        name: "Cliente general",
-        isGeneric: true,
-        isActive: true,
-      },
-    })
-  } else {
-    // Actualizar nombre si es diferente
-    if (existingGeneric.name !== "Cliente general") {
-      await prisma.customer.update({
-        where: { id: existingGeneric.id },
-        data: {
-          name: "Cliente general",
-          isActive: true,
-        },
-      })
-    }
-  }
+  // Generic customer (Cliente general, visualId=1)
+  await ensureGenericCustomer(prisma, account.id)
 
   // Admin user (username: admin, password: admin)
   // Este usuario es el owner del account

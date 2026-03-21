@@ -63,6 +63,7 @@ export async function PUT(
 
     return NextResponse.json({
       id: customer.id,
+      visualId: customer.visualId,
       name: customer.name,
       phone: customer.phone,
       address: customer.address,

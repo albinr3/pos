@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
               customer: r.sale.customer
                 ? {
                     id: r.sale.customer.id,
+                    visualId: r.sale.customer.visualId,
                     name: r.sale.customer.name,
                   }
                 : null,

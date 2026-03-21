@@ -207,6 +207,7 @@ model Account {
   quoteSequence        QuoteSequence?
   productSequence      ProductSequence?
   categorySequence     CategorySequence?
+  customerSequence     CustomerSequence?
   paymentSequence      PaymentSequence?
   subUserLoginTokens   SubUserLoginToken[]
 
@@ -421,6 +422,19 @@ model CategorySequence {
   @@index([accountId])
 }
 
+model CustomerSequence {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String  @unique
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  lastNumber Int @default(0)
+
+  @@index([accountId])
+}
+
 model PaymentSequence {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
@@ -444,6 +458,7 @@ model Customer {
 
   accountId String
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  visualId  Int      @map("id_visual")
 
   name     String
   phone    String?
@@ -461,6 +476,7 @@ model Customer {
   arItems AccountReceivable[]
   quotes  Quote[]
 
+  @@unique([accountId, visualId])
   @@index([accountId])
   @@index([accountId, name])
   @@index([accountId, isGeneric])

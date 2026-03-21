@@ -54,6 +54,7 @@ export function QuotesListClient() {
     return (
       q.quoteCode.toLowerCase().includes(qLower) ||
       q.customer?.name.toLowerCase().includes(qLower) ||
+      String(q.customer?.visualId ?? "").includes(qLower) ||
       false
     )
   })

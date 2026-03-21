@@ -510,7 +510,7 @@ export function QuotesClient({
               >
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.isGeneric ? "(Genérico) " : ""}{c.name}
+                    {c.isGeneric ? "(Genérico) " : ""}#{c.visualId} {c.name}
                   </option>
                 ))}
               </select>

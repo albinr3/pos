@@ -321,7 +321,7 @@ export async function GET(request: NextRequest) {
         <tr ${p.cancelledAt ? 'class="cancelled"' : ""}>
           <td class="receipt-code">${p.receiptCode}</td>
           <td>${fmtDate(p.paidAt)}</td>
-          <td>${p.ar.customer.name}</td>
+          <td>#${p.ar.customer.visualId} ${p.ar.customer.name}</td>
           <td class="receipt-code">${p.ar.sale.invoiceCode}</td>
           <td class="amount">${formatRD(p.amountCents)}</td>
           <td>${p.method}</td>

@@ -6,6 +6,11 @@ import { hasPermissionOrLog } from "@/lib/permission-guard"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message
+  return fallback
+}
+
 // GET /api/customers - Listar clientes
 export async function GET(request: NextRequest) {
   try {
@@ -22,6 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       data: customers.map((c) => ({
         id: c.id,
+        visualId: c.visualId,
         name: c.name,
         phone: c.phone,
         address: c.address,
@@ -34,10 +40,10 @@ export async function GET(request: NextRequest) {
         updatedAt: c.updatedAt.toISOString(),
       })),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en GET /api/customers:", error)
     return NextResponse.json(
-      { error: error.message || "Error al obtener clientes" },
+      { error: getErrorMessage(error, "Error al obtener clientes") },
       { status: 500 }
     )
   }
@@ -69,7 +75,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    await upsertCustomer({
+    const persistedCustomer = await upsertCustomer({
       name: body.name,
       phone: body.phone || null,
       address: body.address || null,
@@ -83,10 +89,9 @@ export async function POST(request: NextRequest) {
     const { prisma } = await import("@/lib/db")
     const customer = await prisma.customer.findFirst({
       where: {
+        id: persistedCustomer.id,
         accountId: user.accountId,
-        name: body.name,
       },
-      orderBy: { createdAt: "desc" },
     })
 
     if (!customer) {
@@ -95,6 +100,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       id: customer.id,
+      visualId: customer.visualId,
       name: customer.name,
       phone: customer.phone,
       address: customer.address,
@@ -106,13 +112,14 @@ export async function POST(request: NextRequest) {
       createdAt: customer.createdAt.toISOString(),
       updatedAt: customer.updatedAt.toISOString(),
     }, { status: 201 })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error en POST /api/customers:", error)
-    if (typeof error?.message === "string" && error.message.includes("No tienes permiso")) {
-      return NextResponse.json({ error: error.message }, { status: 403 })
+    const message = getErrorMessage(error, "Error al crear cliente")
+    if (message.includes("No tienes permiso")) {
+      return NextResponse.json({ error: message }, { status: 403 })
     }
     return NextResponse.json(
-      { error: error.message || "Error al crear cliente" },
+      { error: message },
       { status: 500 }
     )
   }

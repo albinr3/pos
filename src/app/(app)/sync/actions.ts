@@ -124,6 +124,7 @@ export async function syncCustomersToIndexedDB() {
 
   return customers.map((c) => ({
     id: c.id,
+    visualId: c.visualId,
     name: c.name,
     phone: c.phone,
     address: c.address,
@@ -176,6 +177,7 @@ export async function syncARToIndexedDB() {
       status: ar.status,
       customer: {
         id: ar.customer.id,
+        visualId: ar.customer.visualId,
         name: ar.customer.name,
         phone: ar.customer.phone,
       },

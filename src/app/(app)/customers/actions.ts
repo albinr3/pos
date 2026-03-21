@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizePhone, sanitizeCedula, validateLength } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
 import { ensurePermission } from "@/lib/permission-guard"
+import { ensureGenericCustomer, nextCustomerVisualId } from "@/lib/customer-helpers"
 
 type AuthActor = {
   id: string
@@ -14,56 +15,10 @@ type AuthActor = {
   username?: string | null
 }
 
-function assertAuthActor(actor: any): asserts actor is AuthActor {
+function assertAuthActor(actor: unknown): asserts actor is AuthActor {
   if (!actor || typeof actor !== "object") throw new Error("No autenticado")
   if (typeof actor.id !== "string" || actor.id.length === 0) throw new Error("No autenticado")
   if (typeof actor.accountId !== "string" || actor.accountId.length === 0) throw new Error("No autenticado")
-}
-
-/**
- * Asegura que el cliente general existe y devuelve su ID
- * Maneja condiciones de carrera donde múltiples solicitudes pueden intentar crear el cliente
- */
-async function ensureGenericCustomer(accountId: string): Promise<string> {
-  // Primero verificar si ya existe
-  const existingGeneric = await prisma.customer.findFirst({
-    where: {
-      accountId,
-      isGeneric: true,
-    },
-  })
-
-  if (existingGeneric) {
-    return existingGeneric.id
-  }
-
-  // Intentar crear el cliente genérico
-  try {
-    const newGeneric = await prisma.customer.create({
-      data: {
-        accountId,
-        name: "Cliente general",
-        isGeneric: true,
-        isActive: true,
-      },
-    })
-    return newGeneric.id
-  } catch (error: any) {
-    // Si ya existe por condición de carrera, buscarlo nuevamente
-    if (error?.code === "P2002") {
-      const retryGeneric = await prisma.customer.findFirst({
-        where: {
-          accountId,
-          isGeneric: true,
-        },
-      })
-      if (retryGeneric) {
-        return retryGeneric.id
-      }
-    }
-    // Re-lanzar el error si no es un error de duplicación
-    throw error
-  }
 }
 
 export async function listCustomers(query?: string, user?: AuthActor) {
@@ -71,14 +26,23 @@ export async function listCustomers(query?: string, user?: AuthActor) {
   assertAuthActor(currentUser)
 
   // Asegurar que el cliente general existe
-  await ensureGenericCustomer(currentUser.accountId)
+  await ensureGenericCustomer(prisma, currentUser.accountId)
 
   const q = query?.trim()
+  const normalizedVisualQuery = q ? q.replace(/^#/, "") : ""
+  const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
   return prisma.customer.findMany({
     where: {
       accountId: currentUser.accountId,
       isActive: true,
-      ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              ...(visualIdQuery !== null ? [{ visualId: visualIdQuery }] : []),
+            ],
+          }
+        : {}),
     },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }],
     take: 200,
@@ -90,16 +54,25 @@ export async function listCustomersPage(options?: { query?: string; cursor?: str
   if (!user) throw new Error("No autenticado")
 
   // Asegurar que el cliente general existe
-  await ensureGenericCustomer(user.accountId)
+  await ensureGenericCustomer(prisma, user.accountId)
 
   const q = options?.query?.trim()
+  const normalizedVisualQuery = q ? q.replace(/^#/, "") : ""
+  const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
   const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
 
   const customers = await prisma.customer.findMany({
     where: {
       accountId: user.accountId,
       isActive: true,
-      ...(q ? { name: { contains: q, mode: "insensitive" } } : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: "insensitive" } },
+              ...(visualIdQuery !== null ? [{ visualId: visualIdQuery }] : []),
+            ],
+          }
+        : {}),
     },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }, { id: "asc" }],
     cursor: options?.cursor ? { id: options.cursor } : undefined,
@@ -136,6 +109,7 @@ export async function upsertCustomer(input: {
   })
 
   const normalizedCreditDays = input.creditEnabled ? input.creditDays : 0
+  let persistedCustomer: { id: string; visualId: number } | null = null
 
   // 🔐 SANITIZAR todos los inputs
   const sanitized = {
@@ -204,6 +178,10 @@ export async function upsertCustomer(input: {
         province: sanitized.province,
       },
     })
+    persistedCustomer = {
+      id: existing.id,
+      visualId: existing.visualId,
+    }
   } else {
     if (input.creditEnabled || normalizedCreditDays > 0) {
       await ensurePermission(user, "canApproveCredit", {
@@ -212,20 +190,44 @@ export async function upsertCustomer(input: {
       })
     }
 
-    const created = await prisma.customer.create({
-      data: {
-        accountId: user.accountId,
-        name: sanitized.name,
-        phone: sanitized.phone,
-        address: sanitized.address,
-        cedula: sanitized.cedula,
-        province: sanitized.province,
-        creditEnabled: input.creditEnabled,
-        creditDays: normalizedCreditDays,
-        isGeneric: false,
-        isActive: true,
-      },
-    })
+    await ensureGenericCustomer(prisma, user.accountId)
+
+    let created: { id: string; visualId: number } | null = null
+    let lastError: unknown = null
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const visualId = await nextCustomerVisualId(prisma, user.accountId)
+        created = await prisma.customer.create({
+          data: {
+            accountId: user.accountId,
+            visualId,
+            name: sanitized.name,
+            phone: sanitized.phone,
+            address: sanitized.address,
+            cedula: sanitized.cedula,
+            province: sanitized.province,
+            creditEnabled: input.creditEnabled,
+            creditDays: normalizedCreditDays,
+            isGeneric: false,
+            isActive: true,
+          },
+          select: { id: true, visualId: true },
+        })
+        break
+      } catch (error: unknown) {
+        lastError = error
+        const code =
+          error && typeof error === "object" && "code" in error
+            ? String((error as { code?: unknown }).code ?? "")
+            : ""
+        if (code !== "P2002") throw error
+      }
+    }
+
+    if (!created) {
+      throw (lastError instanceof Error ? lastError : new Error("No se pudo asignar visualId al cliente"))
+    }
 
     await logAuditEvent({
       accountId: user.accountId,
@@ -236,6 +238,7 @@ export async function upsertCustomer(input: {
       resourceType: "Customer",
       resourceId: created.id,
       details: {
+        visualId: created.visualId,
         name: sanitized.name,
         phone: sanitized.phone,
         address: sanitized.address,
@@ -243,11 +246,18 @@ export async function upsertCustomer(input: {
         province: sanitized.province,
       },
     })
+    persistedCustomer = created
   }
 
   revalidatePath("/customers")
   revalidatePath("/sales")
   revalidatePath("/ar")
+
+  if (!persistedCustomer) {
+    throw new Error("No se pudo persistir el cliente")
+  }
+
+  return persistedCustomer
 }
 
 export async function deactivateCustomer(id: string) {

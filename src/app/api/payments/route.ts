@@ -21,6 +21,8 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const query = (searchParams.get("query") || "").trim()
+    const normalizedVisualQuery = query ? query.replace(/^#/, "") : ""
+    const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
     const take = searchParams.get("take") ? Math.min(500, Math.max(1, parseInt(searchParams.get("take")!, 10))) : 200
 
     const payments = await prisma.payment.findMany({
@@ -37,6 +39,7 @@ export async function GET(request: NextRequest) {
                 { note: { contains: query, mode: "insensitive" } },
                 { transferBankName: { contains: query, mode: "insensitive" } },
                 { ar: { customer: { name: { contains: query, mode: "insensitive" } } } },
+                ...(visualIdQuery !== null ? [{ ar: { customer: { visualId: visualIdQuery } } }] : []),
                 { ar: { sale: { invoiceCode: { contains: query, mode: "insensitive" } } } },
               ],
             }
@@ -46,7 +49,7 @@ export async function GET(request: NextRequest) {
       include: {
         ar: {
           include: {
-            customer: { select: { id: true, name: true, phone: true } },
+            customer: { select: { id: true, visualId: true, name: true, phone: true } },
             sale: { select: { id: true, invoiceCode: true, cancelledAt: true } },
           },
         },
@@ -73,6 +76,7 @@ export async function GET(request: NextRequest) {
         customer: p.ar?.customer
           ? {
               id: p.ar.customer.id,
+              visualId: p.ar.customer.visualId,
               name: p.ar.customer.name,
               phone: p.ar.customer.phone,
             }

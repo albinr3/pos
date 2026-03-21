@@ -123,7 +123,7 @@ export async function GET(
     const sale = await prisma.sale.findFirst({
       where: { id, accountId: user.accountId },
       include: {
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, visualId: true, name: true } },
         payments: {
           select: {
             id: true,
@@ -166,6 +166,7 @@ export async function GET(
         transferBankName: payment.transferBankName,
       })),
       customerId: sale.customerId,
+      customerVisualId: sale.customer?.visualId ?? null,
       customerName: sale.customer?.name || null,
       subtotalCents: sale.subtotalCents,
       itbisCents: sale.itbisCents,
@@ -322,7 +323,7 @@ export async function PUT(
     const updatedSale = await prisma.sale.findFirst({
       where: { id, accountId: user.accountId },
       include: {
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, visualId: true, name: true } },
       },
     })
 
@@ -333,6 +334,7 @@ export async function PUT(
       paymentMethod: updatedSale?.paymentMethod,
       transferBankName: updatedSale?.transferBankName ?? null,
       customerId: updatedSale?.customerId,
+      customerVisualId: updatedSale?.customer?.visualId ?? null,
       customerName: updatedSale?.customer?.name || null,
       totalCents: updatedSale?.totalCents,
       salePricesIncludeItbis: updatedSale?.salePricesIncludeItbis ?? true,

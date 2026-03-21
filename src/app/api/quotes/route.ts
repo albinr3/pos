@@ -64,6 +64,8 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const query = (searchParams.get("query") || "").trim()
+    const normalizedVisualQuery = query ? query.replace(/^#/, "") : ""
+    const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
 
     const quotes = await prisma.quote.findMany({
       where: {
@@ -73,13 +75,14 @@ export async function GET(request: NextRequest) {
               OR: [
                 { quoteCode: { contains: query, mode: "insensitive" } },
                 { customer: { name: { contains: query, mode: "insensitive" } } },
+                ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
               ],
             }
           : {}),
       },
       orderBy: { quotedAt: "desc" },
       include: {
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, visualId: true, name: true } },
         items: {
           select: {
             id: true,
@@ -101,6 +104,7 @@ export async function GET(request: NextRequest) {
         quotedAt: quote.quotedAt.toISOString(),
         validUntil: quote.validUntil ? quote.validUntil.toISOString() : null,
         customerId: quote.customerId,
+        customerVisualId: quote.customer?.visualId ?? null,
         customerName: quote.customer?.name || null,
         subtotalCents: quote.subtotalCents,
         itbisCents: quote.itbisCents,

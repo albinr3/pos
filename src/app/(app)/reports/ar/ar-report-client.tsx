@@ -22,6 +22,7 @@ import autoTable from "jspdf-autotable"
 
 interface Customer {
   id: string
+  visualId: number
   name: string
 }
 
@@ -32,6 +33,7 @@ interface ARItem {
   balanceCents: number
   dueDate: Date | null
   customer: {
+    visualId: number
     name: string
     phone: string | null
     cedula: string | null
@@ -58,6 +60,7 @@ interface ReportData {
     countVencidas: number
     topDebtors: Array<{
       customerId: string
+      customerVisualId: number | null
       customerName: string
       balance: number
       invoiceCount: number
@@ -285,7 +288,10 @@ export function ARReportClient({
               <div key={debtor.customerId} className="flex items-center justify-between border-b pb-2">
                 <div>
                   <span className="mr-2 font-bold text-neutral-500">#{index + 1}</span>
-                  <span className="font-medium">{debtor.customerName}</span>
+                  <span className="font-medium">
+                    {debtor.customerVisualId ? `#${debtor.customerVisualId} ` : ""}
+                    {debtor.customerName}
+                  </span>
                   <span className="ml-2 text-sm text-neutral-500">({debtor.invoiceCount} facturas)</span>
                 </div>
                 <div className="font-bold text-red-600">{formatRD(debtor.balance)}</div>
@@ -329,7 +335,7 @@ export function ARReportClient({
                 <SelectItem value="ALL">Todos los clientes</SelectItem>
                 {customers.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    {c.name}
+                    #{c.visualId} {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -430,7 +436,7 @@ export function ARReportClient({
                       </td>
                       <td className="p-3 text-sm">{fmtDate(ar.sale.soldAt)}</td>
                       <td className="p-3">
-                        <div className="font-medium">{ar.customer.name}</div>
+                        <div className="font-medium">#{ar.customer.visualId} {ar.customer.name}</div>
                         {ar.customer.phone && (
                           <div className="text-xs text-neutral-500">{ar.customer.phone}</div>
                         )}

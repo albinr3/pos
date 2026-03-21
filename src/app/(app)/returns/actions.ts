@@ -637,6 +637,8 @@ export async function searchSalesForReturn(
   assertReturnUserLike(user)
 
   const q = query.trim()
+  const normalizedVisualQuery = q ? q.replace(/^#/, "") : ""
+  const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
   const customerId = options?.customerId?.trim() || null
   if (!q && !customerId) return []
 
@@ -650,6 +652,7 @@ export async function searchSalesForReturn(
             OR: [
               { invoiceCode: { contains: q, mode: "insensitive" } },
               { customer: { name: { contains: q, mode: "insensitive" } } },
+              ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
             ],
           }
         : {}),

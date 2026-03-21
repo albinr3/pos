@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
         id: ar.id,
         saleId: ar.saleId,
         customerId: ar.customerId,
+        customerVisualId: ar.customer?.visualId ?? null,
         totalCents: ar.totalCents,
         balanceCents: ar.balanceCents,
         status: ar.status,
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
         updatedAt: ar.updatedAt.toISOString(),
         customer: ar.customer ? {
           id: ar.customer.id,
+          visualId: ar.customer.visualId,
           name: ar.customer.name,
           phone: ar.customer.phone,
         } : null,

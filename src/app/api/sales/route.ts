@@ -119,6 +119,8 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const query = (searchParams.get("query") || "").trim()
+    const normalizedVisualQuery = query ? query.replace(/^#/, "") : ""
+    const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
 
     const sales = await prisma.sale.findMany({
       where: {
@@ -128,13 +130,14 @@ export async function GET(request: NextRequest) {
               OR: [
                 { invoiceCode: { contains: query, mode: "insensitive" } },
                 { customer: { name: { contains: query, mode: "insensitive" } } },
+                ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
               ],
             }
           : {}),
       },
       orderBy: { soldAt: "desc" },
       include: {
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, visualId: true, name: true } },
         items: {
           select: {
             id: true,
@@ -159,6 +162,7 @@ export async function GET(request: NextRequest) {
         paymentMethod: sale.paymentMethod,
         transferBankName: sale.transferBankName,
         customerId: sale.customerId,
+        customerVisualId: sale.customer?.visualId ?? null,
         customerName: sale.customer?.name || null,
         subtotalCents: sale.subtotalCents,
         itbisCents: sale.itbisCents,

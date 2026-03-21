@@ -23,6 +23,7 @@ import autoTable from "jspdf-autotable"
 
 interface Customer {
   id: string
+  visualId: number
   name: string
 }
 
@@ -38,6 +39,7 @@ interface Payment {
   cancelledAt: Date | null
   ar: {
     customer: {
+      visualId: number
       name: string
       phone: string | null
     }
@@ -186,7 +188,7 @@ export function ReceiptsReportClient({
       const tableData = data.payments.map(p => [
         p.receiptCode,
         formatDateDO(p.paidAt),
-        p.ar.customer.name.substring(0, 25),
+        `#${p.ar.customer.visualId} ${p.ar.customer.name}`.substring(0, 25),
         p.ar.sale.invoiceCode,
         formatRD(p.amountCents),
         formatPaymentWithBank(p.method, p.transferBankName),
@@ -347,7 +349,7 @@ export function ReceiptsReportClient({
                 <SelectItem value="ALL">Todos los clientes</SelectItem>
                 {customers.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
-                    {c.name}
+                    #{c.visualId} {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -455,7 +457,7 @@ export function ReceiptsReportClient({
                     </td>
                     <td className="p-3 text-sm">{fmtDate(payment.paidAt)}</td>
                     <td className="p-3">
-                      <div className="font-medium">{payment.ar.customer.name}</div>
+                      <div className="font-medium">#{payment.ar.customer.visualId} {payment.ar.customer.name}</div>
                       {payment.ar.customer.phone && (
                         <div className="text-xs text-neutral-500">{payment.ar.customer.phone}</div>
                       )}

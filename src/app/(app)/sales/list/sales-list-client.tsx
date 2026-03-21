@@ -410,7 +410,9 @@ export function SalesListClient() {
                       {s.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADA</div>}
                     </TableCell>
                     <TableCell>{formatDateDO(s.soldAt)}</TableCell>
-                    <TableCell>{s.customer?.name ?? "Cliente"}</TableCell>
+                    <TableCell>
+                      {s.customer ? `#${s.customer.visualId} ${s.customer.name}` : "Cliente"}
+                    </TableCell>
                     <TableCell>
                       <Badge
                         variant="outline"
@@ -534,12 +536,12 @@ export function SalesListClient() {
                     value={customerId || "generic"}
                     onChange={(e) => setCustomerId(e.target.value === "generic" ? null : e.target.value)}
                   >
-                    <option value="generic">Cliente general</option>
+                    <option value="generic">#1 Cliente general</option>
                     {customers
                       .filter((c) => !c.isGeneric)
                       .map((c) => (
                         <option key={c.id} value={c.id}>
-                          {c.name}
+                          #{c.visualId} {c.name}
                         </option>
                       ))}
                   </select>

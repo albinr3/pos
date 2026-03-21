@@ -84,6 +84,7 @@ export async function getReceiptsReport(filters: ReceiptFilters = {}) {
         include: {
           customer: {
             select: {
+              visualId: true,
               name: true,
               phone: true,
             },
@@ -154,6 +155,7 @@ export async function getCustomersForFilter() {
     },
     select: {
       id: true,
+      visualId: true,
       name: true,
     },
     orderBy: {

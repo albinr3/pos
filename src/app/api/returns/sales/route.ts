@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
         customer: sale.customer
           ? {
               id: sale.customer.id,
+              visualId: sale.customer.visualId,
               name: sale.customer.name,
               phone: sale.customer.phone || null,
             }

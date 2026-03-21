@@ -79,7 +79,7 @@ export async function GET(
     const quote = await prisma.quote.findFirst({
       where: { id, accountId: user.accountId },
       include: {
-        customer: { select: { id: true, name: true } },
+        customer: { select: { id: true, visualId: true, name: true } },
         items: {
           include: {
             product: { select: { id: true, name: true, sku: true, reference: true } },
@@ -98,6 +98,7 @@ export async function GET(
       quotedAt: quote.quotedAt.toISOString(),
       validUntil: quote.validUntil ? quote.validUntil.toISOString() : null,
       customerId: quote.customerId,
+      customerVisualId: quote.customer?.visualId ?? null,
       customerName: quote.customer?.name || null,
       subtotalCents: quote.subtotalCents,
       itbisCents: quote.itbisCents,

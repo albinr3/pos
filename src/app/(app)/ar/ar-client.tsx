@@ -37,6 +37,42 @@ function methodLabel(m: PaymentMethod) {
   return getPaymentMethodLabel(m)
 }
 
+function formatCustomerLabel(customer?: { visualId?: number | null; name?: string | null } | null) {
+  const name = customer?.name?.trim() || "Cliente"
+  if (typeof customer?.visualId !== "number") return name
+  return `(${customer.visualId}) ${name}`
+}
+
+function parseVisualIdSearch(rawQuery: string) {
+  const trimmed = rawQuery.trim()
+  if (!trimmed) return null
+
+  // Acepta formatos: 12, #12, (12)
+  if (!/^[#(]?\s*\d+\s*\)?$/.test(trimmed)) return null
+  const digits = trimmed.replace(/\D/g, "")
+  return digits || null
+}
+
+function matchesARQuery(
+  ar: {
+    sale?: { invoiceCode?: string | null } | null
+    customer?: { name?: string | null; visualId?: number | null } | null
+  },
+  rawQuery: string
+) {
+  const q = rawQuery.trim().toLowerCase()
+  if (!q) return true
+
+  const visualIdText = String(ar.customer?.visualId ?? "")
+  const normalizedVisualSearch = parseVisualIdSearch(q)
+
+  return (
+    (ar.sale?.invoiceCode || "").toLowerCase().includes(q) ||
+    (ar.customer?.name || "").toLowerCase().includes(q) ||
+    (normalizedVisualSearch ? visualIdText.includes(normalizedVisualSearch) : false)
+  )
+}
+
 export function ARClient() {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -120,12 +156,7 @@ export function ARClient() {
         // Filtrar por query si existe
         let filtered = cached
         if (query.trim()) {
-          const q = query.toLowerCase()
-          filtered = cached.filter(
-            (ar: any) =>
-              ar.sale?.invoiceCode?.toLowerCase().includes(q) ||
-              ar.customer?.name?.toLowerCase().includes(q)
-          )
+          filtered = cached.filter((ar: any) => matchesARQuery(ar, query))
         }
         setItems(filtered.slice(0, 10) as any)
         setHasMore(filtered.length > 10)
@@ -159,12 +190,7 @@ export function ARClient() {
         }))
         let filtered = cached
         if (query.trim()) {
-          const q = query.toLowerCase()
-          filtered = cached.filter(
-            (ar: any) =>
-              ar.sale?.invoiceCode?.toLowerCase().includes(q) ||
-              ar.customer?.name?.toLowerCase().includes(q)
-          )
+          filtered = cached.filter((ar: any) => matchesARQuery(ar, query))
         }
         const newSkip = skip + 10
         const more = filtered.slice(newSkip, newSkip + 10)
@@ -539,7 +565,7 @@ export function ARClient() {
                       />
                     </TableCell>
                     <TableCell className="font-medium">{ar.sale.invoiceCode}</TableCell>
-                    <TableCell>{ar.customer.name}</TableCell>
+                    <TableCell>{formatCustomerLabel(ar.customer)}</TableCell>
                     <TableCell>
                       {ar.dueDate ? (
                         <div className="text-sm">
@@ -653,7 +679,7 @@ export function ARClient() {
                 <div className="flex items-center gap-2 font-semibold">
                   <CreditCard className="h-4 w-4" /> {selected.sale.invoiceCode}
                 </div>
-                <div className="text-muted-foreground">{selected.customer.name}</div>
+                <div className="text-muted-foreground">{formatCustomerLabel(selected.customer)}</div>
                 <Separator className="my-2" />
                 <div className="flex items-center justify-between">
                   <span>Total</span>
@@ -804,7 +830,7 @@ export function ARClient() {
                 <div className="flex items-center gap-2 font-semibold">
                   <CreditCard className="h-4 w-4" /> {selectedForReceipts.sale.invoiceCode}
                 </div>
-                <div className="text-muted-foreground">{selectedForReceipts.customer.name}</div>
+                <div className="text-muted-foreground">{formatCustomerLabel(selectedForReceipts.customer)}</div>
                 <Separator className="my-2" />
                 <div className="flex items-center justify-between">
                   <span>Total</span>
@@ -896,7 +922,7 @@ export function ARClient() {
             {selectedItems.length > 0 && (
               <div className="rounded-md border p-3 text-sm">
                 <div className="flex items-center gap-2 font-semibold">
-                  <CreditCard className="h-4 w-4" /> {selectedItems[0].customer.name}
+                  <CreditCard className="h-4 w-4" /> {formatCustomerLabel(selectedItems[0].customer)}
                 </div>
                 <Separator className="my-2" />
                 {selectedItems

@@ -90,6 +90,7 @@ export async function getARReport(filters: ARFilters = {}) {
     include: {
       customer: {
         select: {
+          visualId: true,
           name: true,
           phone: true,
           cedula: true,
@@ -158,6 +159,7 @@ export async function getARReport(filters: ARFilters = {}) {
     .slice(0, 5)
     .map(([customerId, data]) => ({
       customerId,
+      customerVisualId: data.customer.visualId ?? null,
       customerName: data.customer.name,
       balance: data.totalBalance,
       invoiceCount: data.count,
@@ -187,6 +189,7 @@ export async function getCustomersForARFilter() {
     },
     select: {
       id: true,
+      visualId: true,
       name: true,
     },
     orderBy: {
