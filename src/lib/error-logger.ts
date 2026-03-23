@@ -22,6 +22,9 @@ const SENSITIVE_FIELDS = [
   "cedula",
 ]
 
+// Evita recursión infinita cuando falla Prisma durante el propio proceso de logging.
+let isLoggingErrorInternally = false
+
 /**
  * Sanitiza un objeto removiendo campos sensibles
  */
@@ -199,6 +202,12 @@ export async function logError(
   error: Error,
   options: LogErrorOptions = {}
 ): Promise<string | null> {
+  if (isLoggingErrorInternally) {
+    console.error("[ErrorLogger] Recursive log attempt suppressed:", error)
+    return null
+  }
+
+  isLoggingErrorInternally = true
   try {
     const severity = options.severity ?? determineSeverity(error, options.code)
     const userContext = await resolveUserContext(options)
@@ -292,6 +301,8 @@ export async function logError(
     console.error("[ErrorLogger] Failed to log error:", logError)
     console.error("[Original Error]:", error)
     return null
+  } finally {
+    isLoggingErrorInternally = false
   }
 }
 

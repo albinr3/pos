@@ -1782,11 +1782,10 @@ export function ProductsClient() {
                 <TableRow>
                   <TableHead>ID</TableHead>
                   <TableHead>Descripción</TableHead>
-                  <TableHead>Proveedor</TableHead>
-                  <TableHead>Código de proveedor</TableHead>
                   <TableHead>Referencia</TableHead>
                   <TableHead className="text-right">Precio</TableHead>
                   <TableHead className="text-right">Existencia</TableHead>
+                  <TableHead>Proveedor</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -1805,8 +1804,6 @@ export function ProductsClient() {
                         )}
                       </div>
                     </TableCell>
-                    <TableCell>{p.supplier?.name ?? "—"}</TableCell>
-                    <TableCell>{p.sku ?? "—"}</TableCell>
                     <TableCell>{p.reference ?? "—"}</TableCell>
                     <TableCell className="text-right">{formatRD(p.priceCents)}</TableCell>
                     <TableCell className="text-right">
@@ -1814,6 +1811,7 @@ export function ProductsClient() {
                         ? "Por insumos"
                         : formatQty(decimalToNumber(p.stock), (p.unit as UnitType) ?? "UNIDAD")}
                     </TableCell>
+                    <TableCell>{p.supplier?.name ?? "—"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button
@@ -1863,7 +1861,7 @@ export function ProductsClient() {
 
                 {!isLoading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="py-12">
+                    <TableCell colSpan={7} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
                           src="/lupa.webp"

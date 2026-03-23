@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { formatRD, calcLineTotalsByTaxMode, toCents } from "@/lib/money"
 import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
@@ -72,6 +73,7 @@ type PaymentSplit = {
 
 const USER_CACHE_KEY = "tejada-pos-user"
 const POS_FORCE_RESET_KEY = "tejada-pos-force-reset-after-print"
+const CREATE_CUSTOMER_OPTION = "__create_customer__"
 
 function buildCartLineId(productId: string, recipeAdjustments: RecipeAdjustment[]) {
   const adjustmentsKey = recipeAdjustments
@@ -156,6 +158,8 @@ export function PosClient({
 
   const [customers, setCustomers] = useState<Customer[]>([])
   const [customerId, setCustomerId] = useState<string | null>("generic")
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
+  const [customerPickerQuery, setCustomerPickerQuery] = useState("")
   const [saleType, setSaleType] = useState<SaleType>(SaleType.CONTADO)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
   const [transferBankName, setTransferBankName] = useState<string>("")
@@ -192,6 +196,37 @@ export function PosClient({
 
   const router = useRouter()
   const pathname = usePathname()
+  const shouldUseCustomerSearchModal = customers.length > 12
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerPickerQuery.trim().toLowerCase()
+    if (!q) return customers
+    return customers.filter((c) => {
+      const idLabel = typeof c.visualId === "number" ? String(c.visualId) : ""
+      return `${c.name} ${idLabel}`.toLowerCase().includes(q)
+    })
+  }, [customers, customerPickerQuery])
+
+  const genericCustomerId = useMemo(
+    () => customers.find((c) => c.isGeneric)?.id ?? null,
+    [customers]
+  )
+
+  const effectiveCustomerId = customerId === "generic" ? genericCustomerId : customerId
+
+  const selectedCustomerLabel = useMemo(() => {
+    const selectedCustomer = customers.find((c) => c.id === effectiveCustomerId)
+    if (!selectedCustomer) return "Cliente general"
+    return `${typeof selectedCustomer.visualId === "number" ? `#${selectedCustomer.visualId} ` : ""}${selectedCustomer.name}`
+  }, [customers, effectiveCustomerId])
+
+  const handleCustomerSelect = useCallback((value: string) => {
+    if (value === CREATE_CUSTOMER_OPTION) {
+      router.push("/customers")
+      return
+    }
+    setCustomerId(value || null)
+  }, [router])
 
   const resetSaleFormState = useCallback(() => {
     setCart([])
@@ -1019,19 +1054,107 @@ export function PosClient({
               <>
                 <div className="grid gap-2">
                   <Label>Cliente</Label>
-                  <select
-                    className="h-10 rounded-md border bg-background px-3 text-sm"
-                    value={customerId ?? ""}
-                    onChange={(e) => setCustomerId(e.target.value || null)}
-                  >
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.isGeneric ? "(General) " : ""}
-                        {typeof c.visualId === "number" ? `#${c.visualId} ` : ""}
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                  {shouldUseCustomerSearchModal ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="justify-between font-normal"
+                        onClick={() => setCustomerPickerOpen(true)}
+                      >
+                        <span className="truncate">{selectedCustomerLabel}</span>
+                        <Search className="h-4 w-4 text-muted-foreground" />
+                      </Button>
+                      <Dialog
+                        open={customerPickerOpen}
+                        onOpenChange={(open) => {
+                          setCustomerPickerOpen(open)
+                          if (!open) setCustomerPickerQuery("")
+                        }}
+                      >
+                        <DialogContent className="sm:max-w-[520px]">
+                          <DialogHeader>
+                            <DialogTitle>Seleccionar cliente</DialogTitle>
+                          </DialogHeader>
+                          <div className="grid gap-3">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                value={customerPickerQuery}
+                                onChange={(e) => setCustomerPickerQuery(e.target.value)}
+                                className="pl-9"
+                                placeholder="Buscar cliente por nombre o ID"
+                                autoFocus
+                              />
+                            </div>
+                            <div className="max-h-[320px] overflow-y-auto rounded-md border">
+                              {filteredCustomers.length === 0 ? (
+                                <div className="p-3 text-sm text-muted-foreground">No se encontraron clientes.</div>
+                              ) : (
+                                <div className="divide-y">
+                                  {filteredCustomers.map((c) => (
+                                    <button
+                                      key={c.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setCustomerId(c.id)
+                                        setCustomerPickerOpen(false)
+                                        setCustomerPickerQuery("")
+                                      }}
+                                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+                                    >
+                                      <span className="truncate">
+                                        {c.isGeneric ? "(General) " : ""}
+                                        {typeof c.visualId === "number" ? `#${c.visualId} ` : ""}
+                                        {c.name}
+                                      </span>
+                                      {effectiveCustomerId === c.id && <Badge variant="secondary">Actual</Badge>}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            <Separator />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="justify-start gap-2"
+                              onClick={() => {
+                                setCustomerPickerOpen(false)
+                                setCustomerPickerQuery("")
+                                router.push("/customers")
+                              }}
+                            >
+                              <Plus className="h-4 w-4" />
+                              Crear cliente
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                    </>
+                  ) : (
+                    <Select value={effectiveCustomerId ?? ""} onValueChange={handleCustomerSelect}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona cliente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {customers.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.isGeneric ? "(General) " : ""}
+                            {typeof c.visualId === "number" ? `#${c.visualId} ` : ""}
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                        <SelectSeparator />
+                        <SelectItem value={CREATE_CUSTOMER_OPTION}>
+                          <span className="inline-flex items-center gap-2">
+                            <Plus className="h-4 w-4" />
+                            Crear cliente
+                          </span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1106,11 +1229,7 @@ export function PosClient({
                   className="flex w-full items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/60 hover:border-foreground/20 transition-colors cursor-pointer text-left"
                 >
                   <span>
-                    {(() => {
-                      const selectedCustomer = customers.find((c) => c.id === customerId)
-                      if (!selectedCustomer) return "Cliente general"
-                      return `${typeof selectedCustomer.visualId === "number" ? `#${selectedCustomer.visualId} ` : ""}${selectedCustomer.name}`
-                    })()} ·{" "}
+                    {selectedCustomerLabel} ·{" "}
                     {saleType === SaleType.CONTADO ? "Contado" : "Crédito"}
                     {saleType === SaleType.CONTADO && paymentMethod ? ` · ${paymentMethod.toLowerCase().replace("_", " ")}` : ""}
                   </span>

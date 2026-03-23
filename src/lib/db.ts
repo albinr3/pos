@@ -86,6 +86,10 @@ function wrapPrismaModel(model: any, modelName: string): any {
           try {
             return await value.apply(target, args)
           } catch (error) {
+            if (modelName === "errorLog") {
+              throw error
+            }
+
             // Log the error asynchronously (don't block the throw)
             if (error instanceof Error && globalForPrisma.prismaErrorLogger) {
               // Don't await - log in background
