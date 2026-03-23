@@ -50,9 +50,12 @@ export async function listCustomers(query?: string, user?: AuthActor) {
   })
 }
 
-export async function listCustomersPage(options?: { query?: string; cursor?: string | null; take?: number }) {
-  const user = await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+export async function listCustomersPage(
+  options?: { query?: string; cursor?: string | null; take?: number },
+  actor?: AuthActor
+) {
+  const user = actor ?? await getCurrentUser()
+  assertAuthActor(user)
 
   // Asegurar que el cliente general existe
   await ensureGenericCustomer(prisma, user.accountId)

@@ -11,6 +11,13 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Error inesperado"
 }
 
+function parseTake(value: string | null, defaultValue: number, max: number): number {
+  if (value === null) return defaultValue
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return defaultValue
+  return Math.min(max, Math.max(1, parsed))
+}
+
 // GET /api/suppliers - Listar proveedores activos
 export async function GET(request: NextRequest) {
   try {
@@ -21,6 +28,8 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const query = (searchParams.get("query") || "").trim()
+    const cursor = searchParams.get("cursor")
+    const take = parseTake(searchParams.get("take"), 200, 500)
 
     const suppliers = await prisma.supplier.findMany({
       where: {
@@ -36,12 +45,18 @@ export async function GET(request: NextRequest) {
             }
           : {}),
       },
-      orderBy: { name: "asc" },
-      take: 200,
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      cursor: cursor ? { id: cursor } : undefined,
+      skip: cursor ? 1 : 0,
+      take: take + 1,
     })
 
+    const hasMore = suppliers.length > take
+    const pageItems = hasMore ? suppliers.slice(0, take) : suppliers
+    const nextCursor = hasMore ? pageItems[pageItems.length - 1]?.id ?? null : null
+
     return NextResponse.json({
-      data: suppliers.map((s) => ({
+      data: pageItems.map((s) => ({
         id: s.id,
         name: s.name,
         contactName: s.contactName,
@@ -52,6 +67,7 @@ export async function GET(request: NextRequest) {
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,
       })),
+      nextCursor,
     })
   } catch (error: unknown) {
     console.error("Error en GET /api/suppliers:", error)

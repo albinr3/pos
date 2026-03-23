@@ -11,6 +11,20 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Error inesperado"
 }
 
+function parseSkip(value: string | null): number | null {
+  if (value === null) return null
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return parsed
+}
+
+function parseTake(value: string | null, defaultValue: number, max: number): number {
+  if (value === null) return defaultValue
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return defaultValue
+  return Math.min(max, Math.max(1, parsed))
+}
+
 // GET /api/payments - Listar recibos de pago
 export async function GET(request: NextRequest) {
   try {
@@ -23,7 +37,9 @@ export async function GET(request: NextRequest) {
     const query = (searchParams.get("query") || "").trim()
     const normalizedVisualQuery = query ? query.replace(/^#/, "") : ""
     const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
-    const take = searchParams.get("take") ? Math.min(500, Math.max(1, parseInt(searchParams.get("take")!, 10))) : 200
+    const requestedSkip = parseSkip(searchParams.get("skip"))
+    const take = parseTake(searchParams.get("take"), 200, 500)
+    const effectiveSkip = requestedSkip ?? 0
 
     const payments = await prisma.payment.findMany({
       where: {
@@ -56,11 +72,16 @@ export async function GET(request: NextRequest) {
         user: { select: { id: true, username: true, name: true } },
         cancelledUser: { select: { id: true, username: true, name: true } },
       },
-      take,
+      skip: effectiveSkip,
+      take: take + 1,
     })
 
+    const hasMore = payments.length > take
+    const pageItems = hasMore ? payments.slice(0, take) : payments
+    const nextSkip = hasMore ? effectiveSkip + take : null
+
     return NextResponse.json({
-      data: payments.map((p) => ({
+      data: pageItems.map((p) => ({
         id: p.id,
         arId: p.arId,
         receiptNumber: p.receiptNumber,
@@ -103,6 +124,7 @@ export async function GET(request: NextRequest) {
             }
           : null,
       })),
+      nextSkip,
     })
   } catch (error: unknown) {
     console.error("Error en GET /api/payments:", error)

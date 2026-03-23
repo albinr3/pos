@@ -95,6 +95,20 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Error inesperado"
 }
 
+function parseSkip(value: string | null): number | null {
+  if (value === null) return null
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return parsed
+}
+
+function parseTake(value: string | null, defaultValue: number, max: number): number {
+  if (value === null) return defaultValue
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return defaultValue
+  return Math.min(max, Math.max(1, parsed))
+}
+
 type ApiPurchaseItemInput = {
   productId: string
   qty: number
@@ -115,6 +129,9 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const query = (searchParams.get("query") || "").trim()
+    const requestedSkip = parseSkip(searchParams.get("skip"))
+    const take = parseTake(searchParams.get("take"), 200, 500)
+    const effectiveSkip = requestedSkip ?? 0
 
     const purchases = await prisma.purchase.findMany({
       where: {
@@ -136,11 +153,16 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      take: 200,
+      skip: effectiveSkip,
+      take: take + 1,
     })
 
+    const hasMore = purchases.length > take
+    const pageItems = hasMore ? purchases.slice(0, take) : purchases
+    const nextSkip = hasMore ? effectiveSkip + take : null
+
     return NextResponse.json({
-      data: purchases.map((purchase) => ({
+      data: pageItems.map((purchase) => ({
         id: purchase.id,
         purchasedAt: purchase.purchasedAt.toISOString(),
         supplierName: purchase.supplierName,
@@ -163,6 +185,7 @@ export async function GET(request: NextRequest) {
           lineTotalCents: item.lineTotalCents,
         })),
       })),
+      nextSkip,
     })
   } catch (error: unknown) {
     console.error("Error en GET /api/purchases:", error)

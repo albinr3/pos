@@ -60,9 +60,14 @@ function assertReturnUserLike(user: unknown): asserts user is ReturnUserLike {
   if (typeof candidate.accountId !== "string" || candidate.accountId.length === 0) throw new Error("No autenticado")
 }
 
-export async function listReturns(currentUserArg?: unknown) {
+export async function listReturns(
+  currentUserArg?: unknown,
+  options?: { skip?: number; take?: number }
+) {
   const user = currentUserArg ?? await getCurrentUser()
   assertReturnUserLike(user)
+  const skip = Math.max(0, Number(options?.skip ?? 0) || 0)
+  const take = Math.min(500, Math.max(1, Number(options?.take ?? 500) || 500))
 
   const returnsList = await prisma.return.findMany({
     where: { accountId: user.accountId },
@@ -92,7 +97,8 @@ export async function listReturns(currentUserArg?: unknown) {
         },
       },
     },
-    take: 500,
+    skip,
+    take,
   })
 
   return returnsList.map((r) => ({

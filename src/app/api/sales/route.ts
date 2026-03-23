@@ -68,6 +68,20 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
+function parseSkip(value: string | null): number | null {
+  if (value === null) return null
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return parsed
+}
+
+function parseTake(value: string | null, defaultValue: number, max: number): number {
+  if (value === null) return defaultValue
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return defaultValue
+  return Math.min(max, Math.max(1, parsed))
+}
+
 function readBoolean(value: unknown): boolean | undefined {
   if (typeof value === "boolean") return value
   if (typeof value === "string") {
@@ -121,6 +135,9 @@ export async function GET(request: NextRequest) {
     const query = (searchParams.get("query") || "").trim()
     const normalizedVisualQuery = query ? query.replace(/^#/, "") : ""
     const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
+    const requestedSkip = parseSkip(searchParams.get("skip"))
+    const take = parseTake(searchParams.get("take"), 300, 500)
+    const effectiveSkip = requestedSkip ?? 0
 
     const sales = await prisma.sale.findMany({
       where: {
@@ -149,11 +166,16 @@ export async function GET(request: NextRequest) {
           },
         },
       },
-      take: 300,
+      skip: effectiveSkip,
+      take: take + 1,
     })
 
+    const hasMore = sales.length > take
+    const pageItems = hasMore ? sales.slice(0, take) : sales
+    const nextSkip = hasMore ? effectiveSkip + take : null
+
     return NextResponse.json({
-      data: sales.map((sale) => ({
+      data: pageItems.map((sale) => ({
         id: sale.id,
         invoiceCode: sale.invoiceCode,
         soldAt: sale.soldAt.toISOString(),
@@ -180,6 +202,7 @@ export async function GET(request: NextRequest) {
           itbisRateBp: item.itbisRateBp,
         })),
       })),
+      nextSkip,
     })
   } catch (error: unknown) {
     console.error("Error en GET /api/sales:", error)

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
-import { listCustomers, upsertCustomer } from "@/app/(app)/customers/actions"
+import { listCustomersPage, upsertCustomer } from "@/app/(app)/customers/actions"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
 
 export const dynamic = "force-dynamic"
@@ -9,6 +9,13 @@ export const runtime = "nodejs"
 function getErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof Error && error.message) return error.message
   return fallback
+}
+
+function parseTake(value: string | null, defaultValue: number, max: number): number {
+  if (value === null) return defaultValue
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return defaultValue
+  return Math.min(max, Math.max(1, parsed))
 }
 
 // GET /api/customers - Listar clientes
@@ -21,8 +28,17 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const query = searchParams.get("query") || undefined
+    const cursor = searchParams.get("cursor")
+    const take = parseTake(searchParams.get("take"), 200, 500)
 
-    const customers = await listCustomers(query, user)
+    const { items: customers, nextCursor } = await listCustomersPage(
+      {
+        query,
+        cursor: cursor || null,
+        take,
+      },
+      user
+    )
 
     return NextResponse.json({
       data: customers.map((c) => ({
@@ -39,6 +55,7 @@ export async function GET(request: NextRequest) {
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
       })),
+      nextCursor,
     })
   } catch (error: unknown) {
     console.error("Error en GET /api/customers:", error)

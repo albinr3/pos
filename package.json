@@ -18,7 +18,8 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "prisma db seed",
-    "sales:normalize-timestamps": "tsx scripts/normalize-sales-timestamps.ts"
+    "sales:normalize-timestamps": "tsx scripts/normalize-sales-timestamps.ts",
+    "phase0:baseline": "tsx scripts/phase0-baseline.ts"
   },
   "dependencies": {
     "@clerk/localizations": "^3.35.1",

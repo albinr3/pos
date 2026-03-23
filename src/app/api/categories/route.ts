@@ -7,6 +7,13 @@ import { hasPermissionOrLog } from "@/lib/permission-guard"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function parseTake(value: string | null, defaultValue: number, max: number): number {
+  if (value === null) return defaultValue
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return defaultValue
+  return Math.min(max, Math.max(1, parsed))
+}
+
 // GET /api/categories - Listar categorías activas
 export async function GET(request: NextRequest) {
   try {
@@ -17,6 +24,8 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const query = (searchParams.get("query") || "").trim()
+    const cursor = searchParams.get("cursor")
+    const take = parseTake(searchParams.get("take"), 200, 500)
 
     const categories = await prisma.category.findMany({
       where: {
@@ -31,12 +40,18 @@ export async function GET(request: NextRequest) {
             }
           : {}),
       },
-      orderBy: { categoryId: "asc" },
-      take: 200,
+      orderBy: [{ categoryId: "asc" }, { id: "asc" }],
+      cursor: cursor ? { id: cursor } : undefined,
+      skip: cursor ? 1 : 0,
+      take: take + 1,
     })
 
+    const hasMore = categories.length > take
+    const pageItems = hasMore ? categories.slice(0, take) : categories
+    const nextCursor = hasMore ? pageItems[pageItems.length - 1]?.id ?? null : null
+
     return NextResponse.json({
-      data: categories.map((c) => ({
+      data: pageItems.map((c) => ({
         id: c.categoryId,
         internalId: c.id,
         name: c.name,
@@ -44,6 +59,7 @@ export async function GET(request: NextRequest) {
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
       })),
+      nextCursor,
     })
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Error al obtener categorías"

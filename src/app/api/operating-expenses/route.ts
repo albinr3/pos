@@ -17,6 +17,20 @@ function normalizeDateInput(value: unknown): Date | null {
   return parseDateParam(String(value))
 }
 
+function parseSkip(value: string | null): number | null {
+  if (value === null) return null
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return parsed
+}
+
+function parseTake(value: string | null, defaultValue: number, max: number): number {
+  if (value === null) return defaultValue
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return defaultValue
+  return Math.min(max, Math.max(1, parsed))
+}
+
 // GET /api/operating-expenses - Listar gastos operativos
 export async function GET(request: NextRequest) {
   try {
@@ -27,6 +41,9 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const query = (searchParams.get("query") || "").trim()
+    const requestedSkip = parseSkip(searchParams.get("skip"))
+    const take = parseTake(searchParams.get("take"), 500, 500)
+    const effectiveSkip = requestedSkip ?? 0
     const fromDate = normalizeDateInput(searchParams.get("from"))
     const toDate = normalizeDateInput(searchParams.get("to"))
     const hasDateFilter = Boolean(fromDate || toDate)
@@ -53,11 +70,16 @@ export async function GET(request: NextRequest) {
           select: { id: true, name: true, username: true },
         },
       },
-      take: 500,
+      skip: effectiveSkip,
+      take: take + 1,
     })
 
+    const hasMore = items.length > take
+    const pageItems = hasMore ? items.slice(0, take) : items
+    const nextSkip = hasMore ? effectiveSkip + take : null
+
     return NextResponse.json({
-      data: items.map((item) => ({
+      data: pageItems.map((item) => ({
         id: item.id,
         description: item.description,
         amountCents: item.amountCents,
@@ -68,6 +90,7 @@ export async function GET(request: NextRequest) {
         createdAt: item.createdAt.toISOString(),
         updatedAt: item.updatedAt.toISOString(),
       })),
+      nextSkip,
     })
   } catch (error: unknown) {
     console.error("Error en GET /api/operating-expenses:", error)
