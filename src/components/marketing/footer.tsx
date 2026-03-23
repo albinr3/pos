@@ -8,6 +8,7 @@ const footerLinks = {
     { href: "/sistema-de-inventario", label: "Sistema de inventario" },
     { href: "/facturacion-online", label: "Facturación online" },
     { href: "/punto-de-venta-abarrotes", label: "Punto de venta abarrotes" },
+    { href: "/app-movil", label: "App Móvil Android" },
     { href: "/pricing", label: "Precios" },
     { href: "/about", label: "Nosotros" },
   ],
