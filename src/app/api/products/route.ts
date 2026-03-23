@@ -88,6 +88,48 @@ export async function POST(request: NextRequest) {
     if (Array.isArray(body.modifiers) && body.modifiers.length > 0) {
       return NextResponse.json({ error: "modifiers ya no es soportado. Usa recipeAdjustments al momento de la venta." }, { status: 400 })
     }
+
+    // Idempotencia: si viene localId, verificar si ya existe un producto idéntico creado recientemente
+    if (body.localId) {
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000)
+      const existing = await prisma.product.findFirst({
+        where: {
+          accountId: user.accountId,
+          name: body.name?.trim(),
+          isActive: true,
+          createdAt: { gte: twoMinutesAgo },
+        },
+        include: {
+          category: {
+            select: { id: true, categoryId: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+      if (existing) {
+        console.log(`[POST /api/products] Idempotencia: producto duplicado detectado (localId=${body.localId}, existingId=${existing.id})`)
+        return NextResponse.json({
+          id: existing.id,
+          productId: existing.productId,
+          name: existing.name,
+          sku: existing.sku,
+          reference: existing.reference,
+          price: Number(existing.priceCents) / 100,
+          priceCents: Number(existing.priceCents),
+          cost: Number(existing.costCents) / 100,
+          costCents: Number(existing.costCents),
+          stock: existing.stock instanceof Decimal ? existing.stock.toNumber() : Number(existing.stock),
+          minStock: existing.minStock instanceof Decimal ? existing.minStock.toNumber() : Number(existing.minStock),
+          itbisRateBp: existing.itbisRateBp,
+          isAvailableForSale: existing.isAvailableForSale,
+          imageUrls: existing.imageUrls,
+          productKind: existing.productKind,
+          unit: existing.unit,
+          categoryId: existing.category?.categoryId ?? null,
+          categoryInternalId: existing.categoryId ?? null,
+        }, { status: 200 })
+      }
+    }
     
     // Convertir precio de pesos a centavos si viene como número decimal
     const priceCents = body.priceCents ?? (body.price ? Math.round(body.price * 100) : undefined)
