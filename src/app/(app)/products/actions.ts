@@ -343,6 +343,27 @@ export async function upsertProduct(input: {
     }
 
     await prisma.$transaction(async (tx) => {
+      if (sku) {
+        const conflictingSkuProduct = await tx.product.findFirst({
+          where: {
+            accountId: user.accountId,
+            sku: { equals: sku, mode: "insensitive" },
+            ...(input.id ? { id: { not: input.id } } : {}),
+          },
+          select: {
+            id: true,
+            productId: true,
+            name: true,
+          },
+        })
+
+        if (conflictingSkuProduct) {
+          throw new Error(
+            `El SKU "${sku}" ya está en uso por el producto #${conflictingSkuProduct.productId} (${conflictingSkuProduct.name}).`
+          )
+        }
+      }
+
       if (productKind === ProductKind.RECIPE) {
         await validateRecipeDefinition(tx, {
           accountId: user.accountId,
@@ -509,6 +530,16 @@ export async function upsertProduct(input: {
         name: input.name,
       },
     })
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const target = Array.isArray(error.meta?.target) ? error.meta.target.map(String) : []
+      if (target.includes("accountId") && target.includes("sku")) {
+        const sanitizedSku = input.sku ? sanitizeCode(input.sku) : ""
+        const shownSku = sanitizedSku || "sin código"
+        throw new Error(`El SKU "${shownSku}" ya existe en esta cuenta. Usa otro código o deja el campo vacío.`)
+      }
+    }
+
     throw error
   }
 }
