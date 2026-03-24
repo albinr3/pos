@@ -255,7 +255,10 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     }),
   ])
 
-  const grossSalesTotalCents = allSales.reduce((sum, sale) => sum + sale.totalCents, 0)
+  // Defensa extra: aunque la consulta ya filtra canceladas, solo calcular con ventas activas.
+  const activeSales = allSales.filter((sale) => sale.cancelledAt === null)
+
+  const grossSalesTotalCents = activeSales.reduce((sum, sale) => sum + sale.totalCents, 0)
   const returnsTotalCents = periodReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
   const salesTotalCents = grossSalesTotalCents - returnsTotalCents
   const paymentsTotalCents = payments.reduce((sum, payment) => sum + payment.amountCents, 0)
@@ -263,7 +266,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   const returnsItbisCents = periodReturns.reduce((sum, ret) => sum + ret.itbisCents, 0)
 
   const soldDatesForCost = [
-    ...allSales.map((sale) => sale.soldAt),
+    ...activeSales.map((sale) => sale.soldAt),
     ...periodReturns.map((ret) => ret.sale.soldAt),
   ]
   const maxSoldAt = soldDatesForCost.length > 0
@@ -271,7 +274,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     : null
   const soldProductIds = Array.from(
     new Set([
-      ...allSales.flatMap((sale) =>
+      ...activeSales.flatMap((sale) =>
         sale.items.flatMap((item) => item.consumptions.map((consumption) => consumption.ingredientId))
       ),
       ...periodReturns.flatMap((ret) =>
@@ -317,7 +320,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   }
 
   // Calcular costo de ventas usando costo histórico (ultima compra antes de la venta).
-  const grossCostOfSalesCents = allSales.reduce((total, sale) => {
+  const grossCostOfSalesCents = activeSales.reduce((total, sale) => {
     const saleCost = sale.items.reduce((itemTotal, item) => {
       const itemCost = calculateConsumptionsCostCents(
         costsByProductId,
@@ -354,7 +357,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   }, 0)
 
   const costOfSalesCents = grossCostOfSalesCents - returnsCostCents
-  const purchasesCount = allSales.length
+  const purchasesCount = activeSales.length
 
   // 3. UTILIDAD BRUTA: Ventas - Costo de ventas
   const grossProfitCents = totalRevenueCents - costOfSalesCents
@@ -376,7 +379,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   const otherIncomeExpensesCents = 0
 
   // 7. IMPUESTOS (ITBIS neto): ITBIS cobrado en ventas - ITBIS pagado en compras
-  const grossSalesItbisCents = allSales.reduce((sum, sale) => sum + sale.itbisCents, 0)
+  const grossSalesItbisCents = activeSales.reduce((sum, sale) => sum + sale.itbisCents, 0)
   const salesItbisCents = grossSalesItbisCents - returnsItbisCents
   const purchases = await prisma.purchase.findMany({
     where: {
@@ -418,6 +421,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
       status: { in: ["PENDIENTE", "PARCIAL"] },
       sale: {
         accountId: user.accountId,
+        cancelledAt: null,
       },
     },
   })
@@ -429,7 +433,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     // Ingresos/Ventas
     grossSalesTotalCents,
     salesTotalCents,
-    salesCount: allSales.length,
+    salesCount: activeSales.length,
     returnsCount: periodReturns.length,
     returnsTotalCents,
     paymentsTotalCents,

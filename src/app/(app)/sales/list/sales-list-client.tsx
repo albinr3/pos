@@ -16,6 +16,7 @@ import { PriceInput } from "@/components/app/price-input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
+import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
 import { formatRD, calcLineTotalsByTaxMode } from "@/lib/money"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { cn } from "@/lib/utils"
@@ -88,6 +89,7 @@ export function SalesListClient() {
   const [customerId, setCustomerId] = useState<string | null>(null)
   const [saleType, setSaleType] = useState<SaleType>(SaleType.CONTADO)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
+  const [transferBankName, setTransferBankName] = useState("")
   const [cart, setCart] = useState<CartItem[]>([])
   const [isSaving, startSaving] = useTransition()
   const [recipeDialogLineId, setRecipeDialogLineId] = useState<string | null>(null)
@@ -189,6 +191,7 @@ export function SalesListClient() {
       setCustomerId(sale.customerId)
       setSaleType(sale.type)
       setPaymentMethod(sale.paymentMethod || PaymentMethod.EFECTIVO)
+      setTransferBankName(sale.transferBankName || "")
       setCart(
         sale.items.map((item) => ({
           lineId: buildCartLineId(
@@ -306,6 +309,10 @@ export function SalesListClient() {
       toast({ title: "Error", description: "Debes seleccionar un método de pago para ventas al contado" })
       return
     }
+    if (saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && !transferBankName) {
+      toast({ title: "Error", description: "Debes seleccionar el banco de la transferencia" })
+      return
+    }
 
     startSaving(async () => {
       try {
@@ -314,6 +321,10 @@ export function SalesListClient() {
           customerId: customerId === "generic" ? null : customerId,
           type: saleType,
           paymentMethod: saleType === SaleType.CONTADO ? paymentMethod : null,
+          transferBankName:
+            saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
+              ? transferBankName
+              : null,
           items: cart.map((c) => ({
             productId: c.productId,
             qty: c.qty,
@@ -522,6 +533,9 @@ export function SalesListClient() {
                       if (e.target.value === SaleType.CONTADO && !paymentMethod) {
                         setPaymentMethod(PaymentMethod.EFECTIVO)
                       }
+                      if (e.target.value !== SaleType.CONTADO) {
+                        setTransferBankName("")
+                      }
                     }}
                     disabled={!user || (!user.canChangeSaleType && !user.isOwner)}
                   >
@@ -554,11 +568,34 @@ export function SalesListClient() {
                   <select
                     className="h-10 rounded-md border bg-background px-3 text-sm"
                     value={paymentMethod ?? ""}
-                    onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                    onChange={(e) => {
+                      const nextMethod = e.target.value as PaymentMethod
+                      setPaymentMethod(nextMethod)
+                      if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
+                        setTransferBankName("")
+                      }
+                    }}
                   >
                     <option value={PaymentMethod.EFECTIVO}>Efectivo</option>
                     <option value={PaymentMethod.TRANSFERENCIA}>Transferencia</option>
                     <option value={PaymentMethod.TARJETA}>Tarjeta</option>
+                  </select>
+                </div>
+              )}
+              {saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && (
+                <div className="grid gap-2">
+                  <Label>Banco de la transferencia</Label>
+                  <select
+                    className="h-10 rounded-md border bg-background px-3 text-sm"
+                    value={transferBankName}
+                    onChange={(e) => setTransferBankName(e.target.value)}
+                  >
+                    <option value="">Selecciona un banco</option>
+                    {DOMINICAN_BANKS.map((bankName) => (
+                      <option key={bankName} value={bankName}>
+                        {bankName}
+                      </option>
+                    ))}
                   </select>
                 </div>
               )}

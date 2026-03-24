@@ -980,6 +980,7 @@ export async function createSale(input: {
       }
 
       revalidatePath("/", "layout")
+      revalidatePath("/reports/profit")
 
       return sale
     }, TRANSACTION_OPTIONS)
@@ -1155,6 +1156,7 @@ export async function cancelSale(id: string, username: string, currentUserArg?: 
       }, tx)
 
       revalidatePath("/", "layout")
+      revalidatePath("/reports/profit")
 
       return { success: true }
     }, TRANSACTION_OPTIONS)
@@ -1462,5 +1464,6 @@ export async function updateSale(input: {
     }
 
     revalidatePath("/", "layout")
+    revalidatePath("/reports/profit")
   }, TRANSACTION_OPTIONS)
 }
