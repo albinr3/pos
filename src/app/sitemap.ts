@@ -12,6 +12,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/sistema-pos",
     "/sistema-de-inventario",
     "/facturacion-online",
+    "/app-movil",
     "/punto-de-venta-abarrotes",
     "/privacy",
     "/terms",

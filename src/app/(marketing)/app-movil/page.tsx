@@ -4,17 +4,19 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { CheckCircle2, Download, Smartphone, WifiOff, Printer, BarChart3, ShieldCheck } from "lucide-react"
 
+const appDownloadUrl = "https://pub-db000bf677ef4b89aebfffa3aea14be3.r2.dev/apk_movo/movo-release.apk"
+
 export const metadata: Metadata = {
-  title: "Descargar MOVOPos App Móvil Android | Punto de Venta Celular",
+  title: "App Punto de Venta Móvil Android | Descargar APK POS Offline RD",
   description:
-    "Descarga el APK de la aplicación móvil de MOVOPos para Android. Factura, controla inventario y saca reportes desde tu celular en República Dominicana con o sin internet.",
+    "Descarga el APK de la app de punto de venta móvil para Android de MOVOPos. Factura desde tu celular, controla inventario y usa tu POS offline en República Dominicana.",
   alternates: {
     canonical: "/app-movil",
   },
   openGraph: {
-    title: "Descargar MOVOPos App Móvil Android | Punto de Venta",
+    title: "App POS Móvil Android | Descargar APK Punto de Venta",
     description:
-      "Convierte tu smartphone Android en un potente punto de venta. Factura, cuadra caja y controla tu negocio desde donde estés.",
+      "Convierte tu Android en un punto de venta móvil. Factura, controla inventario y vende con o sin internet desde tu celular.",
     url: "/app-movil",
     images: [
       {
@@ -26,9 +28,9 @@ export const metadata: Metadata = {
     ],
   },
   twitter: {
-    title: "Descargar MOVOPos App Móvil Android | Punto de Venta",
+    title: "App POS Móvil Android | Descargar APK Punto de Venta",
     description:
-      "Convierte tu smartphone Android en un potente punto de venta. Factura, cuadra caja y controla tu negocio desde donde estés.",
+      "Convierte tu Android en un punto de venta móvil. Factura, controla inventario y vende con o sin internet desde tu celular.",
     images: ["/pos-mobile-app-mockup.png"],
   },
 }
@@ -39,13 +41,45 @@ const jsonLd = {
   "name": "MOVOPos App Móvil",
   "operatingSystem": "ANDROID",
   "applicationCategory": "BusinessApplication",
-  "downloadUrl": "https://movopos.com/downloads/movopos-app.apk",
+  "keywords": "app punto de venta móvil, punto de venta móvil android, app pos android, descargar apk punto de venta, punto de venta android offline, facturar desde celular, control de inventario desde celular, república dominicana",
+  "downloadUrl": appDownloadUrl,
   "offers": {
     "@type": "Offer",
     "price": "0",
     "priceCurrency": "DOP"
   },
   "description": "Aplicación de punto de venta e inventario para negocios en República Dominicana. Facturación offline y en la nube."
+}
+
+const faqJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "¿La app de punto de venta móvil funciona sin internet?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Sí. MOVOPos permite facturar en modo offline y sincroniza la información cuando vuelve la conexión."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "¿Cómo descargo e instalo el APK en Android?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Descarga el APK desde esta página, habilita la instalación desde fuentes desconocidas y completa la instalación."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "¿Sirve para controlar inventario desde el celular?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Sí. Puedes consultar y actualizar inventario, registrar ventas y revisar reportes desde tu smartphone Android."
+      }
+    }
+  ]
 }
 
 const features = [
@@ -78,6 +112,10 @@ export default function AppMovilPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+      />
       
       {/* Hero Section */}
       <section className="relative overflow-hidden bg-white/50 py-16 sm:py-24 lg:py-32">
@@ -91,16 +129,16 @@ export default function AppMovilPage() {
                   Disponible para Android
                 </div>
                 <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl xl:text-6xl/none text-slate-900">
-                  Tu negocio en la palma de tu mano
+                  App de punto de venta móvil para Android
                 </h1>
                 <p className="max-w-[600px] text-lg text-slate-600 sm:text-xl">
-                  Descarga la aplicación POS móvil de MOVOPos. Factura en RD$, controla inventario y visualiza reportes desde tu celular con total libertad.
+                  Descarga el APK de MOVOPos y usa un POS móvil Android para facturar en RD$, controlar inventario y revisar reportes desde tu celular, incluso offline.
                 </p>
               </div>
               
               <div className="flex flex-col sm:flex-row gap-4">
                 <Button size="lg" className="h-14 px-8 text-base font-semibold shadow-lg bg-violet-600 hover:bg-violet-700 w-full sm:w-auto" asChild>
-                  <a href="/downloads/movopos-app.apk" download>
+                  <a href={appDownloadUrl}>
                     <Download className="mr-2 h-5 w-5" />
                     Descargar APK Directo
                   </a>
@@ -145,7 +183,7 @@ export default function AppMovilPage() {
         <div className="container px-4 md:px-6">
           <div className="mx-auto max-w-3xl text-center mb-16">
             <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
-              Diseñada para la velocidad de tu local
+              POS móvil Android para vender rápido, con o sin internet
             </h2>
             <p className="mt-4 text-lg text-slate-600">
               No dejes que tu sistema te frene. Nuestra app está optimizada para que atiendas rápido, sin depender al 100% de la conexión a internet.
@@ -191,7 +229,7 @@ export default function AppMovilPage() {
       <section className="py-20 bg-white">
         <div className="container px-4 md:px-6">
           <div className="mx-auto max-w-3xl">
-            <h2 className="text-3xl font-bold text-center mb-12">¿Cómo instalar el APK?</h2>
+            <h2 className="text-3xl font-bold text-center mb-12">¿Cómo descargar e instalar el APK en Android?</h2>
             <div className="space-y-8 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
               
               <div className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
@@ -229,6 +267,37 @@ export default function AppMovilPage() {
         </div>
       </section>
 
+      {/* FAQ Section */}
+      <section className="py-20 bg-slate-50">
+        <div className="container px-4 md:px-6">
+          <div className="mx-auto max-w-4xl">
+            <h2 className="text-3xl font-bold text-center text-slate-900 mb-12">
+              Preguntas frecuentes sobre la app POS móvil
+            </h2>
+            <div className="grid gap-6 md:grid-cols-3">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="font-semibold text-slate-900">¿Funciona offline?</h3>
+                <p className="mt-3 text-sm leading-relaxed text-slate-600">
+                  Sí. Puedes facturar sin internet y la app sincroniza automáticamente cuando recuperas conexión.
+                </p>
+              </article>
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="font-semibold text-slate-900">¿Cómo se instala el APK?</h3>
+                <p className="mt-3 text-sm leading-relaxed text-slate-600">
+                  Descarga el archivo, permite la instalación desde fuentes desconocidas e instala en pocos pasos.
+                </p>
+              </article>
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="font-semibold text-slate-900">¿Sirve para inventario?</h3>
+                <p className="mt-3 text-sm leading-relaxed text-slate-600">
+                  Sí. Controlas inventario, ventas y reportes desde Android en una sola app de punto de venta.
+                </p>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Bottom CTA */}
       <section className="py-20 bg-violet-900 text-white">
         <div className="container px-4 md:px-6 text-center">
@@ -240,7 +309,7 @@ export default function AppMovilPage() {
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-4">
             <Button size="lg" className="h-14 px-8 text-base font-semibold bg-white text-violet-900 hover:bg-slate-100" asChild>
-              <a href="/downloads/movopos-app.apk" download>
+              <a href={appDownloadUrl}>
                 <Download className="mr-2 h-5 w-5" />
                 Descargar la App
               </a>

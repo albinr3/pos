@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import Image from "next/image"
 import { Hero } from "@/components/marketing/hero"
 import { Features } from "@/components/marketing/features"
 import { BusinessTypesSection } from "@/components/marketing/business-types-section"
@@ -9,7 +10,7 @@ import { faqItems } from "@/components/marketing/faq-data"
 import { PricingCard } from "@/components/marketing/pricing-card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { ArrowRight } from "lucide-react"
+import { ArrowRight, Smartphone } from "lucide-react"
 
 export const metadata: Metadata = {
   title: "Sistema de facturación en República Dominicana | MOVOPos",
@@ -138,6 +139,48 @@ function MobileStickyCTA() {
   )
 }
 
+function MobileAppTeaserSection() {
+  return (
+    <section className="py-12 sm:py-16 bg-slate-50">
+      <div className="container">
+        <div className="mx-auto max-w-4xl rounded-3xl border bg-white p-6 sm:p-10 shadow-sm">
+          <div className="grid gap-8 lg:grid-cols-2 lg:items-center">
+            <div className="max-w-2xl">
+              <div className="inline-flex items-center rounded-lg bg-violet-100 px-3 py-1 text-sm font-medium text-violet-800">
+                <Smartphone className="mr-2 h-4 w-4" />
+                Nueva opción móvil
+              </div>
+              <h2 className="mt-4 text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
+                También tenemos app móvil para Android
+              </h2>
+              <p className="mt-3 text-base text-muted-foreground sm:text-lg">
+                Descarga el APK de MOVOPos y factura, controla inventario y vende con o sin
+                internet desde tu celular.
+              </p>
+              <Button asChild size="lg" className="mt-6 font-semibold">
+                <Link href="/app-movil">
+                  Ver app móvil
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+            <div className="relative mx-auto w-full max-w-sm">
+              <div className="absolute inset-0 -z-10 rounded-3xl bg-gradient-to-tr from-violet-100 to-transparent" />
+              <Image
+                src="/pos_en_app_android.png"
+                alt="MOVOPos app móvil en Android"
+                width={600}
+                height={800}
+                className="h-auto w-full rounded-2xl object-contain"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export default function LandingPage() {
   return (
     <>
@@ -205,6 +248,7 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <MobileAppTeaserSection />
       <FAQSection />
       <DesktopSectionCTA />
 
