@@ -692,7 +692,16 @@ export function ProductsClient() {
         refresh(query)
         listRecipeIngredientOptions().then(setIngredientOptions).catch(() => setIngredientOptions([]))
       } catch (e) {
-        toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
+        const errorMessage = e instanceof Error ? e.message : "No se pudo guardar"
+        const isDuplicateSku =
+          /sku/i.test(errorMessage) &&
+          /(ya existe|ya está en uso|ya esta en uso|duplicad|duplicate)/i.test(errorMessage)
+        toast({
+          title: isDuplicateSku ? "SKU duplicado" : "Error",
+          description: errorMessage,
+          variant: "destructive",
+          className: isDuplicateSku ? "border-red-300 bg-red-100 text-red-900" : undefined,
+        })
       }
     })
   }

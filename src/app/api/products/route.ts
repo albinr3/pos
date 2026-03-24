@@ -135,6 +135,40 @@ export async function POST(request: NextRequest) {
     const priceCents = body.priceCents ?? (body.price ? Math.round(body.price * 100) : undefined)
     const costCents = body.costCents ?? (body.cost ? Math.round(body.cost * 100) : undefined)
     let resolvedCategoryInternalId: string | null = null
+    const normalizedSku = typeof body.sku === "string" ? body.sku.trim() : ""
+
+    if (normalizedSku) {
+      const existingSkuProduct = await prisma.product.findFirst({
+        where: {
+          accountId: user.accountId,
+          sku: { equals: normalizedSku, mode: "insensitive" },
+          isActive: true,
+        },
+        select: {
+          id: true,
+          productId: true,
+          name: true,
+          sku: true,
+        },
+      })
+
+      if (existingSkuProduct) {
+        return NextResponse.json(
+          {
+            error: `El SKU "${normalizedSku}" ya está en uso por el producto #${existingSkuProduct.productId} (${existingSkuProduct.name}).`,
+            code: "SKU_DUPLICATE",
+            sku: existingSkuProduct.sku,
+            existingProduct: {
+              id: existingSkuProduct.id,
+              productId: existingSkuProduct.productId,
+              name: existingSkuProduct.name,
+              sku: existingSkuProduct.sku,
+            },
+          },
+          { status: 409 }
+        )
+      }
+    }
 
     if (hasValue(body.categoryId)) {
       const parsedCategoryId = Number(body.categoryId)
