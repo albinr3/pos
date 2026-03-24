@@ -19,6 +19,16 @@ type InventoryAdjustmentClient = {
   }
 }
 
+class UpsertProductUserError extends Error {
+  code?: "SKU_DUPLICATE"
+
+  constructor(message: string, code?: "SKU_DUPLICATE") {
+    super(message)
+    this.name = "UpsertProductUserError"
+    this.code = code
+  }
+}
+
 async function safeCreateInventoryAdjustment(client: InventoryAdjustmentClient, data: any) {
   try {
     await client.inventoryAdjustment.create({ data })
@@ -304,7 +314,7 @@ export async function upsertProduct(input: {
   recipeItems?: RecipeItemInput[]
   unit: UnitType
   user?: any
-}) {
+}): Promise<{ ok: true } | { ok: false; error: string; code?: "SKU_DUPLICATE" }> {
   const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
@@ -358,8 +368,9 @@ export async function upsertProduct(input: {
         })
 
         if (conflictingSkuProduct) {
-          throw new Error(
-            `El SKU "${sku}" ya está en uso por el producto #${conflictingSkuProduct.productId} (${conflictingSkuProduct.name}).`
+          throw new UpsertProductUserError(
+            `El SKU "${sku}" ya está en uso por el producto #${conflictingSkuProduct.productId} (${conflictingSkuProduct.name}).`,
+            "SKU_DUPLICATE"
           )
         }
       }
@@ -517,7 +528,12 @@ export async function upsertProduct(input: {
     })
 
     safeRevalidate("/products")
+    return { ok: true }
   } catch (error) {
+    if (error instanceof UpsertProductUserError) {
+      return { ok: false, error: error.message, code: error.code }
+    }
+
     await logError(error as Error, {
       code: ErrorCodes.INVENTORY_UPDATE_ERROR,
       severity: "MEDIUM",
@@ -536,7 +552,11 @@ export async function upsertProduct(input: {
       if (target.includes("accountId") && target.includes("sku")) {
         const sanitizedSku = input.sku ? sanitizeCode(input.sku) : ""
         const shownSku = sanitizedSku || "sin código"
-        throw new Error(`El SKU "${shownSku}" ya existe en esta cuenta. Usa otro código o deja el campo vacío.`)
+        return {
+          ok: false,
+          error: `El SKU "${shownSku}" ya existe en esta cuenta. Usa otro código o deja el campo vacío.`,
+          code: "SKU_DUPLICATE",
+        }
       }
     }
 

@@ -57,7 +57,7 @@ export async function PUT(
       resolvedCategoryInternalId = category.id
     }
 
-    await upsertProduct({
+    const result = await upsertProduct({
       id,
       name: body.name,
       sku: body.sku || null,
@@ -77,6 +77,10 @@ export async function PUT(
       unit: body.unit || "UNIDAD",
       user,
     })
+    if (!result.ok) {
+      const status = result.code === "SKU_DUPLICATE" ? 409 : 400
+      return NextResponse.json({ error: result.error, code: result.code }, { status })
+    }
 
     // Obtener el producto actualizado para retornarlo
     const product = await prisma.product.findFirst({

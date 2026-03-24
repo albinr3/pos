@@ -668,7 +668,7 @@ export function ProductsClient() {
               .filter((item) => item.ingredientId)
             : []
 
-        await upsertProduct({
+        const result = await upsertProduct({
           id: editing?.id,
           name,
           sku: sku || null,
@@ -686,6 +686,16 @@ export function ProductsClient() {
           recipeItems: normalizedRecipeItems,
           unit: finalUnit,
         })
+        if (!result.ok) {
+          const isDuplicateSku = result.code === "SKU_DUPLICATE"
+          toast({
+            title: isDuplicateSku ? "SKU duplicado" : "Error",
+            description: result.error,
+            variant: "destructive",
+            className: isDuplicateSku ? "border-red-300 bg-red-100 text-red-900" : undefined,
+          })
+          return
+        }
         toast({ title: "Guardado", description: "Producto actualizado" })
         setOpen(false)
         resetForm(null)

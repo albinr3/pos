@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
       resolvedCategoryInternalId = category.id
     }
 
-    await upsertProduct({
+    const result = await upsertProduct({
       name: body.name,
       sku: body.sku || null,
       reference: body.reference || null,
@@ -208,6 +208,10 @@ export async function POST(request: NextRequest) {
       unit: body.unit || "UNIDAD",
       user,
     })
+    if (!result.ok) {
+      const status = result.code === "SKU_DUPLICATE" ? 409 : 400
+      return NextResponse.json({ error: result.error, code: result.code }, { status })
+    }
 
     // Obtener el producto creado para retornarlo
     const product = await prisma.product.findFirst({
