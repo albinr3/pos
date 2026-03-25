@@ -9,6 +9,7 @@ import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 
 const navItems = [
   { href: "/pricing", label: "Precios" },
+  { href: "/app-movil", label: "App Móvil" },
   { href: "/about", label: "Acerca de nosotros" },
 ]
 

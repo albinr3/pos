@@ -29,6 +29,7 @@ import {
   LogOut,
   RefreshCw,
   WifiOff,
+  ChevronRight,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -51,8 +52,8 @@ import {
 import { useOnlineStatus } from "@/hooks/use-online-status"
 
 const nav = [
-  { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/sales", label: "Vender", icon: ShoppingCart },
+  { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/quotes", label: "Cotizaciones", icon: FileText },
   { href: "/returns", label: "Devoluciones", icon: RotateCcw },
   { href: "/customers", label: "Clientes", icon: Users },
@@ -311,6 +312,13 @@ export function AppShell({ children, billingState }: AppShellProps) {
   // Determinar el tema actual (resuelve "system" a "light" o "dark")
   const currentTheme = resolvedTheme || theme || "light"
   const logoPath = currentTheme === "light" ? "/movoLogoDark.png" : "/movoLogo.png"
+  const salesNavItem = filteredNav.find((item) => item.href === "/sales")
+  const regularNavItems = filteredNav.filter((item) => item.href !== "/sales")
+  const isNavItemDisabled = (href: string) => {
+    const isOfflineDisabled = !isOnline && !OFFLINE_ALLOWED_ROUTES.has(href)
+    const isBillingDisabled = isBillingRestricted && href !== "/billing"
+    return (href === "/backups" && DISABLE_BACKUPS_NAV) || isOfflineDisabled || isBillingDisabled
+  }
   
   return (
     <div className="min-h-dvh bg-background">
@@ -324,14 +332,36 @@ export function AppShell({ children, billingState }: AppShellProps) {
             </div>
             <Separator />
             <nav className="flex-1 space-y-1 px-3 py-3">
-              {filteredNav.map((item) => {
+              {salesNavItem && (
+                isNavItemDisabled(salesNavItem.href) ? (
+                  <Button
+                    key={salesNavItem.href}
+                    variant="ghost"
+                    disabled
+                    className="mb-2 w-full justify-start gap-2 text-base opacity-60"
+                  >
+                    <salesNavItem.icon className="h-5 w-5" />
+                    {salesNavItem.label}
+                  </Button>
+                ) : (
+                  <Button
+                    key={salesNavItem.href}
+                    asChild
+                    className="mb-2 h-auto w-full justify-start rounded-xl bg-[#22C55E] px-4 py-4 text-left text-base font-black tracking-wide text-white shadow-[0_4px_14px_rgba(34,197,94,0.38)] hover:bg-[#16A34A]"
+                  >
+                    <Link href={salesNavItem.href} onClick={(event) => handleNavClick(event, salesNavItem.href)}>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20">
+                        <salesNavItem.icon className="h-6 w-6" />
+                      </span>
+                      <span className="flex-1">VENDER</span>
+                      <ChevronRight className="h-5 w-5 opacity-80" />
+                    </Link>
+                  </Button>
+                )
+              )}
+              {regularNavItems.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
-                const isOfflineDisabled = !isOnline && !OFFLINE_ALLOWED_ROUTES.has(item.href)
-                const isBillingDisabled = isBillingRestricted && item.href !== "/billing"
-                const isDisabled =
-                  (item.href === "/backups" && DISABLE_BACKUPS_NAV) ||
-                  isOfflineDisabled ||
-                  isBillingDisabled
+                const isDisabled = isNavItemDisabled(item.href)
                 if (isDisabled) {
                   return (
                     <Button
@@ -409,14 +439,38 @@ export function AppShell({ children, billingState }: AppShellProps) {
                 </div>
                 <Separator className="flex-shrink-0" />
                 <nav className="flex-1 space-y-1 px-3 py-3 overflow-y-auto">
-                  {filteredNav.map((item) => {
+                  {salesNavItem && (
+                    isNavItemDisabled(salesNavItem.href) ? (
+                      <Button
+                        key={salesNavItem.href}
+                        variant="ghost"
+                        disabled
+                        className="mb-2 w-full justify-start gap-2 text-base opacity-60"
+                      >
+                        <salesNavItem.icon className="h-5 w-5" />
+                        {salesNavItem.label}
+                      </Button>
+                    ) : (
+                      <Button
+                        key={salesNavItem.href}
+                        asChild
+                        className="mb-2 h-auto w-full justify-start rounded-xl bg-[#22C55E] px-4 py-4 text-left text-base font-black tracking-wide text-white shadow-[0_4px_14px_rgba(34,197,94,0.38)] hover:bg-[#16A34A]"
+                      >
+                        <SheetClose asChild>
+                          <Link href={salesNavItem.href} onClick={(event) => handleNavClick(event, salesNavItem.href)}>
+                            <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20">
+                              <salesNavItem.icon className="h-6 w-6" />
+                            </span>
+                            <span className="flex-1">VENDER</span>
+                            <ChevronRight className="h-5 w-5 opacity-80" />
+                          </Link>
+                        </SheetClose>
+                      </Button>
+                    )
+                  )}
+                  {regularNavItems.map((item) => {
                     const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
-                    const isOfflineDisabled = !isOnline && !OFFLINE_ALLOWED_ROUTES.has(item.href)
-                    const isBillingDisabled = isBillingRestricted && item.href !== "/billing"
-                    const isDisabled =
-                      (item.href === "/backups" && DISABLE_BACKUPS_NAV) ||
-                      isOfflineDisabled ||
-                      isBillingDisabled
+                    const isDisabled = isNavItemDisabled(item.href)
                     if (isDisabled) {
                       return (
                         <Button
