@@ -7,6 +7,7 @@ import { PaymentMethod } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { isDominicanBankName } from "@/lib/dominican-banks"
+import { endOfDay } from "@/lib/dates"
 
 type AuthActor = {
   id: string
@@ -34,12 +35,16 @@ function parseVisualIdQuery(rawQuery: string | undefined): number | null {
   return Number(digits)
 }
 
-export async function listOpenAR(options?: { query?: string; skip?: number; take?: number }, actor?: AuthActor) {
+export async function listOpenAR(
+  options?: { query?: string; skip?: number; take?: number; overdueOnly?: boolean },
+  actor?: AuthActor
+) {
   const user = actor ?? await getCurrentUser()
   assertAuthActor(user)
 
   const query = options?.query?.trim()
   const visualIdQuery = parseVisualIdQuery(query)
+  const overdueOnly = options?.overdueOnly ?? false
   const skip = options?.skip ?? 0
   const take = options?.take ?? 10
 
@@ -58,10 +63,19 @@ export async function listOpenAR(options?: { query?: string; skip?: number; take
       ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
     ]
   }
+  if (overdueOnly) {
+    where.dueDate = {
+      lte: endOfDay(),
+    }
+  }
 
   return prisma.accountReceivable.findMany({
     where,
-    orderBy: [{ createdAt: "asc" }], // Más antiguas primero
+    orderBy: [
+      { customer: { name: "asc" } },
+      { createdAt: "asc" },
+      { id: "asc" },
+    ],
     include: {
       customer: true,
       sale: true,
@@ -73,6 +87,44 @@ export async function listOpenAR(options?: { query?: string; skip?: number; take
     skip,
     take,
   })
+}
+
+export async function getARSummaryStats(actor?: AuthActor) {
+  const user = actor ?? await getCurrentUser()
+  assertAuthActor(user)
+
+  const todayEnd = endOfDay()
+
+  const [arOpen, arOverdue] = await Promise.all([
+    prisma.accountReceivable.aggregate({
+      where: {
+        status: { in: ["PENDIENTE", "PARCIAL"] },
+        sale: {
+          accountId: user.accountId,
+          cancelledAt: null,
+        },
+      },
+      _sum: { balanceCents: true },
+      _count: true,
+    }),
+    prisma.accountReceivable.aggregate({
+      where: {
+        status: { in: ["PENDIENTE", "PARCIAL"] },
+        dueDate: { lte: todayEnd },
+        sale: {
+          accountId: user.accountId,
+          cancelledAt: null,
+        },
+      },
+      _count: true,
+    }),
+  ])
+
+  return {
+    openBalanceCents: arOpen._sum.balanceCents ?? 0,
+    openCount: arOpen._count ?? 0,
+    overdueCount: arOverdue._count ?? 0,
+  }
 }
 
 export async function cancelPayment(id: string) {

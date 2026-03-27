@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { DollarSign, CreditCard, TrendingUp, Receipt, Wallet, AlertTriangle } from "lucide-react"
+import { DollarSign, CreditCard, TrendingUp, Receipt, Wallet, AlertTriangle, Clock3 } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -91,6 +91,16 @@ export default async function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-semibold text-red-600">{formatRD(stats.arOpenCents)}</div>
             <div className="mt-1 text-xs text-muted-foreground">{stats.arOpenCount} facturas</div>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-rose-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Facturas vencidas</CardTitle>
+            <Clock3 className="h-5 w-5 text-rose-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-rose-500">{stats.arOverdueCount}</div>
+            <div className="mt-1 text-xs text-muted-foreground">facturas</div>
           </CardContent>
         </Card>
         <Card className={cn("border-l-4", stats.lowStockCount > 0 ? "border-l-red-500" : "border-l-gray-300")}>

@@ -149,6 +149,11 @@ export default async function SaleReceiptPage({
         <div className="mt-1">
           <span className="font-semibold">Cliente:</span> {sale.customer?.name ?? "Cliente"}
         </div>
+        {sale.customer?.province && (
+          <div className="mt-1">
+            <span className="font-semibold">Provincia:</span> {sale.customer.province}
+          </div>
+        )}
         <div className="mt-1">
           <span className="font-semibold">Tipo de venta:</span> {formatSaleType(sale.type)}
         </div>

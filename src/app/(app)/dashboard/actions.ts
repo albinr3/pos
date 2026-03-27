@@ -88,7 +88,7 @@ export async function getDashboardStats() {
   const from = startOfDay()
   const to = endOfDay()
 
-  const [salesToday, salesCash, salesCredit, arOpen, paymentsToday, operatingExpensesToday, lowStockCountRow] = await Promise.all([
+  const [salesToday, salesCash, salesCredit, arOpen, arOverdue, paymentsToday, operatingExpensesToday, lowStockCountRow] = await Promise.all([
     prisma.sale.aggregate({
       where: {
         accountId: user.accountId,
@@ -127,6 +127,17 @@ export async function getDashboardStats() {
         },
       },
       _sum: { balanceCents: true },
+      _count: true,
+    }),
+    prisma.accountReceivable.aggregate({
+      where: {
+        status: { in: ["PENDIENTE", "PARCIAL"] },
+        dueDate: { lte: to },
+        sale: {
+          accountId: user.accountId,
+          cancelledAt: null, // Excluir ventas canceladas
+        },
+      },
       _count: true,
     }),
     prisma.payment.aggregate({
@@ -175,6 +186,7 @@ export async function getDashboardStats() {
     operatingExpensesTodayCount: operatingExpensesToday._count ?? 0,
     arOpenCents: arOpen._sum.balanceCents ?? 0,
     arOpenCount: arOpen._count ?? 0,
+    arOverdueCount: arOverdue._count ?? 0,
     lowStockCount,
   }
 }

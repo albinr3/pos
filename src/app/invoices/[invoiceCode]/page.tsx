@@ -149,6 +149,11 @@ export default async function InvoicePrintPage({
             <span className="font-semibold">Dirección:</span> {sale.customer.address}
           </div>
         )}
+        {sale.customer?.province && (
+          <div className="mt-2 text-sm">
+            <span className="font-semibold">Provincia:</span> {sale.customer.province}
+          </div>
+        )}
         <div className="mt-2 text-sm">
           <span className="font-semibold">Tipo de venta:</span> {formatSaleType(sale.type)}
         </div>

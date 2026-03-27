@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 
-import { CheckSquare, CreditCard, HandCoins, Printer, Receipt, Search, WifiOff } from "lucide-react"
+import { CheckSquare, Clock3, CreditCard, HandCoins, Printer, Receipt, Search, WifiOff } from "lucide-react"
 import { PaymentMethod } from "@prisma/client"
 
 import { Button } from "@/components/ui/button"
@@ -29,7 +29,7 @@ import {
 import { syncARToIndexedDB } from "@/app/(app)/sync/actions"
 import { saveARCache } from "@/lib/indexed-db"
 
-import { addPayment, addBatchPayment, listOpenAR } from "./actions"
+import { addPayment, addBatchPayment, getARSummaryStats, listOpenAR } from "./actions"
 
 type AR = Awaited<ReturnType<typeof listOpenAR>>[number]
 
@@ -73,6 +73,26 @@ function matchesARQuery(
   )
 }
 
+function isOverdueFromDueDate(dueDate: Date | string | null | undefined) {
+  if (!dueDate) return false
+  const due = new Date(dueDate)
+  const today = new Date()
+  due.setHours(0, 0, 0, 0)
+  today.setHours(0, 0, 0, 0)
+  return due.getTime() <= today.getTime()
+}
+
+function compareByCustomerAndDate(a: { customer?: { name?: string | null } | null; createdAt?: Date | string | null }, b: { customer?: { name?: string | null } | null; createdAt?: Date | string | null }) {
+  const nameA = (a.customer?.name ?? "").toLocaleLowerCase()
+  const nameB = (b.customer?.name ?? "").toLocaleLowerCase()
+  const byName = nameA.localeCompare(nameB, "es")
+  if (byName !== 0) return byName
+
+  const createdAtA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+  const createdAtB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+  return createdAtA - createdAtB
+}
+
 export function ARClient() {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -84,6 +104,7 @@ export function ARClient() {
   }, [])
   const [isLoading, startLoading] = useTransition()
   const [query, setQuery] = useState("")
+  const [overdueOnly, setOverdueOnly] = useState(false)
   const [skip, setSkip] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, startLoadingMore] = useTransition()
@@ -96,6 +117,11 @@ export function ARClient() {
   const [note, setNote] = useState("")
   const [isSaving, startSaving] = useTransition()
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
+  const [summary, setSummary] = useState({
+    openBalanceCents: 0,
+    openCount: 0,
+    overdueCount: 0,
+  })
 
   const [openReceipts, setOpenReceipts] = useState(false)
   const [selectedForReceipts, setSelectedForReceipts] = useState<AR | null>(null)
@@ -131,9 +157,13 @@ export function ARClient() {
       try {
         if (isOnline) {
           try {
-            const r = await listOpenAR({ query, skip: 0, take: 10 })
+            const [r, stats] = await Promise.all([
+              listOpenAR({ query, overdueOnly, skip: 0, take: 10 }),
+              getARSummaryStats(),
+            ])
             setItems(r as any)
             setHasMore(r.length === 10)
+            setSummary(stats)
 
             // Pre-cargar a IndexedDB
             try {
@@ -153,16 +183,28 @@ export function ARClient() {
           ...item,
           payments: item.payments ?? [],
         }))
+        const overdueCount = cached.filter((ar: any) => isOverdueFromDueDate(ar.dueDate)).length
+        const openBalanceCents = cached.reduce((sum: number, ar: any) => sum + (ar.balanceCents ?? 0), 0)
+        setSummary({
+          openBalanceCents,
+          openCount: cached.length,
+          overdueCount,
+        })
         // Filtrar por query si existe
         let filtered = cached
         if (query.trim()) {
           filtered = cached.filter((ar: any) => matchesARQuery(ar, query))
         }
+        if (overdueOnly) {
+          filtered = filtered.filter((ar: any) => isOverdueFromDueDate(ar.dueDate))
+        }
+        filtered = [...filtered].sort(compareByCustomerAndDate)
         setItems(filtered.slice(0, 10) as any)
         setHasMore(filtered.length > 10)
       } catch {
         setItems([])
         setHasMore(false)
+        setSummary({ openBalanceCents: 0, openCount: 0, overdueCount: 0 })
       }
     })
   }
@@ -173,7 +215,7 @@ export function ARClient() {
         if (isOnline) {
           try {
             const newSkip = skip + 10
-            const r = await listOpenAR({ query, skip: newSkip, take: 10 })
+            const r = await listOpenAR({ query, overdueOnly, skip: newSkip, take: 10 })
             setItems((prev) => [...prev, ...r])
             setSkip(newSkip)
             setHasMore(r.length === 10)
@@ -192,6 +234,10 @@ export function ARClient() {
         if (query.trim()) {
           filtered = cached.filter((ar: any) => matchesARQuery(ar, query))
         }
+        if (overdueOnly) {
+          filtered = filtered.filter((ar: any) => isOverdueFromDueDate(ar.dueDate))
+        }
+        filtered = [...filtered].sort(compareByCustomerAndDate)
         const newSkip = skip + 10
         const more = filtered.slice(newSkip, newSkip + 10)
         setItems((prev) => [...prev, ...more] as any)
@@ -215,9 +261,7 @@ export function ARClient() {
     const interval = setInterval(updatePendingCounts, 5000) // Actualizar cada 5 segundos
     
     return () => clearInterval(interval)
-  }, [query, isOnline])
-
-  const totalBalance = useMemo(() => items.reduce((s, i) => s + i.balanceCents, 0), [items])
+  }, [query, overdueOnly, isOnline])
 
   // Multi-select helpers
   const selectedItems = useMemo(() => items.filter((i) => selectedIds.has(i.id)), [items, selectedIds])
@@ -464,13 +508,24 @@ export function ARClient() {
         </div>
       )}
       
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="text-sm text-muted-foreground">Total pendiente</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">{formatRD(totalBalance)}</div>
+            <div className="text-2xl font-semibold">{formatRD(summary.openBalanceCents)}</div>
+            <div className="mt-1 text-xs text-muted-foreground">{summary.openCount} facturas</div>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-rose-500">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Facturas vencidas</CardTitle>
+            <Clock3 className="h-5 w-5 text-rose-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-semibold text-rose-500">{summary.overdueCount}</div>
+            <div className="mt-1 text-xs text-muted-foreground">facturas</div>
           </CardContent>
         </Card>
       </div>
@@ -489,6 +544,18 @@ export function ARClient() {
               placeholder="Buscar por número de factura o cliente..."
             />
           </div>
+          <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded accent-rose-500"
+              checked={overdueOnly}
+              onChange={(e) => {
+                setSelectedIds(new Set())
+                setOverdueOnly(e.target.checked)
+              }}
+            />
+            Solo facturas vencidas
+          </label>
 
           {/* Barra de acciones batch */}
           {selectedIds.size > 0 && (
@@ -544,7 +611,7 @@ export function ARClient() {
               </TableHeader>
               <TableBody>
                 {items.map((ar) => {
-                  const isOverdue = ar.dueDate && new Date(ar.dueDate) < new Date()
+                  const isOverdue = isOverdueFromDueDate(ar.dueDate)
                   const daysUntilDue = ar.dueDate 
                     ? Math.ceil((new Date(ar.dueDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
                     : null
@@ -695,7 +762,7 @@ export function ARClient() {
                     <div className="flex items-center justify-between">
                       <span>Vence</span>
                       <span className={
-                        new Date(selected.dueDate) < new Date() 
+                        isOverdueFromDueDate(selected.dueDate)
                           ? "font-semibold text-red-600" 
                           : "font-semibold"
                       }>
@@ -706,7 +773,7 @@ export function ARClient() {
                         })}
                       </span>
                     </div>
-                    {new Date(selected.dueDate) < new Date() && (
+                    {isOverdueFromDueDate(selected.dueDate) && (
                       <div className="mt-1 text-xs text-red-600 font-semibold">
                         ⚠️ Factura vencida
                       </div>
@@ -846,7 +913,7 @@ export function ARClient() {
                     <div className="flex items-center justify-between">
                       <span>Vence</span>
                       <span className={
-                        new Date(selectedForReceipts.dueDate) < new Date() 
+                        isOverdueFromDueDate(selectedForReceipts.dueDate)
                           ? "font-semibold text-red-600" 
                           : "font-semibold"
                       }>
