@@ -1,4 +1,5 @@
 import { createUploadthing, type FileRouter } from "uploadthing/next"
+import { UploadThingError } from "uploadthing/server"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 
 const f = createUploadthing()
@@ -47,6 +48,32 @@ export const ourFileRouter = {
     })
     .onUploadComplete(async ({ metadata, file }) => {
       return { url: file.ufsUrl ?? file.url }
+    }),
+
+  // Videos de tutoriales para marketing/super-admin (solo MP4, max 256MB)
+  tutorialVideoUploader: f({ video: { maxFileSize: "256MB", maxFileCount: 1 } })
+    .middleware(({ files }) => {
+      const file = files[0]
+      if (!file || file.type !== "video/mp4") {
+        throw new UploadThingError("Solo se permiten videos MP4")
+      }
+      return {}
+    })
+    .onUploadError(async ({ error }) => {
+      await logError(new Error(error.message), {
+        code: ErrorCodes.EXTERNAL_UPLOAD_ERROR,
+        severity: "MEDIUM",
+        endpoint: "/api/uploadthing/tutorialVideoUploader",
+        metadata: { uploaderType: "tutorialVideo" },
+      })
+    })
+    .onUploadComplete(async ({ file }) => {
+      return {
+        url: file.ufsUrl ?? file.url,
+        key: file.key,
+        mimeType: file.type,
+        name: file.name,
+      }
     }),
 } satisfies FileRouter
 

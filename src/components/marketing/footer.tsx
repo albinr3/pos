@@ -19,6 +19,7 @@ const footerLinks = {
   ],
   empresa: [
     { href: "/about", label: "Nosotros" },
+    { href: "/como-usar-la-plataforma", label: "Tutoriales" },
   ],
 }
 
@@ -90,5 +91,3 @@ export function MarketingFooter() {
     </footer>
   )
 }
-
-

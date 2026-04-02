@@ -13,7 +13,7 @@ export type TutorialVideo = {
   categoryLabel: string
   duration: string
   level: "Basico" | "Intermedio" | "Avanzado"
-  youtubeId: string | null
+  videoUrl: string | null
   featured?: boolean
   outcomes: string[]
 }
@@ -65,7 +65,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Primeros pasos",
     duration: "4 min",
     level: "Basico",
-    youtubeId: null,
+    videoUrl: null,
     featured: true,
     outcomes: [
       "Ubicar modulos principales",
@@ -82,7 +82,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Primeros pasos",
     duration: "5 min",
     level: "Basico",
-    youtubeId: null,
+    videoUrl: null,
     outcomes: [
       "Actualizar nombre y datos del negocio",
       "Dejar lista la configuracion inicial",
@@ -98,7 +98,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Ventas",
     duration: "6 min",
     level: "Basico",
-    youtubeId: null,
+    videoUrl: null,
     outcomes: [
       "Agregar productos a una venta",
       "Confirmar totales y metodos de pago",
@@ -114,7 +114,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Ventas",
     duration: "5 min",
     level: "Intermedio",
-    youtubeId: null,
+    videoUrl: null,
     outcomes: [
       "Emitir documentos correctamente",
       "Imprimir o compartir tickets",
@@ -130,7 +130,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Inventario",
     duration: "7 min",
     level: "Basico",
-    youtubeId: null,
+    videoUrl: null,
     outcomes: [
       "Agregar productos correctamente",
       "Clasificar el catalogo por categorias",
@@ -146,7 +146,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Inventario",
     duration: "6 min",
     level: "Intermedio",
-    youtubeId: null,
+    videoUrl: null,
     outcomes: [
       "Hacer ajustes de inventario",
       "Revisar diferencias de stock",
@@ -162,7 +162,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Compras",
     duration: "6 min",
     level: "Intermedio",
-    youtubeId: null,
+    videoUrl: null,
     outcomes: [
       "Registrar compras completas",
       "Actualizar stock automaticamente",
@@ -178,7 +178,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Compras",
     duration: "5 min",
     level: "Intermedio",
-    youtubeId: null,
+    videoUrl: null,
     outcomes: [
       "Consultar proveedores",
       "Dar seguimiento a pendientes",
@@ -194,7 +194,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Configuracion",
     duration: "5 min",
     level: "Intermedio",
-    youtubeId: null,
+    videoUrl: null,
     outcomes: [
       "Crear usuarios del equipo",
       "Asignar roles con criterio",
@@ -210,7 +210,7 @@ export const tutorialVideos: TutorialVideo[] = [
     categoryLabel: "Configuracion",
     duration: "7 min",
     level: "Avanzado",
-    youtubeId: null,
+    videoUrl: null,
     outcomes: [
       "Ajustar parametros del negocio",
       "Personalizar la salida de documentos",

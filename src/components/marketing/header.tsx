@@ -11,6 +11,7 @@ const navItems = [
   { href: "/pricing", label: "Precios" },
   { href: "/app-movil", label: "App Móvil" },
   { href: "/about", label: "Acerca de nosotros" },
+  { href: "/como-usar-la-plataforma", label: "Tutoriales" },
 ]
 
 export function MarketingHeader() {

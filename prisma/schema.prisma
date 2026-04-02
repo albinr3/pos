@@ -1518,6 +1518,52 @@ model ErrorLog {
 }
 
 // ==========================================
+// TUTORIAL LIBRARY (marketing + super-admin)
+// ==========================================
+model TutorialCategory {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  slug        String @unique
+  label       String
+  description String
+  displayOrder Int   @default(0)
+  isActive    Boolean @default(true)
+
+  videos TutorialVideo[]
+
+  @@index([isActive, displayOrder])
+}
+
+model TutorialVideo {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  slug        String @unique
+  title       String
+  description String
+
+  categoryId String
+  category   TutorialCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  duration String
+  level    String
+  outcomes String[] @default([])
+
+  videoUrl     String
+  videoFileKey String
+
+  isPublished Boolean @default(false)
+  isFeatured  Boolean @default(false)
+  displayOrder Int    @default(0)
+
+  @@index([isPublished, displayOrder])
+  @@index([categoryId, displayOrder])
+}
+
+// ==========================================
 // WHATSAPP OTP (legacy)
 // ==========================================
 model WhatsappOtp {

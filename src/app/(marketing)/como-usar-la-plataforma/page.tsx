@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
 
 import { TutorialVideoHub } from "@/components/marketing/tutorial-video-hub"
-import { tutorialVideos } from "@/components/marketing/tutorial-videos"
+import { getPublishedTutorialLibrary } from "@/lib/tutorial-library"
+
+export const dynamic = "force-dynamic"
 
 export const metadata: Metadata = {
   title: "Como usar la plataforma | Tutoriales MOVOPos",
@@ -23,36 +25,37 @@ export const metadata: Metadata = {
   },
 }
 
-const jsonLd = [
-  {
-    "@context": "https://schema.org",
-    "@type": "WebPage",
-    name: "Como usar la plataforma | Tutoriales MOVOPos",
-    url: "https://movopos.com/como-usar-la-plataforma",
-    description:
-      "Centro de tutoriales y soporte visual para aprender a usar MOVOPos paso a paso.",
-  },
-  {
-    "@context": "https://schema.org",
-    "@type": "ItemList",
-    itemListElement: tutorialVideos.map((video, index) => ({
-      "@type": "ListItem",
-      position: index + 1,
-      name: video.title,
-      description: video.description,
-      url: `https://movopos.com/como-usar-la-plataforma#${video.slug}`,
-    })),
-  },
-]
+export default async function HowToUsePlatformPage() {
+  const { categories, videos } = await getPublishedTutorialLibrary()
+  const jsonLd = [
+    {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      name: "Como usar la plataforma | Tutoriales MOVOPos",
+      url: "https://movopos.com/como-usar-la-plataforma",
+      description:
+        "Centro de tutoriales y soporte visual para aprender a usar MOVOPos paso a paso.",
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "ItemList",
+      itemListElement: videos.map((video, index) => ({
+        "@type": "ListItem",
+        position: index + 1,
+        name: video.title,
+        description: video.description,
+        url: `https://movopos.com/como-usar-la-plataforma#${video.slug}`,
+      })),
+    },
+  ]
 
-export default function HowToUsePlatformPage() {
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <TutorialVideoHub />
+      <TutorialVideoHub categories={categories} videos={videos} />
     </>
   )
 }

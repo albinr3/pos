@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import {
   ArrowRight,
   Clock3,
@@ -9,7 +9,6 @@ import {
   Mail,
   MessageCircle,
   PlayCircle,
-  Youtube,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -28,38 +27,42 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs"
 import {
-  tutorialCategories,
-  tutorialVideos,
-  type TutorialCategory,
-  type TutorialVideo,
-} from "@/components/marketing/tutorial-videos"
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import type { PublicTutorialCategory, PublicTutorialVideo } from "@/lib/tutorial-types"
 
-type TabValue = "todos" | TutorialCategory
+type TabValue = "todos" | string
 
-function getYoutubeEmbedUrl(youtubeId: string) {
-  return `https://www.youtube-nocookie.com/embed/${youtubeId}`
+type TutorialVideoHubProps = {
+  categories: PublicTutorialCategory[]
+  videos: PublicTutorialVideo[]
 }
 
-function getYoutubeWatchUrl(youtubeId: string) {
-  return `https://www.youtube.com/watch?v=${youtubeId}`
+function isPublished(video: PublicTutorialVideo) {
+  return Boolean(video.videoUrl)
 }
 
-function isPublished(video: TutorialVideo) {
-  return Boolean(video.youtubeId)
-}
-
-function VideoPreview({ video }: { video: TutorialVideo }) {
-  if (video.youtubeId) {
+function HeroThumbnail({ video }: { video: PublicTutorialVideo | null }) {
+  if (video?.videoUrl) {
     return (
       <div className="relative aspect-video overflow-hidden rounded-[1.5rem] border border-white/10 bg-black shadow-2xl">
-        <iframe
-          className="h-full w-full"
-          src={getYoutubeEmbedUrl(video.youtubeId)}
-          title={video.title}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerPolicy="strict-origin-when-cross-origin"
-          allowFullScreen
+        <video
+          className="h-full w-full object-cover"
+          src={video.videoUrl}
+          muted
+          playsInline
+          preload="metadata"
+          aria-hidden="true"
         />
+        <div className="absolute inset-0 bg-black/20" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 text-purple-primary shadow-xl">
+            <PlayCircle className="h-8 w-8" />
+          </div>
+        </div>
       </div>
     )
   }
@@ -72,10 +75,9 @@ function VideoPreview({ video }: { video: TutorialVideo }) {
           <PlayCircle className="h-8 w-8" />
         </div>
         <div className="space-y-2">
-          <p className="text-lg font-semibold text-foreground">Espacio listo para tu video</p>
+          <p className="text-lg font-semibold text-foreground">Sin videos publicados por ahora</p>
           <p className="mx-auto max-w-lg text-sm leading-6 text-muted-foreground sm:text-base">
-            Cuando subas este tutorial a YouTube y agregues su `youtubeId`, aqui se mostrara el
-            reproductor automaticamente.
+            Pronto veras aqui los tutoriales disponibles para aprender a usar MOVOPos.
           </p>
         </div>
       </div>
@@ -86,95 +88,191 @@ function VideoPreview({ video }: { video: TutorialVideo }) {
 function VideoCard({
   video,
   isActive,
-  onSelect,
+  onOpenModal,
 }: {
-  video: TutorialVideo
+  video: PublicTutorialVideo
   isActive: boolean
-  onSelect: () => void
+  onOpenModal: () => void
 }) {
   const published = isPublished(video)
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className="w-full text-left"
-      aria-pressed={isActive}
+    <Card
+      className={[
+        "h-full overflow-hidden border transition-all duration-200 hover:-translate-y-1 hover:shadow-xl",
+        isActive
+          ? "border-purple-400 shadow-xl ring-2 ring-purple-200"
+          : "border-border/80 shadow-sm",
+      ].join(" ")}
     >
-      <Card
-        className={[
-          "h-full overflow-hidden border transition-all duration-200 hover:-translate-y-1 hover:shadow-xl",
-          isActive
-            ? "border-purple-400 shadow-xl ring-2 ring-purple-200"
-            : "border-border/80 shadow-sm",
-        ].join(" ")}
+      <button
+        type="button"
+        onClick={onOpenModal}
+        className="group w-full text-left"
+        aria-label={`Abrir video ${video.title}`}
       >
         <div className="relative aspect-video overflow-hidden border-b bg-slate-950">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(139,92,246,0.45),_transparent_50%)]" />
-          <div className="relative flex h-full items-center justify-center">
-            {published ? (
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/95 text-purple-primary shadow-xl">
-                <Youtube className="h-8 w-8" />
-              </div>
-            ) : (
-              <div className="flex flex-col items-center gap-3 px-6 text-center text-white">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/15 backdrop-blur">
-                  <PlayCircle className="h-7 w-7" />
-                </div>
-                <p className="text-sm font-medium text-white/90">Tutorial listo para publicar</p>
-              </div>
-            )}
+          {video.videoUrl ? (
+            <video
+              className="h-full w-full object-cover"
+              src={video.videoUrl}
+              muted
+              playsInline
+              preload="metadata"
+              aria-hidden="true"
+            />
+          ) : (
+            <>
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(139,92,246,0.45),_transparent_50%)]" />
+            </>
+          )}
+          <div className="pointer-events-none absolute inset-0 bg-black/20" />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white/95 text-purple-primary shadow-xl transition-transform duration-200 group-hover:scale-105">
+              <PlayCircle className="h-8 w-8" />
+            </div>
           </div>
         </div>
+      </button>
 
-        <CardHeader className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" className="bg-purple-50 text-purple-700 hover:bg-purple-50">
-              {video.categoryLabel}
-            </Badge>
-            <Badge variant="outline">{video.level}</Badge>
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-              <Clock3 className="h-3.5 w-3.5" />
-              {video.duration}
-            </span>
-          </div>
-          <div className="space-y-2">
-            <CardTitle className="text-xl leading-snug">{video.title}</CardTitle>
-            <CardDescription className="text-sm leading-6">{video.description}</CardDescription>
-          </div>
-        </CardHeader>
+      <CardHeader className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary" className="bg-purple-50 text-purple-700 hover:bg-purple-50">
+            {video.categoryLabel}
+          </Badge>
+          <Badge variant="outline">{video.level}</Badge>
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <Clock3 className="h-3.5 w-3.5" />
+            {video.duration}
+          </span>
+        </div>
+        <div className="space-y-2">
+          <CardTitle className="text-xl leading-snug">{video.title}</CardTitle>
+          <CardDescription className="text-sm leading-6">{video.description}</CardDescription>
+        </div>
+      </CardHeader>
 
-        <CardContent className="space-y-3">
-          <div className="space-y-2">
-            {video.outcomes.slice(0, 2).map((outcome) => (
-              <div key={outcome} className="flex items-start gap-2 text-sm text-muted-foreground">
-                <span className="mt-1 h-2 w-2 rounded-full bg-purple-500" />
-                <span>{outcome}</span>
-              </div>
-            ))}
-          </div>
+      <CardContent className="space-y-3">
+        <div className="space-y-2">
+          {video.outcomes.slice(0, 2).map((outcome) => (
+            <div key={outcome} className="flex items-start gap-2 text-sm text-muted-foreground">
+              <span className="mt-1 h-2 w-2 rounded-full bg-purple-500" />
+              <span>{outcome}</span>
+            </div>
+          ))}
+        </div>
 
-          <div className="inline-flex items-center gap-2 text-sm font-semibold text-purple-700">
-            {published ? "Ver en el reproductor principal" : "Seleccionar vista previa"}
-            <ArrowRight className="h-4 w-4" />
-          </div>
-        </CardContent>
-      </Card>
-    </button>
+        <div className="inline-flex items-center gap-2 text-sm font-semibold text-purple-700">
+          {published ? "Haz clic para abrir y reproducir" : "Seleccionar vista previa"}
+          <ArrowRight className="h-4 w-4" />
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
-export function TutorialVideoHub() {
-  const defaultVideo = tutorialVideos.find((video) => video.featured) ?? tutorialVideos[0]
-  const [selectedTab, setSelectedTab] = useState<TabValue>("primeros-pasos")
-  const [selectedSlug, setSelectedSlug] = useState(defaultVideo.slug)
+function VideoPlayerModal({
+  video,
+  open,
+  onOpenChange,
+  onNext,
+  hasNext,
+  nextTitle,
+}: {
+  video: PublicTutorialVideo | null
+  open: boolean
+  onOpenChange: (next: boolean) => void
+  onNext: () => void
+  hasNext: boolean
+  nextTitle: string | null
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[95vw] sm:w-[92vw] lg:w-[88vw] lg:max-w-3xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+        <DialogHeader>
+          <DialogTitle>{video?.title ?? "Reproductor de tutorial"}</DialogTitle>
+        </DialogHeader>
+        {video?.videoUrl ? (
+          <div className="space-y-4">
+            <div className="aspect-video rounded-lg overflow-hidden border bg-black">
+              <video
+                key={video.slug}
+                className="h-full w-full"
+                src={video.videoUrl}
+                controls
+                autoPlay
+                playsInline
+                preload="metadata"
+                onEnded={() => {
+                  if (hasNext) onNext()
+                }}
+              />
+            </div>
+            <div className="rounded-lg border bg-background/70 p-4 sm:p-5">
+              <div className="flex justify-end">
+                <Button type="button" onClick={onNext} disabled={!hasNext}>
+                  Siguiente tutorial
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+              {nextTitle ? (
+                <p className="mt-2 text-right text-xs text-muted-foreground">
+                  Siguiente: {nextTitle}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">Este tutorial no tiene video disponible.</p>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
 
-  const selectedVideo =
-    tutorialVideos.find((video) => video.slug === selectedSlug) ?? defaultVideo
+export function TutorialVideoHub({ categories, videos }: TutorialVideoHubProps) {
+  const categoriesWithAll = useMemo(
+    () => [
+      {
+        value: "todos",
+        label: "Todos",
+        description: "Recorre toda la biblioteca y elige el siguiente paso.",
+      },
+      ...categories,
+    ],
+    [categories]
+  )
 
-  const plannedCount = tutorialVideos.length
-  const categoryCount = tutorialCategories.filter((category) => category.value !== "todos").length
-  const publishedCount = tutorialVideos.filter(isPublished).length
+  const defaultVideo = useMemo(
+    () => videos.find((video) => video.featured) ?? videos[0] ?? null,
+    [videos]
+  )
+  const defaultTab = categories[0]?.value ?? "todos"
+
+  const [selectedTab, setSelectedTab] = useState<TabValue>(defaultTab)
+  const [selectedSlug, setSelectedSlug] = useState(defaultVideo?.slug ?? "")
+  const [modalVideo, setModalVideo] = useState<PublicTutorialVideo | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+
+  const currentModalIndex = useMemo(() => {
+    if (!modalVideo) return -1
+    return videos.findIndex((video) => video.slug === modalVideo.slug)
+  }, [modalVideo, videos])
+
+  const hasNextModalVideo = videos.length > 1 && currentModalIndex >= 0
+  const nextModalVideo = hasNextModalVideo
+    ? videos[(currentModalIndex + 1) % videos.length] ?? null
+    : null
+
+  const goToNextModalVideo = () => {
+    if (!nextModalVideo) return
+    setSelectedSlug(nextModalVideo.slug)
+    setModalVideo(nextModalVideo)
+  }
+
+  const plannedCount = videos.length
+  const categoryCount = categories.length
+  const publishedCount = videos.filter(isPublished).length
 
   return (
     <>
@@ -192,8 +290,9 @@ export function TutorialVideoHub() {
                   Aprende a usar la plataforma con videos claros, cortos y accionables
                 </h1>
                 <p className="max-w-2xl text-lg leading-8 text-white/80 sm:text-xl">
-                  Reune en un solo lugar los tutoriales de YouTube para que tus usuarios entiendan
-                  rapido cada modulo, desde los primeros pasos hasta la configuracion avanzada.
+                  Reune en un solo lugar los tutoriales alojados en UploadThing para que tus
+                  usuarios entiendan rapido cada modulo, desde los primeros pasos hasta la
+                  configuracion avanzada.
                 </p>
               </div>
 
@@ -219,13 +318,13 @@ export function TutorialVideoHub() {
                 <Card className="border-white/10 bg-white/10 text-white shadow-none backdrop-blur">
                   <CardContent className="p-5">
                     <p className="text-3xl font-semibold">{plannedCount}</p>
-                    <p className="mt-1 text-sm text-white/70">tutoriales planificados</p>
+                    <p className="mt-1 text-sm text-white/70">tutoriales publicados</p>
                   </CardContent>
                 </Card>
                 <Card className="border-white/10 bg-white/10 text-white shadow-none backdrop-blur">
                   <CardContent className="p-5">
                     <p className="text-3xl font-semibold">{categoryCount}</p>
-                    <p className="mt-1 text-sm text-white/70">categorias para encontrar rapido</p>
+                    <p className="mt-1 text-sm text-white/70">categorias activas</p>
                   </CardContent>
                 </Card>
                 <Card className="border-white/10 bg-white/10 text-white shadow-none backdrop-blur">
@@ -233,14 +332,14 @@ export function TutorialVideoHub() {
                     <p className="text-3xl font-semibold">
                       {publishedCount}/{plannedCount}
                     </p>
-                    <p className="mt-1 text-sm text-white/70">videos publicados en YouTube</p>
+                    <p className="mt-1 text-sm text-white/70">videos listos para ver</p>
                   </CardContent>
                 </Card>
               </div>
             </div>
 
             <div className="rounded-[2rem] border border-white/10 bg-white/10 p-4 shadow-2xl backdrop-blur md:p-6">
-              <VideoPreview video={selectedVideo} />
+              <HeroThumbnail video={defaultVideo} />
             </div>
           </div>
         </div>
@@ -255,7 +354,7 @@ export function TutorialVideoHub() {
             </h2>
             <p className="mt-5 text-lg leading-8 text-muted-foreground">
               Usa las categorias para ir directo al modulo correcto y selecciona cualquier tarjeta
-              para actualizar el reproductor principal.
+              para abrir el video en una ventana de reproduccion.
             </p>
           </div>
 
@@ -266,7 +365,7 @@ export function TutorialVideoHub() {
           >
             <div className="overflow-x-auto pb-2">
               <TabsList className="h-auto min-w-max gap-2 rounded-2xl bg-white p-2 shadow-sm">
-                {tutorialCategories.map((category) => (
+                {categoriesWithAll.map((category) => (
                   <TabsTrigger
                     key={category.value}
                     value={category.value}
@@ -278,11 +377,11 @@ export function TutorialVideoHub() {
               </TabsList>
             </div>
 
-            {tutorialCategories.map((category) => {
-              const videos =
+            {categoriesWithAll.map((category) => {
+              const tabVideos =
                 category.value === "todos"
-                  ? tutorialVideos
-                  : tutorialVideos.filter((video) => video.category === category.value)
+                  ? videos
+                  : videos.filter((video) => video.category === category.value)
 
               return (
                 <TabsContent key={category.value} value={category.value} className="mt-6">
@@ -293,24 +392,44 @@ export function TutorialVideoHub() {
                     <p className="mt-2 text-base text-muted-foreground">{category.description}</p>
                   </div>
 
-                  <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                    {videos.map((video) => (
-                      <div key={video.slug} id={video.slug}>
-                        <VideoCard
-                          video={video}
-                          isActive={video.slug === selectedSlug}
-                          onSelect={() => setSelectedSlug(video.slug)}
-                        />
-                      </div>
-                    ))}
-                  </div>
+                  {tabVideos.length === 0 ? (
+                    <Card>
+                      <CardContent className="pt-6 text-center text-muted-foreground">
+                        Todavia no hay videos en esta categoria.
+                      </CardContent>
+                    </Card>
+                  ) : (
+                    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                      {tabVideos.map((video) => (
+                        <div key={video.slug} id={video.slug}>
+                          <VideoCard
+                            video={video}
+                            isActive={video.slug === selectedSlug}
+                            onOpenModal={() => {
+                              setSelectedSlug(video.slug)
+                              setModalVideo(video)
+                              setModalOpen(true)
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </TabsContent>
               )
             })}
           </Tabs>
-
         </div>
       </section>
+
+      <VideoPlayerModal
+        video={modalVideo}
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        onNext={goToNextModalVideo}
+        hasNext={hasNextModalVideo}
+        nextTitle={nextModalVideo?.title ?? null}
+      />
 
       <section className="bg-slate-50 py-14 sm:py-20">
         <div className="container">

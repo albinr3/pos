@@ -17,6 +17,7 @@ import {
   Shield,
   Bug,
   Tag,
+  Clapperboard,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -49,6 +50,7 @@ const nav: NavItem[] = [
   { href: "/super-admin/plans", label: "Planes", icon: Tag, permission: "canModifyPricing" },
   { href: "/super-admin/banks", label: "Cuentas Bancarias", icon: Landmark, permission: "canManageAccounts" },
   { href: "/super-admin/errors", label: "Errores", icon: Bug, permission: "canManageAccounts" },
+  { href: "/super-admin/tutoriales", label: "Tutoriales", icon: Clapperboard },
   { href: "/super-admin/reports", label: "Reportes", icon: FileText, permission: "canViewFinancials" },
   { href: "/super-admin/settings", label: "Configuración", icon: Settings, permission: "canModifyPricing" },
 ]
