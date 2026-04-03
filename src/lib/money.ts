@@ -94,14 +94,29 @@ export function calcDiscountedLineTotalsByTaxMode(
   const normalizedDiscountBp = normalizeDiscountPercentBp(discountPercentBp)
   const lineBase = calcLineTotalsByTaxMode(unitPriceCents, qty, itbisRateBp, priceIncludesItbis)
   const subtotalBeforeDiscountCents = lineBase.subtotalCents
-  const discountSubtotalCents = Math.round((subtotalBeforeDiscountCents * normalizedDiscountBp) / 10000)
-  const subtotalCents = Math.max(0, subtotalBeforeDiscountCents - discountSubtotalCents)
-  // Sin descuento efectivo, conservar el snapshot base evita drift de 1 centavo
-  // en precios con ITBIS incluido (ej: 100.00 -> 100.01 por doble redondeo).
-  const hasDiscount = discountSubtotalCents > 0
-  const itbisCents = hasDiscount ? Math.round((subtotalCents * itbisRateBp) / 10000) : lineBase.itbisCents
-  const totalCents = hasDiscount ? subtotalCents + itbisCents : lineBase.totalCents
   const totalBeforeDiscountCents = lineBase.totalCents
+  const discountFactorBp = 10000 - normalizedDiscountBp
+
+  let subtotalCents = subtotalBeforeDiscountCents
+  let itbisCents = lineBase.itbisCents
+  let totalCents = totalBeforeDiscountCents
+
+  if (normalizedDiscountBp > 0) {
+    if (priceIncludesItbis) {
+      // En precios con ITBIS incluido: descontar sobre el total bruto y luego
+      // separar subtotal/ITBIS. Esto evita casos como 50.00 - 10% = 44.99.
+      totalCents = Math.round((totalBeforeDiscountCents * discountFactorBp) / 10000)
+      const discountedSplit = calcItbisIncluded(totalCents, itbisRateBp)
+      subtotalCents = discountedSplit.subtotalCents
+      itbisCents = discountedSplit.itbisCents
+    } else {
+      subtotalCents = Math.round((subtotalBeforeDiscountCents * discountFactorBp) / 10000)
+      itbisCents = Math.round((subtotalCents * itbisRateBp) / 10000)
+      totalCents = subtotalCents + itbisCents
+    }
+  }
+
+  const discountSubtotalCents = Math.max(0, subtotalBeforeDiscountCents - subtotalCents)
   const discountTotalCents = Math.max(0, totalBeforeDiscountCents - totalCents)
 
   return {
