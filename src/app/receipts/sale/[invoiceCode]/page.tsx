@@ -183,6 +183,12 @@ export default async function SaleReceiptPage({
       </div>
 
       <div className="mt-2 space-y-1">
+        {sale.discountTotalCents > 0 && (
+          <div className="flex justify-between text-emerald-700">
+            <span>Descuento ({(sale.discountPercentBp / 100).toFixed(2)}%)</span>
+            <span>-{formatRD(sale.discountTotalCents)}</span>
+          </div>
+        )}
         <div className="flex justify-between">
           <span>Subtotal</span>
           <span>{formatRD((company?.showItbisOnReceipts ?? true) ? sale.subtotalCents : (sale.subtotalCents + sale.itbisCents))}</span>

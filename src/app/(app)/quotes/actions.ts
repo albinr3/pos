@@ -2,9 +2,17 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { calcLineTotalsByTaxMode } from "@/lib/money"
+import {
+  calcDiscountedDocumentTotalsByTaxMode,
+  normalizeDiscountPercentBp,
+} from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
-import { ProductKind, RecipeAdjustmentType, type Prisma } from "@prisma/client"
+import {
+  DocumentDiscountSource,
+  ProductKind,
+  RecipeAdjustmentType,
+  type Prisma,
+} from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
@@ -178,7 +186,7 @@ export async function listCustomers() {
   return prisma.customer.findMany({
     where: { accountId: user.accountId, isActive: true },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }],
-    select: { id: true, visualId: true, name: true, isGeneric: true },
+    select: { id: true, visualId: true, name: true, isGeneric: true, saleDiscountPercentBp: true },
     take: 50,
   })
 }
@@ -292,6 +300,13 @@ type CartItemInput = {
     ingredientId: string
     adjustmentType: RecipeAdjustmentType
   }>
+}
+
+type DiscountModeInput = "AUTO" | "MANUAL"
+
+type ResolvedDocumentDiscount = {
+  discountSource: DocumentDiscountSource
+  discountPercentBp: number
 }
 
 const MAX_QUOTE_ITEMS = 100
@@ -515,29 +530,80 @@ function quoteCode(number: number) {
 
 function calculateQuoteTotalsFromResolvedLines(
   lines: ResolvedQuoteLine[],
-  salePricesIncludeItbis: boolean
+  salePricesIncludeItbis: boolean,
+  discountPercentBp: number
 ) {
-  return lines.reduce(
-    (acc, line) => {
-      const lineTotals = calcLineTotalsByTaxMode(
-        line.item.unitPriceCents,
-        line.item.qty,
-        line.product.itbisRateBp ?? 1800,
-        salePricesIncludeItbis
-      )
-      acc.subtotalCents += lineTotals.subtotalCents
-      acc.itbisCents += lineTotals.itbisCents
-      acc.itemsTotalCents += lineTotals.totalCents
-      return acc
-    },
-    { subtotalCents: 0, itbisCents: 0, itemsTotalCents: 0 }
+  return calcDiscountedDocumentTotalsByTaxMode(
+    lines.map((line) => ({
+      unitPriceCents: line.item.unitPriceCents,
+      qty: line.item.qty,
+      itbisRateBp: line.product.itbisRateBp ?? 1800,
+    })),
+    salePricesIncludeItbis,
+    discountPercentBp
   )
+}
+
+function resolveAutoDiscount(
+  customer: { saleDiscountPercentBp: number } | null | undefined
+): ResolvedDocumentDiscount {
+  const customerDiscountBp = normalizeDiscountPercentBp(customer?.saleDiscountPercentBp ?? 0)
+  if (customerDiscountBp <= 0) {
+    return {
+      discountSource: DocumentDiscountSource.NONE,
+      discountPercentBp: 0,
+    }
+  }
+  return {
+    discountSource: DocumentDiscountSource.CUSTOMER,
+    discountPercentBp: customerDiscountBp,
+  }
+}
+
+function resolveManualDiscount(
+  user: { canApplyDiscounts?: boolean; isOwner?: boolean },
+  manualDiscountPercentBp: number
+): ResolvedDocumentDiscount {
+  if (!user.canApplyDiscounts && !user.isOwner) {
+    throw new Error("No tienes permiso para aplicar descuentos manuales.")
+  }
+  return {
+    discountSource: DocumentDiscountSource.MANUAL,
+    discountPercentBp: normalizeDiscountPercentBp(manualDiscountPercentBp),
+  }
+}
+
+function resolveDocumentDiscount(input: {
+  discountMode?: DiscountModeInput
+  manualDiscountPercentBp?: number
+  user: { canApplyDiscounts?: boolean; isOwner?: boolean }
+  customer?: { saleDiscountPercentBp: number } | null
+  fallback?: {
+    discountSource?: DocumentDiscountSource | null
+    discountPercentBp?: number | null
+  }
+}): ResolvedDocumentDiscount {
+  if (input.discountMode === "MANUAL") {
+    return resolveManualDiscount(input.user, input.manualDiscountPercentBp ?? 0)
+  }
+  if (input.discountMode === "AUTO") {
+    return resolveAutoDiscount(input.customer)
+  }
+  if (input.fallback?.discountSource) {
+    return {
+      discountSource: input.fallback.discountSource,
+      discountPercentBp: normalizeDiscountPercentBp(input.fallback.discountPercentBp ?? 0),
+    }
+  }
+  return resolveAutoDiscount(input.customer)
 }
 
 export async function createQuote(input: {
   customerId: string | null
   items: CartItemInput[]
   shippingCents?: number
+  discountMode?: DiscountModeInput
+  manualDiscountPercentBp?: number
   salePricesIncludeItbis?: boolean
   validUntil?: Date | null
   notes?: string
@@ -567,6 +633,12 @@ export async function createQuote(input: {
     const code = quoteCode(number)
 
     const resolvedLines = await resolveQuoteLines(tx, currentUser.accountId, normalizedItems)
+    const customerForDiscount = input.customerId
+      ? await tx.customer.findFirst({
+          where: { id: input.customerId, accountId: currentUser.accountId, isActive: true },
+          select: { saleDiscountPercentBp: true },
+        })
+      : null
 
     for (const line of resolvedLines) {
       const originalPriceCents = Number(line.product.priceCents)
@@ -592,9 +664,22 @@ export async function createQuote(input: {
       }
     }
 
-    const { subtotalCents, itbisCents, itemsTotalCents } = calculateQuoteTotalsFromResolvedLines(
+    const { discountSource, discountPercentBp } = resolveDocumentDiscount({
+      discountMode: input.discountMode,
+      manualDiscountPercentBp: input.manualDiscountPercentBp,
+      user: currentUser,
+      customer: customerForDiscount,
+    })
+    const {
+      discountSubtotalCents,
+      subtotalCents,
+      itbisCents,
+      discountTotalCents,
+      itemsTotalCents,
+    } = calculateQuoteTotalsFromResolvedLines(
       resolvedLines,
-      salePricesIncludeItbis
+      salePricesIncludeItbis,
+      discountPercentBp
     )
     const shippingCents = input.shippingCents ?? 0
     const totalCents = itemsTotalCents + shippingCents
@@ -610,6 +695,10 @@ export async function createQuote(input: {
         subtotalCents,
         itbisCents,
         shippingCents,
+        discountSource,
+        discountPercentBp,
+        discountSubtotalCents,
+        discountTotalCents,
         totalCents,
         salePricesIncludeItbis,
         notes: input.notes || null,
@@ -633,7 +722,15 @@ export async function createQuote(input: {
           })),
         },
       },
-      select: { id: true, quoteCode: true, salePricesIncludeItbis: true },
+      select: {
+        id: true,
+        quoteCode: true,
+        salePricesIncludeItbis: true,
+        discountSource: true,
+        discountPercentBp: true,
+        discountSubtotalCents: true,
+        discountTotalCents: true,
+      },
     })
 
     await logAuditEvent({
@@ -647,6 +744,8 @@ export async function createQuote(input: {
       details: {
         quoteCode: quote.quoteCode,
         totalCents,
+        discountSource: quote.discountSource,
+        discountPercentBp: quote.discountPercentBp,
         itemsCount: resolvedLines.length,
         customerId: input.customerId,
       },
@@ -664,6 +763,8 @@ export async function updateQuote(input: {
   customerId: string | null
   items: CartItemInput[]
   shippingCents?: number
+  discountMode?: DiscountModeInput
+  manualDiscountPercentBp?: number
   salePricesIncludeItbis?: boolean
   validUntil?: Date | null
   notes?: string
@@ -700,6 +801,12 @@ export async function updateQuote(input: {
     const resolvedLines = await resolveQuoteLines(tx, currentUser.accountId, normalizedItems, {
       allowUnavailableProductIds,
     })
+    const customerForDiscount = input.customerId
+      ? await tx.customer.findFirst({
+          where: { id: input.customerId, accountId: currentUser.accountId, isActive: true },
+          select: { saleDiscountPercentBp: true },
+        })
+      : null
 
     for (const line of resolvedLines) {
       const originalPriceCents = Number(line.product.priceCents)
@@ -733,9 +840,26 @@ export async function updateQuote(input: {
     // Calcular nuevos totales con el modo histórico del documento
     const documentSalePricesIncludeItbis =
       existingQuote.salePricesIncludeItbis ?? input.salePricesIncludeItbis ?? accountSalePricesIncludeItbis
-    const { subtotalCents, itbisCents, itemsTotalCents } = calculateQuoteTotalsFromResolvedLines(
+    const { discountSource, discountPercentBp } = resolveDocumentDiscount({
+      discountMode: input.discountMode,
+      manualDiscountPercentBp: input.manualDiscountPercentBp,
+      user: currentUser,
+      customer: customerForDiscount,
+      fallback: {
+        discountSource: existingQuote.discountSource,
+        discountPercentBp: existingQuote.discountPercentBp,
+      },
+    })
+    const {
+      discountSubtotalCents,
+      subtotalCents,
+      itbisCents,
+      discountTotalCents,
+      itemsTotalCents,
+    } = calculateQuoteTotalsFromResolvedLines(
       resolvedLines,
-      documentSalePricesIncludeItbis
+      documentSalePricesIncludeItbis,
+      discountPercentBp
     )
     const shippingCents = input.shippingCents ?? 0
     const totalCents = itemsTotalCents + shippingCents
@@ -749,6 +873,10 @@ export async function updateQuote(input: {
         subtotalCents,
         itbisCents,
         shippingCents,
+        discountSource,
+        discountPercentBp,
+        discountSubtotalCents,
+        discountTotalCents,
         totalCents,
         salePricesIncludeItbis: documentSalePricesIncludeItbis,
         notes: input.notes || null,
@@ -789,6 +917,8 @@ export async function updateQuote(input: {
       resourceId: input.id,
       details: {
         totalCents,
+        discountSource,
+        discountPercentBp,
         itemsCount: resolvedLines.length,
         customerId: input.customerId,
       },

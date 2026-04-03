@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
-import { calcLineTotalsByTaxMode, formatRD } from "@/lib/money"
+import { calcDiscountedLineTotalsByTaxMode, formatRD } from "@/lib/money"
 
 import { createReturn, getSaleForReturn, searchSalesForReturn } from "./actions"
 
@@ -139,20 +139,23 @@ export function ReturnsClient() {
     setReturnItems((prev) => prev.filter((x) => x.saleItemId !== saleItemId))
   }
 
-  const { subtotalCents, itbisCents, totalCents } = returnItems.reduce(
+  const discountPercentBp = selectedSale?.discountPercentBp ?? 0
+  const { subtotalCents, itbisCents, discountTotalCents, totalCents } = returnItems.reduce(
     (acc, item) => {
-      const lineTotals = calcLineTotalsByTaxMode(
+      const lineTotals = calcDiscountedLineTotalsByTaxMode(
         item.unitPriceCents,
         item.qty,
         item.itbisRateBp,
-        selectedSale?.salePricesIncludeItbis ?? true
+        selectedSale?.salePricesIncludeItbis ?? true,
+        discountPercentBp
       )
       acc.subtotalCents += lineTotals.subtotalCents
       acc.itbisCents += lineTotals.itbisCents
+      acc.discountTotalCents += lineTotals.discountTotalCents
       acc.totalCents += lineTotals.totalCents
       return acc
     },
-    { subtotalCents: 0, itbisCents: 0, totalCents: 0 }
+    { subtotalCents: 0, itbisCents: 0, discountTotalCents: 0, totalCents: 0 }
   )
   const maxReturnCents = selectedSale?.returnPolicy.maxReturnCents ?? null
   const isReturnBlocked = selectedSale ? !selectedSale.returnPolicy.canCreateReturn : false
@@ -461,6 +464,15 @@ export function ReturnsClient() {
                         <TableCell className="text-right">{formatRD(subtotalCents)}</TableCell>
                         <TableCell></TableCell>
                       </TableRow>
+                      {discountTotalCents > 0 && (
+                        <TableRow>
+                          <TableCell colSpan={3} className="text-right text-emerald-700">
+                            Descuento ({(discountPercentBp / 100).toFixed(2)}%):
+                          </TableCell>
+                          <TableCell className="text-right text-emerald-700">-{formatRD(discountTotalCents)}</TableCell>
+                          <TableCell></TableCell>
+                        </TableRow>
+                      )}
                       <TableRow>
                         <TableCell colSpan={3} className="text-right">
                           ITBIS ({selectedSale?.salePricesIncludeItbis ? "incluido" : "no incluido"}):

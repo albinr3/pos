@@ -161,6 +161,12 @@ export default async function ReturnReceiptPage({
       </div>
 
       <div className="my-2 border-t border-dashed pt-2">
+        {returnRecord.discountTotalCents > 0 && (
+          <div className="flex justify-between text-emerald-700">
+            <span>Descuento ({(returnRecord.discountPercentBp / 100).toFixed(2)}%):</span>
+            <span>-{formatRD(returnRecord.discountTotalCents)}</span>
+          </div>
+        )}
         <div className="flex justify-between">
           <span>Subtotal:</span>
           <span>{formatRD(returnRecord.subtotalCents)}</span>

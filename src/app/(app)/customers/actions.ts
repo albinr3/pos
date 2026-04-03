@@ -22,6 +22,14 @@ function assertAuthActor(actor: unknown): asserts actor is AuthActor {
   if (typeof candidate.accountId !== "string" || candidate.accountId.length === 0) throw new Error("No autenticado")
 }
 
+function normalizeSaleDiscountPercentBp(value: unknown): number {
+  const discountBp = Number.isFinite(Number(value)) ? Math.round(Number(value)) : 0
+  if (discountBp < 0 || discountBp > 10000) {
+    throw new Error("El descuento automático debe estar entre 0% y 100%.")
+  }
+  return discountBp
+}
+
 export async function listCustomers(query?: string, user?: AuthActor) {
   const currentUser = user ?? await getCurrentUser()
   assertAuthActor(currentUser)
@@ -103,6 +111,7 @@ export async function upsertCustomer(input: {
   province?: string | null
   creditEnabled: boolean
   creditDays: number
+  saleDiscountPercentBp?: number
 }, actor?: AuthActor) {
   const user = actor ?? await getCurrentUser()
   assertAuthActor(user)
@@ -113,6 +122,7 @@ export async function upsertCustomer(input: {
   })
 
   const normalizedCreditDays = input.creditEnabled ? input.creditDays : 0
+  const normalizedSaleDiscountPercentBp = normalizeSaleDiscountPercentBp(input.saleDiscountPercentBp ?? 0)
   let persistedCustomer: { id: string; visualId: number } | null = null
 
   // 🔐 SANITIZAR todos los inputs
@@ -143,10 +153,18 @@ export async function upsertCustomer(input: {
     const isChangingCreditPolicy =
       existing.creditEnabled !== input.creditEnabled ||
       existing.creditDays !== normalizedCreditDays
+    const isChangingSaleDiscount = existing.saleDiscountPercentBp !== normalizedSaleDiscountPercentBp
 
     if (isChangingCreditPolicy) {
       await ensurePermission(user, "canApproveCredit", {
         message: "No tienes permiso para aprobar lineas de credito",
+        resourceType: "Customer",
+        resourceId: input.id,
+      })
+    }
+    if (isChangingSaleDiscount) {
+      await ensurePermission(user, "canApplyDiscounts", {
+        message: "No tienes permiso para editar descuento automático del cliente",
         resourceType: "Customer",
         resourceId: input.id,
       })
@@ -162,6 +180,7 @@ export async function upsertCustomer(input: {
         province: sanitized.province,
         creditEnabled: input.creditEnabled,
         creditDays: normalizedCreditDays,
+        saleDiscountPercentBp: normalizedSaleDiscountPercentBp,
       },
     })
     if (updated.count === 0) throw new Error("Cliente no encontrado")
@@ -180,6 +199,7 @@ export async function upsertCustomer(input: {
         address: sanitized.address,
         cedula: sanitized.cedula,
         province: sanitized.province,
+        saleDiscountPercentBp: normalizedSaleDiscountPercentBp,
       },
     })
     persistedCustomer = {
@@ -190,6 +210,12 @@ export async function upsertCustomer(input: {
     if (input.creditEnabled || normalizedCreditDays > 0) {
       await ensurePermission(user, "canApproveCredit", {
         message: "No tienes permiso para aprobar lineas de credito",
+        resourceType: "Customer",
+      })
+    }
+    if (normalizedSaleDiscountPercentBp > 0) {
+      await ensurePermission(user, "canApplyDiscounts", {
+        message: "No tienes permiso para editar descuento automático del cliente",
         resourceType: "Customer",
       })
     }
@@ -213,6 +239,7 @@ export async function upsertCustomer(input: {
             province: sanitized.province,
             creditEnabled: input.creditEnabled,
             creditDays: normalizedCreditDays,
+            saleDiscountPercentBp: normalizedSaleDiscountPercentBp,
             isGeneric: false,
             isActive: true,
           },
@@ -248,6 +275,7 @@ export async function upsertCustomer(input: {
         address: sanitized.address,
         cedula: sanitized.cedula,
         province: sanitized.province,
+        saleDiscountPercentBp: normalizedSaleDiscountPercentBp,
       },
     })
     persistedCustomer = created

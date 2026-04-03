@@ -21,6 +21,12 @@ enum SaleType {
   CREDITO
 }
 
+enum DocumentDiscountSource {
+  NONE
+  CUSTOMER
+  MANUAL
+}
+
 enum AROpenStatus {
   PENDIENTE
   PARCIAL
@@ -471,6 +477,7 @@ model Customer {
 
   creditEnabled Boolean @default(false)
   creditDays    Int     @default(0)
+  saleDiscountPercentBp Int @default(0)
 
   sales   Sale[]
   arItems AccountReceivable[]
@@ -732,6 +739,10 @@ model Sale {
   subtotalCents Int
   itbisCents    Int
   shippingCents Int @default(0)
+  discountSource        DocumentDiscountSource @default(NONE)
+  discountPercentBp     Int                    @default(0)
+  discountSubtotalCents Int                    @default(0)
+  discountTotalCents    Int                    @default(0)
   totalCents    Int
   salePricesIncludeItbis Boolean @default(true)
 
@@ -1010,6 +1021,9 @@ model Return {
 
   subtotalCents Int
   itbisCents    Int
+  discountPercentBp     Int @default(0)
+  discountSubtotalCents Int @default(0)
+  discountTotalCents    Int @default(0)
   totalCents    Int
   salePricesIncludeItbis Boolean @default(true)
 
@@ -1076,6 +1090,10 @@ model Quote {
   subtotalCents Int
   itbisCents    Int
   shippingCents Int @default(0)
+  discountSource        DocumentDiscountSource @default(NONE)
+  discountPercentBp     Int                    @default(0)
+  discountSubtotalCents Int                    @default(0)
+  discountTotalCents    Int                    @default(0)
   totalCents    Int
   salePricesIncludeItbis Boolean @default(true)
 

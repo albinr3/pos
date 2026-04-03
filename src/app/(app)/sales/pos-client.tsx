@@ -16,7 +16,12 @@ import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { formatRD, calcLineTotalsByTaxMode, toCents } from "@/lib/money"
+import {
+  calcDiscountedDocumentTotalsByTaxMode,
+  formatRD,
+  normalizeDiscountPercentBp,
+  toCents,
+} from "@/lib/money"
 import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
 import { formatQty, formatQtyNumber, parseQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
@@ -71,9 +76,18 @@ type PaymentSplit = {
   transferBankName?: string | null
 }
 
+type DiscountMode = "AUTO" | "MANUAL"
+
 const USER_CACHE_KEY = "tejada-pos-user"
 const POS_FORCE_RESET_KEY = "tejada-pos-force-reset-after-print"
 const CREATE_CUSTOMER_OPTION = "__create_customer__"
+
+function clampPercentInput(value: string) {
+  const normalized = value.replace(",", ".").replace(/[^\d.]/g, "")
+  const parts = normalized.split(".")
+  if (parts.length <= 1) return normalized
+  return `${parts[0]}.${parts.slice(1).join("")}`
+}
 
 function buildCartLineId(productId: string, recipeAdjustments: RecipeAdjustment[]) {
   const adjustmentsKey = recipeAdjustments
@@ -167,9 +181,12 @@ export function PosClient({
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [shippingInput, setShippingInput] = useState("")
+  const [discountMode, setDiscountMode] = useState<DiscountMode>("AUTO")
+  const [manualDiscountInput, setManualDiscountInput] = useState("")
   const [user, setUser] = useState<CurrentUser | null>(() => getCachedUser())
   // Usar el permiso del usuario para vender sin stock
   const allowNegativeStock = useMemo(() => user?.canSellWithoutStock || user?.isOwner || false, [user])
+  const canApplyDiscounts = useMemo(() => user?.canApplyDiscounts || user?.isOwner || false, [user])
   const [isSaving, startSave] = useTransition()
   const [showChangeDialog, setShowChangeDialog] = useState(false)
   const [amountPaidInput, setAmountPaidInput] = useState("")
@@ -213,12 +230,29 @@ export function PosClient({
   )
 
   const effectiveCustomerId = customerId === "generic" ? genericCustomerId : customerId
+  const selectedCustomer = useMemo(
+    () => customers.find((c) => c.id === effectiveCustomerId) ?? null,
+    [customers, effectiveCustomerId]
+  )
 
   const selectedCustomerLabel = useMemo(() => {
-    const selectedCustomer = customers.find((c) => c.id === effectiveCustomerId)
     if (!selectedCustomer) return "Cliente general"
     return `${typeof selectedCustomer.visualId === "number" ? `#${selectedCustomer.visualId} ` : ""}${selectedCustomer.name}`
-  }, [customers, effectiveCustomerId])
+  }, [selectedCustomer])
+
+  const autoDiscountPercentBp = useMemo(
+    () => normalizeDiscountPercentBp(selectedCustomer?.saleDiscountPercentBp ?? 0),
+    [selectedCustomer]
+  )
+  const manualDiscountPercentBp = useMemo(() => {
+    const parsed = Number.parseFloat(manualDiscountInput.replace(",", "."))
+    if (!Number.isFinite(parsed)) return 0
+    return normalizeDiscountPercentBp(parsed * 100)
+  }, [manualDiscountInput])
+  const effectiveDiscountPercentBp = useMemo(() => {
+    if (canApplyDiscounts) return manualDiscountPercentBp
+    return autoDiscountPercentBp
+  }, [autoDiscountPercentBp, canApplyDiscounts, manualDiscountPercentBp])
 
   const handleCustomerSelect = useCallback((value: string) => {
     if (value === CREATE_CUSTOMER_OPTION) {
@@ -233,6 +267,8 @@ export function PosClient({
     setCustomerId("generic")
     setSaleType(SaleType.CONTADO)
     setShippingInput("")
+    setDiscountMode("AUTO")
+    setManualDiscountInput("")
     setQuery("")
     setResults([])
     setShowChangeDialog(false)
@@ -289,6 +325,14 @@ export function PosClient({
         console.error("Error fetching user")
       })
   }, [])
+
+  useEffect(() => {
+    if (autoDiscountPercentBp > 0) {
+      setManualDiscountInput((autoDiscountPercentBp / 100).toFixed(2))
+    } else {
+      setManualDiscountInput("")
+    }
+  }, [effectiveCustomerId, autoDiscountPercentBp])
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -387,6 +431,8 @@ export function PosClient({
             setPaymentMethod(state.paymentMethod)
             setTransferBankName(state.transferBankName || "")
             setShippingInput(state.shippingInput || "")
+            setDiscountMode(state.discountMode === "MANUAL" ? "MANUAL" : "AUTO")
+            setManualDiscountInput(typeof state.manualDiscountInput === "string" ? state.manualDiscountInput : "")
             setPaymentSplits(
               Array.isArray(state.paymentSplits)
                 ? state.paymentSplits.map((split: any) => ({
@@ -544,6 +590,8 @@ export function PosClient({
           transferBankName,
           paymentSplits,
           shippingInput,
+          discountMode,
+          manualDiscountInput,
           timestamp: Date.now(),
         }
         localStorage.setItem("posCartState", JSON.stringify(state))
@@ -556,7 +604,18 @@ export function PosClient({
       // Si el carrito está vacío, limpiar el estado guardado
       localStorage.removeItem("posCartState")
     }
-  }, [cart, customerId, saleType, paymentMethod, transferBankName, paymentSplits, shippingInput, isInitialized])
+  }, [
+    cart,
+    customerId,
+    saleType,
+    paymentMethod,
+    transferBankName,
+    paymentSplits,
+    shippingInput,
+    discountMode,
+    manualDiscountInput,
+    isInitialized,
+  ])
 
   // Interceptar navegación cuando hay productos en el carrito
   useEffect(() => {
@@ -596,6 +655,8 @@ export function PosClient({
             transferBankName,
             paymentSplits,
             shippingInput,
+            discountMode,
+            manualDiscountInput,
             timestamp: Date.now(),
           }
           localStorage.setItem("posCartState", JSON.stringify(state))
@@ -614,7 +675,18 @@ export function PosClient({
       document.removeEventListener("click", handleClick, true)
       window.removeEventListener("beforeunload", handleBeforeUnload)
     }
-  }, [cart, customerId, saleType, paymentMethod, transferBankName, paymentSplits, shippingInput, pathname])
+  }, [
+    cart,
+    customerId,
+    saleType,
+    paymentMethod,
+    transferBankName,
+    paymentSplits,
+    shippingInput,
+    discountMode,
+    manualDiscountInput,
+    pathname,
+  ])
 
   useEffect(() => {
     const q = query.trim()
@@ -697,23 +769,22 @@ export function PosClient({
     return () => clearTimeout(handle)
   }, [query, viewMode, isOnline])
 
-  const { subtotalCents, itbisCents, itemsTotalCents } = useMemo(() => {
-    return cart.reduce(
-      (acc, item) => {
-        const lineTotals = calcLineTotalsByTaxMode(
-          item.unitPriceCents,
-          item.qty,
-          item.itbisRateBp,
-          salePricesIncludeItbis
-        )
-        acc.subtotalCents += lineTotals.subtotalCents
-        acc.itbisCents += lineTotals.itbisCents
-        acc.itemsTotalCents += lineTotals.totalCents
-        return acc
-      },
-      { subtotalCents: 0, itbisCents: 0, itemsTotalCents: 0 }
+  const {
+    subtotalCents,
+    itbisCents,
+    discountTotalCents,
+    itemsTotalCents,
+  } = useMemo(() => {
+    return calcDiscountedDocumentTotalsByTaxMode(
+      cart.map((item) => ({
+        unitPriceCents: item.unitPriceCents,
+        qty: item.qty,
+        itbisRateBp: item.itbisRateBp,
+      })),
+      salePricesIncludeItbis,
+      effectiveDiscountPercentBp
     )
-  }, [cart, salePricesIncludeItbis])
+  }, [cart, salePricesIncludeItbis, effectiveDiscountPercentBp])
   const shippingCents = useMemo(() => toCents(shippingInput), [shippingInput])
   const totalCents = useMemo(() => itemsTotalCents + shippingCents, [itemsTotalCents, shippingCents])
 
@@ -881,6 +952,8 @@ export function PosClient({
       return
     }
 
+    const discountModeForSave: DiscountMode = canApplyDiscounts ? "MANUAL" : "AUTO"
+
     const saveSaleOffline = async () => {
       const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       await savePendingSale({
@@ -904,6 +977,9 @@ export function PosClient({
           })),
         })),
         shippingCents: shippingCents > 0 ? shippingCents : undefined,
+        discountMode: discountModeForSave,
+        manualDiscountPercentBp:
+          discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
         salePricesIncludeItbis,
         username: user.username,
         createdAt: Date.now(),
@@ -944,6 +1020,9 @@ export function PosClient({
                 })),
               })),
               shippingCents: shippingCents > 0 ? shippingCents : undefined,
+              discountMode: discountModeForSave,
+              manualDiscountPercentBp:
+                discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
               salePricesIncludeItbis,
               username: user.username,
             })
@@ -1217,6 +1296,22 @@ export function PosClient({
                   </div>
                 )}
 
+                <div className="grid gap-2">
+                  <Label>Descuento (%)</Label>
+                  <Input
+                    value={manualDiscountInput}
+                    onChange={(e) => setManualDiscountInput(clampPercentInput(e.target.value))}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    disabled={!canApplyDiscounts}
+                  />
+                  {!canApplyDiscounts && (
+                    <p className="text-xs text-muted-foreground">
+                      El descuento mostrado viene del cliente. Tu usuario no puede modificarlo.
+                    </p>
+                  )}
+                </div>
+
                 <Separator />
               </>
             )}
@@ -1232,6 +1327,7 @@ export function PosClient({
                     {selectedCustomerLabel} ·{" "}
                     {saleType === SaleType.CONTADO ? "Contado" : "Crédito"}
                     {saleType === SaleType.CONTADO && paymentMethod ? ` · ${paymentMethod.toLowerCase().replace("_", " ")}` : ""}
+                    {effectiveDiscountPercentBp > 0 ? ` · Desc. ${(effectiveDiscountPercentBp / 100).toFixed(2)}%` : ""}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 ml-2" />
                 </button>
@@ -1889,6 +1985,12 @@ export function PosClient({
               </div>
             </div>
             <div className="space-y-1.5 text-sm">
+              {discountTotalCents > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                  <span>Descuento ({(effectiveDiscountPercentBp / 100).toFixed(2)}%)</span>
+                  <span>-{formatRD(discountTotalCents)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span>Subtotal</span>
                 <span>{formatRD(showItbisOnReceipts ? subtotalCents : itemsTotalCents)}</span>
@@ -2409,6 +2511,8 @@ export function PosClient({
                       transferBankName,
                       paymentSplits,
                       shippingInput,
+                      discountMode,
+                      manualDiscountInput,
                       timestamp: Date.now(),
                     }
                     localStorage.setItem("posCartState", JSON.stringify(state))

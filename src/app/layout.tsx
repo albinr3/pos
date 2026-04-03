@@ -20,6 +20,8 @@ const geistMono = Geist_Mono({
 
 const siteUrl = "https://movopos.com";
 const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID;
+const GOOGLE_ADS_ID = "AW-740730125";
+const GTAG_LOADER_ID = GA_MEASUREMENT_ID ?? GOOGLE_ADS_ID;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -151,11 +153,11 @@ export default function RootLayout({
     <ClerkProvider localization={clerkLocalization}>
       <html lang="es" suppressHydrationWarning>
         <head>
-          {GA_MEASUREMENT_ID ? (
+          {GTAG_LOADER_ID ? (
             <>
               <Script
                 async
-                src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+                src={`https://www.googletagmanager.com/gtag/js?id=${GTAG_LOADER_ID}`}
                 strategy="afterInteractive"
               />
               <Script id="google-analytics" strategy="afterInteractive">
@@ -163,7 +165,8 @@ export default function RootLayout({
                   window.dataLayer = window.dataLayer || [];
                   function gtag(){dataLayer.push(arguments);}
                   gtag('js', new Date());
-                  gtag('config', '${GA_MEASUREMENT_ID}');
+                  ${GA_MEASUREMENT_ID ? `gtag('config', '${GA_MEASUREMENT_ID}');` : ""}
+                  gtag('config', '${GOOGLE_ADS_ID}');
                 `}
               </Script>
             </>

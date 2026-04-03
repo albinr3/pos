@@ -236,6 +236,12 @@ export default async function InvoicePrintPage({
         </div>
 
         <div className="ml-auto w-full max-w-sm rounded-md border p-4 text-sm">
+          {sale.discountTotalCents > 0 && (
+            <div className="flex items-center justify-between text-emerald-700">
+              <span>Descuento ({(sale.discountPercentBp / 100).toFixed(2)}%)</span>
+              <span>-{formatRD(sale.discountTotalCents)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span>Subtotal</span>
             <span>{formatRD((company?.showItbisOnReceipts ?? true) ? sale.subtotalCents : (sale.subtotalCents + sale.itbisCents))}</span>

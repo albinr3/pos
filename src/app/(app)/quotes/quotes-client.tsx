@@ -15,7 +15,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
-import { formatRD, calcLineTotalsByTaxMode, toCents } from "@/lib/money"
+import {
+  calcDiscountedDocumentTotalsByTaxMode,
+  formatRD,
+  normalizeDiscountPercentBp,
+  toCents,
+} from "@/lib/money"
 import { formatQty, formatQtyNumber, parseQty, unitAllowsDecimals } from "@/lib/units"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { toast } from "@/hooks/use-toast"
@@ -116,6 +121,7 @@ export function QuotesClient({
   const [isLoadingQuote, startLoadingQuote] = useTransition()
   const [editingQuoteCode, setEditingQuoteCode] = useState<string | null>(null)
   const [activeSalePricesIncludeItbis, setActiveSalePricesIncludeItbis] = useState(salePricesIncludeItbis)
+  const [manualDiscountInput, setManualDiscountInput] = useState("")
   const [recipeDialogLineId, setRecipeDialogLineId] = useState<string | null>(null)
   const [recipeDialogMode, setRecipeDialogMode] = useState<"SIN" | "EXTRA" | null>(null)
   const [recipeApplyScope, setRecipeApplyScope] = useState<RecipeApplyScope>("ONE")
@@ -124,6 +130,21 @@ export function QuotesClient({
     () => cart.find((item) => item.lineId === recipeDialogLineId) ?? null,
     [cart, recipeDialogLineId]
   )
+  const canApplyDiscounts = Boolean(user?.canApplyDiscounts || user?.isOwner)
+  const selectedCustomer = useMemo(
+    () => customers.find((customer) => customer.id === customerId) ?? null,
+    [customers, customerId]
+  )
+  const autoDiscountPercentBp = useMemo(
+    () => normalizeDiscountPercentBp(selectedCustomer?.saleDiscountPercentBp ?? 0),
+    [selectedCustomer]
+  )
+  const manualDiscountPercentBp = useMemo(() => {
+    const parsed = Number(manualDiscountInput.trim().replace(",", "."))
+    if (!Number.isFinite(parsed)) return 0
+    return normalizeDiscountPercentBp(Math.round(parsed * 100))
+  }, [manualDiscountInput])
+  const effectiveDiscountPercentBp = canApplyDiscounts ? manualDiscountPercentBp : autoDiscountPercentBp
 
   function resetForm() {
     setCustomerId("generic")
@@ -134,6 +155,7 @@ export function QuotesClient({
     setQuery("")
     setResults([])
     setActiveSalePricesIncludeItbis(salePricesIncludeItbis)
+    setManualDiscountInput("")
   }
 
   useEffect(() => {
@@ -221,6 +243,11 @@ export function QuotesClient({
         setValidUntilInput(quote.validUntil ? new Date(quote.validUntil).toISOString().slice(0, 10) : "")
         setNotes(quote.notes ?? "")
         setActiveSalePricesIncludeItbis(quote.salePricesIncludeItbis ?? salePricesIncludeItbis)
+        setManualDiscountInput(
+          quote.discountPercentBp > 0
+            ? (normalizeDiscountPercentBp(quote.discountPercentBp ?? 0) / 100).toFixed(2)
+            : ""
+        )
         setQuery("")
         setResults([])
         setEditingQuoteCode(quote.quoteCode)
@@ -229,6 +256,14 @@ export function QuotesClient({
       }
     })
   }, [editQuoteId, router, itbisRateBp, salePricesIncludeItbis])
+
+  useEffect(() => {
+    if (autoDiscountPercentBp > 0) {
+      setManualDiscountInput((autoDiscountPercentBp / 100).toFixed(2))
+    } else {
+      setManualDiscountInput("")
+    }
+  }, [customerId, autoDiscountPercentBp])
 
   useEffect(() => {
     // Cargar todos los productos cuando se cambia a vista de grid
@@ -279,23 +314,24 @@ export function QuotesClient({
     return () => clearTimeout(handle)
   }, [query, viewMode])
 
-  const { subtotalCents, itbisCents, itemsTotalCents } = useMemo(() => {
-    let totalSubtotal = 0
-    let totalItbis = 0
-    let totalItems = 0
-    for (const item of cart) {
-      const lineTotals = calcLineTotalsByTaxMode(
-        item.unitPriceCents,
-        item.qty,
-        item.itbisRateBp,
-        activeSalePricesIncludeItbis
-      )
-      totalSubtotal += lineTotals.subtotalCents
-      totalItbis += lineTotals.itbisCents
-      totalItems += lineTotals.totalCents
-    }
-    return { subtotalCents: totalSubtotal, itbisCents: totalItbis, itemsTotalCents: totalItems }
-  }, [cart, activeSalePricesIncludeItbis])
+  const {
+    subtotalCents,
+    itbisCents,
+    discountTotalCents,
+    itemsTotalCents,
+  } = useMemo(
+    () =>
+      calcDiscountedDocumentTotalsByTaxMode(
+        cart.map((item) => ({
+          unitPriceCents: item.unitPriceCents,
+          qty: item.qty,
+          itbisRateBp: item.itbisRateBp,
+        })),
+        activeSalePricesIncludeItbis,
+        effectiveDiscountPercentBp
+      ),
+    [cart, activeSalePricesIncludeItbis, effectiveDiscountPercentBp]
+  )
   const shippingCents = useMemo(() => toCents(shippingInput), [shippingInput])
   const totalCents = useMemo(() => itemsTotalCents + shippingCents, [itemsTotalCents, shippingCents])
   const itbisLabel = useMemo(() => {
@@ -389,9 +425,28 @@ export function QuotesClient({
   }
 
   async function onSave() {
+    if (canApplyDiscounts) {
+      const parsedManualDiscount = Number(manualDiscountInput.trim().replace(",", "."))
+      if (!Number.isFinite(parsedManualDiscount) || parsedManualDiscount < 0 || parsedManualDiscount > 100) {
+        toast({
+          title: "Descuento inválido",
+          description: "El descuento manual debe estar entre 0% y 100%.",
+        })
+        return
+      }
+    }
+
     startSave(async () => {
       try {
         const validUntil = validUntilInput ? new Date(validUntilInput) : null
+        const discountPayload = canApplyDiscounts
+          ? {
+              discountMode: "MANUAL" as const,
+              manualDiscountPercentBp,
+            }
+          : {
+              discountMode: "AUTO" as const,
+            }
 
         if (editQuoteId) {
           await updateQuote({
@@ -411,6 +466,7 @@ export function QuotesClient({
             salePricesIncludeItbis: activeSalePricesIncludeItbis,
             validUntil,
             notes: notes || undefined,
+            ...discountPayload,
           })
 
           toast({
@@ -442,6 +498,7 @@ export function QuotesClient({
           salePricesIncludeItbis: activeSalePricesIncludeItbis,
           validUntil,
           notes: notes || undefined,
+          ...discountPayload,
         })
 
         toast({ title: "Cotización guardada", description: `Cotización ${quote.quoteCode}` })
@@ -514,6 +571,22 @@ export function QuotesClient({
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Descuento (%)</Label>
+              <Input
+                value={manualDiscountInput}
+                onChange={(e) => setManualDiscountInput(e.target.value)}
+                inputMode="decimal"
+                placeholder="0.00"
+                disabled={!canApplyDiscounts}
+              />
+              {!canApplyDiscounts && (
+                <p className="text-xs text-muted-foreground">
+                  El descuento mostrado viene del cliente. Tu usuario no puede modificarlo.
+                </p>
+              )}
             </div>
 
             <div className="grid gap-2">
@@ -943,6 +1016,12 @@ export function QuotesClient({
                 <span>{itbisLabel}</span>
                 <span suppressHydrationWarning>{formatRD(itbisCents)}</span>
               </div>
+              {discountTotalCents > 0 && (
+                <div className="flex items-center justify-between text-emerald-700">
+                  <span>Descuento ({(effectiveDiscountPercentBp / 100).toFixed(2)}%)</span>
+                  <span suppressHydrationWarning>-{formatRD(discountTotalCents)}</span>
+                </div>
+              )}
               {shippingCents > 0 && (
                 <div className="flex items-center justify-between">
                   <span>Flete</span>

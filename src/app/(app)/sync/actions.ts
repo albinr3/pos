@@ -131,6 +131,7 @@ export async function syncCustomersToIndexedDB() {
     cedula: c.cedula,
     province: c.province,
     isGeneric: c.isGeneric,
+    saleDiscountPercentBp: c.saleDiscountPercentBp,
   }))
 }
 

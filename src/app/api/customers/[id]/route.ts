@@ -6,6 +6,16 @@ import { hasPermissionOrLog } from "@/lib/permission-guard"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function parseSaleDiscountPercentBp(body: Record<string, unknown>): number {
+  if (Number.isFinite(Number(body.saleDiscountPercentBp))) {
+    return Math.round(Number(body.saleDiscountPercentBp))
+  }
+  if (Number.isFinite(Number(body.saleDiscountPercent))) {
+    return Math.round(Number(body.saleDiscountPercent) * 100)
+  }
+  return 0
+}
+
 // PUT /api/customers/:id - Actualizar cliente
 export async function PUT(
   request: NextRequest,
@@ -25,7 +35,7 @@ export async function PUT(
     }
 
     const { id } = await params
-    const body = await request.json()
+    const body = await request.json() as Record<string, any>
     if (body?.creditEnabled || Number(body?.creditDays || 0) > 0) {
       const canApproveCredit = await hasPermissionOrLog(user, "canApproveCredit", {
         resourceType: "Customer",
@@ -46,6 +56,7 @@ export async function PUT(
       province: body.province || null,
       creditEnabled: body.creditEnabled ?? false,
       creditDays: body.creditDays ?? 0,
+      saleDiscountPercentBp: parseSaleDiscountPercentBp(body),
     }, user)
 
     // Obtener el cliente actualizado para retornarlo
@@ -71,6 +82,7 @@ export async function PUT(
       province: customer.province,
       creditEnabled: customer.creditEnabled,
       creditDays: customer.creditDays,
+      saleDiscountPercentBp: customer.saleDiscountPercentBp,
       isGeneric: customer.isGeneric,
       createdAt: customer.createdAt.toISOString(),
       updatedAt: customer.updatedAt.toISOString(),

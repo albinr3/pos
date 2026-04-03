@@ -18,6 +18,16 @@ function parseTake(value: string | null, defaultValue: number, max: number): num
   return Math.min(max, Math.max(1, parsed))
 }
 
+function parseSaleDiscountPercentBp(body: Record<string, unknown>): number {
+  if (Number.isFinite(Number(body.saleDiscountPercentBp))) {
+    return Math.round(Number(body.saleDiscountPercentBp))
+  }
+  if (Number.isFinite(Number(body.saleDiscountPercent))) {
+    return Math.round(Number(body.saleDiscountPercent) * 100)
+  }
+  return 0
+}
+
 // GET /api/customers - Listar clientes
 export async function GET(request: NextRequest) {
   try {
@@ -51,6 +61,7 @@ export async function GET(request: NextRequest) {
         province: c.province,
         creditEnabled: c.creditEnabled,
         creditDays: c.creditDays,
+        saleDiscountPercentBp: c.saleDiscountPercentBp,
         isGeneric: c.isGeneric,
         createdAt: c.createdAt.toISOString(),
         updatedAt: c.updatedAt.toISOString(),
@@ -81,7 +92,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No tienes permiso para gestionar clientes" }, { status: 403 })
     }
 
-    const body = await request.json()
+    const body = await request.json() as Record<string, any>
     if (body?.creditEnabled || Number(body?.creditDays || 0) > 0) {
       const canApproveCredit = await hasPermissionOrLog(user, "canApproveCredit", {
         resourceType: "Customer",
@@ -100,6 +111,7 @@ export async function POST(request: NextRequest) {
       province: body.province || null,
       creditEnabled: body.creditEnabled ?? false,
       creditDays: body.creditDays ?? 0,
+      saleDiscountPercentBp: parseSaleDiscountPercentBp(body),
     }, user)
 
     // Obtener el cliente creado para retornarlo
@@ -125,6 +137,7 @@ export async function POST(request: NextRequest) {
       province: customer.province,
       creditEnabled: customer.creditEnabled,
       creditDays: customer.creditDays,
+      saleDiscountPercentBp: customer.saleDiscountPercentBp,
       isGeneric: customer.isGeneric,
       createdAt: customer.createdAt.toISOString(),
       updatedAt: customer.updatedAt.toISOString(),

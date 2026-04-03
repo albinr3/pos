@@ -145,6 +145,12 @@ export default async function QuoteReceiptPage({
           <span>{itbisLabel}</span>
           <span>{formatRD(quote.itbisCents)}</span>
         </div>
+        {quote.discountTotalCents > 0 && (
+          <div className="flex justify-between text-emerald-700">
+            <span>Descuento ({(quote.discountPercentBp / 100).toFixed(2)}%)</span>
+            <span>-{formatRD(quote.discountTotalCents)}</span>
+          </div>
+        )}
         {quote.shippingCents > 0 && (
           <div className="flex justify-between">
             <span>Flete</span>

@@ -2,9 +2,20 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { calcLineTotalsByTaxMode, invoiceCode } from "@/lib/money"
+import {
+  calcDiscountedDocumentTotalsByTaxMode,
+  invoiceCode,
+  normalizeDiscountPercentBp,
+} from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
-import { ProductKind, RecipeAdjustmentType, SaleType, PaymentMethod, type Prisma } from "@prisma/client"
+import {
+  DocumentDiscountSource,
+  ProductKind,
+  RecipeAdjustmentType,
+  SaleType,
+  PaymentMethod,
+  type Prisma,
+} from "@prisma/client"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
@@ -199,7 +210,7 @@ export async function listCustomers() {
   return prisma.customer.findMany({
     where: { accountId: user.accountId, isActive: true },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }],
-    select: { id: true, visualId: true, name: true, isGeneric: true },
+    select: { id: true, visualId: true, name: true, isGeneric: true, saleDiscountPercentBp: true },
     take: 50,
   })
 }
@@ -299,6 +310,13 @@ type PaymentSplitInput = {
   transferBankName?: string | null
 }
 
+type DiscountModeInput = "AUTO" | "MANUAL"
+
+type ResolvedDocumentDiscount = {
+  discountSource: DocumentDiscountSource
+  discountPercentBp: number
+}
+
 const MAX_SALE_ITEMS = 100
 
 function validateCartItems(items: CartItemInput[]) {
@@ -352,23 +370,82 @@ function calculateSaleTotalsFromResolvedLines(
     item: { qty: number; unitPriceCents: number }
     product: { itbisRateBp: number | null }
   }>,
-  salePricesIncludeItbis: boolean
+  salePricesIncludeItbis: boolean,
+  discountPercentBp: number
 ) {
-  return lines.reduce(
-    (acc, line) => {
-      const lineTotals = calcLineTotalsByTaxMode(
-        line.item.unitPriceCents,
-        line.item.qty,
-        line.product.itbisRateBp ?? 1800,
-        salePricesIncludeItbis
-      )
-      acc.subtotalCents += lineTotals.subtotalCents
-      acc.itbisCents += lineTotals.itbisCents
-      acc.itemsTotalCents += lineTotals.totalCents
-      return acc
-    },
-    { subtotalCents: 0, itbisCents: 0, itemsTotalCents: 0 }
+  return calcDiscountedDocumentTotalsByTaxMode(
+    lines.map((line) => ({
+      unitPriceCents: line.item.unitPriceCents,
+      qty: line.item.qty,
+      itbisRateBp: line.product.itbisRateBp ?? 1800,
+    })),
+    salePricesIncludeItbis,
+    discountPercentBp
   )
+}
+
+function resolveAutoDiscount(
+  customer: { saleDiscountPercentBp: number } | null | undefined
+): ResolvedDocumentDiscount {
+  const customerDiscountBp = normalizeDiscountPercentBp(customer?.saleDiscountPercentBp ?? 0)
+  if (customerDiscountBp <= 0) {
+    return {
+      discountSource: DocumentDiscountSource.NONE,
+      discountPercentBp: 0,
+    }
+  }
+  return {
+    discountSource: DocumentDiscountSource.CUSTOMER,
+    discountPercentBp: customerDiscountBp,
+  }
+}
+
+function resolveManualDiscount(
+  user: { canApplyDiscounts?: boolean; isOwner?: boolean },
+  manualDiscountPercentBp: number
+): ResolvedDocumentDiscount {
+  if (!user.canApplyDiscounts && !user.isOwner) {
+    throw new Error("No tienes permiso para aplicar descuentos manuales.")
+  }
+  const normalizedManualDiscountBp = normalizeDiscountPercentBp(manualDiscountPercentBp)
+  if (normalizedManualDiscountBp <= 0) {
+    return {
+      discountSource: DocumentDiscountSource.MANUAL,
+      discountPercentBp: 0,
+    }
+  }
+  return {
+    discountSource: DocumentDiscountSource.MANUAL,
+    discountPercentBp: normalizedManualDiscountBp,
+  }
+}
+
+function resolveDocumentDiscount(input: {
+  discountMode?: DiscountModeInput
+  manualDiscountPercentBp?: number
+  user: { canApplyDiscounts?: boolean; isOwner?: boolean }
+  customer?: { saleDiscountPercentBp: number } | null
+  fallback?: {
+    discountSource?: DocumentDiscountSource | null
+    discountPercentBp?: number | null
+  }
+}): ResolvedDocumentDiscount {
+  if (input.discountMode === "MANUAL") {
+    return resolveManualDiscount(input.user, input.manualDiscountPercentBp ?? 0)
+  }
+
+  if (input.discountMode === "AUTO") {
+    return resolveAutoDiscount(input.customer)
+  }
+
+  if (input.fallback && input.fallback.discountSource) {
+    return {
+      discountSource: input.fallback.discountSource,
+      discountPercentBp: normalizeDiscountPercentBp(input.fallback.discountPercentBp ?? 0),
+    }
+  }
+
+  return resolveAutoDiscount(input.customer)
 }
 
 function parseOptionalDateInput(value: unknown): Date | undefined {
@@ -712,6 +789,8 @@ export async function createSale(input: {
   paymentSplits?: PaymentSplitInput[]
   items: CartItemInput[]
   shippingCents?: number
+  discountMode?: DiscountModeInput
+  manualDiscountPercentBp?: number
   salePricesIncludeItbis?: boolean
   soldAt?: Date | string | number | null
   username: string
@@ -826,18 +905,6 @@ export async function createSale(input: {
       // Asegurar que el cliente genérico existe
       const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
 
-      const { subtotalCents, itbisCents, itemsTotalCents } = calculateSaleTotalsFromResolvedLines(
-        resolvedLines,
-        salePricesIncludeItbis
-      )
-      const shippingCents = input.shippingCents ?? 0
-      const totalCents = itemsTotalCents + shippingCents
-      const paymentSplits = input.paymentSplits ?? []
-      const hasPaymentSplits = paymentSplits.length > 0
-
-      validateTransferBankName(input.paymentMethod, input.transferBankName)
-      validatePaymentSplits(paymentSplits, totalCents)
-
       // Validar y usar customerId, o usar el cliente genérico por defecto
       let finalCustomerId: string | null = null
       if (input.customerId) {
@@ -857,6 +924,42 @@ export async function createSale(input: {
           finalCustomerId = customer.id
         }
       }
+
+      const finalCustomer =
+        finalCustomerId
+          ? await tx.customer.findFirst({
+              where: { id: finalCustomerId, accountId: user.accountId },
+              select: { id: true, creditDays: true, saleDiscountPercentBp: true },
+            })
+          : null
+
+      const { discountSource, discountPercentBp } = resolveDocumentDiscount({
+        discountMode: input.discountMode,
+        manualDiscountPercentBp: input.manualDiscountPercentBp,
+        user,
+        customer: finalCustomer
+          ? { saleDiscountPercentBp: finalCustomer.saleDiscountPercentBp }
+          : null,
+      })
+
+      const {
+        discountSubtotalCents,
+        subtotalCents,
+        itbisCents,
+        discountTotalCents,
+        itemsTotalCents,
+      } = calculateSaleTotalsFromResolvedLines(
+        resolvedLines,
+        salePricesIncludeItbis,
+        discountPercentBp
+      )
+      const shippingCents = input.shippingCents ?? 0
+      const totalCents = itemsTotalCents + shippingCents
+      const paymentSplits = input.paymentSplits ?? []
+      const hasPaymentSplits = paymentSplits.length > 0
+
+      validateTransferBankName(input.paymentMethod, input.transferBankName)
+      validatePaymentSplits(paymentSplits, totalCents)
 
       const sale = await tx.sale.create({
         data: {
@@ -879,6 +982,10 @@ export async function createSale(input: {
           subtotalCents,
           itbisCents,
           shippingCents,
+          discountSource,
+          discountPercentBp,
+          discountSubtotalCents,
+          discountTotalCents,
           totalCents,
           salePricesIncludeItbis,
           items: {
@@ -921,6 +1028,10 @@ export async function createSale(input: {
           soldAt: true,
           transferBankName: true,
           salePricesIncludeItbis: true,
+          discountSource: true,
+          discountPercentBp: true,
+          discountSubtotalCents: true,
+          discountTotalCents: true,
         },
       })
 
@@ -936,6 +1047,8 @@ export async function createSale(input: {
           invoiceCode: sale.invoiceCode,
           type: sale.type,
           totalCents,
+          discountSource: sale.discountSource,
+          discountPercentBp: sale.discountPercentBp,
         },
       }, tx)
 
@@ -954,17 +1067,11 @@ export async function createSale(input: {
           throw new Error("Para crédito debes seleccionar un cliente.")
         }
 
-        // Obtener los días de crédito del cliente
-        const customer = await tx.customer.findUnique({
-          where: { id: customerIdForAR },
-          select: { creditDays: true },
-        })
-
         // Calcular fecha de vencimiento
         let dueDate: Date | null = null
-        if (customer && customer.creditDays > 0) {
+        if (finalCustomer && finalCustomer.creditDays > 0) {
           dueDate = new Date(soldAt ?? new Date())
-          dueDate.setDate(dueDate.getDate() + customer.creditDays)
+          dueDate.setDate(dueDate.getDate() + finalCustomer.creditDays)
         }
 
         await tx.accountReceivable.create({
@@ -1181,6 +1288,8 @@ export async function updateSale(input: {
   transferBankName?: string | null
   paymentSplits?: PaymentSplitInput[]
   items: CartItemInput[]
+  discountMode?: DiscountModeInput
+  manualDiscountPercentBp?: number
   soldAt?: Date | string | number | null
   username?: string
   user?: any
@@ -1291,6 +1400,41 @@ export async function updateSale(input: {
       allowNegativeStock
     )
 
+    const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
+    let finalCustomerId: string | null = null
+    if (input.customerId) {
+      const requestedCustomer = await tx.customer.findFirst({
+        where: { id: input.customerId, accountId: user.accountId },
+        select: { id: true, isActive: true },
+      })
+      if (!requestedCustomer || !requestedCustomer.isActive) {
+        finalCustomerId = genericCustomer.id
+      } else {
+        finalCustomerId = requestedCustomer.id
+      }
+    }
+
+    const finalCustomer =
+      finalCustomerId
+        ? await tx.customer.findFirst({
+            where: { id: finalCustomerId, accountId: user.accountId },
+            select: { id: true, creditDays: true, saleDiscountPercentBp: true },
+          })
+        : null
+
+    const { discountSource, discountPercentBp } = resolveDocumentDiscount({
+      discountMode: input.discountMode,
+      manualDiscountPercentBp: input.manualDiscountPercentBp,
+      user,
+      customer: finalCustomer
+        ? { saleDiscountPercentBp: finalCustomer.saleDiscountPercentBp }
+        : null,
+      fallback: {
+        discountSource: existingSale.discountSource,
+        discountPercentBp: existingSale.discountPercentBp,
+      },
+    })
+
     // Eliminar items anteriores
     await tx.saleItem.deleteMany({
       where: { saleId: input.id, sale: { accountId: user.accountId } },
@@ -1298,9 +1442,16 @@ export async function updateSale(input: {
 
     // Calcular nuevos totales
     const documentSalePricesIncludeItbis = existingSale.salePricesIncludeItbis ?? salePricesIncludeItbis
-    const { subtotalCents, itbisCents, itemsTotalCents } = calculateSaleTotalsFromResolvedLines(
+    const {
+      discountSubtotalCents,
+      subtotalCents,
+      itbisCents,
+      discountTotalCents,
+      itemsTotalCents,
+    } = calculateSaleTotalsFromResolvedLines(
       resolvedLines,
-      documentSalePricesIncludeItbis
+      documentSalePricesIncludeItbis,
+      discountPercentBp
     )
     const shippingCents = existingSale.shippingCents ?? 0
     const totalCents = itemsTotalCents + shippingCents
@@ -1326,10 +1477,14 @@ export async function updateSale(input: {
           input.paymentMethod === PaymentMethod.TRANSFERENCIA
             ? input.transferBankName?.trim() ?? null
             : null,
-        customerId: input.customerId || null,
+        customerId: finalCustomerId || null,
         subtotalCents,
         itbisCents,
         shippingCents,
+        discountSource,
+        discountPercentBp,
+        discountSubtotalCents,
+        discountTotalCents,
         totalCents,
         salePricesIncludeItbis: documentSalePricesIncludeItbis,
       },
@@ -1347,6 +1502,8 @@ export async function updateSale(input: {
       details: {
         type: input.type,
         totalCents,
+        discountSource,
+        discountPercentBp,
       },
     }, tx)
 
@@ -1399,21 +1556,15 @@ export async function updateSale(input: {
 
     // Actualizar o crear cuenta por cobrar si es crédito
     if (input.type === SaleType.CREDITO) {
-      const customerId = input.customerId
+      const customerId = finalCustomerId
       if (!customerId) throw new Error("Para crédito debes seleccionar un cliente.")
 
       if (existingSale.ar) {
-        // Obtener los días de crédito del cliente
-        const customer = await tx.customer.findUnique({
-          where: { id: customerId },
-          select: { creditDays: true },
-        })
-
         // Calcular fecha de vencimiento
         let dueDate: Date | null = null
-        if (customer && customer.creditDays > 0) {
+        if (finalCustomer && finalCustomer.creditDays > 0) {
           dueDate = new Date(soldAt ?? existingSale.soldAt ?? new Date())
-          dueDate.setDate(dueDate.getDate() + customer.creditDays)
+          dueDate.setDate(dueDate.getDate() + finalCustomer.creditDays)
         }
 
         const updatedAr = await tx.accountReceivable.updateMany({
@@ -1431,17 +1582,11 @@ export async function updateSale(input: {
         })
         if (updatedAr.count === 0) throw new Error("Cuenta por cobrar no encontrada")
       } else {
-        // Obtener los días de crédito del cliente
-        const customer = await tx.customer.findUnique({
-          where: { id: customerId },
-          select: { creditDays: true },
-        })
-
         // Calcular fecha de vencimiento
         let dueDate: Date | null = null
-        if (customer && customer.creditDays > 0) {
+        if (finalCustomer && finalCustomer.creditDays > 0) {
           dueDate = new Date(soldAt ?? existingSale.soldAt ?? new Date())
-          dueDate.setDate(dueDate.getDate() + customer.creditDays)
+          dueDate.setDate(dueDate.getDate() + finalCustomer.creditDays)
         }
 
         await tx.accountReceivable.create({

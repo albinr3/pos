@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { prisma } from "@/lib/db"
-import { calcLineTotalsByTaxMode } from "@/lib/money"
+import { calcDiscountedDocumentTotalsByTaxMode, normalizeDiscountPercentBp } from "@/lib/money"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
+import { DocumentDiscountSource } from "@prisma/client"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -131,6 +132,10 @@ export async function GET(request: NextRequest) {
         subtotalCents: quote.subtotalCents,
         itbisCents: quote.itbisCents,
         shippingCents: quote.shippingCents,
+        discountSource: quote.discountSource,
+        discountPercentBp: quote.discountPercentBp,
+        discountSubtotalCents: quote.discountSubtotalCents,
+        discountTotalCents: quote.discountTotalCents,
         totalCents: quote.totalCents,
         salePricesIncludeItbis: quote.salePricesIncludeItbis,
         notes: quote.notes || null,
@@ -185,6 +190,9 @@ export async function POST(request: NextRequest) {
       salePricesIncludeItbis?: boolean
       preciosIncluyenItbis?: boolean
       precioVentaIncluyeItbis?: boolean
+      discountMode?: string
+      manualDiscountPercentBp?: number
+      manualDiscountPercent?: number
     }
 
     const items: QuoteItemInput[] = (body.items || []).map((item) => ({
@@ -211,6 +219,15 @@ export async function POST(request: NextRequest) {
       readBoolean(body.preciosIncluyenItbis) ??
       readBoolean(body.precioVentaIncluyeItbis) ??
       (settings?.salePricesIncludeItbis ?? true)
+    const discountModeRaw = String(body.discountMode || "").toUpperCase()
+    const discountMode = discountModeRaw === "AUTO" || discountModeRaw === "MANUAL"
+      ? (discountModeRaw as "AUTO" | "MANUAL")
+      : undefined
+    const manualDiscountPercentBp = Number.isFinite(Number(body.manualDiscountPercentBp))
+      ? Math.round(Number(body.manualDiscountPercentBp))
+      : Number.isFinite(Number(body.manualDiscountPercent))
+        ? Math.round(Number(body.manualDiscountPercent) * 100)
+        : 0
 
     const quote = await prisma.$transaction(async (tx) => {
       const seq = await tx.quoteSequence.upsert({
@@ -242,20 +259,40 @@ export async function POST(request: NextRequest) {
         ...item,
         itbisRateBp: byId.get(item.productId)?.itbisRateBp ?? 1800,
       }))
-      const { subtotalCents, itbisCents, itemsTotalCents } = itemsWithTax.reduce(
-        (acc, item) => {
-          const lineTotals = calcLineTotalsByTaxMode(
-            item.unitPriceCents,
-            item.qty,
-            item.itbisRateBp ?? 1800,
-            salePricesIncludeItbis
-          )
-          acc.subtotalCents += lineTotals.subtotalCents
-          acc.itbisCents += lineTotals.itbisCents
-          acc.itemsTotalCents += lineTotals.totalCents
-          return acc
-        },
-        { subtotalCents: 0, itbisCents: 0, itemsTotalCents: 0 }
+      const customerForDiscount = body.customerId
+        ? await tx.customer.findFirst({
+            where: { id: body.customerId, accountId: user.accountId, isActive: true },
+            select: { saleDiscountPercentBp: true },
+          })
+        : null
+      let discountSource: DocumentDiscountSource = DocumentDiscountSource.NONE
+      let discountPercentBp = 0
+      if (discountMode === "MANUAL") {
+        if (!user.canApplyDiscounts && !user.isOwner) {
+          throw new Error("No tienes permiso para aplicar descuentos manuales.")
+        }
+        discountSource = DocumentDiscountSource.MANUAL
+        discountPercentBp = normalizeDiscountPercentBp(manualDiscountPercentBp)
+      } else {
+        const customerDiscountBp = normalizeDiscountPercentBp(customerForDiscount?.saleDiscountPercentBp ?? 0)
+        discountSource = customerDiscountBp > 0 ? DocumentDiscountSource.CUSTOMER : DocumentDiscountSource.NONE
+        discountPercentBp = customerDiscountBp
+      }
+
+      const {
+        discountSubtotalCents,
+        subtotalCents,
+        itbisCents,
+        discountTotalCents,
+        itemsTotalCents,
+      } = calcDiscountedDocumentTotalsByTaxMode(
+        itemsWithTax.map((item) => ({
+          unitPriceCents: item.unitPriceCents,
+          qty: item.qty,
+          itbisRateBp: item.itbisRateBp ?? 1800,
+        })),
+        salePricesIncludeItbis,
+        discountPercentBp
       )
       const shippingCents = Number(body.shippingCents ?? (body.shipping ? Math.round(body.shipping * 100) : 0))
       const totalCents = itemsTotalCents + shippingCents
@@ -271,6 +308,10 @@ export async function POST(request: NextRequest) {
           subtotalCents,
           itbisCents,
           shippingCents,
+          discountSource,
+          discountPercentBp,
+          discountSubtotalCents,
+          discountTotalCents,
           totalCents,
           salePricesIncludeItbis,
           notes: body.notes || null,
@@ -285,7 +326,15 @@ export async function POST(request: NextRequest) {
             })),
           },
         },
-        select: { id: true, quoteCode: true, salePricesIncludeItbis: true },
+        select: {
+          id: true,
+          quoteCode: true,
+          salePricesIncludeItbis: true,
+          discountSource: true,
+          discountPercentBp: true,
+          discountSubtotalCents: true,
+          discountTotalCents: true,
+        },
       })
 
       await logAuditEvent(
@@ -300,6 +349,8 @@ export async function POST(request: NextRequest) {
           details: {
             quoteCode: created.quoteCode,
             totalCents,
+            discountSource: created.discountSource,
+            discountPercentBp: created.discountPercentBp,
             itemsCount: items.length,
             customerId: body.customerId || null,
           },
@@ -315,6 +366,10 @@ export async function POST(request: NextRequest) {
         id: quote.id,
         quoteCode: quote.quoteCode,
         salePricesIncludeItbis: quote.salePricesIncludeItbis,
+        discountSource: quote.discountSource,
+        discountPercentBp: quote.discountPercentBp,
+        discountSubtotalCents: quote.discountSubtotalCents,
+        discountTotalCents: quote.discountTotalCents,
       },
       { status: 201 }
     )

@@ -17,7 +17,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
 import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
-import { formatRD, calcLineTotalsByTaxMode } from "@/lib/money"
+import {
+  calcDiscountedDocumentTotalsByTaxMode,
+  formatRD,
+  normalizeDiscountPercentBp,
+} from "@/lib/money"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { cn } from "@/lib/utils"
 import type { CurrentUser } from "@/lib/auth"
@@ -52,6 +56,8 @@ type CartItem = {
   recipeAdjustments: RecipeAdjustment[]
 }
 
+type DiscountMode = "AUTO" | "MANUAL"
+
 function buildCartLineId(productId: string, recipeAdjustments: RecipeAdjustment[]) {
   const adjustmentsKey = recipeAdjustments
     .map((adjustment) => `${adjustment.ingredientId}:${adjustment.adjustmentType}`)
@@ -72,6 +78,13 @@ function getRecipeVariantLabels(recipeAdjustments: RecipeAdjustment[]) {
 
 const PAGE_SIZE = 50
 
+function clampPercentInput(value: string) {
+  const normalized = value.replace(",", ".").replace(/[^\d.]/g, "")
+  const parts = normalized.split(".")
+  if (parts.length <= 1) return normalized
+  return `${parts[0]}.${parts.slice(1).join("")}`
+}
+
 function toInt(v: string) {
   const n = Number(v || 0)
   return Number.isFinite(n) ? Math.trunc(n) : 0
@@ -90,6 +103,7 @@ export function SalesListClient() {
   const [saleType, setSaleType] = useState<SaleType>(SaleType.CONTADO)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
   const [transferBankName, setTransferBankName] = useState("")
+  const [manualDiscountInput, setManualDiscountInput] = useState("")
   const [cart, setCart] = useState<CartItem[]>([])
   const [isSaving, startSaving] = useTransition()
   const [recipeDialogLineId, setRecipeDialogLineId] = useState<string | null>(null)
@@ -102,10 +116,28 @@ export function SalesListClient() {
   const [searchResults, setSearchResults] = useState<ProductResult[]>([])
   const [, startSearch] = useTransition()
   const [user, setUser] = useState<CurrentUser | null>(null)
+  const canApplyDiscounts = Boolean(user?.canApplyDiscounts || user?.isOwner)
   const recipeDialogCartItem = useMemo(
     () => cart.find((item) => item.lineId === recipeDialogLineId) ?? null,
     [cart, recipeDialogLineId]
   )
+  const selectedCustomer = useMemo(
+    () => customers.find((customer) => customer.id === customerId) ?? null,
+    [customerId, customers]
+  )
+  const autoDiscountPercentBp = useMemo(
+    () => normalizeDiscountPercentBp(selectedCustomer?.saleDiscountPercentBp ?? 0),
+    [selectedCustomer]
+  )
+  const manualDiscountPercentBp = useMemo(() => {
+    const parsed = Number.parseFloat(manualDiscountInput.replace(",", "."))
+    if (!Number.isFinite(parsed)) return 0
+    return normalizeDiscountPercentBp(parsed * 100)
+  }, [manualDiscountInput])
+  const effectiveDiscountPercentBp = useMemo(() => {
+    if (canApplyDiscounts) return manualDiscountPercentBp
+    return autoDiscountPercentBp
+  }, [autoDiscountPercentBp, canApplyDiscounts, manualDiscountPercentBp])
 
   useEffect(() => {
     // Obtener usuario actual con permisos
@@ -120,6 +152,14 @@ export function SalesListClient() {
         console.error("Error fetching user")
       })
   }, [])
+
+  useEffect(() => {
+    if (autoDiscountPercentBp > 0) {
+      setManualDiscountInput((autoDiscountPercentBp / 100).toFixed(2))
+    } else {
+      setManualDiscountInput("")
+    }
+  }, [customerId, autoDiscountPercentBp])
 
   function refresh(q?: string) {
     startLoading(async () => {
@@ -192,6 +232,11 @@ export function SalesListClient() {
       setSaleType(sale.type)
       setPaymentMethod(sale.paymentMethod || PaymentMethod.EFECTIVO)
       setTransferBankName(sale.transferBankName || "")
+      setManualDiscountInput(
+        sale.discountPercentBp > 0
+          ? (sale.discountPercentBp / 100).toFixed(2)
+          : ""
+      )
       setCart(
         sale.items.map((item) => ({
           lineId: buildCartLineId(
@@ -316,6 +361,7 @@ export function SalesListClient() {
 
     startSaving(async () => {
       try {
+        const discountModeForSave: DiscountMode = canApplyDiscounts ? "MANUAL" : "AUTO"
         await updateSale({
           id: editingSale.id,
           customerId: customerId === "generic" ? null : customerId,
@@ -335,6 +381,9 @@ export function SalesListClient() {
               adjustmentType: adjustment.adjustmentType,
             })),
           })),
+          discountMode: discountModeForSave,
+          manualDiscountPercentBp:
+            discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
         })
         toast({ title: "Guardado", description: "Venta actualizada" })
         setOpenEdit(false)
@@ -361,23 +410,22 @@ export function SalesListClient() {
     }
   }
 
-  const { subtotalCents, itbisCents, itemsTotalCents } = useMemo(() => {
-    let totalSubtotal = 0
-    let totalItbis = 0
-    let totalItems = 0
-    for (const item of cart) {
-      const lineTotals = calcLineTotalsByTaxMode(
-        item.unitPriceCents,
-        item.qty,
-        item.itbisRateBp,
-        documentSalePricesIncludeItbis
-      )
-      totalSubtotal += lineTotals.subtotalCents
-      totalItbis += lineTotals.itbisCents
-      totalItems += lineTotals.totalCents
-    }
-    return { subtotalCents: totalSubtotal, itbisCents: totalItbis, itemsTotalCents: totalItems }
-  }, [cart, documentSalePricesIncludeItbis])
+  const {
+    subtotalCents,
+    itbisCents,
+    discountTotalCents,
+    itemsTotalCents,
+  } = useMemo(() => {
+    return calcDiscountedDocumentTotalsByTaxMode(
+      cart.map((item) => ({
+        unitPriceCents: item.unitPriceCents,
+        qty: item.qty,
+        itbisRateBp: item.itbisRateBp,
+      })),
+      documentSalePricesIncludeItbis,
+      effectiveDiscountPercentBp
+    )
+  }, [cart, documentSalePricesIncludeItbis, effectiveDiscountPercentBp])
   const shippingCents = editingSale?.shippingCents ?? 0
   const totalCents = itemsTotalCents + shippingCents
 
@@ -601,6 +649,22 @@ export function SalesListClient() {
               )}
 
               <div className="grid gap-2">
+                <Label>Descuento (%)</Label>
+                <Input
+                  value={manualDiscountInput}
+                  onChange={(e) => setManualDiscountInput(clampPercentInput(e.target.value))}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  disabled={!canApplyDiscounts}
+                />
+                {!canApplyDiscounts && (
+                  <p className="text-xs text-muted-foreground">
+                    El descuento mostrado viene del cliente. Tu usuario no puede modificarlo.
+                  </p>
+                )}
+              </div>
+
+              <div className="grid gap-2">
                 <Label>Buscar producto</Label>
                 <div className="relative">
                   <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
@@ -688,6 +752,12 @@ export function SalesListClient() {
               </div>
 
               <div className="border-t pt-2 space-y-1">
+                {discountTotalCents > 0 && (
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Descuento ({(effectiveDiscountPercentBp / 100).toFixed(2)}%):</span>
+                    <span className="font-semibold">-{formatRD(discountTotalCents)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Subtotal:</span>
                   <span className="font-semibold">{formatRD(subtotalCents)}</span>

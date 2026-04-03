@@ -46,6 +46,109 @@ export function calcLineTotalsByTaxMode(
   return calcItbisExcluded(lineBaseCents, itbisRateBp)
 }
 
+const MIN_DISCOUNT_BP = 0
+const MAX_DISCOUNT_BP = 10000
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+export function normalizeDiscountPercentBp(value: number | null | undefined) {
+  if (!Number.isFinite(value)) return 0
+  return clamp(Math.round(value ?? 0), MIN_DISCOUNT_BP, MAX_DISCOUNT_BP)
+}
+
+export type DiscountedLineInput = {
+  unitPriceCents: number
+  qty: number
+  itbisRateBp?: number | null
+}
+
+export type DiscountedLineTotals = {
+  subtotalBeforeDiscountCents: number
+  discountSubtotalCents: number
+  subtotalCents: number
+  itbisCents: number
+  totalBeforeDiscountCents: number
+  discountTotalCents: number
+  totalCents: number
+}
+
+export type DiscountedDocumentTotals = {
+  subtotalBeforeDiscountCents: number
+  discountSubtotalCents: number
+  subtotalCents: number
+  itbisCents: number
+  itemsTotalBeforeDiscountCents: number
+  discountTotalCents: number
+  itemsTotalCents: number
+}
+
+export function calcDiscountedLineTotalsByTaxMode(
+  unitPriceCents: number,
+  qty: number,
+  itbisRateBp = 1800,
+  priceIncludesItbis = true,
+  discountPercentBp = 0
+): DiscountedLineTotals {
+  const normalizedDiscountBp = normalizeDiscountPercentBp(discountPercentBp)
+  const lineBase = calcLineTotalsByTaxMode(unitPriceCents, qty, itbisRateBp, priceIncludesItbis)
+  const subtotalBeforeDiscountCents = lineBase.subtotalCents
+  const discountSubtotalCents = Math.round((subtotalBeforeDiscountCents * normalizedDiscountBp) / 10000)
+  const subtotalCents = Math.max(0, subtotalBeforeDiscountCents - discountSubtotalCents)
+  const itbisCents = Math.round((subtotalCents * itbisRateBp) / 10000)
+  const totalCents = subtotalCents + itbisCents
+  const totalBeforeDiscountCents = lineBase.totalCents
+  const discountTotalCents = Math.max(0, totalBeforeDiscountCents - totalCents)
+
+  return {
+    subtotalBeforeDiscountCents,
+    discountSubtotalCents,
+    subtotalCents,
+    itbisCents,
+    totalBeforeDiscountCents,
+    discountTotalCents,
+    totalCents,
+  }
+}
+
+export function calcDiscountedDocumentTotalsByTaxMode(
+  lines: DiscountedLineInput[],
+  priceIncludesItbis = true,
+  discountPercentBp = 0
+): DiscountedDocumentTotals {
+  const normalizedDiscountBp = normalizeDiscountPercentBp(discountPercentBp)
+
+  return lines.reduce<DiscountedDocumentTotals>(
+    (acc, line) => {
+      const lineTotals = calcDiscountedLineTotalsByTaxMode(
+        line.unitPriceCents,
+        line.qty,
+        line.itbisRateBp ?? 1800,
+        priceIncludesItbis,
+        normalizedDiscountBp
+      )
+      acc.subtotalBeforeDiscountCents += lineTotals.subtotalBeforeDiscountCents
+      acc.discountSubtotalCents += lineTotals.discountSubtotalCents
+      acc.subtotalCents += lineTotals.subtotalCents
+      acc.itbisCents += lineTotals.itbisCents
+      acc.itemsTotalBeforeDiscountCents += lineTotals.totalBeforeDiscountCents
+      acc.discountTotalCents += lineTotals.discountTotalCents
+      acc.itemsTotalCents += lineTotals.totalCents
+      return acc
+    },
+    {
+      subtotalBeforeDiscountCents: 0,
+      discountSubtotalCents: 0,
+      subtotalCents: 0,
+      itbisCents: 0,
+      itemsTotalBeforeDiscountCents: 0,
+      discountTotalCents: 0,
+      itemsTotalCents: 0,
+    }
+  )
+}
+
 export function invoiceCode(series: string, number: number) {
   return `${series}-${number.toString().padStart(5, "0")}`
 }

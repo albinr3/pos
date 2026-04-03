@@ -1,0 +1,21 @@
+CREATE TYPE "DocumentDiscountSource" AS ENUM ('NONE', 'CUSTOMER', 'MANUAL');
+
+ALTER TABLE "Customer"
+ADD COLUMN "saleDiscountPercentBp" INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE "Sale"
+ADD COLUMN "discountSource" "DocumentDiscountSource" NOT NULL DEFAULT 'NONE',
+ADD COLUMN "discountPercentBp" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "discountSubtotalCents" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "discountTotalCents" INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE "Quote"
+ADD COLUMN "discountSource" "DocumentDiscountSource" NOT NULL DEFAULT 'NONE',
+ADD COLUMN "discountPercentBp" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "discountSubtotalCents" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "discountTotalCents" INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE "Return"
+ADD COLUMN "discountPercentBp" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "discountSubtotalCents" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "discountTotalCents" INTEGER NOT NULL DEFAULT 0;

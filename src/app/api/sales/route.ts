@@ -42,6 +42,9 @@ type SaleCreateBody = {
   salePricesIncludeItbis?: boolean
   preciosIncluyenItbis?: boolean
   precioVentaIncluyeItbis?: boolean
+  discountMode?: string
+  manualDiscountPercentBp?: number
+  manualDiscountPercent?: number
 }
 
 const methodMap: Record<string, PaymentMethod> = {
@@ -189,6 +192,10 @@ export async function GET(request: NextRequest) {
         subtotalCents: sale.subtotalCents,
         itbisCents: sale.itbisCents,
         shippingCents: sale.shippingCents,
+        discountSource: sale.discountSource,
+        discountPercentBp: sale.discountPercentBp,
+        discountSubtotalCents: sale.discountSubtotalCents,
+        discountTotalCents: sale.discountTotalCents,
         totalCents: sale.totalCents,
         salePricesIncludeItbis: sale.salePricesIncludeItbis,
         cancelledAt: sale.cancelledAt ? sale.cancelledAt.toISOString() : null,
@@ -280,6 +287,16 @@ export async function POST(request: NextRequest) {
       }))
       : undefined
 
+    const discountModeRaw = String(body.discountMode || "").toUpperCase()
+    const discountMode = discountModeRaw === "AUTO" || discountModeRaw === "MANUAL"
+      ? (discountModeRaw as "AUTO" | "MANUAL")
+      : undefined
+    const manualDiscountPercentBp = Number.isFinite(Number(body.manualDiscountPercentBp))
+      ? Math.round(Number(body.manualDiscountPercentBp))
+      : Number.isFinite(Number(body.manualDiscountPercent))
+        ? Math.round(Number(body.manualDiscountPercent) * 100)
+        : undefined
+
     const sale = await createSale({
       customerId: body.customerId || null,
       type: saleType,
@@ -288,6 +305,8 @@ export async function POST(request: NextRequest) {
       paymentSplits: paymentSplits && paymentSplits.length > 0 ? paymentSplits : undefined,
       items,
       shippingCents,
+      discountMode,
+      manualDiscountPercentBp,
       salePricesIncludeItbis,
       soldAt,
       username: user.username,
@@ -302,6 +321,10 @@ export async function POST(request: NextRequest) {
       createdAt: sale.soldAt.toISOString(),
       transferBankName: sale.transferBankName ?? null,
       salePricesIncludeItbis: sale.salePricesIncludeItbis ?? true,
+      discountSource: sale.discountSource,
+      discountPercentBp: sale.discountPercentBp,
+      discountSubtotalCents: sale.discountSubtotalCents,
+      discountTotalCents: sale.discountTotalCents,
     }, { status: 201 })
   } catch (error: unknown) {
     console.error("Error en POST /api/sales:", error)

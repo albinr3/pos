@@ -45,6 +45,9 @@ type UpdateSaleBody = {
   salePricesIncludeItbis?: boolean
   preciosIncluyenItbis?: boolean
   precioVentaIncluyeItbis?: boolean
+  discountMode?: string
+  manualDiscountPercentBp?: number
+  manualDiscountPercent?: number
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -171,6 +174,10 @@ export async function GET(
       subtotalCents: sale.subtotalCents,
       itbisCents: sale.itbisCents,
       shippingCents: sale.shippingCents,
+      discountSource: sale.discountSource,
+      discountPercentBp: sale.discountPercentBp,
+      discountSubtotalCents: sale.discountSubtotalCents,
+      discountTotalCents: sale.discountTotalCents,
       totalCents: sale.totalCents,
       salePricesIncludeItbis: sale.salePricesIncludeItbis,
       cancelledAt: sale.cancelledAt ? sale.cancelledAt.toISOString() : null,
@@ -306,6 +313,15 @@ export async function PUT(
           transferBankName: split.transferBankName || null,
         }))
       : undefined
+    const discountModeRaw = String(body?.discountMode || "").toUpperCase()
+    const discountMode = discountModeRaw === "AUTO" || discountModeRaw === "MANUAL"
+      ? (discountModeRaw as "AUTO" | "MANUAL")
+      : undefined
+    const manualDiscountPercentBp = Number.isFinite(Number(body?.manualDiscountPercentBp))
+      ? Math.round(Number(body?.manualDiscountPercentBp))
+      : Number.isFinite(Number(body?.manualDiscountPercent))
+        ? Math.round(Number(body?.manualDiscountPercent) * 100)
+        : undefined
 
     await updateSale({
       id,
@@ -315,6 +331,8 @@ export async function PUT(
       transferBankName: body?.transferBankName || null,
       paymentSplits,
       items,
+      discountMode,
+      manualDiscountPercentBp,
       soldAt,
       username: user.username || user.name || "api",
       user,
@@ -338,6 +356,10 @@ export async function PUT(
       customerName: updatedSale?.customer?.name || null,
       totalCents: updatedSale?.totalCents,
       salePricesIncludeItbis: updatedSale?.salePricesIncludeItbis ?? true,
+      discountSource: updatedSale?.discountSource,
+      discountPercentBp: updatedSale?.discountPercentBp,
+      discountSubtotalCents: updatedSale?.discountSubtotalCents,
+      discountTotalCents: updatedSale?.discountTotalCents,
       soldAt: updatedSale?.soldAt ? updatedSale.soldAt.toISOString() : null,
       createdAt: updatedSale?.soldAt ? updatedSale.soldAt.toISOString() : null,
       cancelledAt: updatedSale?.cancelledAt ? updatedSale.cancelledAt.toISOString() : null,

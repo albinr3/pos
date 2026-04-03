@@ -34,6 +34,7 @@ export function CustomersClient() {
   const [province, setProvince] = useState("")
   const [creditEnabled, setCreditEnabled] = useState(false)
   const [creditDays, setCreditDays] = useState<number | "">(0)
+  const [saleDiscountInput, setSaleDiscountInput] = useState("")
   const [isSaving, startSaving] = useTransition()
 
   function refresh(q?: string) {
@@ -82,6 +83,7 @@ export function CustomersClient() {
     setProvince(c?.province ?? "")
     setCreditEnabled(c?.creditEnabled ?? false)
     setCreditDays(c?.creditDays ?? 0)
+    setSaleDiscountInput(c?.saleDiscountPercentBp ? (c.saleDiscountPercentBp / 100).toFixed(2) : "")
   }
 
   async function onSave() {
@@ -90,6 +92,19 @@ export function CustomersClient() {
       toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
       return
     }
+    const parsedSaleDiscountPercent = saleDiscountInput.trim()
+      ? Number(saleDiscountInput.trim().replace(",", "."))
+      : 0
+    if (!Number.isFinite(parsedSaleDiscountPercent) || parsedSaleDiscountPercent < 0 || parsedSaleDiscountPercent > 100) {
+      toast({
+        title: "Descuento inválido",
+        description: "El descuento automático debe estar entre 0% y 100%.",
+        variant: "destructive",
+      })
+      return
+    }
+    const saleDiscountPercentBp = Math.round(parsedSaleDiscountPercent * 100)
+
     startSaving(async () => {
       try {
         await upsertCustomer({
@@ -101,6 +116,7 @@ export function CustomersClient() {
           province: province || null,
           creditEnabled,
           creditDays: creditEnabled ? (Number(creditDays) || 0) : 0,
+          saleDiscountPercentBp,
         })
         toast({ title: "Guardado" })
         setOpen(false)
@@ -236,6 +252,23 @@ export function CustomersClient() {
                     </div>
                   )}
                 </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="sale-discount">Descuento automático (%)</Label>
+                  <Input
+                    id="sale-discount"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={saleDiscountInput}
+                    onChange={(e) => setSaleDiscountInput(e.target.value)}
+                    placeholder="Ej: 10.00"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Se aplicará automáticamente en facturas/cotizaciones cuando el modo sea Auto.
+                  </p>
+                </div>
               </div>
 
               <DialogFooter>
@@ -266,6 +299,7 @@ export function CustomersClient() {
                   <TableHead>Cédula</TableHead>
                   <TableHead>Dirección</TableHead>
                   <TableHead>Provincia</TableHead>
+                  <TableHead>Desc. Auto</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -280,6 +314,7 @@ export function CustomersClient() {
                     <TableCell>{c.cedula ?? "—"}</TableCell>
                     <TableCell>{c.address ?? "—"}</TableCell>
                     <TableCell>{c.province ?? "—"}</TableCell>
+                    <TableCell>{c.saleDiscountPercentBp > 0 ? `${(c.saleDiscountPercentBp / 100).toFixed(2)}%` : "—"}</TableCell>
                     <TableCell className="text-right">
                       {c.isGeneric ? (
                         <span className="text-xs text-muted-foreground">Protegido</span>
@@ -312,7 +347,7 @@ export function CustomersClient() {
 
                 {!isLoading && items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-12">
+                    <TableCell colSpan={8} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
                           src="/lupa.webp"

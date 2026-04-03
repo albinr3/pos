@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { calcLineTotalsByTaxMode } from "@/lib/money"
+import { calcDiscountedLineTotalsByTaxMode } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
@@ -364,17 +364,19 @@ export async function createReturn(input: {
     }
 
     const documentSalePricesIncludeItbis = sale.salePricesIncludeItbis ?? true
+    const discountPercentBp = sale.discountPercentBp ?? 0
     const returnItemsWithSnapshot = input.items.map((item) => {
       const saleItem = saleItemsById.get(item.saleItemId)
       if (!saleItem) {
         throw new Error("Item de venta no encontrado")
       }
       const itbisRateBp = saleItem.itbisRateBp ?? 1800
-      const lineTotals = calcLineTotalsByTaxMode(
+      const lineTotals = calcDiscountedLineTotalsByTaxMode(
         saleItem.unitPriceCents,
         item.qty,
         itbisRateBp,
-        documentSalePricesIncludeItbis
+        documentSalePricesIncludeItbis,
+        discountPercentBp
       )
       return {
         saleItemId: item.saleItemId,
@@ -386,11 +388,15 @@ export async function createReturn(input: {
         subtotalCents: lineTotals.subtotalCents,
         itbisCents: lineTotals.itbisCents,
         totalCents: lineTotals.totalCents,
+        discountSubtotalCents: lineTotals.discountSubtotalCents,
+        discountTotalCents: lineTotals.discountTotalCents,
       }
     })
 
     const subtotalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.subtotalCents, 0)
     const itbisCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.itbisCents, 0)
+    const discountSubtotalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.discountSubtotalCents, 0)
+    const discountTotalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.discountTotalCents, 0)
     const totalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.totalCents, 0)
     let creditAr: { id: string; totalCents: number; balanceCents: number; status: string } | null = null
 
@@ -431,6 +437,9 @@ export async function createReturn(input: {
         userId: dbUser.id,
         subtotalCents,
         itbisCents,
+        discountPercentBp,
+        discountSubtotalCents,
+        discountTotalCents,
         totalCents,
         salePricesIncludeItbis: documentSalePricesIncludeItbis,
         notes: input.notes?.trim() || null,

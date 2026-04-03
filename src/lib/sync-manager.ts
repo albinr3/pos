@@ -74,6 +74,9 @@ export async function syncPendingData() {
               : [],
           })),
           shippingCents: sale.shippingCents || 0,
+          discountMode: sale.discountMode === "MANUAL" ? "MANUAL" : sale.discountMode === "AUTO" ? "AUTO" : undefined,
+          manualDiscountPercentBp:
+            typeof sale.manualDiscountPercentBp === "number" ? sale.manualDiscountPercentBp : undefined,
           salePricesIncludeItbis:
             typeof sale.salePricesIncludeItbis === "boolean" ? sale.salePricesIncludeItbis : undefined,
           soldAt: sale.createdAt,
