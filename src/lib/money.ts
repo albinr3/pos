@@ -96,8 +96,11 @@ export function calcDiscountedLineTotalsByTaxMode(
   const subtotalBeforeDiscountCents = lineBase.subtotalCents
   const discountSubtotalCents = Math.round((subtotalBeforeDiscountCents * normalizedDiscountBp) / 10000)
   const subtotalCents = Math.max(0, subtotalBeforeDiscountCents - discountSubtotalCents)
-  const itbisCents = Math.round((subtotalCents * itbisRateBp) / 10000)
-  const totalCents = subtotalCents + itbisCents
+  // Sin descuento efectivo, conservar el snapshot base evita drift de 1 centavo
+  // en precios con ITBIS incluido (ej: 100.00 -> 100.01 por doble redondeo).
+  const hasDiscount = discountSubtotalCents > 0
+  const itbisCents = hasDiscount ? Math.round((subtotalCents * itbisRateBp) / 10000) : lineBase.itbisCents
+  const totalCents = hasDiscount ? subtotalCents + itbisCents : lineBase.totalCents
   const totalBeforeDiscountCents = lineBase.totalCents
   const discountTotalCents = Math.max(0, totalBeforeDiscountCents - totalCents)
 
