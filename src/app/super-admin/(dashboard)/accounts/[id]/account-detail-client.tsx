@@ -470,6 +470,10 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                 <Play className="mr-2 h-4 w-4" />
                 Extender trial (+7 días)
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleExtendTrial(3)}>
+                <Play className="mr-2 h-4 w-4" />
+                Extender trial (+3 días)
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleExtendTrial(15)}>
                 <Play className="mr-2 h-4 w-4" />
                 Extender trial (+15 días)

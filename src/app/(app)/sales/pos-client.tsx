@@ -2456,46 +2456,21 @@ export function PosClient({
 
       <Dialog open={showNavigationDialog} onOpenChange={setShowNavigationDialog}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5 text-amber-500" />
-              ¿Desea guardar el pedido para después?
-            </DialogTitle>
-          </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="flex flex-col items-center gap-4">
               <img src="/pausa.webp" alt="Pausa" className="h-64 w-64 object-contain" />
+              <DialogHeader className="text-center">
+                <DialogTitle className="flex items-center justify-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-amber-500" />
+                  ¿Desea guardar el pedido para después?
+                </DialogTitle>
+              </DialogHeader>
               <p className="text-base font-medium text-center">
                 Tienes {cart.length} producto{cart.length !== 1 ? "s" : ""} en tu carrito.
               </p>
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setShowNavigationDialog(false)
-                setPendingNavigation(null)
-              }}
-              className="w-full sm:w-auto"
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (pendingNavigation) {
-                  // No guardar, solo limpiar el estado y navegar
-                  localStorage.removeItem("posCartState")
-                  setShowNavigationDialog(false)
-                  router.push(pendingNavigation)
-                  setPendingNavigation(null)
-                }
-              }}
-              className="w-full sm:w-auto"
-            >
-              No
-            </Button>
             <Button
               onClick={() => {
                 if (pendingNavigation) {
@@ -2526,7 +2501,33 @@ export function PosClient({
               }}
               className="w-full sm:w-auto"
             >
-              Sí
+              Sí, guardar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (pendingNavigation) {
+                  // No guardar, solo limpiar el estado y navegar
+                  sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
+                  resetSaleFormState()
+                  setShowNavigationDialog(false)
+                  router.push(pendingNavigation)
+                  setPendingNavigation(null)
+                }
+              }}
+              className="w-full sm:w-auto"
+            >
+              No, salir sin guardar
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowNavigationDialog(false)
+                setPendingNavigation(null)
+              }}
+              className="w-full sm:w-auto"
+            >
+              Cancelar
             </Button>
           </DialogFooter>
         </DialogContent>
