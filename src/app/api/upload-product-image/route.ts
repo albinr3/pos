@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 const utapi = new UTApi()
+const MAX_PRODUCT_IMAGE_SIZE_BYTES = 2 * 1024 * 1024
 
 async function uploadAndGetUrl(file: File): Promise<string> {
   const uploaded = await utapi.uploadFiles(file)
@@ -67,6 +68,9 @@ export async function POST(request: NextRequest) {
 
     if (!file.type?.startsWith("image/")) {
       return NextResponse.json({ error: "Solo se permiten imágenes" }, { status: 400 })
+    }
+    if (file.size > MAX_PRODUCT_IMAGE_SIZE_BYTES) {
+      return NextResponse.json({ error: "La imagen supera el máximo permitido de 2MB" }, { status: 400 })
     }
 
     const url = await uploadAndGetUrl(file)

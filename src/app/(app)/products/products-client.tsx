@@ -31,11 +31,14 @@ import {
   adjustManyStock,
   deactivateProduct,
   finalizeInventoryBulkOperation,
+  importProductImagesChunk,
   importProductsChunk,
   listRecipeIngredientOptions,
   listProductMovements,
   listProducts,
   startInventoryBulkOperation,
+  type BulkProductImageImportRow,
+  type BulkProductImageImportRowResult,
   type BulkProductImportRow,
   type BulkProductImportRowResult,
   upsertProduct,
@@ -61,6 +64,11 @@ const INVENTORY_IMPORT_MAX_ROWS = 5000
 const INVENTORY_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024
 const INVENTORY_IMPORT_CHUNK_SIZE = 50
 const INVENTORY_PREVIEW_PAGE_SIZE = 20
+const PRODUCT_IMAGE_IMPORT_CHUNK_SIZE = 20
+const PRODUCT_IMAGE_MAX_PER_PRODUCT = 3
+const PRODUCT_IMAGE_MAX_FILE_SIZE = 2 * 1024 * 1024
+const PRODUCT_IMAGE_IMPORT_MAX_FILES = 50
+const PRODUCT_IMAGE_IMPORT_REASON = "Carga masiva de imágenes por ID"
 const NONE_SUPPLIER_OPTION = "__none_supplier__"
 const NONE_CATEGORY_OPTION = "__none_category__"
 const CREATE_SUPPLIER_OPTION = "__create_supplier__"
@@ -79,7 +87,6 @@ const INVENTORY_TEMPLATE_HEADERS = [
   "existencia_minima",
   "categoria",
   "proveedor",
-  "imagenes",
 ] as const
 
 const MOVEMENT_LABELS: Record<ProductMovement["type"], string> = {
@@ -144,6 +151,78 @@ type InventoryImportSummary = {
   updated: number
   failed: number
   results: BulkProductImportRowResult[]
+}
+
+type ProductImageImportGroup = {
+  rowNumber: number
+  productId: number
+  files: File[]
+  fileNames: string[]
+}
+
+type ProductImageImportSummary = {
+  total: number
+  updated: number
+  failed: number
+  results: BulkProductImageImportRowResult[]
+}
+
+function parseProductIdFromFileName(fileName: string) {
+  const withoutExtension = fileName.trim().replace(/\.[^/.]+$/, "")
+  const match = withoutExtension.match(/^(\d+)/)
+  if (!match) return null
+  const parsed = Number(match[1])
+  if (!Number.isInteger(parsed) || parsed <= 0) return null
+  return parsed
+}
+
+function buildProductImageImportGroups(files: File[]) {
+  const errors: string[] = []
+  const grouped = new Map<number, File[]>()
+
+  for (const file of files) {
+    if (!file.type?.startsWith("image/")) {
+      errors.push(`${file.name}: solo se permiten imágenes.`)
+      continue
+    }
+    if (file.size > PRODUCT_IMAGE_MAX_FILE_SIZE) {
+      errors.push(`${file.name}: supera el máximo de 2MB.`)
+      continue
+    }
+
+    const productId = parseProductIdFromFileName(file.name)
+    if (!productId) {
+      errors.push(`${file.name}: el nombre debe iniciar con el ID del producto (ej: 123.jpg o 123-1.png).`)
+      continue
+    }
+
+    const current = grouped.get(productId) ?? []
+    current.push(file)
+    grouped.set(productId, current)
+  }
+
+  const groups: ProductImageImportGroup[] = []
+  const orderedProductIds = Array.from(grouped.keys()).sort((a, b) => a - b)
+  let rowNumber = 1
+
+  for (const productId of orderedProductIds) {
+    const productFiles = grouped.get(productId) ?? []
+    if (!productFiles.length) continue
+    if (productFiles.length > PRODUCT_IMAGE_MAX_PER_PRODUCT) {
+      errors.push(`Producto ${productId}: máximo ${PRODUCT_IMAGE_MAX_PER_PRODUCT} imágenes por producto.`)
+      continue
+    }
+
+    groups.push({
+      rowNumber,
+      productId,
+      files: productFiles,
+      fileNames: productFiles.map((file) => file.name),
+    })
+    rowNumber += 1
+  }
+
+  return { groups, errors }
 }
 
 function parseBulkLines(value: string): BulkParseResult {
@@ -345,7 +424,6 @@ function mapExcelRowsToImportRows(rows: Record<string, unknown>[]) {
     const stockMinimo = getCellValue(normalized, ["stock_minimo", "existencia_minima", "min_stock"])
     const categoria = getCellValue(normalized, ["categoria", "category"])
     const proveedor = getCellValue(normalized, ["proveedor", "supplier"])
-    const imagenes = getCellValue(normalized, ["imagenes", "image_urls", "images"])
 
     if (!hasCellValue(nombre)) {
       throw new Error(`Línea ${index + 2}: nombre es requerido`)
@@ -366,7 +444,6 @@ function mapExcelRowsToImportRows(rows: Record<string, unknown>[]) {
     if (hasCellValue(referencia)) parsed.referencia = String(referencia).trim()
     if (hasCellValue(categoria)) parsed.categoria = String(categoria).trim()
     if (hasCellValue(proveedor)) parsed.proveedor = String(proveedor).trim()
-    if (hasCellValue(imagenes)) parsed.imagenes = String(imagenes).trim()
 
     const parsedType = parseExcelProductType(tipoProducto)
     if (hasCellValue(tipoProducto) && !parsedType) {
@@ -426,6 +503,15 @@ export function ProductsClient() {
   const [inventorySummary, setInventorySummary] = useState<InventoryImportSummary | null>(null)
   const [inventoryPreviewPage, setInventoryPreviewPage] = useState(0)
   const inventoryFileInputRef = useRef<HTMLInputElement>(null)
+  const [productImageBulkOpen, setProductImageBulkOpen] = useState(false)
+  const [productImageGroups, setProductImageGroups] = useState<ProductImageImportGroup[]>([])
+  const [productImageParseErrors, setProductImageParseErrors] = useState<string[]>([])
+  const [isProductImageDragOver, setIsProductImageDragOver] = useState(false)
+  const [isProductImageUploading, setIsProductImageUploading] = useState(false)
+  const [productImageProgress, setProductImageProgress] = useState(0)
+  const [productImageStatus, setProductImageStatus] = useState("Listo para cargar")
+  const [productImageSummary, setProductImageSummary] = useState<ProductImageImportSummary | null>(null)
+  const productImageFileInputRef = useRef<HTMLInputElement>(null)
   const [movementsOpen, setMovementsOpen] = useState(false)
   const [movementsProduct, setMovementsProduct] = useState<Product | null>(null)
   const [movements, setMovements] = useState<ProductMovement[]>([])
@@ -762,6 +848,299 @@ export function ProductsClient() {
     setInventoryBulkOpen(false)
   }
 
+  function resetProductImageImportState() {
+    setProductImageGroups([])
+    setProductImageParseErrors([])
+    setProductImageProgress(0)
+    setProductImageStatus("Listo para cargar")
+    setProductImageSummary(null)
+    setIsProductImageDragOver(false)
+    setIsProductImageUploading(false)
+    if (productImageFileInputRef.current) {
+      productImageFileInputRef.current.value = ""
+    }
+  }
+
+  function closeProductImageImportModal() {
+    resetProductImageImportState()
+    setProductImageBulkOpen(false)
+  }
+
+  async function loadProductImageFiles(files: File[]) {
+    setProductImageParseErrors([])
+    setProductImageSummary(null)
+    setProductImageProgress(0)
+
+    const filteredFiles = files.filter((file) => !!file)
+    if (!filteredFiles.length) {
+      throw new Error("No se detectaron archivos para cargar")
+    }
+    if (filteredFiles.length > PRODUCT_IMAGE_IMPORT_MAX_FILES) {
+      throw new Error(`Máximo ${PRODUCT_IMAGE_IMPORT_MAX_FILES} imágenes por carga`)
+    }
+
+    const { groups, errors } = buildProductImageImportGroups(filteredFiles)
+    if (!groups.length) {
+      throw new Error(errors[0] ?? "No se encontraron archivos válidos para importar")
+    }
+
+    setProductImageGroups(groups)
+    setProductImageParseErrors(errors)
+    if (errors.length) {
+      setProductImageStatus(`${groups.length} producto(s) listo(s) · ${errors.length} archivo(s) con observaciones`)
+    } else {
+      setProductImageStatus(`${groups.length} producto(s) listo(s) para importar`)
+    }
+  }
+
+  function onProductImageFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? [])
+    if (!files.length) return
+    void loadProductImageFiles(files).catch((error) => {
+      const message = error instanceof Error ? error.message : "No se pudieron procesar los archivos"
+      setProductImageGroups([])
+      setProductImageStatus("Listo para cargar")
+      setProductImageParseErrors([message])
+    })
+  }
+
+  function onProductImageDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setIsProductImageDragOver(false)
+    const files = Array.from(event.dataTransfer.files ?? [])
+    if (!files.length) return
+    void loadProductImageFiles(files).catch((error) => {
+      const message = error instanceof Error ? error.message : "No se pudieron procesar los archivos"
+      setProductImageGroups([])
+      setProductImageStatus("Listo para cargar")
+      setProductImageParseErrors([message])
+    })
+  }
+
+  function onProductImageDragOver(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setIsProductImageDragOver(true)
+  }
+
+  function onProductImageDragLeave(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setIsProductImageDragOver(false)
+  }
+
+  async function uploadProductImageFile(file: File) {
+    const formData = new FormData()
+    formData.append("file", file)
+
+    const response = await fetch("/api/upload-product-image", {
+      method: "POST",
+      body: formData,
+    })
+
+    const payload = await response.json().catch(() => null)
+    if (!response.ok) {
+      const message =
+        payload && typeof payload === "object" && "error" in payload
+          ? String((payload as { error?: unknown }).error ?? "")
+          : ""
+      throw new Error(message || "No se pudo subir la imagen")
+    }
+
+    if (!payload || typeof payload !== "object" || !("url" in payload)) {
+      throw new Error("La subida no devolvió URL válida")
+    }
+
+    const url = String((payload as { url?: unknown }).url ?? "").trim()
+    if (!url) {
+      throw new Error("La subida no devolvió URL válida")
+    }
+
+    return url
+  }
+
+  async function onProductImageUpload() {
+    if (!canImportProductImages) {
+      toast({
+        title: "Sin permiso",
+        description: "No tienes permiso para importar imágenes de productos.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!productImageGroups.length) {
+      toast({
+        title: "Sin datos",
+        description: "Selecciona archivos de imagen para continuar.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsProductImageUploading(true)
+    setProductImageSummary(null)
+    setProductImageProgress(0)
+    setProductImageStatus("Iniciando carga...")
+
+    const allResults: BulkProductImageImportRowResult[] = []
+    let updated = 0
+    let failed = 0
+    let processed = 0
+    const total = productImageGroups.length
+    let operationId: string | null = null
+    let finalized = false
+
+    try {
+      const started = await startInventoryBulkOperation({
+        source: "BULK_EXCEL",
+        reason: PRODUCT_IMAGE_IMPORT_REASON,
+        totalRows: total,
+      })
+      operationId = started.operationId
+
+      for (let start = 0; start < total; start += PRODUCT_IMAGE_IMPORT_CHUNK_SIZE) {
+        const chunk = productImageGroups.slice(start, start + PRODUCT_IMAGE_IMPORT_CHUNK_SIZE)
+        const chunkEnd = Math.min(start + chunk.length, total)
+        setProductImageStatus(`Procesando ${chunkEnd}/${total}`)
+
+        const preparedRows: BulkProductImageImportRow[] = []
+
+        for (const group of chunk) {
+          try {
+            const imageUrls = await Promise.all(group.files.map((file) => uploadProductImageFile(file)))
+            preparedRows.push({
+              rowNumber: group.rowNumber,
+              productId: group.productId,
+              imageUrls,
+            })
+          } catch (error) {
+            failed += 1
+            allResults.push({
+              rowNumber: group.rowNumber,
+              productId: group.productId,
+              status: "FAILED",
+              message: error instanceof Error ? error.message : "No se pudieron subir las imágenes",
+            })
+          }
+        }
+
+        if (preparedRows.length) {
+          try {
+            const result = await importProductImagesChunk({
+              operationId,
+              rows: preparedRows,
+              reason: PRODUCT_IMAGE_IMPORT_REASON,
+            })
+            updated += result.updated
+            failed += result.failed
+            allResults.push(...result.results)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "Error al actualizar imágenes en el lote"
+            failed += preparedRows.length
+            allResults.push(
+              ...preparedRows.map((row) => ({
+                rowNumber: row.rowNumber,
+                productId: row.productId,
+                status: "FAILED" as const,
+                message,
+              })),
+            )
+          }
+        }
+
+        processed += chunk.length
+        setProductImageProgress(Math.min(Math.round((processed / total) * 100), 100))
+      }
+
+      await finalizeInventoryBulkOperation({
+        operationId,
+        status: "COMPLETED",
+        totalRows: total,
+        createdCount: 0,
+        updatedCount: updated,
+        failedCount: failed,
+      })
+      finalized = true
+
+      const summary: ProductImageImportSummary = {
+        total,
+        updated,
+        failed,
+        results: allResults,
+      }
+
+      setProductImageSummary(summary)
+      setProductImageStatus("Carga finalizada")
+      refresh(query)
+
+      if (failed > 0) {
+        toast({
+          title: "Carga completada con observaciones",
+          description: `Actualizados: ${updated}, errores: ${failed}`,
+        })
+      } else {
+        toast({
+          title: "Carga completada",
+          description: `Se actualizaron ${updated} producto(s).`,
+        })
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo completar la carga de imágenes"
+      setProductImageStatus("Carga fallida")
+      if (operationId && !finalized) {
+        try {
+          await finalizeInventoryBulkOperation({
+            operationId,
+            status: "FAILED",
+            totalRows: total,
+            createdCount: 0,
+            updatedCount: updated,
+            failedCount: Math.max(failed, total - processed),
+            errorMessage: message,
+          })
+        } catch {
+          // Ignore finalize errors; el error principal se muestra al usuario.
+        }
+      }
+      toast({
+        title: "Error",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      setIsProductImageUploading(false)
+    }
+  }
+
+  function downloadProductImageErrorReport() {
+    if (!productImageSummary) return
+    const failedRows = productImageSummary.results.filter((item) => item.status === "FAILED")
+    if (!failedRows.length) return
+
+    const rowByNumber = new Map(productImageGroups.map((group) => [group.rowNumber, group]))
+    const reportRows = failedRows.map((item) => {
+      const sourceRow = rowByNumber.get(item.rowNumber)
+      return {
+        fila: item.rowNumber,
+        id_producto: item.productId || sourceRow?.productId || "",
+        archivos: sourceRow?.fileNames.join(", ") ?? "",
+        error: item.message,
+      }
+    })
+
+    const worksheet = XLSX.utils.json_to_sheet(reportRows)
+    worksheet["!cols"] = [
+      { wch: 8 },
+      { wch: 14 },
+      { wch: 50 },
+      { wch: 60 },
+    ]
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Errores")
+    const date = new Date().toISOString().slice(0, 10)
+    XLSX.writeFile(workbook, `reporte_errores_carga_imagenes_${date}.xlsx`)
+  }
+
   function downloadInventoryTemplate() {
     const worksheet = XLSX.utils.aoa_to_sheet([
       [...INVENTORY_TEMPLATE_HEADERS],
@@ -778,7 +1157,6 @@ export function ProductsClient() {
         5,
         "General",
         "Proveedor A",
-        "",
       ],
     ])
     worksheet["!cols"] = INVENTORY_TEMPLATE_HEADERS.map((header) => ({ wch: Math.max(header.length + 4, 16) }))
@@ -1057,6 +1435,7 @@ export function ProductsClient() {
 
   const totalProducts = items.length
   const canAdjustStock = !!user && (user.canAdjustInventory || user.isOwner)
+  const canImportProductImages = !!user && (user.canEditProducts || user.isOwner)
   const movementInitial = useMemo(() => movements.find((m) => m.type === "INITIAL") ?? null, [movements])
   const movementItems = useMemo(() => movements.filter((m) => m.type !== "INITIAL"), [movements])
   const movementPageSize = 10
@@ -1185,7 +1564,7 @@ export function ProductsClient() {
                           Revisa los productos antes de confirmar la carga. Esta tabla es solo de lectura.
                         </div>
                         <div className="max-h-[320px] overflow-auto rounded-md border">
-                          <Table className="min-w-[1450px] text-xs">
+                          <Table className="min-w-[1300px] text-xs">
                             <TableHeader>
                               <TableRow>
                                 <TableHead>Fila</TableHead>
@@ -1201,7 +1580,6 @@ export function ProductsClient() {
                                 <TableHead className="text-right">Existencia minima</TableHead>
                                 <TableHead>Categoria</TableHead>
                                 <TableHead>Proveedor</TableHead>
-                                <TableHead>Imagenes</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -1220,7 +1598,6 @@ export function ProductsClient() {
                                   <TableCell className="text-right">{formatInventoryPreviewValue(row.stock_minimo)}</TableCell>
                                   <TableCell>{formatInventoryPreviewValue(row.categoria)}</TableCell>
                                   <TableCell>{formatInventoryPreviewValue(row.proveedor)}</TableCell>
-                                  <TableCell className="max-w-[220px] truncate">{formatInventoryPreviewValue(row.imagenes)}</TableCell>
                                 </TableRow>
                               ))}
                             </TableBody>
@@ -1296,6 +1673,178 @@ export function ProductsClient() {
                       type="button"
                     >
                       {isInventoryUploading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="mr-2 h-4 w-4" /> Cargar
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+              <Dialog
+                open={productImageBulkOpen}
+                onOpenChange={(v) => {
+                  setProductImageBulkOpen(v)
+                  if (!v) resetProductImageImportState()
+                }}
+              >
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        disabled={!canImportProductImages}
+                        className="bg-blue-100 border-blue-300 text-blue-900 hover:bg-blue-200"
+                      >
+                        Cargar imágenes masivamente
+                      </Button>
+                    </DialogTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Actualizar imágenes por ID de producto</p>
+                  </TooltipContent>
+                </Tooltip>
+                <DialogContent className="sm:max-w-[780px] max-h-[90vh] flex flex-col">
+                  <DialogHeader>
+                    <DialogTitle>Cargar imágenes masivamente</DialogTitle>
+                  </DialogHeader>
+
+                  <div className="grid gap-6 overflow-y-auto pr-1">
+                    <div className="grid gap-2 text-xs text-muted-foreground">
+                      <div className="text-sm font-medium text-foreground">Reglas del importador</div>
+                      <div>1. El nombre del archivo debe iniciar con el ID del producto (ej: 123.jpg, 123-1.png, 123_frente.webp).</div>
+                      <div>2. Máximo {PRODUCT_IMAGE_MAX_PER_PRODUCT} imágenes por producto.</div>
+                      <div>3. Solo imágenes y máximo 2MB por archivo.</div>
+                      <div>4. Máximo {PRODUCT_IMAGE_IMPORT_MAX_FILES} imágenes por carga.</div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">Selecciona o arrastra imágenes</div>
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onDragOver={onProductImageDragOver}
+                        onDragLeave={onProductImageDragLeave}
+                        onDrop={onProductImageDrop}
+                        onClick={() => productImageFileInputRef.current?.click()}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault()
+                            productImageFileInputRef.current?.click()
+                          }
+                        }}
+                        className={`relative rounded-lg border-2 border-dashed p-10 text-center transition-colors ${isProductImageDragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/60"
+                          }`}
+                      >
+                        <input
+                          ref={productImageFileInputRef}
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={onProductImageFileChange}
+                          className="hidden"
+                        />
+                        <div className="flex flex-col items-center gap-2">
+                          <Upload className="h-8 w-8 text-primary" />
+                          <div className="text-sm font-medium">Arrastra y suelta imágenes aquí</div>
+                          <div className="text-xs text-muted-foreground">o haz click para seleccionar múltiples archivos</div>
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        Productos detectados: <span className="font-medium">{productImageGroups.length}</span> ·
+                        Archivos válidos: <span className="font-medium">{productImageGroups.reduce((acc, group) => acc + group.files.length, 0)}</span>
+                      </div>
+                      {productImageParseErrors.length > 0 && (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                          <div className="font-medium">Observaciones ({productImageParseErrors.length})</div>
+                          <div className="mt-1 grid gap-1">
+                            {productImageParseErrors.slice(0, 8).map((error, index) => (
+                              <div key={`${error}-${index}`}>• {error}</div>
+                            ))}
+                            {productImageParseErrors.length > 8 && (
+                              <div>• ... y {productImageParseErrors.length - 8} más</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {productImageGroups.length > 0 && (
+                      <div className="grid gap-2">
+                        <div className="text-sm font-medium">Vista previa por producto</div>
+                        <div className="max-h-[320px] overflow-auto rounded-md border">
+                          <Table className="min-w-[700px] text-xs">
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Fila</TableHead>
+                                <TableHead>ID producto</TableHead>
+                                <TableHead className="text-right">Cant. imágenes</TableHead>
+                                <TableHead>Archivos</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {productImageGroups.map((group) => (
+                                <TableRow key={`${group.productId}-${group.rowNumber}`}>
+                                  <TableCell>{group.rowNumber}</TableCell>
+                                  <TableCell>{group.productId}</TableCell>
+                                  <TableCell className="text-right">{group.files.length}</TableCell>
+                                  <TableCell className="max-w-[420px] truncate">{group.fileNames.join(", ")}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid gap-2">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{productImageStatus}</span>
+                        <span>{productImageProgress}%</span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-muted">
+                        <div
+                          className="h-2 rounded-full bg-primary transition-all"
+                          style={{ width: `${productImageProgress}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {productImageSummary && (
+                      <div className="rounded-md border p-3 text-sm">
+                        <div className="font-medium">Resultado de la carga</div>
+                        <div className="mt-2 grid gap-1 text-xs text-muted-foreground">
+                          <div>Total productos: {productImageSummary.total}</div>
+                          <div>Actualizados: {productImageSummary.updated}</div>
+                          <div>Errores: {productImageSummary.failed}</div>
+                        </div>
+                        {productImageSummary.failed > 0 && (
+                          <div className="mt-3">
+                            <Button type="button" variant="outline" size="sm" onClick={downloadProductImageErrorReport}>
+                              Descargar reporte de errores
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <DialogFooter>
+                    <Button variant="secondary" onClick={closeProductImageImportModal} type="button">
+                      Cerrar
+                    </Button>
+                    <Button
+                      onClick={onProductImageUpload}
+                      disabled={isProductImageUploading || !productImageGroups.length || !canImportProductImages}
+                      type="button"
+                    >
+                      {isProductImageUploading ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Cargando...
                         </>

@@ -838,7 +838,6 @@ export type BulkProductImportRow = {
   stock_minimo?: number
   categoria?: string
   proveedor?: string
-  imagenes?: string
 }
 
 export type BulkProductImportChunkInput = {
@@ -864,8 +863,37 @@ export type BulkProductImportChunkResult = {
   results: BulkProductImportRowResult[]
 }
 
+export type BulkProductImageImportRow = {
+  rowNumber: number
+  productId: number
+  imageUrls: string[]
+}
+
+export type BulkProductImageImportChunkInput = {
+  operationId: string
+  rows: BulkProductImageImportRow[]
+  reason?: string
+  user?: unknown
+}
+
+export type BulkProductImageImportRowResult = {
+  rowNumber: number
+  productId: number
+  status: "UPDATED" | "FAILED"
+  message: string
+}
+
+export type BulkProductImageImportChunkResult = {
+  updated: number
+  failed: number
+  results: BulkProductImageImportRowResult[]
+}
+
 const IMPORT_REASON_DEFAULT = "Importación masiva Excel"
 const MAX_IMPORT_ROWS_PER_CHUNK = 200
+const IMAGE_IMPORT_REASON_DEFAULT = "Carga masiva de imágenes por ID"
+const MAX_IMAGE_IMPORT_ROWS_PER_CHUNK = 200
+const MAX_IMAGE_URLS_PER_PRODUCT = 3
 
 export type StartInventoryBulkOperationInput = {
   source: InventoryBulkSource
@@ -1062,16 +1090,6 @@ function normalizeQtyForUnit(value: number, unit: UnitType, fieldLabel = "Cantid
   const normalized = Math.round(value * 100) / 100
   assertDecimal10x3Range(normalized, fieldLabel)
   return normalized
-}
-
-function parseImageUrls(value: unknown) {
-  if (!hasImportValue(value)) return null
-  const raw = String(value).trim()
-  if (!raw) return null
-  return raw
-    .split(/[\n,;]+/g)
-    .map((item) => item.trim())
-    .filter(Boolean)
 }
 
 async function assertWritableBulkOperation(
@@ -1769,8 +1787,12 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
   for (const row of rows) {
     const rowNumber = Number.isInteger(row.rowNumber) && row.rowNumber > 0 ? row.rowNumber : 0
     try {
-      if ("unidad_compra" in (row as Record<string, unknown>) || "unidad_venta" in (row as Record<string, unknown>)) {
+      const rowRecord = row as Record<string, unknown>
+      if ("unidad_compra" in rowRecord || "unidad_venta" in rowRecord) {
         throw new Error("Usa la columna unidad. unidad_compra y unidad_venta ya no son válidas")
+      }
+      if ("imagenes" in rowRecord || "image_urls" in rowRecord || "images" in rowRecord) {
+        throw new Error("La columna imagenes ya no está disponible en Inventario masivo. Usa Cargar imágenes masivamente.")
       }
 
       const skuSanitized = row.sku ? sanitizeCode(String(row.sku)) : ""
@@ -1800,8 +1822,6 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
       const minStockValue = parseImportNumber(row.stock_minimo, "Existencia mínima")
       const hasItbis = hasImportValue(row.itbis)
       const itbisRateBp = parseImportItbisBp(row.itbis)
-      const images = parseImageUrls(row.imagenes)
-      const hasImages = hasImportValue(row.imagenes)
       const hasCategory = hasImportValue(row.categoria)
       const hasSupplier = hasImportValue(row.proveedor)
       const categoryName = hasCategory ? String(row.categoria).trim() : ""
@@ -1876,10 +1896,6 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
           productKind: productType === "MEDIDO" ? ProductKind.MEASURED : productType === "BASICO" ? ProductKind.BASIC : existing.productKind,
           unit: nextUnit,
           isActive: true,
-        }
-
-        if (hasImages) {
-          updateData.imageUrls = images ?? []
         }
 
         await prisma.$transaction(async (tx) => {
@@ -2014,7 +2030,7 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
             itbisRateBp: itbisRateBp ?? 1800,
             stock: initialStock,
             minStock,
-            imageUrls: images ?? [],
+            imageUrls: [],
             productKind: resolvedProductType === "MEDIDO" ? ProductKind.MEASURED : ProductKind.BASIC,
             unit,
             isActive: true,
@@ -2086,6 +2102,141 @@ export async function importProductsChunk(input: BulkProductImportChunkInput): P
 
   return {
     created,
+    updated,
+    failed,
+    results,
+  }
+}
+
+export async function importProductImagesChunk(
+  input: BulkProductImageImportChunkInput
+): Promise<BulkProductImageImportChunkResult> {
+  const user = (input.user as CurrentUser | null | undefined) ?? await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  if (!user.canEditProducts && !user.isOwner) {
+    throw new Error("No tienes permiso para importar imágenes de productos")
+  }
+
+  const rows = input.rows ?? []
+  if (!rows.length) {
+    throw new Error("No hay filas para importar imágenes")
+  }
+  if (rows.length > MAX_IMAGE_IMPORT_ROWS_PER_CHUNK) {
+    throw new Error(`Máximo ${MAX_IMAGE_IMPORT_ROWS_PER_CHUNK} filas por lote`)
+  }
+  await assertWritableBulkOperation(input.operationId, user, InventoryBulkSource.BULK_EXCEL)
+
+  const reason = sanitizeString(input.reason ?? IMAGE_IMPORT_REASON_DEFAULT) || IMAGE_IMPORT_REASON_DEFAULT
+  const results: BulkProductImageImportRowResult[] = []
+  let updated = 0
+  let failed = 0
+
+  for (const row of rows) {
+    const rowNumber = Number.isInteger(row.rowNumber) && row.rowNumber > 0 ? row.rowNumber : 0
+    const rawProductId = Number(row.productId)
+    try {
+      if (!Number.isInteger(rawProductId) || rawProductId <= 0) {
+        throw new Error("ID de producto inválido")
+      }
+
+      const normalizedImageUrls = Array.isArray(row.imageUrls)
+        ? row.imageUrls.map((item) => String(item).trim()).filter(Boolean)
+        : []
+      const imageUrls = Array.from(new Set(normalizedImageUrls))
+
+      if (!imageUrls.length) {
+        throw new Error("Debes enviar al menos una imagen por producto")
+      }
+      if (imageUrls.length > MAX_IMAGE_URLS_PER_PRODUCT) {
+        throw new Error(`Máximo ${MAX_IMAGE_URLS_PER_PRODUCT} imágenes por producto`)
+      }
+
+      const existing = await prisma.product.findFirst({
+        where: {
+          accountId: user.accountId,
+          productId: rawProductId,
+        },
+        select: {
+          id: true,
+          productId: true,
+          name: true,
+          sku: true,
+          reference: true,
+          supplierId: true,
+          categoryId: true,
+          priceCents: true,
+          costCents: true,
+          itbisRateBp: true,
+          stock: true,
+          minStock: true,
+          imageUrls: true,
+          productKind: true,
+          unit: true,
+          isActive: true,
+          isAvailableForSale: true,
+        },
+      })
+
+      if (!existing) {
+        throw new Error(`Producto #${rawProductId} no encontrado`)
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await ensureBulkSnapshot(tx, {
+          operationId: input.operationId,
+          accountId: user.accountId,
+          productId: existing.id,
+          existedBefore: true,
+          beforeState: serializeBulkSnapshotState(existing),
+        })
+
+        await tx.product.update({
+          where: { id: existing.id },
+          data: {
+            imageUrls,
+          },
+        })
+
+        await logAuditEvent({
+          accountId: user.accountId,
+          userId: user.id,
+          userEmail: user.email ?? null,
+          userUsername: user.username ?? null,
+          action: "PRODUCT_EDITED",
+          resourceType: "Product",
+          resourceId: existing.id,
+          details: {
+            source: "bulk_image_upload",
+            rowNumber,
+            productId: existing.productId,
+            imageCount: imageUrls.length,
+            reason,
+          },
+        }, tx)
+      })
+
+      updated += 1
+      results.push({
+        rowNumber,
+        productId: existing.productId,
+        status: "UPDATED",
+        message: "Imágenes actualizadas",
+      })
+    } catch (error) {
+      failed += 1
+      results.push({
+        rowNumber,
+        productId: Number.isInteger(rawProductId) && rawProductId > 0 ? rawProductId : 0,
+        status: "FAILED",
+        message: error instanceof Error ? error.message : "Error desconocido en la fila",
+      })
+    }
+  }
+
+  safeRevalidate("/products")
+
+  return {
     updated,
     failed,
     results,
