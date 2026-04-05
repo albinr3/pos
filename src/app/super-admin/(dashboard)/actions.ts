@@ -423,9 +423,17 @@ export async function extendTrial(
       return { success: false, error: "Suscripción no encontrada" }
     }
 
-    const newTrialEnd = subscription.trialEndsAt 
-      ? new Date(subscription.trialEndsAt.getTime() + days * 24 * 60 * 60 * 1000)
-      : new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+    if (!Number.isFinite(days) || days <= 0) {
+      return { success: false, error: "La cantidad de días debe ser mayor a 0" }
+    }
+
+    const now = new Date()
+    const millisecondsToAdd = days * 24 * 60 * 60 * 1000
+    const extensionBase =
+      subscription.trialEndsAt && subscription.trialEndsAt > now
+        ? subscription.trialEndsAt
+        : now
+    const newTrialEnd = new Date(extensionBase.getTime() + millisecondsToAdd)
 
     await prisma.billingSubscription.update({
       where: { accountId },
@@ -438,11 +446,12 @@ export async function extendTrial(
 
     await logSuperAdminAction(admin.id, "extended_trial", {
       targetAccountId: accountId,
-      metadata: { days, newTrialEnd },
+      metadata: { days, extensionBase, newTrialEnd },
     })
 
     revalidatePath("/super-admin")
     revalidatePath("/super-admin/accounts")
+    revalidatePath(`/super-admin/accounts/${accountId}`)
 
     return { success: true }
   } catch (error) {
