@@ -6,7 +6,6 @@ import {
   getBankAccountById,
 } from "@/lib/billing"
 import { logAuditEvent } from "@/lib/audit-log"
-import { notifyManualPaymentPending } from "@/lib/billing-manual-payment-alert"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -59,17 +58,6 @@ export async function POST(request: NextRequest) {
         bankAccountId,
         bankName: bankAccount.bankName,
       },
-    })
-
-    await notifyManualPaymentPending({
-      accountId: user.accountId,
-      paymentId: payment.id,
-      amountCents: subscription.priceDopCents,
-      bankName: bankAccount.bankName,
-      userId: user.id,
-      userName: user.name,
-      userUsername: user.username,
-      userEmail: user.email ?? null,
     })
 
     return NextResponse.json({ success: true, paymentId: payment.id, payment }, { status: 201 })

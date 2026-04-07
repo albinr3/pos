@@ -189,17 +189,6 @@ export async function createDopPayment(bankAccountId: string): Promise<{
       },
     })
 
-    await notifyManualPaymentPending({
-      accountId: user.accountId,
-      paymentId: payment.id,
-      amountCents: subscription.priceDopCents,
-      bankName: bankAccount.bankName,
-      userId: user.id,
-      userName: user.name,
-      userUsername: user.username,
-      userEmail: user.email ?? null,
-    })
-
     return { success: true, paymentId: payment.id }
   } catch (error) {
     console.error("Error creating DOP payment:", error)
@@ -284,6 +273,11 @@ export async function submitPaymentProof(
           id: true,
           amountCents: true,
           currency: true,
+          bankAccount: {
+            select: {
+              bankName: true,
+            },
+          },
           subscription: {
             select: {
               account: {
@@ -293,6 +287,19 @@ export async function submitPaymentProof(
           },
         },
       })
+
+      if (paymentData) {
+        await notifyManualPaymentPending({
+          accountId: user.accountId,
+          paymentId: paymentData.id,
+          amountCents: paymentData.amountCents,
+          bankName: paymentData.bankAccount?.bankName || "Cuenta bancaria",
+          userId: user.id,
+          userName: user.name,
+          userUsername: user.username,
+          userEmail: user.email ?? null,
+        })
+      }
 
       if (paymentData && (paymentData.currency === "DOP" || paymentData.currency === "USD")) {
         await notifyTransferPendingReview({

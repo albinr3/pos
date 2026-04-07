@@ -5,6 +5,7 @@ import { checkRateLimit, RateLimitError } from "@/lib/rate-limit"
 import { uploadPaymentProof } from "@/lib/billing"
 import { logAuditEvent } from "@/lib/audit-log"
 import { notifyTransferPendingReview } from "@/lib/super-admin-notifications"
+import { notifyManualPaymentPending } from "@/lib/billing-manual-payment-alert"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -36,6 +37,11 @@ export async function POST(
         id: true,
         amountCents: true,
         currency: true,
+        bankAccount: {
+          select: {
+            bankName: true,
+          },
+        },
         subscription: {
           select: {
             account: {
@@ -109,6 +115,17 @@ export async function POST(
         action: "SETTINGS_CHANGED",
         resourceType: "BillingSubscription",
         details: { newStatus: "ACTIVE", reason: "first_proof_uploaded" },
+      })
+
+      await notifyManualPaymentPending({
+        accountId: user.accountId,
+        paymentId: payment.id,
+        amountCents: payment.amountCents,
+        bankName: payment.bankAccount?.bankName || "Cuenta bancaria",
+        userId: user.id,
+        userName: user.name,
+        userUsername: user.username,
+        userEmail: user.email ?? null,
       })
 
       if (payment.currency === "DOP" || payment.currency === "USD") {
