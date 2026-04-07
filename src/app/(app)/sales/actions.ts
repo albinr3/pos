@@ -33,6 +33,12 @@ function decimalToNumber(decimal: unknown): number {
   return 0
 }
 
+function normalizeRequestedCustomerId(customerId: string | null | undefined): string | null {
+  const normalized = customerId?.trim()
+  if (!normalized) return null
+  return normalized.toLowerCase() === "generic" ? null : normalized
+}
+
 export async function searchProducts(query: string) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -799,6 +805,7 @@ export async function createSale(input: {
   const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
   const soldAt = parseOptionalDateInput(input.soldAt)
+  const requestedCustomerId = normalizeRequestedCustomerId(input.customerId)
 
   try {
     validateCartItems(input.items)
@@ -907,18 +914,18 @@ export async function createSale(input: {
 
       // Validar y usar customerId, o usar el cliente genérico por defecto
       let finalCustomerId: string | null = null
-      if (input.customerId) {
+      if (requestedCustomerId) {
         const customer = await tx.customer.findFirst({
-          where: { id: input.customerId, accountId: user.accountId },
+          where: { id: requestedCustomerId, accountId: user.accountId },
           select: { id: true, accountId: true, isActive: true },
         })
         if (!customer) {
           // Si el cliente no existe, usar el cliente genérico
-          console.warn(`Cliente ${input.customerId} no existe, usando cliente genérico`)
+          console.warn(`Cliente ${requestedCustomerId} no existe, usando cliente genérico`)
           finalCustomerId = genericCustomer.id
         } else if (!customer.isActive) {
           // Si el cliente está inactivo, usar el cliente genérico
-          console.warn(`Cliente ${input.customerId} está inactivo, usando cliente genérico`)
+          console.warn(`Cliente ${requestedCustomerId} está inactivo, usando cliente genérico`)
           finalCustomerId = genericCustomer.id
         } else {
           finalCustomerId = customer.id
@@ -1102,7 +1109,7 @@ export async function createSale(input: {
         step: "transaction",
         type: input.type,
         itemCount: input.items.length,
-        customerId: input.customerId,
+        customerId: requestedCustomerId,
       },
     })
     throw error
@@ -1297,6 +1304,7 @@ export async function updateSale(input: {
   const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
   const soldAt = parseOptionalDateInput(input.soldAt)
+  const requestedCustomerId = normalizeRequestedCustomerId(input.customerId)
 
   validateCartItems(input.items)
 
@@ -1402,9 +1410,9 @@ export async function updateSale(input: {
 
     const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
     let finalCustomerId: string | null = null
-    if (input.customerId) {
+    if (requestedCustomerId) {
       const requestedCustomer = await tx.customer.findFirst({
-        where: { id: input.customerId, accountId: user.accountId },
+        where: { id: requestedCustomerId, accountId: user.accountId },
         select: { id: true, isActive: true },
       })
       if (!requestedCustomer || !requestedCustomer.isActive) {

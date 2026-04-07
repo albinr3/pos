@@ -1001,7 +1001,7 @@ export function PosClient({
         } else {
           try {
             const sale = await createSale({
-              customerId: customerId === "generic" ? "generic" : customerId,
+              customerId: customerId === "generic" ? null : customerId,
               type: saleType,
               paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
               transferBankName:
