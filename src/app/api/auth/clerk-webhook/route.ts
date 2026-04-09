@@ -6,6 +6,39 @@ import { headers } from "next/headers"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function normalizeRegistrationDevice(value: unknown): "DESKTOP" | "MOBILE" | "UNKNOWN" {
+  if (!value || typeof value !== "string") return "UNKNOWN"
+  const normalized = value.trim().toLowerCase()
+  if (["mobile", "movil", "móvil", "phone", "telefono", "teléfono"].includes(normalized)) {
+    return "MOBILE"
+  }
+  if (["desktop", "pc", "computer", "computadora", "laptop"].includes(normalized)) {
+    return "DESKTOP"
+  }
+  return "UNKNOWN"
+}
+
+function inferRegistrationMethod(userData: any): "EMAIL" | "GOOGLE" | "UNKNOWN" {
+  const unsafeMethod = userData?.unsafe_metadata?.registration_method
+  if (typeof unsafeMethod === "string") {
+    const normalized = unsafeMethod.trim().toLowerCase()
+    if (normalized === "google") return "GOOGLE"
+    if (normalized === "email" || normalized === "correo") return "EMAIL"
+  }
+
+  const externalAccounts = Array.isArray(userData?.external_accounts) ? userData.external_accounts : []
+  const hasGoogle = externalAccounts.some((account: any) => {
+    const provider = `${account?.provider || account?.provider_type || ""}`.toLowerCase()
+    return provider.includes("google")
+  })
+  if (hasGoogle) return "GOOGLE"
+
+  const hasEmail = Array.isArray(userData?.email_addresses) && userData.email_addresses.length > 0
+  if (hasEmail) return "EMAIL"
+
+  return "UNKNOWN"
+}
+
 export async function POST(request: NextRequest) {
   // Lazy import de Prisma para evitar inicialización durante el build
   const { prisma } = await import("@/lib/db")
@@ -74,6 +107,17 @@ export async function POST(request: NextRequest) {
       console.log("[Clerk Webhook] Extracted primary email:", primaryEmail)
       console.log("[Clerk Webhook] User name:", name)
 
+      const registrationDevice = normalizeRegistrationDevice(
+        evt.data?.unsafe_metadata?.registration_device ??
+          evt.data?.unsafe_metadata?.device_type ??
+          evt.data?.unsafe_metadata?.device
+      )
+      const registrationMethod = inferRegistrationMethod(evt.data)
+      const registrationUserAgent =
+        typeof evt.data?.unsafe_metadata?.registration_user_agent === "string"
+          ? evt.data.unsafe_metadata.registration_user_agent
+          : null
+
       let account = await prisma.account.findUnique({
         where: { clerkUserId: id },
       })
@@ -85,6 +129,9 @@ export async function POST(request: NextRequest) {
           data: {
             name,
             clerkUserId: id,
+            registeredFromDevice: registrationDevice,
+            registeredWithMethod: registrationMethod,
+            registeredUserAgent: registrationUserAgent,
           },
         })
         console.log("[Clerk Webhook] Created new account:", account.id)

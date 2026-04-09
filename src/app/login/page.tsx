@@ -25,6 +25,17 @@ function LoginContent() {
   const [isRequestingOtp, setIsRequestingOtp] = useState(false)
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false)
   const [isSignupMode, setIsSignupMode] = useState(false)
+  const [signupUnsafeMetadata, setSignupUnsafeMetadata] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const userAgent = window.navigator.userAgent || ""
+    const isMobileDevice = /android|iphone|ipad|ipod|mobile/i.test(userAgent)
+    setSignupUnsafeMetadata({
+      registration_device: isMobileDevice ? "mobile" : "desktop",
+      registration_user_agent: userAgent,
+    })
+  }, [])
 
   // Detectar si hay ?signup=true en la URL usando window.location directamente
   // para evitar el retraso de searchParams cuando Clerk navega internamente
@@ -299,6 +310,7 @@ function LoginContent() {
                 routing="hash"
                 signInUrl="/login"
                 forceRedirectUrl="/select-user"
+                unsafeMetadata={signupUnsafeMetadata}
                 appearance={{
                   elements: {
                     rootBox: "mx-auto",

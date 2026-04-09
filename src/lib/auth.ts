@@ -27,6 +27,39 @@ async function getPrisma() {
   return prisma
 }
 
+function normalizeRegistrationDevice(value: unknown): "DESKTOP" | "MOBILE" | "UNKNOWN" {
+  if (!value || typeof value !== "string") return "UNKNOWN"
+  const normalized = value.trim().toLowerCase()
+  if (["mobile", "movil", "móvil", "phone", "telefono", "teléfono"].includes(normalized)) {
+    return "MOBILE"
+  }
+  if (["desktop", "pc", "computer", "computadora", "laptop"].includes(normalized)) {
+    return "DESKTOP"
+  }
+  return "UNKNOWN"
+}
+
+function inferRegistrationMethodFromClerkUser(clerkUser: any): "EMAIL" | "GOOGLE" | "UNKNOWN" {
+  const unsafeMethod = clerkUser?.unsafeMetadata?.registration_method
+  if (typeof unsafeMethod === "string") {
+    const normalized = unsafeMethod.trim().toLowerCase()
+    if (normalized === "google") return "GOOGLE"
+    if (normalized === "email" || normalized === "correo") return "EMAIL"
+  }
+
+  const externalAccounts = Array.isArray(clerkUser?.externalAccounts) ? clerkUser.externalAccounts : []
+  const hasGoogle = externalAccounts.some((account: any) => {
+    const provider = `${account?.provider || account?.providerType || ""}`.toLowerCase()
+    return provider.includes("google")
+  })
+  if (hasGoogle) return "GOOGLE"
+
+  const hasEmail = Array.isArray(clerkUser?.emailAddresses) && clerkUser.emailAddresses.length > 0
+  if (hasEmail) return "EMAIL"
+
+  return "UNKNOWN"
+}
+
 // ==========================================
 // TYPES
 // ==========================================
@@ -270,12 +303,25 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
       const name = clerkUser 
         ? `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || "Mi Negocio"
         : "Mi Negocio"
+      const registrationDevice = normalizeRegistrationDevice(
+        clerkUser?.unsafeMetadata?.registration_device ??
+          clerkUser?.unsafeMetadata?.device_type ??
+          clerkUser?.unsafeMetadata?.device
+      )
+      const registrationMethod = inferRegistrationMethodFromClerkUser(clerkUser)
+      const registrationUserAgent =
+        typeof clerkUser?.unsafeMetadata?.registration_user_agent === "string"
+          ? clerkUser.unsafeMetadata.registration_user_agent
+          : null
 
       try {
         account = await prisma.account.create({
           data: {
             name: name,
             clerkUserId: userId,
+            registeredFromDevice: registrationDevice,
+            registeredWithMethod: registrationMethod,
+            registeredUserAgent: registrationUserAgent,
           },
         })
         accountWasJustCreated = true

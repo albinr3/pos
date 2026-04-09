@@ -119,6 +119,19 @@ function PaymentStatusBadge({ status }: { status: string }) {
   return <Badge className={className}>{label}</Badge>
 }
 
+function getRegistrationMethodLabel(method: AccountDetail["registeredWithMethod"]): string {
+  if (method === "GOOGLE") return "Google"
+  if (method === "EMAIL") return "Correo"
+  if (method === "WHATSAPP") return "WhatsApp"
+  return "—"
+}
+
+function getRegistrationDeviceLabel(device: AccountDetail["registeredFromDevice"]): string {
+  if (device === "DESKTOP") return "Desktop"
+  if (device === "MOBILE") return "Móvil"
+  return "—"
+}
+
 const PRODUCT_KIND_LABELS: Record<string, string> = {
   BASIC: "Básico",
   MEASURED: "Medido",
@@ -629,6 +642,14 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span>Registrado {formatDateDO(account.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Registro con</p>
+                  <p className="font-medium">{getRegistrationMethodLabel(account.registeredWithMethod)}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Registro desde</p>
+                  <p className="font-medium">{getRegistrationDeviceLabel(account.registeredFromDevice)}</p>
                 </div>
               </div>
             </CardContent>

@@ -128,6 +128,19 @@ enum BillingPaymentStatus {
   REJECTED // Rechazado (comprobante inválido)
 }
 
+enum RegistrationDeviceType {
+  DESKTOP
+  MOBILE
+  UNKNOWN
+}
+
+enum RegistrationMethod {
+  EMAIL
+  GOOGLE
+  WHATSAPP
+  UNKNOWN
+}
+
 enum ManualVerificationStatus {
   NONE // No aplica (pago con tarjeta)
   PENDING // Esperando verificación
@@ -191,6 +204,9 @@ model Account {
 
   name        String // Nombre del negocio
   clerkUserId String @unique // ID del usuario Clerk que es dueño
+  registeredFromDevice RegistrationDeviceType @default(UNKNOWN)
+  registeredWithMethod RegistrationMethod     @default(UNKNOWN)
+  registeredUserAgent  String?
 
   // Relaciones - todos los datos del tenant
   users                User[]

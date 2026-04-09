@@ -9,6 +9,18 @@ import { logError, ErrorCodes } from "@/lib/error-logger"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function inferDeviceFromUserAgent(userAgent: string | null): "DESKTOP" | "MOBILE" | "UNKNOWN" {
+  if (!userAgent) return "UNKNOWN"
+  const ua = userAgent.toLowerCase()
+  if (/android|iphone|ipad|ipod|mobile/.test(ua)) {
+    return "MOBILE"
+  }
+  if (/windows|macintosh|linux/.test(ua)) {
+    return "DESKTOP"
+  }
+  return "UNKNOWN"
+}
+
 export async function POST(request: NextRequest) {
   // Lazy import de Prisma para evitar inicialización durante el build
   const { prisma } = await import("@/lib/db")
@@ -186,11 +198,15 @@ export async function POST(request: NextRequest) {
       })
 
       if (!account) {
+        const userAgent = request.headers.get("user-agent")
         account = await prisma.account.create({
           data: {
             id: "default_account",
             name: "Mi Negocio",
             clerkUserId: "whatsapp_users",
+            registeredFromDevice: inferDeviceFromUserAgent(userAgent),
+            registeredWithMethod: "WHATSAPP",
+            registeredUserAgent: userAgent,
           },
         })
       }

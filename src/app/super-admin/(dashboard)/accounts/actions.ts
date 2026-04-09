@@ -6,7 +6,13 @@ import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-aut
 import { processBillingEngine } from "@/lib/billing"
 import { revalidatePath } from "next/cache"
 import { hash } from "bcryptjs"
-import type { BillingStatus, BillingCurrency, BillingProvider } from "@prisma/client"
+import type {
+  BillingStatus,
+  BillingCurrency,
+  BillingProvider,
+  RegistrationDeviceType,
+  RegistrationMethod,
+} from "@prisma/client"
 
 export async function resetUserPassword(
   userId: string,
@@ -62,6 +68,8 @@ export type AccountListItem = {
   name: string
   createdAt: Date
   clerkUserId: string
+  registeredFromDevice: RegistrationDeviceType
+  registeredWithMethod: RegistrationMethod
 
   // Billing info
   status: BillingStatus
@@ -188,6 +196,8 @@ export async function getAccounts(): Promise<AccountListItem[]> {
       name: account.name,
       createdAt: account.createdAt,
       clerkUserId: account.clerkUserId,
+      registeredFromDevice: account.registeredFromDevice,
+      registeredWithMethod: account.registeredWithMethod,
 
       status: sub?.status || "BLOCKED",
       currency: sub?.currency || "DOP",
@@ -272,6 +282,8 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
     name: account.name,
     createdAt: account.createdAt,
     clerkUserId: account.clerkUserId,
+    registeredFromDevice: account.registeredFromDevice,
+    registeredWithMethod: account.registeredWithMethod,
 
     // Billing
     status: sub?.status || "BLOCKED",

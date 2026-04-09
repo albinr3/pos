@@ -65,6 +65,19 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className={className}>{label}</Badge>
 }
 
+function getRegistrationMethodLabel(method: AccountListItem["registeredWithMethod"]): string {
+  if (method === "GOOGLE") return "Google"
+  if (method === "EMAIL") return "Correo"
+  if (method === "WHATSAPP") return "WhatsApp"
+  return "—"
+}
+
+function getRegistrationDeviceLabel(device: AccountListItem["registeredFromDevice"]): string {
+  if (device === "DESKTOP") return "Desktop"
+  if (device === "MOBILE") return "Móvil"
+  return "—"
+}
+
 export function AccountsClient({ initialAccounts }: { initialAccounts: AccountListItem[] }) {
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -199,6 +212,7 @@ export function AccountsClient({ initialAccounts }: { initialAccounts: AccountLi
               <TableHeader>
                 <TableRow>
                   <TableHead>Negocio</TableHead>
+                  <TableHead>Registro</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Plan</TableHead>
                   <TableHead>Uso</TableHead>
@@ -209,7 +223,7 @@ export function AccountsClient({ initialAccounts }: { initialAccounts: AccountLi
               <TableBody>
                 {filteredAccounts.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No se encontraron cuentas
                     </TableCell>
                   </TableRow>
@@ -235,6 +249,18 @@ export function AccountsClient({ initialAccounts }: { initialAccounts: AccountLi
                             <div className="flex items-center gap-1 text-xs text-muted-foreground">
                               <Calendar className="h-3 w-3" />
                               {formatDateDO(account.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Método: </span>
+                              <span>{getRegistrationMethodLabel(account.registeredWithMethod)}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Dispositivo: </span>
+                              <span>{getRegistrationDeviceLabel(account.registeredFromDevice)}</span>
                             </div>
                           </div>
                         </TableCell>
