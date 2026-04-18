@@ -303,6 +303,12 @@ export function BillingClient({ initialData }: BillingClientProps) {
     ? payments.find(p => p.id === activePaymentId)
     : pendingPayment
 
+  const shouldShowManualDuePaymentOptions =
+    state.status === "ACTIVE" &&
+    state.provider === "MANUAL" &&
+    state.daysRemaining !== null &&
+    state.daysRemaining <= 2
+
   useEffect(() => {
     if (uploadedProofUrl) return
     try {
@@ -397,7 +403,7 @@ export function BillingClient({ initialData }: BillingClientProps) {
       </Card>
 
       {/* Payment Options */}
-      {(state.needsPayment || state.isBlocked || state.isTrialing) && (
+      {(state.needsPayment || state.isBlocked || state.isTrialing || shouldShowManualDuePaymentOptions) && (
         <Card className="p-6 mb-6">
           <h2 className="text-lg font-semibold mb-4">Métodos de pago</h2>
 
