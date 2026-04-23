@@ -218,7 +218,7 @@ export function SuppliersClient() {
                   </div>
                 )}
                 <div className="text-xs text-muted-foreground -mt-2 ml-6">
-                  Si se marca, el cálculo de compras usará el porcentaje ITBIS definido para este proveedor.
+                  Si se marca, el cálculo de compras sumara adicionalmente al costo que coloques el ITBIS definido para este proveedor.
                 </div>
 
                 <div className="grid gap-2">
