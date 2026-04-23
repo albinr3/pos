@@ -242,7 +242,7 @@ export async function createPurchaseFromOCR(input: {
     const purchaseItbisRateBp = settings?.itbisRateBp ?? 1800
     const defaultProfitMarginBp = settings?.defaultProfitMarginBp ?? 3000
     const salePricesIncludeItbis = settings?.salePricesIncludeItbis ?? true
-    const purchaseIncludesItbis = supplier ? (supplier.chargesItbis ?? false) : true
+    const purchaseIncludesItbis = supplier ? (supplier.chargesItbis ?? false) : false
     const supplierPurchaseItbisRateBp = supplier?.chargesItbis
       ? (supplier.itbisRateBp ?? purchaseItbisRateBp)
       : purchaseItbisRateBp

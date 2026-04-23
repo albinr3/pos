@@ -78,7 +78,7 @@ export function ScanInvoiceClient() {
   }, [])
 
   function resolveLinePricing(product: ReviewProduct, discountBp: number, overrides?: { saleMarginBp?: number; salePriceCents?: number }) {
-    const purchaseIncludesItbis = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : true
+    const purchaseIncludesItbis = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : false
     const purchaseItbisRateBp = getPurchaseItbisRateBp()
     const saleItbisRateBp = product.matchedProductItbisRateBp > 0
       ? product.matchedProductItbisRateBp
@@ -852,7 +852,7 @@ export function ScanInvoiceClient() {
                           <TableCell className="text-right font-medium">
                             <div>{formatRD(product.netCostCents * product.quantity)}</div>
                             <div className="text-[10px] font-semibold text-muted-foreground">
-                              Desc: {((productDiscounts[index] ?? 0) / 100).toFixed(2)}% · Compra con ITBIS incluido: {selectedSupplier ? (selectedSupplier.chargesItbis ? "No" : "Si") : "No"} · Venta ITBIS: {product.matchedProductItbisRateBp > 0 ? "Si" : "No"}
+                              Desc: {((productDiscounts[index] ?? 0) / 100).toFixed(2)}% · Compra con ITBIS incluido: {selectedSupplier ? (selectedSupplier.chargesItbis ? "No" : "Si") : "Si"} · Venta ITBIS: {product.matchedProductItbisRateBp > 0 ? "Si" : "No"}
                             </div>
                             <div className="text-[10px] text-muted-foreground">
                               NOTA: Si quieres que el producto se venda con o sin ITBIS debes modificar el perfil del producto y ponerlo como exento.

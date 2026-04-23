@@ -158,6 +158,15 @@ export function PurchasesListClient() {
 
     if (!nextSupplierId) {
       setSupplierName("")
+      const purchaseItbisForSupplier = itbisRateBp
+      setCart((prev) =>
+        prev.map((item) =>
+          recalcCartItem(item, {
+            discountPercentBp: 0,
+            purchaseIncludesItbis: false,
+          }, purchaseItbisForSupplier)
+        )
+      )
       return
     }
 
@@ -193,7 +202,7 @@ export function PurchasesListClient() {
         const pricing = resolvePurchaseSalePricing({
           unitCostCents: item.unitCostCents,
           discountPercentBp: item.discountPercentBp,
-          purchaseIncludesItbis: item.purchaseIncludesItbis ?? true,
+          purchaseIncludesItbis: item.purchaseIncludesItbis ?? false,
           purchaseItbisRateBp: purchaseItbisForSupplier,
           productItbisRateBp: item.product.itbisRateBp,
           defaultSaleMarginBp: defaultProfitMarginBp,
@@ -243,7 +252,7 @@ export function PurchasesListClient() {
       }
 
       const discountPercentBp = selectedSupplier?.discountPercentBp ?? 0
-      const purchaseIncludesItbis = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : true
+      const purchaseIncludesItbis = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : false
       const purchaseItbisRateBp = getPurchaseItbisRateBp(selectedSupplier)
       const pricing = resolvePurchaseSalePricing({
         unitCostCents: p.costCents ?? 0,
@@ -696,7 +705,7 @@ export function PurchasesListClient() {
                         </div>
 
                         <div className="mt-2 text-xs font-semibold text-muted-foreground">
-                          Descuento proveedor aplicado: {(c.discountPercentBp / 100).toFixed(2)}% · Compra con ITBIS incluido: {c.purchaseIncludesItbis ? "No" : "Si"} · Venta con ITBIS: {c.appliedItbisRateBp > 0 ? "Si" : "No"}
+                          Descuento proveedor aplicado: {(c.discountPercentBp / 100).toFixed(2)}% · Compra con ITBIS incluido: {selectedSupplier ? (selectedSupplier.chargesItbis ? "No" : "Si") : (c.purchaseIncludesItbis ? "No" : "Si")} · Venta con ITBIS: {c.appliedItbisRateBp > 0 ? "Si" : "No"}
                         </div>
                         <div className="mt-1 text-xs text-muted-foreground">
                           NOTA: Si quieres que el producto se venda con o sin ITBIS debes modificar el perfil del producto y ponerlo como exento.

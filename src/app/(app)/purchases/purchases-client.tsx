@@ -162,7 +162,7 @@ export function PurchasesClient() {
         prev.map((item) =>
           recalcCartItem(item, {
             discountPercentBp: 0,
-            purchaseIncludesItbis: true,
+            purchaseIncludesItbis: false,
           }, purchaseItbisForSupplier)
         )
       )
@@ -213,7 +213,7 @@ export function PurchasesClient() {
 
       const discountBp = selectedSupplier?.discountPercentBp ?? 0
       const unitCostCents = p.costCents ?? 0
-      const purchaseIncludes = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : true
+      const purchaseIncludes = selectedSupplier ? (selectedSupplier.chargesItbis ?? false) : false
       const purchaseItbisRateBp = getPurchaseItbisRateBp(selectedSupplier)
       const pricing = calculatePricing({
         unitCostCents,
@@ -697,7 +697,7 @@ export function PurchasesClient() {
                       </div>
                     </div>
                     <div className="mt-2 text-xs font-semibold text-muted-foreground">
-                      Descuento proveedor aplicado: {(c.discountPercentBp / 100).toFixed(2)}% · Compra con ITBIS incluido: {c.purchaseIncludesItbis ? "No" : "Sí"} · Venta con ITBIS: {c.appliedItbisRateBp > 0 ? "Sí" : "No"}
+                      Descuento proveedor aplicado: {(c.discountPercentBp / 100).toFixed(2)}% · Compra con ITBIS incluido: {selectedSupplier ? (selectedSupplier.chargesItbis ? "No" : "Sí") : (c.purchaseIncludesItbis ? "No" : "Sí")} · Venta con ITBIS: {c.appliedItbisRateBp > 0 ? "Sí" : "No"}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
                       NOTA: Si quieres que el producto se venda con o sin ITBIS debes modificar el perfil del producto y ponerlo como exento.

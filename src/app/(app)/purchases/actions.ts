@@ -85,7 +85,7 @@ async function buildPurchaseItems(params: {
     const discountPercentBp = item.discountPercentBp ?? params.supplier?.discountPercentBp ?? 0
     const purchaseIncludesItbis = params.supplier
       ? (params.supplier.chargesItbis ?? false)
-      : (item.purchaseIncludesItbis ?? true)
+      : (item.purchaseIncludesItbis ?? false)
     const pricing = resolvePurchaseSalePricing({
       unitCostCents: item.unitCostCents,
       discountPercentBp,
