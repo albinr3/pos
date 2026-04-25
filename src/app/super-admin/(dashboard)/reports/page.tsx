@@ -1,12 +1,23 @@
+import { redirect } from "next/navigation"
+
+import { getCurrentSuperAdmin } from "@/lib/super-admin-auth"
+
+import { getSuperAdminAccountsReport } from "./actions"
+import { SuperAdminReportsClient } from "./reports-client"
+
 export const dynamic = "force-dynamic"
 
-export default function ReportsPage() {
-  return (
-    <div className="space-y-2">
-      <h1 className="text-3xl font-bold">Reportes</h1>
-      <p className="text-muted-foreground">
-        Proximamente. Esta seccion se habilitara en la Fase 2.
-      </p>
-    </div>
-  )
+export default async function ReportsPage() {
+  const admin = await getCurrentSuperAdmin()
+  if (!admin) {
+    redirect("/super-admin/login")
+  }
+
+  if (!(admin.role === "OWNER" || admin.role === "ADMIN" || admin.canViewFinancials)) {
+    redirect("/super-admin")
+  }
+
+  const rows = await getSuperAdminAccountsReport()
+
+  return <SuperAdminReportsClient rows={rows} />
 }
