@@ -1,9 +1,31 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useMemo, useRef, useState, useTransition } from "react"
+import { UploadButton } from "@uploadthing/react"
 import { formatDateDO } from "@/lib/date-time"
-import { Mail, Megaphone, Search, Send, Users } from "lucide-react"
+import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold,
+  Heading2,
+  ImagePlus,
+  Italic,
+  Link2,
+  List,
+  ListOrdered,
+  Mail,
+  Megaphone,
+  Pilcrow,
+  Redo2,
+  Search,
+  Send,
+  Underline,
+  Undo2,
+  Users,
+} from "lucide-react"
 
+import type { OurFileRouter } from "@/app/api/uploadthing/core"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,7 +33,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
 
 import { sendMassMarketingEmail, type MarketingAccountItem } from "./actions"
@@ -29,6 +50,16 @@ function StatusBadge({ status }: { status: MarketingAccountItem["status"] }) {
   return <Badge className={data.className}>{data.label}</Badge>
 }
 
+function htmlToPlainText(html: string) {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
 export function EmailMarketingClient({ initialAccounts }: { initialAccounts: MarketingAccountItem[] }) {
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
@@ -36,7 +67,8 @@ export function EmailMarketingClient({ initialAccounts }: { initialAccounts: Mar
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [subject, setSubject] = useState("")
-  const [message, setMessage] = useState("")
+  const [htmlContent, setHtmlContent] = useState("<p></p>")
+  const editorRef = useRef<HTMLDivElement | null>(null)
 
   const filteredAccounts = useMemo(() => {
     const searchTerm = search.trim().toLowerCase()
@@ -98,7 +130,42 @@ export function EmailMarketingClient({ initialAccounts }: { initialAccounts: Mar
     setSelectedIds([])
   }
 
+  const runCommand = (command: string, value?: string) => {
+    editorRef.current?.focus()
+    document.execCommand(command, false, value)
+    setHtmlContent(editorRef.current?.innerHTML || "")
+  }
+
+  const insertLink = () => {
+    const url = window.prompt("Pega la URL del enlace")
+    if (!url) return
+    runCommand("createLink", url.trim())
+  }
+
+  const insertImageByUrl = () => {
+    const imageUrl = window.prompt("Pega la URL de la imagen")
+    if (!imageUrl) return
+    runCommand("insertImage", imageUrl.trim())
+  }
+
+  const handleEditorInput = () => {
+    setHtmlContent(editorRef.current?.innerHTML || "")
+  }
+
+  const handleUploadComplete = (res: Array<any>) => {
+    const first = res?.[0]
+    const imageUrl = first?.serverData?.url ?? first?.ufsUrl ?? first?.url
+    if (!imageUrl) {
+      toast({ title: "No se pudo obtener la URL de la imagen", variant: "destructive" })
+      return
+    }
+    runCommand("insertImage", imageUrl)
+    toast({ title: "Imagen adjuntada" })
+  }
+
   const handleSend = () => {
+    const plainMessage = htmlToPlainText(htmlContent)
+
     if (!selectedIds.length) {
       toast({ title: "Selecciona al menos una cuenta", variant: "destructive" })
       return
@@ -109,7 +176,7 @@ export function EmailMarketingClient({ initialAccounts }: { initialAccounts: Mar
       return
     }
 
-    if (!message.trim()) {
+    if (!plainMessage) {
       toast({ title: "El contenido es obligatorio", variant: "destructive" })
       return
     }
@@ -118,7 +185,7 @@ export function EmailMarketingClient({ initialAccounts }: { initialAccounts: Mar
       const result = await sendMassMarketingEmail({
         accountIds: selectedIds,
         subject,
-        message,
+        htmlContent,
       })
 
       if (!result.success) {
@@ -169,15 +236,61 @@ export function EmailMarketingClient({ initialAccounts }: { initialAccounts: Mar
           </div>
 
           <div className="grid gap-2">
-            <Label htmlFor="message">Mensaje</Label>
-            <Textarea
-              id="message"
-              placeholder="Escribe aqui el contenido del correo..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={8}
-              maxLength={12000}
-            />
+            <Label>Mensaje (editor HTML)</Label>
+            <div className="rounded-md border bg-background">
+              <div className="flex flex-wrap gap-2 border-b p-2">
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("undo")}><Undo2 className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("redo")}><Redo2 className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("bold")}><Bold className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("italic")}><Italic className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("underline")}><Underline className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("formatBlock", "H2")}><Heading2 className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("formatBlock", "P")}><Pilcrow className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("insertUnorderedList")}><List className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("insertOrderedList")}><ListOrdered className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("justifyLeft")}><AlignLeft className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("justifyCenter")}><AlignCenter className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => runCommand("justifyRight")}><AlignRight className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={insertLink}><Link2 className="h-4 w-4" /></Button>
+                <Button type="button" size="sm" variant="outline" onClick={insertImageByUrl}><ImagePlus className="h-4 w-4" /></Button>
+                <input
+                  aria-label="Color del texto"
+                  title="Color del texto"
+                  type="color"
+                  className="h-9 w-12 cursor-pointer rounded border"
+                  onChange={(e) => runCommand("foreColor", e.target.value)}
+                />
+                <UploadButton<OurFileRouter, "productImageUploader">
+                  endpoint="productImageUploader"
+                  onClientUploadComplete={handleUploadComplete}
+                  onUploadError={(error: Error) => {
+                    toast({ title: "Error al subir imagen", description: error.message, variant: "destructive" })
+                  }}
+                  content={{
+                    button() {
+                      return "Adjuntar imagen"
+                    },
+                  }}
+                  appearance={{
+                    button:
+                      "ut-ready:bg-transparent ut-uploading:cursor-not-allowed rounded-md border border-input bg-background px-3 py-2 text-xs font-medium text-foreground hover:bg-accent hover:text-accent-foreground",
+                    container: "w-auto",
+                    allowedContent: "hidden",
+                  }}
+                />
+              </div>
+              <div
+                ref={editorRef}
+                className="min-h-[260px] p-3 focus:outline-none [&_img]:max-w-full [&_img]:rounded [&_img]:my-2 [&_a]:text-blue-600 [&_a]:underline"
+                contentEditable
+                suppressContentEditableWarning
+                onInput={handleEditorInput}
+                dangerouslySetInnerHTML={{ __html: htmlContent }}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Puedes formatear texto, insertar enlaces e imagenes (URL o adjuntar archivo).
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">

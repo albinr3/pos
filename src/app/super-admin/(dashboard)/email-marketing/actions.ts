@@ -21,7 +21,8 @@ export type MarketingAccountItem = {
 type SendMassMarketingEmailInput = {
   accountIds: string[]
   subject: string
-  message: string
+  message?: string
+  htmlContent?: string
 }
 
 type SendMassMarketingEmailResult = {
@@ -47,8 +48,31 @@ function escapeHtml(input: string): string {
     .replace(/'/g, "&#39;")
 }
 
-function buildMarketingEmailHtml(accountName: string, message: string): string {
-  const messageHtml = escapeHtml(message).replace(/\r?\n/g, "<br />")
+function stripHtml(input: string): string {
+  return input
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+function sanitizeMarketingHtml(input: string): string {
+  let html = input.trim()
+
+  html = html.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+  html = html.replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+  html = html.replace(/<iframe[\s\S]*?>[\s\S]*?<\/iframe>/gi, "")
+  html = html.replace(/<object[\s\S]*?>[\s\S]*?<\/object>/gi, "")
+  html = html.replace(/<embed[\s\S]*?>[\s\S]*?<\/embed>/gi, "")
+  html = html.replace(/\s(on\w+)=(".*?"|'.*?'|[^\s>]+)/gi, "")
+  html = html.replace(/(href|src)\s*=\s*(['"])javascript:[\s\S]*?\2/gi, "")
+
+  return html
+}
+
+function buildMarketingEmailHtml(accountName: string, messageHtml: string): string {
   const safeAccountName = escapeHtml(accountName)
   const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
   const safeSupportEmail = escapeHtml(supportEmail)
@@ -57,7 +81,7 @@ function buildMarketingEmailHtml(accountName: string, message: string): string {
     <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; line-height: 1.6; color: #111827;">
       <h2 style="margin: 0 0 16px;">MOVOPos</h2>
       <p style="margin: 0 0 12px;">Hola, equipo de <strong>${safeAccountName}</strong>.</p>
-      <p style="margin: 0 0 16px;">${messageHtml}</p>
+      <div style="margin: 0 0 16px;">${messageHtml}</div>
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
       <p style="font-size: 12px; color: #6b7280; margin: 0;">
         Si necesitas ayuda, puedes responder a este correo o escribir a ${safeSupportEmail}.
@@ -123,7 +147,12 @@ export async function sendMassMarketingEmail(
   }
 
   const subject = input.subject.trim()
-  const message = input.message.trim()
+  const fallbackMessage = (input.message || "").trim()
+  const rawHtmlContent = (input.htmlContent || "").trim()
+  const normalizedHtml = rawHtmlContent
+    ? sanitizeMarketingHtml(rawHtmlContent)
+    : escapeHtml(fallbackMessage).replace(/\r?\n/g, "<br />")
+  const plainText = stripHtml(normalizedHtml)
   const normalizedAccountIds = Array.from(new Set(input.accountIds.map((id) => id.trim()).filter(Boolean)))
 
   if (!normalizedAccountIds.length) {
@@ -135,11 +164,11 @@ export async function sendMassMarketingEmail(
   if (subject.length > 180) {
     return { success: false, error: "El asunto no puede superar 180 caracteres" }
   }
-  if (!message) {
+  if (!plainText) {
     return { success: false, error: "El contenido del correo es obligatorio" }
   }
-  if (message.length > 12000) {
-    return { success: false, error: "El contenido no puede superar 12000 caracteres" }
+  if (normalizedHtml.length > 60000) {
+    return { success: false, error: "El contenido HTML no puede superar 60000 caracteres" }
   }
 
   const accounts = await prisma.account.findMany({
@@ -193,7 +222,7 @@ export async function sendMassMarketingEmail(
   const failedRecipients: string[] = []
 
   for (const recipient of recipients) {
-    const html = buildMarketingEmailHtml(recipient.accountName, message)
+    const html = buildMarketingEmailHtml(recipient.accountName, normalizedHtml)
     const ok = await sendResendEmail({
       to: recipient.email,
       subject,
