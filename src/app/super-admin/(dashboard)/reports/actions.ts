@@ -29,6 +29,11 @@ export async function getSuperAdminAccountsReport(): Promise<SuperAdminAccountsR
 
   const accounts = await prisma.account.findMany({
     include: {
+      companySettings: {
+        select: {
+          phone: true,
+        },
+      },
       billingProfile: {
         select: {
           email: true,
@@ -64,7 +69,7 @@ export async function getSuperAdminAccountsReport(): Promise<SuperAdminAccountsR
       ownerName: owner?.name || null,
       ownerEmail: sanitizeEmail(owner?.email || "") || null,
       billingEmail: sanitizeEmail(account.billingProfile?.email || "") || null,
-      ownerWhatsapp: owner?.whatsappNumber || null,
+      ownerWhatsapp: account.companySettings?.phone || owner?.whatsappNumber || null,
       createdAt: account.createdAt,
     }
   })
