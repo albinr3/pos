@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { UploadButton } from "@uploadthing/react"
 import { formatDateDO } from "@/lib/date-time"
 import {
@@ -69,6 +69,14 @@ export function EmailMarketingClient({ initialAccounts }: { initialAccounts: Mar
   const [subject, setSubject] = useState("")
   const [htmlContent, setHtmlContent] = useState("<p></p>")
   const editorRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!editorRef.current) return
+    if (!editorRef.current.innerHTML.trim()) {
+      editorRef.current.innerHTML = "<p></p>"
+      setHtmlContent(editorRef.current.innerHTML)
+    }
+  }, [])
 
   const filteredAccounts = useMemo(() => {
     const searchTerm = search.trim().toLowerCase()
@@ -282,10 +290,10 @@ export function EmailMarketingClient({ initialAccounts }: { initialAccounts: Mar
               <div
                 ref={editorRef}
                 className="min-h-[260px] p-3 focus:outline-none [&_img]:max-w-full [&_img]:rounded [&_img]:my-2 [&_a]:text-blue-600 [&_a]:underline"
+                dir="ltr"
                 contentEditable
                 suppressContentEditableWarning
                 onInput={handleEditorInput}
-                dangerouslySetInnerHTML={{ __html: htmlContent }}
               />
             </div>
             <p className="text-xs text-muted-foreground">
