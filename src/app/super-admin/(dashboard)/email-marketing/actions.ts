@@ -114,8 +114,12 @@ export async function sendMassMarketingEmail(
   input: SendMassMarketingEmailInput
 ): Promise<SendMassMarketingEmailResult> {
   const admin = await getCurrentSuperAdmin()
-  if (!admin || !canAccessEmailMarketing(admin)) {
-    return { success: false, error: "No tienes permisos para enviar correos masivos" }
+  if (!admin) {
+    return { success: false, error: "Sesion expirada. Inicia sesion nuevamente en super-admin." }
+  }
+
+  if (!canAccessEmailMarketing(admin)) {
+    return { success: false, error: "Tu usuario no tiene permiso canSendEmails para enviar correos masivos." }
   }
 
   const subject = input.subject.trim()
