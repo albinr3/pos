@@ -466,6 +466,21 @@ export function SalesListClient() {
                   <TableRow key={s.id} className={s.cancelledAt ? "bg-red-50" : ""}>
                     <TableCell className="font-medium">
                       {s.invoiceCode}
+                      {s.returnStatus && (
+                        <div className="mt-1">
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              "font-semibold",
+                              s.returnStatus === "TOTAL"
+                                ? "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700"
+                                : "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700"
+                            )}
+                          >
+                            {s.returnStatus === "TOTAL" ? "Devolución total" : "Devolución parcial"}
+                          </Badge>
+                        </div>
+                      )}
                       {s.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADA</div>}
                     </TableCell>
                     <TableCell>{formatDateDO(s.soldAt)}</TableCell>

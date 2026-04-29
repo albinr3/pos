@@ -256,6 +256,10 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
       totalCents: true,
       cancelledAt: true,
       customer: { select: { name: true, visualId: true } },
+      returns: {
+        where: { cancelledAt: null },
+        select: { totalCents: true },
+      },
     },
   })
 
@@ -263,8 +267,24 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
   const pageItems = hasMore ? sales.slice(0, take) : sales
   const nextCursor = hasMore ? pageItems[pageItems.length - 1]?.id ?? null : null
 
+  const mappedItems = pageItems.map((sale) => {
+    const returnedTotalCents = sale.returns.reduce((sum, returnRecord) => sum + returnRecord.totalCents, 0)
+    const returnStatus =
+      returnedTotalCents <= 0
+        ? null
+        : returnedTotalCents >= sale.totalCents
+          ? "TOTAL"
+          : "PARCIAL"
+
+    return {
+      ...sale,
+      returnedTotalCents,
+      returnStatus,
+    }
+  })
+
   return {
-    items: pageItems,
+    items: mappedItems,
     nextCursor,
   }
 }
