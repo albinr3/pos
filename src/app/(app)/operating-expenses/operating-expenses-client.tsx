@@ -32,9 +32,14 @@ function fromInputDateValue(value: string) {
 }
 
 export function OperatingExpensesClient() {
+  const today = toInputDateValue(new Date())
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Expense[]>([])
   const [isLoading, startLoading] = useTransition()
+  const [fromDate, setFromDate] = useState(today)
+  const [toDate, setToDate] = useState(today)
+  const [appliedFromDate, setAppliedFromDate] = useState(today)
+  const [appliedToDate, setAppliedToDate] = useState(today)
 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Expense | null>(null)
@@ -45,10 +50,10 @@ export function OperatingExpensesClient() {
   const [notes, setNotes] = useState("")
   const [isSaving, startSaving] = useTransition()
 
-  function refresh() {
+  function refresh(input?: { from?: string; to?: string }) {
     startLoading(async () => {
       try {
-        const r = await listOperatingExpenses()
+        const r = await listOperatingExpenses(input)
         setItems(r)
       } catch {
         setItems([])
@@ -57,8 +62,8 @@ export function OperatingExpensesClient() {
   }
 
   useEffect(() => {
-    refresh()
-  }, [])
+    refresh({ from: appliedFromDate, to: appliedToDate })
+  }, [appliedFromDate, appliedToDate])
 
   function resetForm(e?: Expense | null) {
     const x = e ?? null
@@ -100,7 +105,7 @@ export function OperatingExpensesClient() {
         }
         setOpen(false)
         resetForm(null)
-        refresh()
+        refresh({ from: appliedFromDate, to: appliedToDate })
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
       }
@@ -112,10 +117,23 @@ export function OperatingExpensesClient() {
     try {
       await deleteOperatingExpense(id)
       toast({ title: "Listo", description: "Gasto operativo eliminado" })
-      refresh()
+      refresh({ from: appliedFromDate, to: appliedToDate })
     } catch (e) {
       toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo eliminar" })
     }
+  }
+
+  function onApplyDateFilter() {
+    if (!fromDate || !toDate) {
+      toast({ title: "Rango inválido", description: "Selecciona fecha desde y hasta." })
+      return
+    }
+    if (fromDate > toDate) {
+      toast({ title: "Rango inválido", description: "La fecha desde no puede ser mayor que la fecha hasta." })
+      return
+    }
+    setAppliedFromDate(fromDate)
+    setAppliedToDate(toDate)
   }
 
   const filteredItems = items.filter((item) => {
@@ -189,9 +207,28 @@ export function OperatingExpensesClient() {
           </Dialog>
         </CardHeader>
         <CardContent className="grid gap-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="grid gap-1">
+              <Label className="text-xs text-muted-foreground">Desde</Label>
+              <Input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label className="text-xs text-muted-foreground">Hasta</Label>
+              <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            </div>
+            <Button variant="secondary" type="button" onClick={onApplyDateFilter}>
+              Aplicar
+            </Button>
+          </div>
+
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
-            <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por descripción, categoría o notas" />
+            <Input
+              className="pl-10"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar por descripción, categoría o notas"
+            />
           </div>
 
           <div className="rounded-md border overflow-x-auto">
