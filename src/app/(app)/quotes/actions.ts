@@ -33,6 +33,12 @@ function roundQty(value: number) {
   return Math.round(value * 1000) / 1000
 }
 
+function normalizeRequestedCustomerId(customerId: string | null | undefined): string | null {
+  const normalized = customerId?.trim()
+  if (!normalized) return null
+  return normalized.toLowerCase() === "generic" ? null : normalized
+}
+
 function normalizeQuote<T extends { items: { qty: Decimal | number; product?: unknown }[] }>(quote: T): T {
   return {
     ...quote,
@@ -617,6 +623,7 @@ export async function createQuote(input: {
 
   const normalizedItems = normalizeQuoteInputItems(input.items)
   validateQuoteItems(normalizedItems)
+  const requestedCustomerId = normalizeRequestedCustomerId(input.customerId)
 
   const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
   const salePricesIncludeItbis = input.salePricesIncludeItbis ?? (settings?.salePricesIncludeItbis ?? true)
@@ -633,12 +640,24 @@ export async function createQuote(input: {
     const code = quoteCode(number)
 
     const resolvedLines = await resolveQuoteLines(tx, currentUser.accountId, normalizedItems)
-    const customerForDiscount = input.customerId
-      ? await tx.customer.findFirst({
-          where: { id: input.customerId, accountId: currentUser.accountId, isActive: true },
-          select: { saleDiscountPercentBp: true },
-        })
-      : null
+    const genericCustomer = await ensureGenericCustomer(tx, currentUser.accountId)
+    let finalCustomerId = genericCustomer.id
+    if (requestedCustomerId) {
+      const requestedCustomer = await tx.customer.findFirst({
+        where: { id: requestedCustomerId, accountId: currentUser.accountId, isActive: true },
+        select: { id: true },
+      })
+      if (requestedCustomer) {
+        finalCustomerId = requestedCustomer.id
+      }
+    }
+    const customerForDiscount = await tx.customer.findFirst({
+      where: { id: finalCustomerId, accountId: currentUser.accountId, isActive: true },
+      select: { id: true, saleDiscountPercentBp: true },
+    })
+    if (!customerForDiscount) {
+      throw new Error("No se pudo resolver el cliente de la cotización.")
+    }
 
     for (const line of resolvedLines) {
       const originalPriceCents = Number(line.product.priceCents)
@@ -689,7 +708,7 @@ export async function createQuote(input: {
         accountId: currentUser.accountId,
         quoteNumber: number,
         quoteCode: code,
-        customerId: input.customerId || null,
+        customerId: finalCustomerId,
         userId: currentUser.id,
         validUntil: input.validUntil || null,
         subtotalCents,
@@ -747,7 +766,7 @@ export async function createQuote(input: {
         discountSource: quote.discountSource,
         discountPercentBp: quote.discountPercentBp,
         itemsCount: resolvedLines.length,
-        customerId: input.customerId,
+        customerId: finalCustomerId,
       },
     }, tx)
 
@@ -779,6 +798,7 @@ export async function updateQuote(input: {
 
   const normalizedItems = normalizeQuoteInputItems(input.items)
   validateQuoteItems(normalizedItems)
+  const requestedCustomerId = normalizeRequestedCustomerId(input.customerId)
 
   const settings = await prisma.companySettings.findFirst({ where: { accountId: currentUser.accountId } })
   const accountSalePricesIncludeItbis = settings?.salePricesIncludeItbis ?? true
@@ -801,12 +821,24 @@ export async function updateQuote(input: {
     const resolvedLines = await resolveQuoteLines(tx, currentUser.accountId, normalizedItems, {
       allowUnavailableProductIds,
     })
-    const customerForDiscount = input.customerId
-      ? await tx.customer.findFirst({
-          where: { id: input.customerId, accountId: currentUser.accountId, isActive: true },
-          select: { saleDiscountPercentBp: true },
-        })
-      : null
+    const genericCustomer = await ensureGenericCustomer(tx, currentUser.accountId)
+    let finalCustomerId = genericCustomer.id
+    if (requestedCustomerId) {
+      const requestedCustomer = await tx.customer.findFirst({
+        where: { id: requestedCustomerId, accountId: currentUser.accountId, isActive: true },
+        select: { id: true },
+      })
+      if (requestedCustomer) {
+        finalCustomerId = requestedCustomer.id
+      }
+    }
+    const customerForDiscount = await tx.customer.findFirst({
+      where: { id: finalCustomerId, accountId: currentUser.accountId, isActive: true },
+      select: { id: true, saleDiscountPercentBp: true },
+    })
+    if (!customerForDiscount) {
+      throw new Error("No se pudo resolver el cliente de la cotización.")
+    }
 
     for (const line of resolvedLines) {
       const originalPriceCents = Number(line.product.priceCents)
@@ -868,7 +900,7 @@ export async function updateQuote(input: {
     const updatedQuote = await tx.quote.updateMany({
       where: { id: input.id, accountId: currentUser.accountId },
       data: {
-        customerId: input.customerId || null,
+        customerId: finalCustomerId,
         validUntil: input.validUntil || null,
         subtotalCents,
         itbisCents,
@@ -920,7 +952,7 @@ export async function updateQuote(input: {
         discountSource,
         discountPercentBp,
         itemsCount: resolvedLines.length,
-        customerId: input.customerId,
+        customerId: finalCustomerId,
       },
     }, tx)
 

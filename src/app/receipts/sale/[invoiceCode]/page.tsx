@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
+import { formatCustomerName } from "@/lib/customer-display"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
 import { PrintButton } from "@/components/app/print-button"
 import { Button } from "@/components/ui/button"
@@ -147,7 +148,7 @@ export default async function SaleReceiptPage({
           <span>{fmtDate(sale.soldAt)}</span>
         </div>
         <div className="mt-1">
-          <span className="font-semibold">Cliente:</span> {sale.customer?.name ?? "Cliente"}
+          <span className="font-semibold">Cliente:</span> {formatCustomerName(sale.customer)}
         </div>
         {sale.customer?.province && (
           <div className="mt-1">

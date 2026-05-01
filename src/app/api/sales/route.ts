@@ -3,6 +3,7 @@ import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { createSale } from "@/app/(app)/sales/actions"
 import { SaleType, PaymentMethod } from "@prisma/client"
 import { prisma } from "@/lib/db"
+import { isGenericCustomerQuery } from "@/lib/customer-display"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -138,6 +139,7 @@ export async function GET(request: NextRequest) {
     const query = (searchParams.get("query") || "").trim()
     const normalizedVisualQuery = query ? query.replace(/^#/, "") : ""
     const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
+    const shouldIncludeLegacyNullGeneric = query ? isGenericCustomerQuery(query) : false
     const requestedSkip = parseSkip(searchParams.get("skip"))
     const take = parseTake(searchParams.get("take"), 300, 500)
     const effectiveSkip = requestedSkip ?? 0
@@ -151,6 +153,7 @@ export async function GET(request: NextRequest) {
                 { invoiceCode: { contains: query, mode: "insensitive" } },
                 { customer: { name: { contains: query, mode: "insensitive" } } },
                 ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
+                ...(shouldIncludeLegacyNullGeneric ? [{ customerId: null }] : []),
               ],
             }
           : {}),

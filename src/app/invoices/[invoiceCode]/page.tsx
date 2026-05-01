@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
+import { formatCustomerName } from "@/lib/customer-display"
 import { PrintButton } from "@/components/app/print-button"
 import { PaymentMethod } from "@prisma/client"
 import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
@@ -142,7 +143,7 @@ export default async function InvoicePrintPage({
 
       <div className="mt-8 rounded-md border p-4">
         <div className="text-sm">
-          <span className="font-semibold">Cliente:</span> {sale.customer?.name ?? "Cliente"}
+          <span className="font-semibold">Cliente:</span> {formatCustomerName(sale.customer)}
         </div>
         {sale.customer?.address && (
           <div className="mt-2 text-sm">

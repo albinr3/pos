@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
 import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
+import { formatCustomerName } from "@/lib/customer-display"
 import { PrintButton } from "@/components/app/print-button"
 import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
 
@@ -129,7 +130,7 @@ export default async function ReturnCartaPrintPage({
 
       <div className="mt-8 rounded-md border p-4">
         <div className="text-sm">
-          <span className="font-semibold">Cliente:</span> {returnRecord.sale.customer?.name ?? "Cliente"}
+          <span className="font-semibold">Cliente:</span> {formatCustomerName(returnRecord.sale.customer)}
         </div>
         {returnRecord.sale.customer?.address && (
           <div className="mt-2 text-sm">

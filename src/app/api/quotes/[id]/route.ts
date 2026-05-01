@@ -6,6 +6,7 @@ import { logAuditEvent } from "@/lib/audit-log"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
 import { DocumentDiscountSource } from "@prisma/client"
+import { ensureGenericCustomer } from "@/lib/customer-helpers"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -68,6 +69,12 @@ function readBoolean(value: unknown): boolean | undefined {
     if (value === 0) return false
   }
   return undefined
+}
+
+function normalizeRequestedCustomerId(customerId: string | null | undefined): string | null {
+  const normalized = customerId?.trim()
+  if (!normalized) return null
+  return normalized.toLowerCase() === "generic" ? null : normalized
 }
 
 function resolveAutoDiscount(
@@ -261,13 +268,24 @@ export async function PUT(
         ...item,
         itbisRateBp: byId.get(item.productId)?.itbisRateBp ?? 1800,
       }))
-      const resolvedCustomerId = body.customerId === undefined ? existing.customerId : body.customerId || null
-      const customerForDiscount = resolvedCustomerId
-        ? await tx.customer.findFirst({
-            where: { id: resolvedCustomerId, accountId: user.accountId, isActive: true },
-            select: { saleDiscountPercentBp: true },
-          })
-        : null
+      const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
+      const requestedCustomerId = body.customerId === undefined
+        ? existing.customerId
+        : normalizeRequestedCustomerId(body.customerId)
+      let resolvedCustomerId = genericCustomer.id
+      if (requestedCustomerId) {
+        const requestedCustomer = await tx.customer.findFirst({
+          where: { id: requestedCustomerId, accountId: user.accountId, isActive: true },
+          select: { id: true },
+        })
+        if (requestedCustomer) {
+          resolvedCustomerId = requestedCustomer.id
+        }
+      }
+      const customerForDiscount = await tx.customer.findFirst({
+        where: { id: resolvedCustomerId, accountId: user.accountId, isActive: true },
+        select: { saleDiscountPercentBp: true },
+      })
       let discountSource: DocumentDiscountSource
       let discountPercentBp: number
 

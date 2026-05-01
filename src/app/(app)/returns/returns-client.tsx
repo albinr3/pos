@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
 import { calcDiscountedLineTotalsByTaxMode, formatRD } from "@/lib/money"
+import { formatCustomerName } from "@/lib/customer-display"
 
 import { createReturn, getSaleForReturn, searchSalesForReturn } from "./actions"
 
@@ -261,7 +262,7 @@ export function ReturnsClient() {
                     {saleSearchResults.map((sale) => (
                       <TableRow key={sale.id}>
                         <TableCell className="font-medium">{sale.invoiceCode}</TableCell>
-                        <TableCell>{sale.customer?.name ?? "Cliente general"}</TableCell>
+                        <TableCell>{formatCustomerName(sale.customer)}</TableCell>
                         <TableCell>{formatDateDO(sale.soldAt)}</TableCell>
                         <TableCell className="text-right">{formatRD(sale.totalCents)}</TableCell>
                         <TableCell className="text-right">
@@ -295,7 +296,7 @@ export function ReturnsClient() {
             <CardContent>
               <div className="space-y-2 text-sm">
                 <div>
-                  <span className="font-semibold">Cliente:</span> {selectedSale.customer?.name ?? "Cliente general"}
+                  <span className="font-semibold">Cliente:</span> {formatCustomerName(selectedSale.customer)}
                 </div>
                 <div>
                   <span className="font-semibold">Fecha:</span>{" "}

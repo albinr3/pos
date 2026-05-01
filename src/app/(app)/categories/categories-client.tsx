@@ -174,6 +174,7 @@ export function CategoriesClient() {
                   <TableHead>ID</TableHead>
                   <TableHead>Nombre</TableHead>
                   <TableHead>Descripción</TableHead>
+                  <TableHead className="text-right">Productos</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
@@ -183,6 +184,7 @@ export function CategoriesClient() {
                     <TableCell className="font-mono text-xs">{item.categoryId}</TableCell>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell className="text-muted-foreground">{item.description || "—"}</TableCell>
+                    <TableCell className="text-right">{item._count.products}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
                         <Button

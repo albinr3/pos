@@ -7,6 +7,7 @@ import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
+import { isGenericCustomerQuery } from "@/lib/customer-display"
 
 function returnCode(number: number): string {
   return `DEV-${String(number).padStart(5, "0")}`
@@ -654,7 +655,9 @@ export async function searchSalesForReturn(
   const q = query.trim()
   const normalizedVisualQuery = q ? q.replace(/^#/, "") : ""
   const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
-  const customerId = options?.customerId?.trim() || null
+  const shouldIncludeLegacyNullGeneric = q ? isGenericCustomerQuery(q) : false
+  const normalizedCustomerId = options?.customerId?.trim() || null
+  const customerId = normalizedCustomerId?.toLowerCase() === "generic" ? null : normalizedCustomerId
   if (!q && !customerId) return []
 
   const sales = await prisma.sale.findMany({
@@ -668,6 +671,7 @@ export async function searchSalesForReturn(
               { invoiceCode: { contains: q, mode: "insensitive" } },
               { customer: { name: { contains: q, mode: "insensitive" } } },
               ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
+              ...(shouldIncludeLegacyNullGeneric ? [{ customerId: null }] : []),
             ],
           }
         : {}),

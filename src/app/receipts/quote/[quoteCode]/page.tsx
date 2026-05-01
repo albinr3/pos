@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatQty } from "@/lib/units"
+import { formatCustomerName } from "@/lib/customer-display"
 import { PrintButton } from "@/components/app/print-button"
 import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
 
@@ -109,7 +110,7 @@ export default async function QuoteReceiptPage({
           </div>
         )}
         <div className="mt-1">
-          <span className="font-semibold">Cliente:</span> {quote.customer?.name ?? "Cliente"}
+          <span className="font-semibold">Cliente:</span> {formatCustomerName(quote.customer)}
         </div>
       </div>
 

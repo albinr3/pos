@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/hooks/use-toast"
+import { formatCustomerName } from "@/lib/customer-display"
 import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import type { CurrentUser } from "@/lib/auth"
@@ -63,7 +64,7 @@ export function ReturnsListClient() {
     return (
       r.returnCode.toLowerCase().includes(q) ||
       r.sale.invoiceCode.toLowerCase().includes(q) ||
-      r.sale.customer?.name.toLowerCase().includes(q) ||
+      (r.sale.customer?.name ?? "").toLowerCase().includes(q) ||
       r.user.name.toLowerCase().includes(q)
     )
   })
@@ -162,7 +163,7 @@ export function ReturnsListClient() {
                           {r.sale.invoiceCode}
                         </Link>
                       </TableCell>
-                      <TableCell>{r.sale.customer?.name ?? "Cliente general"}</TableCell>
+                      <TableCell>{formatCustomerName(r.sale.customer)}</TableCell>
                       <TableCell>
                         {formatDateTimeDO(r.returnedAt, {
                           year: "numeric",

@@ -21,6 +21,7 @@ import {
   normalizeDiscountPercentBp,
   toCents,
 } from "@/lib/money"
+import { formatCustomerLabel } from "@/lib/customer-display"
 import { formatQty, formatQtyNumber, parseQty, unitAllowsDecimals } from "@/lib/units"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { toast } from "@/hooks/use-toast"
@@ -109,7 +110,7 @@ export function QuotesClient({
   const [isLoadingProducts, startLoadingProducts] = useTransition()
 
   const [customers, setCustomers] = useState<Customer[]>([])
-  const [customerId, setCustomerId] = useState<string | null>("generic")
+  const [customerId, setCustomerId] = useState<string | null>(null)
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [shippingInput, setShippingInput] = useState("")
@@ -131,9 +132,14 @@ export function QuotesClient({
     [cart, recipeDialogLineId]
   )
   const canApplyDiscounts = Boolean(user?.canApplyDiscounts || user?.isOwner)
+  const genericCustomerId = useMemo(
+    () => customers.find((customer) => customer.isGeneric)?.id ?? null,
+    [customers]
+  )
+  const effectiveCustomerId = customerId ?? genericCustomerId
   const selectedCustomer = useMemo(
-    () => customers.find((customer) => customer.id === customerId) ?? null,
-    [customers, customerId]
+    () => customers.find((customer) => customer.id === effectiveCustomerId) ?? null,
+    [customers, effectiveCustomerId]
   )
   const autoDiscountPercentBp = useMemo(
     () => normalizeDiscountPercentBp(selectedCustomer?.saleDiscountPercentBp ?? 0),
@@ -147,7 +153,7 @@ export function QuotesClient({
   const effectiveDiscountPercentBp = canApplyDiscounts ? manualDiscountPercentBp : autoDiscountPercentBp
 
   function resetForm() {
-    setCustomerId("generic")
+    setCustomerId(null)
     setCart([])
     setShippingInput("")
     setValidUntilInput("")
@@ -196,7 +202,7 @@ export function QuotesClient({
           return
         }
 
-        setCustomerId(quote.customerId ?? "generic")
+        setCustomerId(quote.customerId ?? genericCustomerId)
         setCart(
           quote.items.map((item) => {
             const recipeAdjustments: RecipeAdjustment[] = (item.recipeAdjustments ?? []).map((adjustment) => ({
@@ -255,7 +261,7 @@ export function QuotesClient({
         toast({ title: "Error", description: "No se pudo cargar la cotización para editar" })
       }
     })
-  }, [editQuoteId, router, itbisRateBp, salePricesIncludeItbis])
+  }, [editQuoteId, router, itbisRateBp, salePricesIncludeItbis, genericCustomerId])
 
   useEffect(() => {
     if (autoDiscountPercentBp > 0) {
@@ -263,7 +269,7 @@ export function QuotesClient({
     } else {
       setManualDiscountInput("")
     }
-  }, [customerId, autoDiscountPercentBp])
+  }, [effectiveCustomerId, autoDiscountPercentBp])
 
   useEffect(() => {
     // Cargar todos los productos cuando se cambia a vista de grid
@@ -464,7 +470,7 @@ export function QuotesClient({
         if (editQuoteId) {
           await updateQuote({
             id: editQuoteId,
-            customerId: customerId === "generic" ? null : customerId,
+            customerId: effectiveCustomerId,
             items: cart.map((c) => ({
               productId: c.productId,
               qty: c.qty,
@@ -496,7 +502,7 @@ export function QuotesClient({
         }
 
         const quote = await createQuote({
-          customerId: customerId === "generic" ? null : customerId,
+          customerId: effectiveCustomerId,
           items: cart.map((c) => ({
             productId: c.productId,
             qty: c.qty,
@@ -575,12 +581,12 @@ export function QuotesClient({
               <Label>Cliente</Label>
               <select
                 className="h-10 rounded-md border bg-background px-3 text-sm"
-                value={customerId ?? ""}
+                value={effectiveCustomerId ?? ""}
                 onChange={(e) => setCustomerId(e.target.value || null)}
               >
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.isGeneric ? "(Genérico) " : ""}#{c.visualId} {c.name}
+                    {formatCustomerLabel(c, { includeVisualId: true })}
                   </option>
                 ))}
               </select>

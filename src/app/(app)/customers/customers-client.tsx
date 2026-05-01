@@ -308,7 +308,7 @@ export function CustomersClient() {
                   <TableRow key={c.id}>
                     <TableCell className="font-mono">#{c.visualId}</TableCell>
                     <TableCell className="font-medium">
-                      {c.isGeneric ? "(General) " : ""}{c.name}
+                      {c.name}
                     </TableCell>
                     <TableCell>{c.phone ?? "—"}</TableCell>
                     <TableCell>{c.cedula ?? "—"}</TableCell>

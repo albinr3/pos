@@ -25,6 +25,7 @@ import {
 import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
 import { formatQty, formatQtyNumber, parseQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
+import { formatCustomerLabel } from "@/lib/customer-display"
 import { toast } from "@/hooks/use-toast"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { syncCacheData } from "@/lib/auto-sync"
@@ -236,8 +237,7 @@ export function PosClient({
   )
 
   const selectedCustomerLabel = useMemo(() => {
-    if (!selectedCustomer) return "Cliente general"
-    return `${typeof selectedCustomer.visualId === "number" ? `#${selectedCustomer.visualId} ` : ""}${selectedCustomer.name}`
+    return formatCustomerLabel(selectedCustomer, { includeVisualId: true })
   }, [selectedCustomer])
 
   const autoDiscountPercentBp = useMemo(
@@ -913,7 +913,7 @@ export function PosClient({
 
   async function onSave() {
     // Validaciones iniciales
-    if (saleType === SaleType.CREDITO && (!customerId || customerId === "generic")) {
+    if (saleType === SaleType.CREDITO && (!effectiveCustomerId || !selectedCustomer || selectedCustomer.isGeneric)) {
       toast({ title: "Crédito", description: "Para crédito debes seleccionar un cliente." })
       return
     }
@@ -1183,9 +1183,7 @@ export function PosClient({
                                       className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
                                     >
                                       <span className="truncate">
-                                        {c.isGeneric ? "(General) " : ""}
-                                        {typeof c.visualId === "number" ? `#${c.visualId} ` : ""}
-                                        {c.name}
+                                        {formatCustomerLabel(c, { includeVisualId: true })}
                                       </span>
                                       {effectiveCustomerId === c.id && <Badge variant="secondary">Actual</Badge>}
                                     </button>
@@ -1219,9 +1217,7 @@ export function PosClient({
                       <SelectContent>
                         {customers.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
-                            {c.isGeneric ? "(General) " : ""}
-                            {typeof c.visualId === "number" ? `#${c.visualId} ` : ""}
-                            {c.name}
+                            {formatCustomerLabel(c, { includeVisualId: true })}
                           </SelectItem>
                         ))}
                         <SelectSeparator />

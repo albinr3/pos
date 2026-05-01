@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatRD } from "@/lib/money"
+import { formatCustomerName } from "@/lib/customer-display"
 
 import { ReportDateRangeFilter } from "../filter-client"
 import { getSalesReport } from "../actions"
@@ -53,7 +54,7 @@ export default async function SalesReportPage({
                 {data.sales.map((s) => (
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{s.invoiceCode}</TableCell>
-                    <TableCell>{s.customer?.name ?? "Cliente"}</TableCell>
+                    <TableCell>{formatCustomerName(s.customer)}</TableCell>
                     <TableCell>{s.type}</TableCell>
                     <TableCell className="text-right">{formatRD(s.totalCents)}</TableCell>
                     <TableCell className="text-right">

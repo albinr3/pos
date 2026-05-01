@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
+import { formatCustomerName, GENERIC_CUSTOMER_NAME } from "@/lib/customer-display"
 import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatPaymentWithBank, getPaymentMethodLabel } from "@/lib/payment-methods"
 import { toast } from "@/hooks/use-toast"
@@ -38,7 +39,8 @@ function methodLabel(m: PaymentMethod) {
 }
 
 function formatCustomerLabel(customer?: { visualId?: number | null; name?: string | null } | null) {
-  const name = customer?.name?.trim() || "Cliente"
+  const name = formatCustomerName(customer)
+  if (name === GENERIC_CUSTOMER_NAME) return name
   if (typeof customer?.visualId !== "number") return name
   return `(${customer.visualId}) ${name}`
 }

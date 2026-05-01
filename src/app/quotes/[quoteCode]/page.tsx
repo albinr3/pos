@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatQty } from "@/lib/units"
+import { formatCustomerName } from "@/lib/customer-display"
 import { DownloadInvoicePdfButton } from "@/components/app/download-invoice-pdf-button"
 import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
 import { QuoteShareButton } from "@/components/app/quote-share-button"
@@ -124,7 +125,7 @@ export default async function QuotePrintPage({
 
       <div className="mt-8 rounded-md border p-4">
         <div className="text-sm">
-          <span className="font-semibold">Cliente:</span> {quote.customer?.name ?? "Cliente"}
+          <span className="font-semibold">Cliente:</span> {formatCustomerName(quote.customer)}
           {quote.customer?.phone && (
             <>
               <br />

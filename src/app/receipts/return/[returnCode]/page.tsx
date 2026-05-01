@@ -4,6 +4,7 @@ import { formatDateTimeDO } from "@/lib/date-time"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
 import { PrintButton } from "@/components/app/print-button"
 import { formatRD } from "@/lib/money"
+import { formatCustomerName } from "@/lib/customer-display"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -137,7 +138,7 @@ export default async function ReturnReceiptPage({
           <span>{fmtDate(returnRecord.returnedAt)}</span>
         </div>
         <div className="mt-1">
-          <span className="font-semibold">Cliente:</span> {returnRecord.sale.customer?.name ?? "Cliente"}
+          <span className="font-semibold">Cliente:</span> {formatCustomerName(returnRecord.sale.customer)}
         </div>
         <div>
           <span className="font-semibold">Usuario:</span> {returnRecord.user.name}

@@ -1,6 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client"
-
-export const GENERIC_CUSTOMER_NAME = "Cliente general"
+import { GENERIC_CUSTOMER_NAME } from "@/lib/customer-display"
 
 type CustomerDbClient = PrismaClient | Prisma.TransactionClient
 

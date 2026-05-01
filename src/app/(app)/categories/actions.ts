@@ -25,6 +25,13 @@ export async function listCategories(query?: string) {
           }
         : {}),
     },
+    include: {
+      _count: {
+        select: {
+          products: true,
+        },
+      },
+    },
     orderBy: { categoryId: "asc" },
     take: 200,
   })

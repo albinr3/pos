@@ -6,6 +6,8 @@ import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
 import { DocumentDiscountSource } from "@prisma/client"
+import { ensureGenericCustomer } from "@/lib/customer-helpers"
+import { isGenericCustomerQuery } from "@/lib/customer-display"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -55,6 +57,12 @@ function decimalToNumber(value: unknown): number {
   return Number(value || 0)
 }
 
+function normalizeRequestedCustomerId(customerId: string | null | undefined): string | null {
+  const normalized = customerId?.trim()
+  if (!normalized) return null
+  return normalized.toLowerCase() === "generic" ? null : normalized
+}
+
 function parseSkip(value: string | null): number | null {
   if (value === null) return null
   const parsed = Number.parseInt(value, 10)
@@ -81,6 +89,7 @@ export async function GET(request: NextRequest) {
     const query = (searchParams.get("query") || "").trim()
     const normalizedVisualQuery = query ? query.replace(/^#/, "") : ""
     const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
+    const shouldIncludeLegacyNullGeneric = query ? isGenericCustomerQuery(query) : false
     const requestedSkip = parseSkip(searchParams.get("skip"))
     const take = parseTake(searchParams.get("take"), 300, 500)
     const effectiveSkip = requestedSkip ?? 0
@@ -94,6 +103,7 @@ export async function GET(request: NextRequest) {
                 { quoteCode: { contains: query, mode: "insensitive" } },
                 { customer: { name: { contains: query, mode: "insensitive" } } },
                 ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
+                ...(shouldIncludeLegacyNullGeneric ? [{ customerId: null }] : []),
               ],
             }
           : {}),
@@ -223,6 +233,7 @@ export async function POST(request: NextRequest) {
     const discountMode = discountModeRaw === "AUTO" || discountModeRaw === "MANUAL"
       ? (discountModeRaw as "AUTO" | "MANUAL")
       : undefined
+    const requestedCustomerId = normalizeRequestedCustomerId(body.customerId)
     const manualDiscountPercentBp = Number.isFinite(Number(body.manualDiscountPercentBp))
       ? Math.round(Number(body.manualDiscountPercentBp))
       : Number.isFinite(Number(body.manualDiscountPercent))
@@ -259,12 +270,21 @@ export async function POST(request: NextRequest) {
         ...item,
         itbisRateBp: byId.get(item.productId)?.itbisRateBp ?? 1800,
       }))
-      const customerForDiscount = body.customerId
-        ? await tx.customer.findFirst({
-            where: { id: body.customerId, accountId: user.accountId, isActive: true },
-            select: { saleDiscountPercentBp: true },
-          })
-        : null
+      const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
+      let finalCustomerId = genericCustomer.id
+      if (requestedCustomerId) {
+        const requestedCustomer = await tx.customer.findFirst({
+          where: { id: requestedCustomerId, accountId: user.accountId, isActive: true },
+          select: { id: true },
+        })
+        if (requestedCustomer) {
+          finalCustomerId = requestedCustomer.id
+        }
+      }
+      const customerForDiscount = await tx.customer.findFirst({
+        where: { id: finalCustomerId, accountId: user.accountId, isActive: true },
+        select: { saleDiscountPercentBp: true },
+      })
       let discountSource: DocumentDiscountSource = DocumentDiscountSource.NONE
       let discountPercentBp = 0
       if (discountMode === "MANUAL") {
@@ -302,7 +322,7 @@ export async function POST(request: NextRequest) {
           accountId: user.accountId,
           quoteNumber: number,
           quoteCode: code,
-          customerId: body.customerId || null,
+          customerId: finalCustomerId,
           userId: user.id,
           validUntil: body.validUntil ? new Date(body.validUntil) : null,
           subtotalCents,
@@ -352,7 +372,7 @@ export async function POST(request: NextRequest) {
             discountSource: created.discountSource,
             discountPercentBp: created.discountPercentBp,
             itemsCount: items.length,
-            customerId: body.customerId || null,
+            customerId: finalCustomerId,
           },
         },
         tx

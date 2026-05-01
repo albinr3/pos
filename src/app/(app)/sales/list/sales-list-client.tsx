@@ -23,6 +23,7 @@ import {
   normalizeDiscountPercentBp,
 } from "@/lib/money"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
+import { formatCustomerLabel, isGenericCustomer } from "@/lib/customer-display"
 import { cn } from "@/lib/utils"
 import type { CurrentUser } from "@/lib/auth"
 
@@ -121,9 +122,14 @@ export function SalesListClient() {
     () => cart.find((item) => item.lineId === recipeDialogLineId) ?? null,
     [cart, recipeDialogLineId]
   )
+  const genericCustomer = useMemo(
+    () => customers.find((customer) => customer.isGeneric) ?? null,
+    [customers]
+  )
+  const effectiveCustomerId = customerId ?? genericCustomer?.id ?? null
   const selectedCustomer = useMemo(
-    () => customers.find((customer) => customer.id === customerId) ?? null,
-    [customerId, customers]
+    () => customers.find((customer) => customer.id === effectiveCustomerId) ?? null,
+    [customers, effectiveCustomerId]
   )
   const autoDiscountPercentBp = useMemo(
     () => normalizeDiscountPercentBp(selectedCustomer?.saleDiscountPercentBp ?? 0),
@@ -159,7 +165,7 @@ export function SalesListClient() {
     } else {
       setManualDiscountInput("")
     }
-  }, [customerId, autoDiscountPercentBp])
+  }, [effectiveCustomerId, autoDiscountPercentBp])
 
   function refresh(q?: string) {
     startLoading(async () => {
@@ -228,7 +234,7 @@ export function SalesListClient() {
       }
       setEditingSale(sale)
       setDocumentSalePricesIncludeItbis(sale.salePricesIncludeItbis ?? true)
-      setCustomerId(sale.customerId)
+      setCustomerId(sale.customerId ?? genericCustomer?.id ?? null)
       setSaleType(sale.type)
       setPaymentMethod(sale.paymentMethod || PaymentMethod.EFECTIVO)
       setTransferBankName(sale.transferBankName || "")
@@ -345,7 +351,7 @@ export function SalesListClient() {
   async function handleSave() {
     if (!editingSale) return
 
-    if (saleType === SaleType.CREDITO && !customerId) {
+    if (saleType === SaleType.CREDITO && (!effectiveCustomerId || isGenericCustomer(selectedCustomer))) {
       toast({ title: "Error", description: "Para crédito debes seleccionar un cliente" })
       return
     }
@@ -364,7 +370,7 @@ export function SalesListClient() {
         const discountModeForSave: DiscountMode = canApplyDiscounts ? "MANUAL" : "AUTO"
         await updateSale({
           id: editingSale.id,
-          customerId: customerId === "generic" ? null : customerId,
+          customerId: effectiveCustomerId,
           type: saleType,
           paymentMethod: saleType === SaleType.CONTADO ? paymentMethod : null,
           transferBankName:
@@ -485,7 +491,7 @@ export function SalesListClient() {
                     </TableCell>
                     <TableCell>{formatDateDO(s.soldAt)}</TableCell>
                     <TableCell>
-                      {s.customer ? `#${s.customer.visualId} ${s.customer.name}` : "Cliente"}
+                      {formatCustomerLabel(s.customer, { includeVisualId: true })}
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -610,17 +616,14 @@ export function SalesListClient() {
                   <Label>Cliente</Label>
                   <select
                     className="h-10 rounded-md border bg-background px-3 text-sm"
-                    value={customerId || "generic"}
-                    onChange={(e) => setCustomerId(e.target.value === "generic" ? null : e.target.value)}
+                    value={effectiveCustomerId ?? ""}
+                    onChange={(e) => setCustomerId(e.target.value || null)}
                   >
-                    <option value="generic">#1 Cliente general</option>
-                    {customers
-                      .filter((c) => !c.isGeneric)
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          #{c.visualId} {c.name}
-                        </option>
-                      ))}
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {formatCustomerLabel(c, { includeVisualId: true })}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

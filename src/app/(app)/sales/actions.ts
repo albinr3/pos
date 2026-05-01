@@ -22,6 +22,7 @@ import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { isDominicanBankName } from "@/lib/dominican-banks"
 import { ensureGenericCustomer } from "@/lib/customer-helpers"
+import { isGenericCustomerQuery } from "@/lib/customer-display"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -228,6 +229,7 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
   const q = options?.query?.trim()
   const normalizedVisualQuery = q ? q.replace(/^#/, "") : ""
   const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
+  const shouldIncludeLegacyNullGeneric = q ? isGenericCustomerQuery(q) : false
   const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
 
   const sales = await prisma.sale.findMany({
@@ -239,6 +241,7 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
             { invoiceCode: { contains: q, mode: "insensitive" } },
             { customer: { name: { contains: q, mode: "insensitive" } } },
             ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
+            ...(shouldIncludeLegacyNullGeneric ? [{ customerId: null }] : []),
             { items: { some: { product: { name: { contains: q, mode: "insensitive" } } } } },
           ],
         }
@@ -933,7 +936,7 @@ export async function createSale(input: {
       const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
 
       // Validar y usar customerId, o usar el cliente genérico por defecto
-      let finalCustomerId: string | null = null
+      let finalCustomerId: string | null = genericCustomer.id
       if (requestedCustomerId) {
         const customer = await tx.customer.findFirst({
           where: { id: requestedCustomerId, accountId: user.accountId },
@@ -956,17 +959,21 @@ export async function createSale(input: {
         finalCustomerId
           ? await tx.customer.findFirst({
               where: { id: finalCustomerId, accountId: user.accountId },
-              select: { id: true, creditDays: true, saleDiscountPercentBp: true },
+              select: { id: true, creditDays: true, saleDiscountPercentBp: true, isGeneric: true },
             })
           : null
+      if (!finalCustomer) {
+        throw new Error("No se pudo resolver el cliente de la venta.")
+      }
+      if (input.type === SaleType.CREDITO && finalCustomer.isGeneric) {
+        throw new Error("Para crédito debes seleccionar un cliente.")
+      }
 
       const { discountSource, discountPercentBp } = resolveDocumentDiscount({
         discountMode: input.discountMode,
         manualDiscountPercentBp: input.manualDiscountPercentBp,
         user,
-        customer: finalCustomer
-          ? { saleDiscountPercentBp: finalCustomer.saleDiscountPercentBp }
-          : null,
+        customer: { saleDiscountPercentBp: finalCustomer.saleDiscountPercentBp },
       })
 
       const {
@@ -1429,7 +1436,7 @@ export async function updateSale(input: {
     )
 
     const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
-    let finalCustomerId: string | null = null
+    let finalCustomerId: string | null = genericCustomer.id
     if (requestedCustomerId) {
       const requestedCustomer = await tx.customer.findFirst({
         where: { id: requestedCustomerId, accountId: user.accountId },
@@ -1446,17 +1453,19 @@ export async function updateSale(input: {
       finalCustomerId
         ? await tx.customer.findFirst({
             where: { id: finalCustomerId, accountId: user.accountId },
-            select: { id: true, creditDays: true, saleDiscountPercentBp: true },
+            select: { id: true, creditDays: true, saleDiscountPercentBp: true, isGeneric: true },
           })
         : null
+    if (!finalCustomer) throw new Error("No se pudo resolver el cliente de la venta.")
+    if (input.type === SaleType.CREDITO && finalCustomer.isGeneric) {
+      throw new Error("Para crédito debes seleccionar un cliente.")
+    }
 
     const { discountSource, discountPercentBp } = resolveDocumentDiscount({
       discountMode: input.discountMode,
       manualDiscountPercentBp: input.manualDiscountPercentBp,
       user,
-      customer: finalCustomer
-        ? { saleDiscountPercentBp: finalCustomer.saleDiscountPercentBp }
-        : null,
+      customer: { saleDiscountPercentBp: finalCustomer.saleDiscountPercentBp },
       fallback: {
         discountSource: existingSale.discountSource,
         discountPercentBp: existingSale.discountPercentBp,
@@ -1505,7 +1514,7 @@ export async function updateSale(input: {
           input.paymentMethod === PaymentMethod.TRANSFERENCIA
             ? input.transferBankName?.trim() ?? null
             : null,
-        customerId: finalCustomerId || null,
+        customerId: finalCustomerId,
         subtotalCents,
         itbisCents,
         shippingCents,

@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
+import { formatCustomerLabel, formatCustomerName, isGenericCustomerQuery } from "@/lib/customer-display"
 
 import { listQuotes, deleteQuote } from "../actions"
 
@@ -51,10 +52,12 @@ export function QuotesListClient() {
   const filteredQuotes = quotes.filter((q) => {
     if (!query.trim()) return true
     const qLower = query.toLowerCase()
+    const customerLabel = formatCustomerLabel(q.customer, { includeVisualId: true }).toLowerCase()
+    const matchesLegacyGeneric = isGenericCustomerQuery(query) && !q.customer
     return (
       q.quoteCode.toLowerCase().includes(qLower) ||
-      q.customer?.name.toLowerCase().includes(qLower) ||
-      String(q.customer?.visualId ?? "").includes(qLower) ||
+      customerLabel.includes(qLower) ||
+      matchesLegacyGeneric ||
       false
     )
   })
@@ -133,7 +136,7 @@ export function QuotesListClient() {
                   {filteredQuotes.map((quote) => (
                     <TableRow key={quote.id}>
                       <TableCell className="font-medium">{quote.quoteCode}</TableCell>
-                      <TableCell>{quote.customer?.name ?? "Cliente general"}</TableCell>
+                      <TableCell>{formatCustomerName(quote.customer)}</TableCell>
                       <TableCell>{fmtDate(quote.quotedAt)}</TableCell>
                       <TableCell>{quote.validUntil ? fmtDate(quote.validUntil) : "—"}</TableCell>
                       <TableCell className="text-right">{formatRD(quote.totalCents)}</TableCell>
