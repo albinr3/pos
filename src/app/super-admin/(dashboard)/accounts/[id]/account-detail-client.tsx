@@ -266,6 +266,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
   const [showPasswordDialog, setShowPasswordDialog] = useState(false)
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
   const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [isResetting, setIsResetting] = useState(false)
 
   // Plan selection
@@ -408,6 +409,22 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
 
   const handlePasswordReset = async () => {
     if (!selectedUserId || !newPassword) return
+    if (newPassword.trim().length < 6) {
+      toast({
+        title: "Contraseña inválida",
+        description: "La contraseña debe tener al menos 6 caracteres.",
+        variant: "destructive",
+      })
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: "Las contraseñas no coinciden",
+        description: "Verifica la confirmación de contraseña.",
+        variant: "destructive",
+      })
+      return
+    }
 
     setIsResetting(true)
     try {
@@ -416,6 +433,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
         toast({ title: "Contraseña actualizada", description: "La contraseña ha sido restablecida correctamente." })
         setShowPasswordDialog(false)
         setNewPassword("")
+        setConfirmPassword("")
         setSelectedUserId(null)
       } else {
         toast({ title: "Error", description: result.error, variant: "destructive" })
@@ -812,6 +830,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                         variant="ghost"
                         size="icon"
                         className="h-8 w-8"
+                        title="Cambiar contraseña"
                         onClick={() => {
                           setSelectedUserId(user.id)
                           setShowPasswordDialog(true)
@@ -887,7 +906,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
       <Dialog open={showPasswordDialog} onOpenChange={setShowPasswordDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Restablecer contraseña</DialogTitle>
+            <DialogTitle>Cambiar contraseña</DialogTitle>
             <DialogDescription>
               Ingresa la nueva contraseña para el usuario. Esta acción es inmediata.
             </DialogDescription>
@@ -897,18 +916,39 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
               <Label htmlFor="new-password">Nueva contraseña</Label>
               <Input
                 id="new-password"
-                type="text"
+                type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Mínimo 6 caracteres"
               />
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="confirm-password">Confirmar contraseña</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repite la nueva contraseña"
+              />
+            </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPasswordDialog(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPasswordDialog(false)
+                setNewPassword("")
+                setConfirmPassword("")
+                setSelectedUserId(null)
+              }}
+            >
               Cancelar
             </Button>
-            <Button onClick={handlePasswordReset} disabled={isResetting || newPassword.length < 6}>
+            <Button
+              onClick={handlePasswordReset}
+              disabled={isResetting || newPassword.trim().length < 6 || confirmPassword.length === 0}
+            >
               {isResetting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Guardar contraseña
             </Button>

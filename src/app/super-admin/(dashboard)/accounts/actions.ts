@@ -19,6 +19,11 @@ export async function resetUserPassword(
   newPassword: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const normalizedPassword = newPassword.trim()
+    if (normalizedPassword.length < 6) {
+      return { success: false, error: "La contraseña debe tener al menos 6 caracteres" }
+    }
+
     const admin = await getCurrentSuperAdmin()
     if (!admin || !admin.canManageAccounts) {
       return { success: false, error: "No tienes permisos para restablecer contraseñas" }
@@ -33,7 +38,7 @@ export async function resetUserPassword(
       return { success: false, error: "Usuario no encontrado" }
     }
 
-    const hashedPassword = await hash(newPassword, 12)
+    const hashedPassword = await hash(normalizedPassword, 12)
 
     await prisma.user.update({
       where: { id: userId },
