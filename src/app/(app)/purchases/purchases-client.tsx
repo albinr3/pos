@@ -84,6 +84,7 @@ export function PurchasesClient() {
   const [updateCost, setUpdateCost] = useState(true)
   const [updatePrice, setUpdatePrice] = useState(true)
   // Estado para los valores de los inputs de descuento mientras se escriben
+  const [unitCostInputs, setUnitCostInputs] = useState<Record<string, string>>({})
   const [discountInputs, setDiscountInputs] = useState<Record<string, string>>({})
   const [saleMarginInputs, setSaleMarginInputs] = useState<Record<string, string>>({})
   const [salePriceInputs, setSalePriceInputs] = useState<Record<string, string>>({})
@@ -323,6 +324,7 @@ export function PurchasesClient() {
         setCart([])
         setQuery("")
         setResults([])
+        setUnitCostInputs({})
         setDiscountInputs({})
         setSaleMarginInputs({})
         setSalePriceInputs({})
@@ -480,6 +482,11 @@ export function PurchasesClient() {
                         size="icon"
                         onClick={() => {
                           setCart((p) => p.filter((x) => x.productId !== c.productId))
+                          setUnitCostInputs((prev) => {
+                            const newState = { ...prev }
+                            delete newState[c.productId]
+                            return newState
+                          })
                           setDiscountInputs((prev) => {
                             const newState = { ...prev }
                             delete newState[c.productId]
@@ -525,9 +532,12 @@ export function PurchasesClient() {
                       <div className="grid gap-1">
                         <div className="text-xs text-muted-foreground">Costo unitario (RD$)</div>
                         <Input
-                          value={((c.unitCostCents ?? 0) / 100).toFixed(2)}
+                          type="text"
+                          value={unitCostInputs[c.productId] ?? (c.unitCostCents / 100).toFixed(2)}
                           onChange={(e) => {
-                            const newCost = toCents(e.target.value)
+                            const value = e.target.value
+                            setUnitCostInputs((prev) => ({ ...prev, [c.productId]: value }))
+                            const newCost = toCents(value)
                             setCart((p) =>
                               p.map((x) =>
                                 x.productId === c.productId
@@ -536,7 +546,26 @@ export function PurchasesClient() {
                               )
                             )
                           }}
+                          onBlur={(e) => {
+                            const newCost = toCents(e.target.value)
+                            setUnitCostInputs((prev) => {
+                              const newState = { ...prev }
+                              delete newState[c.productId]
+                              return newState
+                            })
+                            setCart((p) =>
+                              p.map((x) =>
+                                x.productId === c.productId
+                                  ? recalcCartItem(x, { unitCostCents: newCost })
+                                  : x
+                              )
+                            )
+                          }}
+                          onFocus={() => {
+                            setUnitCostInputs((prev) => ({ ...prev, [c.productId]: (c.unitCostCents / 100).toFixed(2) }))
+                          }}
                           inputMode="decimal"
+                          placeholder="0.00"
                         />
                       </div>
                       <div className="grid gap-1">

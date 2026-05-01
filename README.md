@@ -110,6 +110,13 @@ Notas de autorización:
   - se eliminó el bypass implícito por `role=ADMIN` y por `username=admin` en validaciones de permisos de negocio.
   - el bypass administrativo queda solo para `isOwner`.
 
+### Normalización de Cliente general (abril 2026)
+- Se unificó la visualización del cliente predeterminado en toda la app a una sola etiqueta: `Cliente general`.
+- En ventas y cotizaciones, cuando no se envía cliente explícito, el backend ahora resuelve y guarda el cliente general real (visualId interno `1`) en lugar de persistir `customerId = null` para nuevos documentos.
+- Las ventas a crédito ahora validan en backend que el cliente no sea genérico (ni `null` ni cliente general), obligando a un cliente específico.
+- Se añadió compatibilidad temporal para históricos legacy con `customerId = null`: en búsquedas por cliente general (ej. `cliente general`, `generico`, `#1`), los listados también incluyen esos registros.
+- No se hizo migración masiva de datos históricos; la compatibilidad se resuelve por comportamiento de búsqueda/visualización.
+
 ### Implementaciones
 - **Verificación de conectividad real**: Se agrega ping periódico (`HEAD`) a `/api/health-check` con timeout para detectar si hay internet real, no solo `navigator.onLine`.
 - **Navegación en modo offline**: Al estar sin conexión, solo se habilitan rutas de **Ventas** (`/sales`) y **CxC** (`/ar`); el resto queda deshabilitado en el menú.
