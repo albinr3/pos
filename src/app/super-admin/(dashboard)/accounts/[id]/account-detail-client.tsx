@@ -79,7 +79,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import type { AccountDetail } from "../actions"
-import { deleteAccount, simulateTrialExpiry, runBillingEngine, resetUserPassword } from "../actions"
+import { deleteAccount, simulateTrialExpiry, runBillingEngine, resetUserPassword, resetPrimaryAccountPassword } from "../actions"
 import { updateSubscriptionStatus, extendTrial } from "../../actions"
 import { assignPlanToAccount, getActiveBillingPlans } from "../../plans/actions"
 
@@ -268,6 +268,10 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isResetting, setIsResetting] = useState(false)
+  const [showPrimaryPasswordDialog, setShowPrimaryPasswordDialog] = useState(false)
+  const [newPrimaryPassword, setNewPrimaryPassword] = useState("")
+  const [confirmPrimaryPassword, setConfirmPrimaryPassword] = useState("")
+  const [isResettingPrimaryPassword, setIsResettingPrimaryPassword] = useState(false)
 
   // Plan selection
   const [availablePlans, setAvailablePlans] = useState<BillingPlanOption[]>([])
@@ -442,6 +446,49 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
       toast({ title: "Error", description: "Error al restablecer contraseña", variant: "destructive" })
     } finally {
       setIsResetting(false)
+    }
+  }
+
+  const handlePrimaryPasswordReset = async () => {
+    if (newPrimaryPassword.trim().length < 8) {
+      toast({
+        title: "Contraseña inválida",
+        description: "La contraseña principal debe tener al menos 8 caracteres.",
+        variant: "destructive",
+      })
+      return
+    }
+    if (newPrimaryPassword !== confirmPrimaryPassword) {
+      toast({
+        title: "Las contraseñas no coinciden",
+        description: "Verifica la confirmación de contraseña.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsResettingPrimaryPassword(true)
+    try {
+      const result = await resetPrimaryAccountPassword(account.id, newPrimaryPassword)
+      if (result.success) {
+        toast({
+          title: "Contraseña principal actualizada",
+          description: "Se cambió la contraseña del acceso principal de la cuenta.",
+        })
+        setShowPrimaryPasswordDialog(false)
+        setNewPrimaryPassword("")
+        setConfirmPrimaryPassword("")
+      } else {
+        toast({ title: "Error", description: result.error, variant: "destructive" })
+      }
+    } catch {
+      toast({
+        title: "Error",
+        description: "Error al cambiar la contraseña del acceso principal",
+        variant: "destructive",
+      })
+    } finally {
+      setIsResettingPrimaryPassword(false)
     }
   }
 
@@ -668,6 +715,23 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                 <div>
                   <p className="text-sm text-muted-foreground">Registro desde</p>
                   <p className="font-medium">{getRegistrationDeviceLabel(account.registeredFromDevice)}</p>
+                </div>
+                <div className="md:col-span-2">
+                  <div className="rounded-lg border p-3 bg-muted/30">
+                    <p className="text-sm font-medium">Acceso principal (cuenta general)</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Usuario de autenticación: <span className="font-mono">{account.clerkUserId}</span>
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => setShowPrimaryPasswordDialog(true)}
+                    >
+                      <Key className="mr-2 h-4 w-4" />
+                      Cambiar contraseña principal
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -951,6 +1015,62 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
             >
               {isResetting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Guardar contraseña
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showPrimaryPasswordDialog} onOpenChange={setShowPrimaryPasswordDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cambiar contraseña principal</DialogTitle>
+            <DialogDescription>
+              Esta contraseña corresponde al acceso general de la cuenta (correo/Google en Clerk).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="new-primary-password">Nueva contraseña principal</Label>
+              <Input
+                id="new-primary-password"
+                type="password"
+                value={newPrimaryPassword}
+                onChange={(e) => setNewPrimaryPassword(e.target.value)}
+                placeholder="Mínimo 8 caracteres"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="confirm-primary-password">Confirmar contraseña</Label>
+              <Input
+                id="confirm-primary-password"
+                type="password"
+                value={confirmPrimaryPassword}
+                onChange={(e) => setConfirmPrimaryPassword(e.target.value)}
+                placeholder="Repite la nueva contraseña"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowPrimaryPasswordDialog(false)
+                setNewPrimaryPassword("")
+                setConfirmPrimaryPassword("")
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={handlePrimaryPasswordReset}
+              disabled={
+                isResettingPrimaryPassword ||
+                newPrimaryPassword.trim().length < 8 ||
+                confirmPrimaryPassword.length === 0
+              }
+            >
+              {isResettingPrimaryPassword && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Guardar contraseña principal
             </Button>
           </DialogFooter>
         </DialogContent>

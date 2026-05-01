@@ -6,6 +6,7 @@ import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-aut
 import { processBillingEngine } from "@/lib/billing"
 import { revalidatePath } from "next/cache"
 import { hash } from "bcryptjs"
+import { clerkClient } from "@clerk/nextjs/server"
 import type {
   BillingStatus,
   BillingCurrency,
@@ -60,6 +61,54 @@ export async function resetUserPassword(
   } catch (error) {
     console.error("Error resetting password:", error)
     return { success: false, error: "Error al restablecer la contraseña" }
+  }
+}
+
+export async function resetPrimaryAccountPassword(
+  accountId: string,
+  newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const normalizedPassword = newPassword.trim()
+    if (normalizedPassword.length < 8) {
+      return { success: false, error: "La contraseña debe tener al menos 8 caracteres" }
+    }
+
+    const admin = await getCurrentSuperAdmin()
+    if (!admin || !admin.canManageAccounts) {
+      return { success: false, error: "No tienes permisos para cambiar la contraseña principal" }
+    }
+
+    const account = await prisma.account.findUnique({
+      where: { id: accountId },
+      select: { id: true, name: true, clerkUserId: true },
+    })
+
+    if (!account) {
+      return { success: false, error: "Cuenta no encontrada" }
+    }
+
+    const client = await clerkClient()
+    await client.users.updateUser(account.clerkUserId, {
+      password: normalizedPassword,
+      signOutOfOtherSessions: true,
+    })
+
+    await logSuperAdminAction(admin.id, "reset_primary_account_password", {
+      targetAccountId: account.id,
+      metadata: {
+        clerkUserId: account.clerkUserId,
+      },
+    })
+
+    revalidatePath("/super-admin")
+    revalidatePath("/super-admin/accounts")
+    revalidatePath(`/super-admin/accounts/${account.id}`)
+
+    return { success: true }
+  } catch (error) {
+    console.error("Error resetting primary account password:", error)
+    return { success: false, error: "No se pudo cambiar la contraseña del acceso principal" }
   }
 }
 
