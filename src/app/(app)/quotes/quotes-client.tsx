@@ -438,6 +438,19 @@ export function QuotesClient({
 
     startSave(async () => {
       try {
+        const openQuotePrint = (quoteCode: string) => {
+          const receiptUrl = `/api/print/quote/${quoteCode}?autoprint=1`
+          const popup = window.open(receiptUrl, "_blank")
+
+          if (!popup || popup.closed || typeof popup.closed === "undefined") {
+            toast({
+              title: "Popup bloqueado",
+              description: "Se abrirá el ticket en esta pestaña para continuar con la impresión.",
+            })
+            router.push(receiptUrl)
+          }
+        }
+
         const validUntil = validUntilInput ? new Date(validUntilInput) : null
         const discountPayload = canApplyDiscounts
           ? {
@@ -475,7 +488,7 @@ export function QuotesClient({
           })
 
           if (editingQuoteCode) {
-            router.replace(`/api/print/quote/${editingQuoteCode}`)
+            openQuotePrint(editingQuoteCode)
           } else {
             router.push("/quotes/list")
           }
@@ -503,7 +516,7 @@ export function QuotesClient({
 
         toast({ title: "Cotización guardada", description: `Cotización ${quote.quoteCode}` })
         resetForm()
-        router.push(`/api/print/quote/${quote.quoteCode}`)
+        openQuotePrint(quote.quoteCode)
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Error guardando cotización"
         toast({ title: "No se pudo guardar", description: msg })
@@ -770,12 +783,11 @@ export function QuotesClient({
           </CardContent>
         </Card>
 
-        {viewMode === "list" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Carrito</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Carrito</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
             {cart.length === 0 ? (
               <div className="text-sm text-muted-foreground">Agrega productos para empezar.</div>
             ) : (
@@ -905,7 +917,6 @@ export function QuotesClient({
             )}
           </CardContent>
         </Card>
-        )}
 
         {viewMode === "grid" && (
           <Card>
