@@ -36,7 +36,13 @@ function parseVisualIdQuery(rawQuery: string | undefined): number | null {
 }
 
 export async function listOpenAR(
-  options?: { query?: string; skip?: number; take?: number; overdueOnly?: boolean },
+  options?: {
+    query?: string
+    skip?: number
+    take?: number
+    overdueOnly?: boolean
+    sortBy?: "alphabetical" | "dueDate" | "amount"
+  },
   actor?: AuthActor
 ) {
   const user = actor ?? await getCurrentUser()
@@ -45,6 +51,7 @@ export async function listOpenAR(
   const query = options?.query?.trim()
   const visualIdQuery = parseVisualIdQuery(query)
   const overdueOnly = options?.overdueOnly ?? false
+  const sortBy = options?.sortBy ?? "alphabetical"
   const skip = options?.skip ?? 0
   const take = options?.take ?? 10
 
@@ -69,13 +76,20 @@ export async function listOpenAR(
     }
   }
 
+  const orderBy =
+    sortBy === "dueDate"
+      ? [{ dueDate: "asc" as const }, { createdAt: "asc" as const }, { id: "asc" as const }]
+      : sortBy === "amount"
+      ? [{ balanceCents: "desc" as const }, { createdAt: "asc" as const }, { id: "asc" as const }]
+      : [
+          { customer: { name: "asc" as const } },
+          { createdAt: "asc" as const },
+          { id: "asc" as const },
+        ]
+
   return prisma.accountReceivable.findMany({
     where,
-    orderBy: [
-      { customer: { name: "asc" } },
-      { createdAt: "asc" },
-      { id: "asc" },
-    ],
+    orderBy,
     include: {
       customer: true,
       sale: true,

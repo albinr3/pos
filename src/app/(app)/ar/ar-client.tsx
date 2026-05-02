@@ -33,6 +33,7 @@ import { saveARCache } from "@/lib/indexed-db"
 import { addPayment, addBatchPayment, getARSummaryStats, listOpenAR } from "./actions"
 
 type AR = Awaited<ReturnType<typeof listOpenAR>>[number]
+type ARSortBy = "alphabetical" | "dueDate" | "amount"
 
 function methodLabel(m: PaymentMethod) {
   return getPaymentMethodLabel(m)
@@ -95,6 +96,30 @@ function compareByCustomerAndDate(a: { customer?: { name?: string | null } | nul
   return createdAtA - createdAtB
 }
 
+function compareByDueDate(a: { dueDate?: Date | string | null; createdAt?: Date | string | null }, b: { dueDate?: Date | string | null; createdAt?: Date | string | null }) {
+  const dueA = a.dueDate ? new Date(a.dueDate).getTime() : Number.POSITIVE_INFINITY
+  const dueB = b.dueDate ? new Date(b.dueDate).getTime() : Number.POSITIVE_INFINITY
+  if (dueA !== dueB) return dueA - dueB
+  const createdAtA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+  const createdAtB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+  return createdAtA - createdAtB
+}
+
+function compareByAmount(a: { balanceCents?: number | null; createdAt?: Date | string | null }, b: { balanceCents?: number | null; createdAt?: Date | string | null }) {
+  const amountA = a.balanceCents ?? 0
+  const amountB = b.balanceCents ?? 0
+  if (amountA !== amountB) return amountB - amountA
+  const createdAtA = a.createdAt ? new Date(a.createdAt).getTime() : 0
+  const createdAtB = b.createdAt ? new Date(b.createdAt).getTime() : 0
+  return createdAtA - createdAtB
+}
+
+function sortARItems<T extends { customer?: { name?: string | null } | null; dueDate?: Date | string | null; balanceCents?: number | null; createdAt?: Date | string | null }>(list: T[], sortBy: ARSortBy) {
+  if (sortBy === "dueDate") return [...list].sort(compareByDueDate)
+  if (sortBy === "amount") return [...list].sort(compareByAmount)
+  return [...list].sort(compareByCustomerAndDate)
+}
+
 export function ARClient() {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -106,6 +131,7 @@ export function ARClient() {
   }, [])
   const [isLoading, startLoading] = useTransition()
   const [query, setQuery] = useState("")
+  const [sortBy, setSortBy] = useState<ARSortBy>("alphabetical")
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [skip, setSkip] = useState(0)
   const [hasMore, setHasMore] = useState(true)
@@ -160,7 +186,7 @@ export function ARClient() {
         if (isOnline) {
           try {
             const [r, stats] = await Promise.all([
-              listOpenAR({ query, overdueOnly, skip: 0, take: 10 }),
+              listOpenAR({ query, overdueOnly, sortBy, skip: 0, take: 10 }),
               getARSummaryStats(),
             ])
             setItems(r as any)
@@ -200,7 +226,7 @@ export function ARClient() {
         if (overdueOnly) {
           filtered = filtered.filter((ar: any) => isOverdueFromDueDate(ar.dueDate))
         }
-        filtered = [...filtered].sort(compareByCustomerAndDate)
+        filtered = sortARItems(filtered, sortBy)
         setItems(filtered.slice(0, 10) as any)
         setHasMore(filtered.length > 10)
       } catch {
@@ -217,7 +243,7 @@ export function ARClient() {
         if (isOnline) {
           try {
             const newSkip = skip + 10
-            const r = await listOpenAR({ query, overdueOnly, skip: newSkip, take: 10 })
+            const r = await listOpenAR({ query, overdueOnly, sortBy, skip: newSkip, take: 10 })
             setItems((prev) => [...prev, ...r])
             setSkip(newSkip)
             setHasMore(r.length === 10)
@@ -239,7 +265,7 @@ export function ARClient() {
         if (overdueOnly) {
           filtered = filtered.filter((ar: any) => isOverdueFromDueDate(ar.dueDate))
         }
-        filtered = [...filtered].sort(compareByCustomerAndDate)
+        filtered = sortARItems(filtered, sortBy)
         const newSkip = skip + 10
         const more = filtered.slice(newSkip, newSkip + 10)
         setItems((prev) => [...prev, ...more] as any)
@@ -263,7 +289,7 @@ export function ARClient() {
     const interval = setInterval(updatePendingCounts, 5000) // Actualizar cada 5 segundos
     
     return () => clearInterval(interval)
-  }, [query, overdueOnly, isOnline])
+  }, [query, sortBy, overdueOnly, isOnline])
 
   // Multi-select helpers
   const selectedItems = useMemo(() => items.filter((i) => selectedIds.has(i.id)), [items, selectedIds])
@@ -545,6 +571,22 @@ export function ARClient() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Buscar por número de factura o cliente..."
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="ar-sort" className="shrink-0 text-sm text-muted-foreground">Ordenar por</Label>
+            <select
+              id="ar-sort"
+              className="h-9 rounded-md border bg-background px-3 text-sm"
+              value={sortBy}
+              onChange={(e) => {
+                setSelectedIds(new Set())
+                setSortBy(e.target.value as ARSortBy)
+              }}
+            >
+              <option value="alphabetical">Alfabeto (cliente)</option>
+              <option value="dueDate">Fecha de vencimiento</option>
+              <option value="amount">Monto pendiente</option>
+            </select>
           </div>
           <label className="inline-flex items-center gap-2 text-sm text-muted-foreground">
             <input
