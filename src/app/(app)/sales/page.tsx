@@ -25,6 +25,7 @@ export default async function SalesPage() {
         defaultViewMode={settings.defaultViewMode}
         showItbisOnReceipts={settings.showItbisOnReceipts}
         salePricesIncludeItbis={settings.salePricesIncludeItbis}
+        legalTipEnabled={settings.legalTipEnabled}
       />
     </div>
   )

@@ -170,3 +170,9 @@ export function calcDiscountedDocumentTotalsByTaxMode(
 export function invoiceCode(series: string, number: number) {
   return `${series}-${number.toString().padStart(5, "0")}`
 }
+
+export function calcPercentAmountCents(baseCents: number, percentBp: number) {
+  const normalizedBase = Math.max(0, Math.round(baseCents || 0))
+  const normalizedPercentBp = Math.max(0, Math.round(percentBp || 0))
+  return Math.round((normalizedBase * normalizedPercentBp) / 10000)
+}

@@ -43,6 +43,9 @@ type SaleCreateBody = {
   salePricesIncludeItbis?: boolean
   preciosIncluyenItbis?: boolean
   precioVentaIncluyeItbis?: boolean
+  applyLegalTip?: boolean
+  cobrarPropinaLegal?: boolean
+  incluirPropinaLegal?: boolean
   discountMode?: string
   manualDiscountPercentBp?: number
   manualDiscountPercent?: number
@@ -199,6 +202,10 @@ export async function GET(request: NextRequest) {
         discountPercentBp: sale.discountPercentBp,
         discountSubtotalCents: sale.discountSubtotalCents,
         discountTotalCents: sale.discountTotalCents,
+        legalTipApplied: sale.legalTipApplied,
+        legalTipPercentBp: sale.legalTipPercentBp,
+        legalTipBaseCents: sale.legalTipBaseCents,
+        legalTipCents: sale.legalTipCents,
         totalCents: sale.totalCents,
         salePricesIncludeItbis: sale.salePricesIncludeItbis,
         cancelledAt: sale.cancelledAt ? sale.cancelledAt.toISOString() : null,
@@ -237,6 +244,10 @@ export async function POST(request: NextRequest) {
       readBoolean(body.salePricesIncludeItbis) ??
       readBoolean(body.preciosIncluyenItbis) ??
       readBoolean(body.precioVentaIncluyeItbis)
+    const applyLegalTip =
+      readBoolean(body.applyLegalTip) ??
+      readBoolean(body.cobrarPropinaLegal) ??
+      readBoolean(body.incluirPropinaLegal)
 
     if ((body.items ?? []).some((item) => Array.isArray(item.selectedModifierIds))) {
       return NextResponse.json(
@@ -308,6 +319,7 @@ export async function POST(request: NextRequest) {
       paymentSplits: paymentSplits && paymentSplits.length > 0 ? paymentSplits : undefined,
       items,
       shippingCents,
+      applyLegalTip,
       discountMode,
       manualDiscountPercentBp,
       salePricesIncludeItbis,
@@ -324,6 +336,10 @@ export async function POST(request: NextRequest) {
       createdAt: sale.soldAt.toISOString(),
       transferBankName: sale.transferBankName ?? null,
       salePricesIncludeItbis: sale.salePricesIncludeItbis ?? true,
+      legalTipApplied: sale.legalTipApplied ?? false,
+      legalTipPercentBp: sale.legalTipPercentBp ?? 1000,
+      legalTipBaseCents: sale.legalTipBaseCents ?? 0,
+      legalTipCents: sale.legalTipCents ?? 0,
       discountSource: sale.discountSource,
       discountPercentBp: sale.discountPercentBp,
       discountSubtotalCents: sale.discountSubtotalCents,

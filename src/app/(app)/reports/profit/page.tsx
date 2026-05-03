@@ -62,10 +62,17 @@ export default async function ProfitReportPage({
             <div className="grid gap-2 pl-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm">Ventas del período (contado + crédito)</div>
+                  <div className="text-sm">Ventas del período sin propina legal</div>
                   <div className="text-xs text-muted-foreground">{data.salesCount} facturas</div>
                 </div>
-                <div className="text-base font-medium text-green-600">{formatRD(data.grossSalesTotalCents)}</div>
+                <div className="text-base font-medium text-green-600">{formatRD(data.grossSalesNetOfLegalTipCents)}</div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm">Propina legal cobrada (informativa)</div>
+                  <div className="text-xs text-muted-foreground">No se incluye en utilidad</div>
+                </div>
+                <div className="text-base font-medium">{formatRD(data.grossSalesLegalTipCents)}</div>
               </div>
               <div className="flex items-center justify-between">
                 <div>
@@ -76,10 +83,21 @@ export default async function ProfitReportPage({
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm">Devoluciones del período</div>
+                  <div className="text-sm">Devoluciones del período sin propina legal</div>
                   <div className="text-xs text-muted-foreground">{data.returnsCount} devoluciones</div>
                 </div>
-                <div className="text-base font-medium text-red-600">-{formatRD(data.returnsTotalCents)}</div>
+                <div className="text-base font-medium text-red-600">-{formatRD(data.returnsNetOfLegalTipCents)}</div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm">Propina legal devuelta (informativa)</div>
+                  <div className="text-xs text-muted-foreground">No se incluye en utilidad</div>
+                </div>
+                <div className="text-base font-medium text-red-600">-{formatRD(data.returnsLegalTipCents)}</div>
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="text-sm">Propina legal neta del período (informativa)</div>
+                <div className="text-base font-medium">{formatRD(data.legalTipNetCents)}</div>
               </div>
             </div>
             <div className="flex items-center justify-between border-t pt-2">

@@ -35,6 +35,7 @@ async function main() {
       allowNegativeStock: false,
       itbisRateBp: 1800,
       salePricesIncludeItbis: true,
+      legalTipEnabled: false,
     },
     create: {
       id: "company",
@@ -46,6 +47,7 @@ async function main() {
       allowNegativeStock: false,
       itbisRateBp: 1800,
       salePricesIncludeItbis: true,
+      legalTipEnabled: false,
     },
   })
 

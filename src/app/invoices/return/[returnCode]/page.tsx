@@ -184,6 +184,12 @@ export default async function ReturnCartaPrintPage({
             <span>{itbisLabel}</span>
             <span>{formatRD(returnRecord.itbisCents)}</span>
           </div>
+          {returnRecord.legalTipCents > 0 && (
+            <div className="mt-1 flex items-center justify-between">
+              <span>Propina legal devuelta</span>
+              <span>{formatRD(returnRecord.legalTipCents)}</span>
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-between border-t pt-3 text-base font-bold">
             <span>Total Devuelto</span>
             <span>{formatRD(returnRecord.totalCents)}</span>

@@ -79,6 +79,8 @@ export async function syncPendingData() {
             typeof sale.manualDiscountPercentBp === "number" ? sale.manualDiscountPercentBp : undefined,
           salePricesIncludeItbis:
             typeof sale.salePricesIncludeItbis === "boolean" ? sale.salePricesIncludeItbis : undefined,
+          applyLegalTip:
+            typeof sale.applyLegalTip === "boolean" ? sale.applyLegalTip : undefined,
           soldAt: sale.createdAt,
           username: sale.username,
         })

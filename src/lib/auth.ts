@@ -354,6 +354,7 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
             phone: "",
             address: "",
             salePricesIncludeItbis: true,
+            legalTipEnabled: false,
           },
         })
 

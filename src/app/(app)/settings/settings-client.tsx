@@ -29,7 +29,7 @@ import {
   saveARCache,
 } from "@/lib/indexed-db"
 
-import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings, updatePrintFormats, updateSalePriceTaxMode } from "./actions"
+import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings, updatePrintFormats, updateSalePriceTaxMode, updateLegalTipSetting } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
@@ -75,6 +75,7 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
   const [defaultProfitMargin, setDefaultProfitMargin] = useState("30.00")
   const [salePricesIncludeItbis, setSalePricesIncludeItbis] = useState(true)
   const [showItbisOnReceipts, setShowItbisOnReceipts] = useState(true)
+  const [legalTipEnabled, setLegalTipEnabled] = useState(false)
 
   const [salePrintFormat, setSalePrintFormat] = useState("80mm")
   const [quotePrintFormat, setQuotePrintFormat] = useState("80mm")
@@ -105,6 +106,7 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
       setDefaultProfitMargin((s.defaultProfitMarginBp / 100).toFixed(2))
       setSalePricesIncludeItbis(s.salePricesIncludeItbis)
       setShowItbisOnReceipts(s.showItbisOnReceipts)
+      setLegalTipEnabled(s.legalTipEnabled ?? false)
       setSalePrintFormat(s.salePrintFormat ?? "80mm")
       setQuotePrintFormat(s.quotePrintFormat ?? "80mm")
       setPaymentPrintFormat(s.paymentPrintFormat ?? "80mm")
@@ -563,6 +565,30 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
                 startSaving(async () => {
                   try {
                     await updateReceiptSettings(checked)
+                    toast({ title: "Preferencia guardada" })
+                  } catch (e) {
+                    toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })
+                  }
+                })
+              }}
+              disabled={isSaving || !canEditSettings}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <Label className="text-base">Habilitar propina legal (10%)</Label>
+              <div className="text-sm text-muted-foreground">
+                Al activarlo, en facturación aparecerá la opción para cobrar la propina legal del 10%.
+              </div>
+            </div>
+            <Switch
+              checked={legalTipEnabled}
+              onCheckedChange={(checked) => {
+                if (!canEditSettings) return
+                setLegalTipEnabled(checked)
+                startSaving(async () => {
+                  try {
+                    await updateLegalTipSetting(checked)
                     toast({ title: "Preferencia guardada" })
                   } catch (e) {
                     toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo guardar" })

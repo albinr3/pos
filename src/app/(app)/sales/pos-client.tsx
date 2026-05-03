@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import {
+  calcPercentAmountCents,
   calcDiscountedDocumentTotalsByTaxMode,
   formatRD,
   normalizeDiscountPercentBp,
@@ -150,10 +151,12 @@ export function PosClient({
   defaultViewMode = "list",
   showItbisOnReceipts = true,
   salePricesIncludeItbis = true,
+  legalTipEnabled = false,
 }: {
   defaultViewMode?: string
   showItbisOnReceipts?: boolean
   salePricesIncludeItbis?: boolean
+  legalTipEnabled?: boolean
 }) {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -182,6 +185,7 @@ export function PosClient({
 
   const [cart, setCart] = useState<CartItem[]>([])
   const [shippingInput, setShippingInput] = useState("")
+  const [applyLegalTip, setApplyLegalTip] = useState(legalTipEnabled)
   const [discountMode, setDiscountMode] = useState<DiscountMode>("AUTO")
   const [manualDiscountInput, setManualDiscountInput] = useState("")
   const [user, setUser] = useState<CurrentUser | null>(() => getCachedUser())
@@ -267,6 +271,7 @@ export function PosClient({
     setCustomerId("generic")
     setSaleType(SaleType.CONTADO)
     setShippingInput("")
+    setApplyLegalTip(legalTipEnabled)
     setDiscountMode("AUTO")
     setManualDiscountInput("")
     setQuery("")
@@ -279,7 +284,11 @@ export function PosClient({
     setEditingPaymentAmounts({})
     setPaymentMethod(PaymentMethod.EFECTIVO)
     localStorage.removeItem("posCartState")
-  }, [])
+  }, [legalTipEnabled])
+
+  useEffect(() => {
+    setApplyLegalTip(legalTipEnabled)
+  }, [legalTipEnabled])
 
   useEffect(() => {
     if (pathname !== "/sales") return
@@ -431,6 +440,7 @@ export function PosClient({
             setPaymentMethod(state.paymentMethod)
             setTransferBankName(state.transferBankName || "")
             setShippingInput(state.shippingInput || "")
+            setApplyLegalTip(legalTipEnabled ? state.applyLegalTip !== false : false)
             setDiscountMode(state.discountMode === "MANUAL" ? "MANUAL" : "AUTO")
             setManualDiscountInput(typeof state.manualDiscountInput === "string" ? state.manualDiscountInput : "")
             setPaymentSplits(
@@ -531,7 +541,7 @@ export function PosClient({
     const interval = setInterval(updatePendingCounts, 5000) // Actualizar cada 5 segundos
 
     return () => clearInterval(interval)
-  }, [isOnline])
+  }, [isOnline, legalTipEnabled])
 
   useEffect(() => {
     // Cargar todos los productos cuando se cambia a vista de grid
@@ -590,6 +600,7 @@ export function PosClient({
           transferBankName,
           paymentSplits,
           shippingInput,
+          applyLegalTip,
           discountMode,
           manualDiscountInput,
           timestamp: Date.now(),
@@ -612,6 +623,7 @@ export function PosClient({
     transferBankName,
     paymentSplits,
     shippingInput,
+    applyLegalTip,
     discountMode,
     manualDiscountInput,
     isInitialized,
@@ -655,6 +667,7 @@ export function PosClient({
             transferBankName,
             paymentSplits,
             shippingInput,
+            applyLegalTip,
             discountMode,
             manualDiscountInput,
             timestamp: Date.now(),
@@ -683,6 +696,7 @@ export function PosClient({
     transferBankName,
     paymentSplits,
     shippingInput,
+    applyLegalTip,
     discountMode,
     manualDiscountInput,
     pathname,
@@ -786,7 +800,15 @@ export function PosClient({
     )
   }, [cart, salePricesIncludeItbis, effectiveDiscountPercentBp])
   const shippingCents = useMemo(() => toCents(shippingInput), [shippingInput])
-  const totalCents = useMemo(() => itemsTotalCents + shippingCents, [itemsTotalCents, shippingCents])
+  const legalTipBaseCents = useMemo(() => Math.max(0, subtotalCents), [subtotalCents])
+  const legalTipCents = useMemo(
+    () => (legalTipEnabled && applyLegalTip ? calcPercentAmountCents(legalTipBaseCents, 1000) : 0),
+    [legalTipEnabled, applyLegalTip, legalTipBaseCents]
+  )
+  const totalCents = useMemo(
+    () => itemsTotalCents + shippingCents + legalTipCents,
+    [itemsTotalCents, shippingCents, legalTipCents]
+  )
 
   function addToCart(p: ProductResult, recipeAdjustments: RecipeAdjustment[] = []) {
     const productUnit = (p.unit as UnitType) ?? "UNIDAD"
@@ -977,6 +999,7 @@ export function PosClient({
           })),
         })),
         shippingCents: shippingCents > 0 ? shippingCents : undefined,
+        applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
         discountMode: discountModeForSave,
         manualDiscountPercentBp:
           discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
@@ -1020,6 +1043,7 @@ export function PosClient({
                 })),
               })),
               shippingCents: shippingCents > 0 ? shippingCents : undefined,
+              applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
               discountMode: discountModeForSave,
               manualDiscountPercentBp:
                 discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
@@ -1307,6 +1331,17 @@ export function PosClient({
                     </p>
                   )}
                 </div>
+                {legalTipEnabled && (
+                  <div className="flex items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <Label className="text-sm">Propina legal (10%)</Label>
+                      <div className="text-xs text-muted-foreground">
+                        Se calcula sobre el subtotal neto sin ITBIS.
+                      </div>
+                    </div>
+                    <Switch checked={applyLegalTip} onCheckedChange={setApplyLegalTip} />
+                  </div>
+                )}
 
                 <Separator />
               </>
@@ -1324,6 +1359,7 @@ export function PosClient({
                     {saleType === SaleType.CONTADO ? "Contado" : "Crédito"}
                     {saleType === SaleType.CONTADO && paymentMethod ? ` · ${paymentMethod.toLowerCase().replace("_", " ")}` : ""}
                     {effectiveDiscountPercentBp > 0 ? ` · Desc. ${(effectiveDiscountPercentBp / 100).toFixed(2)}%` : ""}
+                    {legalTipEnabled && applyLegalTip ? " · Propina 10%" : ""}
                   </span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 ml-2" />
                 </button>
@@ -2003,6 +2039,23 @@ export function PosClient({
                   <span>{formatRD(shippingCents)}</span>
                 </div>
               )}
+              {legalTipCents > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-2">
+                    Propina legal (10%)
+                    <button
+                      type="button"
+                      onClick={() => setApplyLegalTip(false)}
+                      className="inline-flex h-5 w-5 items-center justify-center rounded text-red-600 hover:bg-red-50"
+                      title="Desactivar temporalmente propina legal"
+                      aria-label="Desactivar temporalmente propina legal"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                  <span>{formatRD(legalTipCents)}</span>
+                </div>
+              )}
               <Separator className="my-2" />
               <div className="flex justify-between font-bold text-base">
                 <span>Total</span>
@@ -2482,6 +2535,7 @@ export function PosClient({
                       transferBankName,
                       paymentSplits,
                       shippingInput,
+                      applyLegalTip,
                       discountMode,
                       manualDiscountInput,
                       timestamp: Date.now(),

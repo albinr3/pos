@@ -176,6 +176,12 @@ export default async function ReturnReceiptPage({
           <span>{itbisLabel}:</span>
           <span>{formatRD(returnRecord.itbisCents)}</span>
         </div>
+        {returnRecord.legalTipCents > 0 && (
+          <div className="flex justify-between">
+            <span>Propina legal devuelta:</span>
+            <span>{formatRD(returnRecord.legalTipCents)}</span>
+          </div>
+        )}
         <div className="mt-1 flex justify-between border-t border-dashed pt-1 text-[14px] font-bold">
           <span>TOTAL:</span>
           <span>{formatRD(returnRecord.totalCents)}</span>

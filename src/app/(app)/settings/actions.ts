@@ -28,6 +28,7 @@ export async function getSettings() {
     defaultViewMode: s?.defaultViewMode ?? "list",
     defaultProfitMarginBp: s?.defaultProfitMarginBp ?? 3000,
     showItbisOnReceipts: s?.showItbisOnReceipts ?? true,
+    legalTipEnabled: s?.legalTipEnabled ?? false,
     salePrintFormat: s?.salePrintFormat ?? "80mm",
     quotePrintFormat: s?.quotePrintFormat ?? "80mm",
     paymentPrintFormat: s?.paymentPrintFormat ?? "80mm",
@@ -55,6 +56,7 @@ export async function updateAllowNegativeStock(allow: boolean) {
       allowNegativeStock: allow,
       itbisRateBp: 1800,
       salePricesIncludeItbis: true,
+      legalTipEnabled: false,
       defaultProfitMarginBp: 3000,
     },
   })
@@ -94,6 +96,7 @@ export async function updateLabelSizes(barcodeLabelSize: string, shippingLabelSi
       allowNegativeStock: false,
       itbisRateBp: 1800,
       salePricesIncludeItbis: true,
+      legalTipEnabled: false,
       defaultProfitMarginBp: 3000,
       barcodeLabelSize: sanitizedBarcodeLabelSize,
       shippingLabelSize: sanitizedShippingLabelSize,
@@ -139,6 +142,7 @@ export async function updateSalesSettings(defaultViewMode: string) {
       allowNegativeStock: false,
       itbisRateBp: 1800,
       salePricesIncludeItbis: true,
+      legalTipEnabled: false,
       defaultProfitMarginBp: 3000,
       defaultViewMode: sanitizedViewMode,
     },
@@ -176,6 +180,7 @@ export async function updateReceiptSettings(showItbis: boolean) {
       allowNegativeStock: false,
       itbisRateBp: 1800,
       salePricesIncludeItbis: true,
+      legalTipEnabled: false,
       defaultProfitMarginBp: 3000,
       showItbisOnReceipts: showItbis,
     },
@@ -214,6 +219,7 @@ export async function updatePurchasePricingSettings(defaultProfitMarginBp: numbe
       allowNegativeStock: false,
       itbisRateBp: 1800,
       salePricesIncludeItbis: true,
+      legalTipEnabled: false,
       defaultProfitMarginBp: normalizedMargin,
     },
   })
@@ -260,6 +266,7 @@ export async function updatePrintFormats(formats: {
       allowNegativeStock: false,
       itbisRateBp: 1800,
       salePricesIncludeItbis: true,
+      legalTipEnabled: false,
       defaultProfitMarginBp: 3000,
       salePrintFormat: formats.sale,
       quotePrintFormat: formats.quote,
@@ -303,6 +310,7 @@ export async function updateSalePriceTaxMode(salePricesIncludeItbis: boolean) {
       allowNegativeStock: false,
       itbisRateBp: 1800,
       salePricesIncludeItbis,
+      legalTipEnabled: false,
       defaultProfitMarginBp: 3000,
     },
   })
@@ -323,5 +331,43 @@ export async function updateSalePriceTaxMode(salePricesIncludeItbis: boolean) {
   revalidatePath("/products")
   revalidatePath("/returns")
   revalidatePath("/returns/list")
+}
+
+export async function updateLegalTipSetting(enabled: boolean) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSettings", {
+    allowAdminBypass: false,
+    message: "No tienes permiso para modificar ajustes",
+    resourceType: "CompanySettings",
+  })
+
+  await prisma.companySettings.upsert({
+    where: { accountId: user.accountId },
+    update: { legalTipEnabled: enabled },
+    create: {
+      accountId: user.accountId,
+      name: "Mi Negocio",
+      phone: "",
+      address: "",
+      allowNegativeStock: false,
+      itbisRateBp: 1800,
+      salePricesIncludeItbis: true,
+      legalTipEnabled: enabled,
+      defaultProfitMarginBp: 3000,
+    },
+  })
+
+  await logAuditEvent({
+    accountId: user.accountId,
+    userId: user.id,
+    action: "SETTINGS_CHANGED",
+    resourceType: "CompanySettings",
+    details: { legalTipEnabled: enabled },
+  })
+
+  revalidatePath("/settings")
+  revalidatePath("/sales")
+  revalidatePath("/sales/list")
 }
 

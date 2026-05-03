@@ -359,6 +359,7 @@ model CompanySettings {
   allowNegativeStock    Boolean @default(false)
   itbisRateBp           Int     @default(1800)
   salePricesIncludeItbis Boolean @default(true)
+  legalTipEnabled       Boolean @default(false)
   defaultProfitMarginBp Int     @default(3000)
   showItbisOnReceipts   Boolean @default(true)
 
@@ -755,6 +756,10 @@ model Sale {
   subtotalCents Int
   itbisCents    Int
   shippingCents Int @default(0)
+  legalTipApplied   Boolean @default(false)
+  legalTipPercentBp Int     @default(1000)
+  legalTipBaseCents Int     @default(0)
+  legalTipCents     Int     @default(0)
   discountSource        DocumentDiscountSource @default(NONE)
   discountPercentBp     Int                    @default(0)
   discountSubtotalCents Int                    @default(0)
@@ -1040,6 +1045,7 @@ model Return {
   discountPercentBp     Int @default(0)
   discountSubtotalCents Int @default(0)
   discountTotalCents    Int @default(0)
+  legalTipCents         Int @default(0)
   totalCents    Int
   salePricesIncludeItbis Boolean @default(true)
 

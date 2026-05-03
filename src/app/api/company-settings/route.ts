@@ -14,6 +14,7 @@ type CompanySettingsRecord = {
   defaultViewMode: string
   showItbisOnReceipts: boolean
   salePricesIncludeItbis: boolean
+  legalTipEnabled: boolean
   defaultProfitMarginBp: number
 }
 
@@ -31,6 +32,7 @@ function toCompanyPayload(company: CompanySettingsRecord | null) {
       defaultViewMode: company?.defaultViewMode ?? "list",
       showItbisOnReceipts: company?.showItbisOnReceipts ?? true,
       salePricesIncludeItbis: company?.salePricesIncludeItbis ?? true,
+      legalTipEnabled: company?.legalTipEnabled ?? false,
       defaultProfitMarginBp: company?.defaultProfitMarginBp ?? 3000,
     },
     // Compatibilidad con consumidores existentes
@@ -41,6 +43,7 @@ function toCompanyPayload(company: CompanySettingsRecord | null) {
     defaultViewMode: company?.defaultViewMode ?? "list",
     showItbisOnReceipts: company?.showItbisOnReceipts ?? true,
     salePricesIncludeItbis: company?.salePricesIncludeItbis ?? true,
+    legalTipEnabled: company?.legalTipEnabled ?? false,
     defaultProfitMarginBp: company?.defaultProfitMarginBp ?? 3000,
   }
 }
@@ -119,6 +122,10 @@ export async function POST(request: NextRequest) {
       readBoolean((body as Record<string, unknown>).salePricesIncludeItbis) ??
       readBoolean((body as Record<string, unknown>).preciosIncluyenItbis) ??
       readBoolean((body as Record<string, unknown>).precioVentaIncluyeItbis)
+    const rawLegalTipEnabled =
+      readBoolean((body as Record<string, unknown>).legalTipEnabled) ??
+      readBoolean((body as Record<string, unknown>).propinaLegalEnabled) ??
+      readBoolean((body as Record<string, unknown>).habilitarPropinaLegal)
 
     const name = sanitizeString(rawName)
     if (!name) {
@@ -131,6 +138,7 @@ export async function POST(request: NextRequest) {
     const defaultViewMode = rawDefaultViewMode === "grid" ? "grid" : "list"
     const showItbisOnReceipts = rawShowItbisOnReceipts ?? true
     const salePricesIncludeItbis = rawSalePricesIncludeItbis ?? true
+    const legalTipEnabled = rawLegalTipEnabled ?? false
 
     const created = await prisma.companySettings.upsert({
       where: { accountId: user.accountId },
@@ -142,6 +150,7 @@ export async function POST(request: NextRequest) {
         defaultViewMode,
         showItbisOnReceipts,
         salePricesIncludeItbis,
+        legalTipEnabled,
       },
       create: {
         accountId: user.accountId,
@@ -152,6 +161,7 @@ export async function POST(request: NextRequest) {
         defaultViewMode,
         showItbisOnReceipts,
         salePricesIncludeItbis,
+        legalTipEnabled,
         defaultProfitMarginBp: 3000,
       },
     })
@@ -202,6 +212,10 @@ export async function PUT(request: NextRequest) {
       readBoolean(bodyObj.salePricesIncludeItbis) ??
       readBoolean(bodyObj.preciosIncluyenItbis) ??
       readBoolean(bodyObj.precioVentaIncluyeItbis)
+    const rawLegalTipEnabled =
+      readBoolean(bodyObj.legalTipEnabled) ??
+      readBoolean(bodyObj.propinaLegalEnabled) ??
+      readBoolean(bodyObj.habilitarPropinaLegal)
 
     const name = rawName !== null ? sanitizeString(rawName) : current?.name ?? "Mi Negocio"
     if (!name) {
@@ -215,6 +229,7 @@ export async function PUT(request: NextRequest) {
       : (current?.defaultViewMode ?? "list")
     const showItbisOnReceipts = rawShowItbisOnReceipts ?? (current?.showItbisOnReceipts ?? true)
     const salePricesIncludeItbis = rawSalePricesIncludeItbis ?? (current?.salePricesIncludeItbis ?? true)
+    const legalTipEnabled = rawLegalTipEnabled ?? (current?.legalTipEnabled ?? false)
 
     let logoUrl = current?.logoUrl ?? null
     if (rawLogo === null) {
@@ -233,6 +248,7 @@ export async function PUT(request: NextRequest) {
         defaultViewMode,
         showItbisOnReceipts,
         salePricesIncludeItbis,
+        legalTipEnabled,
       },
       create: {
         accountId: user.accountId,
@@ -243,6 +259,7 @@ export async function PUT(request: NextRequest) {
         defaultViewMode,
         showItbisOnReceipts,
         salePricesIncludeItbis,
+        legalTipEnabled,
         defaultProfitMarginBp: 3000,
       },
     })

@@ -113,6 +113,7 @@ export async function savePendingSale(sale: {
     }>
   }>
   shippingCents?: number
+  applyLegalTip?: boolean
   discountMode?: "AUTO" | "MANUAL"
   manualDiscountPercentBp?: number
   salePricesIncludeItbis?: boolean

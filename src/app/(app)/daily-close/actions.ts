@@ -33,6 +33,7 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
       },
       select: {
         totalCents: true,
+        legalTipCents: true,
         type: true,
         paymentMethod: true,
         transferBankName: true,
@@ -66,7 +67,7 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
           type: "CONTADO",
         },
       },
-      select: { totalCents: true },
+      select: { totalCents: true, legalTipCents: true },
     }),
     prisma.operatingExpense.findMany({
       where: {
@@ -84,8 +85,11 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
 
   const soldCashCents = cashSales.reduce((a, b) => a + b.totalCents, 0)
   const soldCreditCents = creditSales.reduce((a, b) => a + b.totalCents, 0)
+  const soldCashLegalTipCents = cashSales.reduce((sum, sale) => sum + (sale.legalTipCents ?? 0), 0)
+  const soldCreditLegalTipCents = creditSales.reduce((sum, sale) => sum + (sale.legalTipCents ?? 0), 0)
   const soldTotalCents = soldCashCents + soldCreditCents
   const cashReturnsCents = cashReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
+  const cashReturnsLegalTipCents = cashReturns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0)
 
   // Desglose de ventas contado por método de pago
   const cashSalesMethodMap = new Map<
@@ -226,6 +230,10 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
       cashTransferenciaCents: cashSalesMethodMap.get("TRANSFERENCIA")?.totalCents ?? 0,
       cashTotalCents: soldCashCents,
       creditCents: soldCreditCents,
+      cashLegalTipCents: soldCashLegalTipCents,
+      creditLegalTipCents: soldCreditLegalTipCents,
+      legalTipCents: soldCashLegalTipCents + soldCreditLegalTipCents,
+      legalTipReturnedCents: cashReturnsLegalTipCents,
       totalCents: soldTotalCents,
       returnsCents: cashReturnsCents,
       netCents: soldTotalCents - cashReturnsCents,

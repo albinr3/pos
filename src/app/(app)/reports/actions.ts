@@ -87,8 +87,9 @@ export async function getSalesReport(input: { from?: string; to?: string }) {
   })
 
   const totalCents = sales.reduce((s, x) => s + x.totalCents, 0)
+  const legalTipTotalCents = sales.reduce((sum, sale) => sum + (sale.legalTipCents ?? 0), 0)
 
-  return { from, to, totalCents, count: sales.length, sales }
+  return { from, to, totalCents, legalTipTotalCents, count: sales.length, sales }
 }
 
 export async function getOperatingExpensesReport(input: { from?: string; to?: string }) {
@@ -260,7 +261,11 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
 
   const grossSalesTotalCents = activeSales.reduce((sum, sale) => sum + sale.totalCents, 0)
   const returnsTotalCents = periodReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
-  const salesTotalCents = grossSalesTotalCents - returnsTotalCents
+  const grossSalesLegalTipCents = activeSales.reduce((sum, sale) => sum + (sale.legalTipCents ?? 0), 0)
+  const returnsLegalTipCents = periodReturns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0)
+  const grossSalesNetOfLegalTipCents = grossSalesTotalCents - grossSalesLegalTipCents
+  const returnsNetOfLegalTipCents = returnsTotalCents - returnsLegalTipCents
+  const salesTotalCents = grossSalesNetOfLegalTipCents - returnsNetOfLegalTipCents
   const paymentsTotalCents = payments.reduce((sum, payment) => sum + payment.amountCents, 0)
   const totalRevenueCents = salesTotalCents
   const returnsItbisCents = periodReturns.reduce((sum, ret) => sum + ret.itbisCents, 0)
@@ -432,10 +437,15 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     to,
     // Ingresos/Ventas
     grossSalesTotalCents,
+    grossSalesLegalTipCents,
+    grossSalesNetOfLegalTipCents,
     salesTotalCents,
     salesCount: activeSales.length,
     returnsCount: periodReturns.length,
     returnsTotalCents,
+    returnsLegalTipCents,
+    returnsNetOfLegalTipCents,
+    legalTipNetCents: grossSalesLegalTipCents - returnsLegalTipCents,
     paymentsTotalCents,
     paymentsCount: payments.length,
     totalRevenueCents,

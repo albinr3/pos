@@ -226,6 +226,7 @@ export async function createFirstUser(formData: FormData) {
       allowNegativeStock: false,
       itbisRateBp: 1800,
       salePricesIncludeItbis: true,
+      legalTipEnabled: false,
     },
   })
 

@@ -45,6 +45,9 @@ type UpdateSaleBody = {
   salePricesIncludeItbis?: boolean
   preciosIncluyenItbis?: boolean
   precioVentaIncluyeItbis?: boolean
+  applyLegalTip?: boolean
+  cobrarPropinaLegal?: boolean
+  incluirPropinaLegal?: boolean
   discountMode?: string
   manualDiscountPercentBp?: number
   manualDiscountPercent?: number
@@ -83,6 +86,21 @@ function parseSaleType(value: unknown, fallback: SaleType): SaleType {
   if (raw === "CREDITO") return SaleType.CREDITO
   if (raw === "CONTADO") return SaleType.CONTADO
   return fallback
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase()
+    if (!trimmed) return undefined
+    if (["1", "true", "si", "sí", "yes", "on"].includes(trimmed)) return true
+    if (["0", "false", "no", "off"].includes(trimmed)) return false
+  }
+  if (typeof value === "number") {
+    if (value === 1) return true
+    if (value === 0) return false
+  }
+  return undefined
 }
 
 function parseOptionalSaleDate(value: unknown): Date | undefined {
@@ -178,6 +196,10 @@ export async function GET(
       discountPercentBp: sale.discountPercentBp,
       discountSubtotalCents: sale.discountSubtotalCents,
       discountTotalCents: sale.discountTotalCents,
+      legalTipApplied: sale.legalTipApplied,
+      legalTipPercentBp: sale.legalTipPercentBp,
+      legalTipBaseCents: sale.legalTipBaseCents,
+      legalTipCents: sale.legalTipCents,
       totalCents: sale.totalCents,
       salePricesIncludeItbis: sale.salePricesIncludeItbis,
       cancelledAt: sale.cancelledAt ? sale.cancelledAt.toISOString() : null,
@@ -322,6 +344,10 @@ export async function PUT(
       : Number.isFinite(Number(body?.manualDiscountPercent))
         ? Math.round(Number(body?.manualDiscountPercent) * 100)
         : undefined
+    const applyLegalTip =
+      readBoolean(body?.applyLegalTip) ??
+      readBoolean(body?.cobrarPropinaLegal) ??
+      readBoolean(body?.incluirPropinaLegal)
 
     await updateSale({
       id,
@@ -330,6 +356,7 @@ export async function PUT(
       paymentMethod,
       transferBankName: body?.transferBankName || null,
       paymentSplits,
+      applyLegalTip,
       items,
       discountMode,
       manualDiscountPercentBp,
@@ -356,6 +383,10 @@ export async function PUT(
       customerName: updatedSale?.customer?.name || null,
       totalCents: updatedSale?.totalCents,
       salePricesIncludeItbis: updatedSale?.salePricesIncludeItbis ?? true,
+      legalTipApplied: updatedSale?.legalTipApplied ?? false,
+      legalTipPercentBp: updatedSale?.legalTipPercentBp ?? 1000,
+      legalTipBaseCents: updatedSale?.legalTipBaseCents ?? 0,
+      legalTipCents: updatedSale?.legalTipCents ?? 0,
       discountSource: updatedSale?.discountSource,
       discountPercentBp: updatedSale?.discountPercentBp,
       discountSubtotalCents: updatedSale?.discountSubtotalCents,

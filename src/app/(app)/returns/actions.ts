@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { calcDiscountedLineTotalsByTaxMode } from "@/lib/money"
+import { calcDiscountedLineTotalsByTaxMode, calcPercentAmountCents } from "@/lib/money"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
@@ -398,7 +398,25 @@ export async function createReturn(input: {
     const itbisCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.itbisCents, 0)
     const discountSubtotalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.discountSubtotalCents, 0)
     const discountTotalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.discountTotalCents, 0)
-    const totalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.totalCents, 0)
+    const itemsTotalCents = returnItemsWithSnapshot.reduce((sum, item) => sum + item.totalCents, 0)
+    const previouslyReturnedLegalTipCents = sale.returns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0)
+    const originalLegalTipCents = sale.legalTipCents ?? 0
+    const pendingLegalTipCents = Math.max(0, originalLegalTipCents - previouslyReturnedLegalTipCents)
+    const legalTipBaseCents =
+      (sale.legalTipBaseCents ?? 0) > 0
+        ? (sale.legalTipBaseCents ?? 0)
+        : originalLegalTipCents > 0
+          ? (sale.subtotalCents ?? 0)
+          : 0
+    const legalTipPercentBp = sale.legalTipPercentBp ?? 1000
+    const legalTipCents =
+      sale.legalTipApplied && legalTipBaseCents > 0 && pendingLegalTipCents > 0
+        ? Math.min(
+            pendingLegalTipCents,
+            calcPercentAmountCents(subtotalCents, legalTipPercentBp)
+          )
+        : 0
+    const totalCents = itemsTotalCents + legalTipCents
     let creditAr: { id: string; totalCents: number; balanceCents: number; status: string } | null = null
 
     if (sale.type === "CREDITO") {
@@ -441,6 +459,7 @@ export async function createReturn(input: {
         discountPercentBp,
         discountSubtotalCents,
         discountTotalCents,
+        legalTipCents,
         totalCents,
         salePricesIncludeItbis: documentSalePricesIncludeItbis,
         notes: input.notes?.trim() || null,
@@ -470,6 +489,7 @@ export async function createReturn(input: {
         returnCode: returnRecord.returnCode,
         saleId: input.saleId,
         totalCents,
+        legalTipCents,
         itemsCount: input.items.length,
       },
     }, tx)

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import {
+  calcPercentAmountCents,
   calcDiscountedDocumentTotalsByTaxMode,
   invoiceCode,
   normalizeDiscountPercentBp,
@@ -347,6 +348,7 @@ type ResolvedDocumentDiscount = {
 }
 
 const MAX_SALE_ITEMS = 100
+const LEGAL_TIP_PERCENT_BP = 1000
 
 function validateCartItems(items: CartItemInput[]) {
   if (!items.length) throw new Error("La venta no tiene productos.")
@@ -411,6 +413,33 @@ function calculateSaleTotalsFromResolvedLines(
     salePricesIncludeItbis,
     discountPercentBp
   )
+}
+
+function resolveLegalTip(input: {
+  legalTipEnabled: boolean
+  applyLegalTip?: boolean
+  fallbackApplied?: boolean | null
+  subtotalCents: number
+}) {
+  const hasHistoricalApplied = input.fallbackApplied === true
+  const canApplyLegalTip = input.legalTipEnabled || hasHistoricalApplied
+  const legalTipApplied = !canApplyLegalTip
+    ? false
+    : typeof input.applyLegalTip === "boolean"
+      ? input.applyLegalTip
+      : typeof input.fallbackApplied === "boolean"
+        ? input.fallbackApplied
+        : true
+
+  const legalTipBaseCents = legalTipApplied ? Math.max(0, input.subtotalCents) : 0
+  const legalTipCents = legalTipApplied ? calcPercentAmountCents(legalTipBaseCents, LEGAL_TIP_PERCENT_BP) : 0
+
+  return {
+    legalTipApplied,
+    legalTipBaseCents,
+    legalTipCents,
+    legalTipPercentBp: LEGAL_TIP_PERCENT_BP,
+  }
 }
 
 function resolveAutoDiscount(
@@ -816,6 +845,7 @@ export async function createSale(input: {
   paymentMethod?: PaymentMethod | null
   transferBankName?: string | null
   paymentSplits?: PaymentSplitInput[]
+  applyLegalTip?: boolean
   items: CartItemInput[]
   shippingCents?: number
   discountMode?: DiscountModeInput
@@ -853,6 +883,7 @@ export async function createSale(input: {
     where: { accountId: user.accountId },
   })
   const salePricesIncludeItbis = input.salePricesIncludeItbis ?? (settings?.salePricesIncludeItbis ?? true)
+  const legalTipEnabled = settings?.legalTipEnabled ?? false
 
   try {
     return await prisma.$transaction(async (tx) => {
@@ -988,7 +1019,12 @@ export async function createSale(input: {
         discountPercentBp
       )
       const shippingCents = input.shippingCents ?? 0
-      const totalCents = itemsTotalCents + shippingCents
+      const { legalTipApplied, legalTipBaseCents, legalTipCents, legalTipPercentBp } = resolveLegalTip({
+        legalTipEnabled,
+        applyLegalTip: input.applyLegalTip,
+        subtotalCents,
+      })
+      const totalCents = itemsTotalCents + shippingCents + legalTipCents
       const paymentSplits = input.paymentSplits ?? []
       const hasPaymentSplits = paymentSplits.length > 0
 
@@ -1016,6 +1052,10 @@ export async function createSale(input: {
           subtotalCents,
           itbisCents,
           shippingCents,
+          legalTipApplied,
+          legalTipPercentBp,
+          legalTipBaseCents,
+          legalTipCents,
           discountSource,
           discountPercentBp,
           discountSubtotalCents,
@@ -1062,6 +1102,10 @@ export async function createSale(input: {
           soldAt: true,
           transferBankName: true,
           salePricesIncludeItbis: true,
+          legalTipApplied: true,
+          legalTipPercentBp: true,
+          legalTipBaseCents: true,
+          legalTipCents: true,
           discountSource: true,
           discountPercentBp: true,
           discountSubtotalCents: true,
@@ -1081,6 +1125,7 @@ export async function createSale(input: {
           invoiceCode: sale.invoiceCode,
           type: sale.type,
           totalCents,
+          legalTipCents: sale.legalTipCents,
           discountSource: sale.discountSource,
           discountPercentBp: sale.discountPercentBp,
         },
@@ -1321,6 +1366,7 @@ export async function updateSale(input: {
   paymentMethod?: PaymentMethod | null
   transferBankName?: string | null
   paymentSplits?: PaymentSplitInput[]
+  applyLegalTip?: boolean
   items: CartItemInput[]
   discountMode?: DiscountModeInput
   manualDiscountPercentBp?: number
@@ -1339,6 +1385,7 @@ export async function updateSale(input: {
     where: { accountId: user.accountId },
   })
   const salePricesIncludeItbis = settings?.salePricesIncludeItbis ?? true
+  const legalTipEnabled = settings?.legalTipEnabled ?? false
 
   // Verificar permiso para editar ventas
   if (!user.canEditSales && !user.isOwner) {
@@ -1491,7 +1538,13 @@ export async function updateSale(input: {
       discountPercentBp
     )
     const shippingCents = existingSale.shippingCents ?? 0
-    const totalCents = itemsTotalCents + shippingCents
+    const { legalTipApplied, legalTipBaseCents, legalTipCents, legalTipPercentBp } = resolveLegalTip({
+      legalTipEnabled,
+      applyLegalTip: input.applyLegalTip,
+      fallbackApplied: existingSale.legalTipApplied,
+      subtotalCents,
+    })
+    const totalCents = itemsTotalCents + shippingCents + legalTipCents
     const hasPaymentSplits = Boolean(input.paymentSplits && input.paymentSplits.length > 0)
 
     validateTransferBankName(input.paymentMethod, input.transferBankName)
@@ -1518,6 +1571,10 @@ export async function updateSale(input: {
         subtotalCents,
         itbisCents,
         shippingCents,
+        legalTipApplied,
+        legalTipPercentBp,
+        legalTipBaseCents,
+        legalTipCents,
         discountSource,
         discountPercentBp,
         discountSubtotalCents,
@@ -1539,6 +1596,7 @@ export async function updateSale(input: {
       details: {
         type: input.type,
         totalCents,
+        legalTipCents,
         discountSource,
         discountPercentBp,
       },

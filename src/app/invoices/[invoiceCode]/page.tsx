@@ -259,6 +259,12 @@ export default async function InvoicePrintPage({
               <span>{formatRD(sale.shippingCents)}</span>
             </div>
           )}
+          {sale.legalTipCents > 0 && (
+            <div className="mt-1 flex items-center justify-between">
+              <span>Propina legal (10%)</span>
+              <span>{formatRD(sale.legalTipCents)}</span>
+            </div>
+          )}
           <div className="mt-3 flex items-center justify-between border-t pt-3 text-base font-bold">
             <span>Total</span>
             <span>{formatRD(sale.totalCents)}</span>

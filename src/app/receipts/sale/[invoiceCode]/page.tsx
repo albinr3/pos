@@ -206,6 +206,12 @@ export default async function SaleReceiptPage({
             <span>{formatRD(sale.shippingCents)}</span>
           </div>
         )}
+        {sale.legalTipCents > 0 && (
+          <div className="flex justify-between">
+            <span>Propina legal (10%)</span>
+            <span>{formatRD(sale.legalTipCents)}</span>
+          </div>
+        )}
         <div className="flex justify-between border-t border-dashed pt-2 text-[18px] font-bold">
           <span>TOTAL</span>
           <span>{formatRD(sale.totalCents)}</span>

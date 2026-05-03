@@ -37,6 +37,9 @@ export default async function SalesReportPage({
       <Card>
         <CardHeader>
           <CardTitle>Total: {formatRD(data.totalCents)} ({data.count} facturas)</CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Propina legal cobrada en el rango: {formatRD(data.legalTipTotalCents ?? 0)}
+          </p>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border overflow-x-auto">
