@@ -543,6 +543,7 @@ type ResolvedSaleLine = {
     id: string
     name: string
     priceCents: number
+    costCents: number
     itbisRateBp: number | null
     stock: number
     isActive: boolean
@@ -607,6 +608,7 @@ async function loadProductsForSaleResolution(
       id: true,
       name: true,
       priceCents: true,
+      costCents: true,
       itbisRateBp: true,
       stock: true,
       isActive: true,
@@ -619,6 +621,7 @@ async function loadProductsForSaleResolution(
           ingredient: {
             select: {
               name: true,
+              costCents: true,
             },
           },
         },
@@ -636,6 +639,7 @@ async function loadProductsForSaleResolution(
           ingredientId: item.ingredientId,
           qty: decimalToNumber(item.qty),
           ingredientName: item.ingredient.name,
+          ingredientCostCents: item.ingredient.costCents,
         })),
       },
     ])
@@ -694,6 +698,7 @@ async function resolveSaleLines(
           id: product.id,
           name: product.name,
           priceCents: product.priceCents,
+          costCents: product.costCents,
           itbisRateBp: product.itbisRateBp,
           stock: product.stock,
           isActive: product.isActive,
@@ -764,6 +769,9 @@ async function resolveSaleLines(
         id: product.id,
         name: product.name,
         priceCents: product.priceCents,
+        costCents: product.recipeItems.reduce(
+          (sum, ri) => sum + Math.round(ri.ingredientCostCents * ri.qty), 0
+        ),
         itbisRateBp: product.itbisRateBp,
         stock: product.stock,
         isActive: product.isActive,
@@ -1067,6 +1075,7 @@ export async function createSale(input: {
               productId: line.item.productId,
               qty: line.item.qty,
               unitPriceCents: line.item.unitPriceCents,
+              costCents: line.product.costCents,
               wasPriceOverridden: line.item.wasPriceOverridden,
               itbisRateBp: line.product.itbisRateBp ?? 1800,
               lineTotalCents: Math.round(line.item.unitPriceCents * line.item.qty),
@@ -1609,6 +1618,7 @@ export async function updateSale(input: {
           productId: line.item.productId,
           qty: line.item.qty,
           unitPriceCents: line.item.unitPriceCents,
+          costCents: line.product.costCents,
           wasPriceOverridden: line.item.wasPriceOverridden,
           itbisRateBp: line.product.itbisRateBp ?? 1800,
           lineTotalCents: Math.round(line.item.unitPriceCents * line.item.qty),

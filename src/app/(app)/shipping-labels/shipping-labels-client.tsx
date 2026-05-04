@@ -30,6 +30,7 @@ export function ShippingLabelsClient() {
   const [customerPhone, setCustomerPhone] = useState("")
   const [customerProvince, setCustomerProvince] = useState("")
   const [senderName, setSenderName] = useState("")
+  const [senderPhone, setSenderPhone] = useState("")
   const [packageCount, setPackageCount] = useState("1")
 
   const [showLabel, setShowLabel] = useState(false)
@@ -51,6 +52,7 @@ export function ShippingLabelsClient() {
     // Cargar nombre de la empresa y tamaño de etiqueta como valores por defecto
     getSettings().then((settings) => {
       setSenderName(settings.name)
+      setSenderPhone(settings.phone ?? "")
       setShippingLabelSize(settings.shippingLabelSize)
     })
   }, [])
@@ -231,6 +233,14 @@ export function ShippingLabelsClient() {
                 <Input value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Ej: Tejada Auto Adornos" />
               </div>
               <div className="grid gap-2">
+                <Label>Teléfono del remitente</Label>
+                <Input
+                  value={senderPhone}
+                  onChange={(e) => setSenderPhone(e.target.value)}
+                  placeholder="Ej: 809-555-1234"
+                />
+              </div>
+              <div className="grid gap-2">
                 <Label>Cantidad de bultos *</Label>
                 <Input
                   type="number"
@@ -255,6 +265,7 @@ export function ShippingLabelsClient() {
           customerPhone={customerPhone || null}
           customerProvince={customerProvince || null}
           senderName={senderName}
+          senderPhone={senderPhone || null}
           packageCount={parseInt(packageCount) || 1}
           labelSize={shippingLabelSize}
           onPrintComplete={handlePrintComplete}
@@ -263,4 +274,3 @@ export function ShippingLabelsClient() {
     </div>
   )
 }
-

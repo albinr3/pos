@@ -800,6 +800,7 @@ model SaleItem {
   qty Decimal @db.Decimal(10, 3)
 
   unitPriceCents     Int
+  costCents          Int     @default(0)
   wasPriceOverridden Boolean @default(false)
   itbisRateBp        Int     @default(1800)
 

@@ -190,7 +190,9 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
       },
       include: {
         items: {
-          include: {
+          select: {
+            costCents: true,
+            qty: true,
             consumptions: {
               select: {
                 ingredientId: true,
@@ -237,6 +239,7 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
             saleItem: {
               select: {
                 qty: true,
+                costCents: true,
                 consumptions: {
                   select: {
                     ingredientId: true,
@@ -324,9 +327,14 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
     costsByProductId.set(item.productId, list)
   }
 
-  // Calcular costo de ventas usando costo histórico (ultima compra antes de la venta).
+  // Calcular costo de ventas.
+  // Para ventas nuevas (costCents > 0): usar el costo congelado al momento de la venta.
+  // Para ventas antiguas (costCents === 0): usar costo histórico de compras (fallback).
   const grossCostOfSalesCents = activeSales.reduce((total, sale) => {
     const saleCost = sale.items.reduce((itemTotal, item) => {
+      if (item.costCents > 0) {
+        return itemTotal + Math.round(item.costCents * toQty(item.qty))
+      }
       const itemCost = calculateConsumptionsCostCents(
         costsByProductId,
         item.consumptions,
@@ -344,6 +352,11 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
 
       const returnedQty = toQty(item.qty)
       if (returnedQty <= 0) return itemTotal
+
+      // Si el SaleItem tiene costo congelado, usar proporcionalmente
+      if (item.saleItem.costCents > 0) {
+        return itemTotal + Math.round(item.saleItem.costCents * returnedQty)
+      }
 
       const ratio = returnedQty / soldQty
       const proportionalConsumptions = item.saleItem.consumptions.map((consumption) => ({

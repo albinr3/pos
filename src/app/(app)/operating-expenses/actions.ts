@@ -32,6 +32,26 @@ export async function listOperatingExpenses(input?: { from?: string; to?: string
   })
 }
 
+export async function listOperatingExpenseCategories() {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const rows = await prisma.operatingExpense.findMany({
+    where: {
+      accountId: user.accountId,
+      category: { not: null },
+    },
+    select: { category: true },
+    distinct: ["category"],
+    orderBy: { category: "asc" },
+    take: 200,
+  })
+
+  return rows
+    .map((row) => row.category?.trim())
+    .filter((value): value is string => Boolean(value))
+}
+
 export async function createOperatingExpense(input: {
   description: string
   amountCents: number

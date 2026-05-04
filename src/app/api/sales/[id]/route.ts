@@ -211,6 +211,7 @@ export async function GET(
         reference: item.product?.reference || null,
         qty: decimalToNumber(item.qty),
         unitPriceCents: item.unitPriceCents,
+        costCents: item.costCents,
         itbisRateBp: item.itbisRateBp,
         lineTotalCents: item.lineTotalCents,
         recipeAdjustments: item.recipeAdjustments.map((adjustment) => ({

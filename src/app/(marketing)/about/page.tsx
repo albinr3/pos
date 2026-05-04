@@ -5,7 +5,7 @@ import { Metadata } from "next"
 export const metadata: Metadata = {
   title: "Sobre MOVOPos | Sistema de facturación en República Dominicana",
   description:
-    "Conoce la historia de MOVOPOS, el sistema de facturación y punto de venta pensado para negocios en República Dominicana.",
+    "Conoce la historia de MOVOPos, el sistema de facturación y punto de venta pensado para negocios en República Dominicana.",
   alternates: {
     canonical: "/about",
   },

@@ -1,18 +1,25 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
-import { Edit, Plus, Search, Trash2, DollarSign } from "lucide-react"
+import { Edit, Plus, Search, Trash2, DollarSign, Filter } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
 
-import { createOperatingExpense, deleteOperatingExpense, listOperatingExpenses, updateOperatingExpense } from "./actions"
+import {
+  createOperatingExpense,
+  deleteOperatingExpense,
+  listOperatingExpenseCategories,
+  listOperatingExpenses,
+  updateOperatingExpense,
+} from "./actions"
 
 type Expense = Awaited<ReturnType<typeof listOperatingExpenses>>[number]
 const BUSINESS_TZ_OFFSET_MS = -4 * 60 * 60 * 1000
@@ -34,7 +41,9 @@ function fromInputDateValue(value: string) {
 export function OperatingExpensesClient() {
   const today = toInputDateValue(new Date())
   const [query, setQuery] = useState("")
+  const [filterCategory, setFilterCategory] = useState<string>("__all__")
   const [items, setItems] = useState<Expense[]>([])
+  const [savedCategories, setSavedCategories] = useState<string[]>([])
   const [isLoading, startLoading] = useTransition()
   const [fromDate, setFromDate] = useState(today)
   const [toDate, setToDate] = useState(today)
@@ -64,6 +73,17 @@ export function OperatingExpensesClient() {
   useEffect(() => {
     refresh({ from: appliedFromDate, to: appliedToDate })
   }, [appliedFromDate, appliedToDate])
+
+  useEffect(() => {
+    startLoading(async () => {
+      try {
+        const categories = await listOperatingExpenseCategories()
+        setSavedCategories(categories)
+      } catch {
+        setSavedCategories([])
+      }
+    })
+  }, [])
 
   function resetForm(e?: Expense | null) {
     const x = e ?? null
@@ -103,6 +123,10 @@ export function OperatingExpensesClient() {
           })
           toast({ title: "Guardado", description: "Gasto operativo creado" })
         }
+        const normalizedCategory = category.trim()
+        if (normalizedCategory && !savedCategories.some((c) => c.toLowerCase() === normalizedCategory.toLowerCase())) {
+          setSavedCategories((prev) => [...prev, normalizedCategory].sort((a, b) => a.localeCompare(b)))
+        }
         setOpen(false)
         resetForm(null)
         refresh({ from: appliedFromDate, to: appliedToDate })
@@ -137,6 +161,15 @@ export function OperatingExpensesClient() {
   }
 
   const filteredItems = items.filter((item) => {
+    // Filtro por categoría
+    if (filterCategory !== "__all__") {
+      if (filterCategory === "__none__") {
+        if (item.category) return false
+      } else {
+        if (item.category?.toLowerCase() !== filterCategory.toLowerCase()) return false
+      }
+    }
+    // Filtro por texto
     if (!query.trim()) return true
     const q = query.toLowerCase()
     return (
@@ -186,7 +219,17 @@ export function OperatingExpensesClient() {
 
                 <div className="grid gap-2">
                   <Label>Categoría (opcional)</Label>
-                  <Input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Ej: Arriendo, Sueldos, Servicios, Marketing" />
+                  <Input
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    placeholder="Ej: Arriendo, Sueldos, Servicios, Marketing"
+                    list="operating-expense-categories"
+                  />
+                  <datalist id="operating-expense-categories">
+                    {savedCategories.map((item) => (
+                      <option key={item} value={item} />
+                    ))}
+                  </datalist>
                 </div>
 
                 <div className="grid gap-2">
@@ -215,6 +258,23 @@ export function OperatingExpensesClient() {
             <div className="grid gap-1">
               <Label className="text-xs text-muted-foreground">Hasta</Label>
               <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            </div>
+            <div className="grid gap-1">
+              <Label className="text-xs text-muted-foreground flex items-center gap-1">
+                <Filter className="h-3 w-3" /> Categoría
+              </Label>
+              <Select value={filterCategory} onValueChange={setFilterCategory}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Todas</SelectItem>
+                  <SelectItem value="__none__">Sin categoría</SelectItem>
+                  {savedCategories.map((cat) => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <Button variant="secondary" type="button" onClick={onApplyDateFilter}>
               Aplicar

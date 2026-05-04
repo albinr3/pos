@@ -10,6 +10,7 @@ interface ShippingLabelProps {
   customerPhone: string | null
   customerProvince: string | null
   senderName: string
+  senderPhone: string | null
   packageCount: number
   labelSize?: string // "4x6", "4x4", "6x4"
   onPrintComplete?: () => void
@@ -28,6 +29,7 @@ export function ShippingLabel({
   customerPhone,
   customerProvince,
   senderName,
+  senderPhone,
   packageCount,
   labelSize = "4x6",
   onPrintComplete,
@@ -93,6 +95,7 @@ export function ShippingLabel({
               <div className="border-t pt-3 mt-3">
                 <div className="text-xs text-gray-500 uppercase mb-1">Remitente</div>
                 <div className="font-semibold text-sm">{senderName}</div>
+                {senderPhone && <div className="text-sm">Tel: {senderPhone}</div>}
               </div>
               <div>
                 <div className="text-xs text-gray-500 uppercase mb-1">Cantidad de bultos</div>
@@ -158,6 +161,7 @@ export function ShippingLabel({
             <div className="print:border-t print:border-gray-400 print:pt-3 print:mt-3">
               <div className="print:text-xs print:text-gray-600 print:uppercase print:mb-1">Remitente</div>
               <div className="print:font-semibold print:text-base">{senderName}</div>
+              {senderPhone && <div className="print:text-sm print:font-medium">Tel: {senderPhone}</div>}
             </div>
             <div>
               <div className="print:text-xs print:text-gray-600 print:uppercase print:mb-1">Cantidad de bultos</div>
@@ -171,4 +175,3 @@ export function ShippingLabel({
     </>
   )
 }
-
