@@ -362,7 +362,7 @@ export function ScanInvoiceClient() {
 
     startSaving(async () => {
       try {
-        await createPurchaseFromOCR({
+        const purchase = await createPurchaseFromOCR({
           supplierId: supplierId || null,
           supplierName: supplierName || null,
           products: includedProducts.map((p) => {
@@ -389,6 +389,12 @@ export function ScanInvoiceClient() {
           updateProductCost: updateCost,
           updateProductPrice: updatePrice,
         })
+
+        const printUrl = `/receipts/purchase/${purchase.id}`
+        const printWindow = window.open(printUrl, "_blank")
+        if (!printWindow) {
+          window.location.href = printUrl
+        }
 
         toast({ title: "Compra registrada", description: "La compra se guardó correctamente" })
         router.push("/purchases/list")

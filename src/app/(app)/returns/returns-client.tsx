@@ -196,6 +196,12 @@ export function ReturnsClient() {
           notes: notes || null,
         })
 
+        const printUrl = `/api/print/return/${result.returnCode}`
+        const printWindow = window.open(printUrl, "_blank")
+        if (!printWindow) {
+          window.location.href = printUrl
+        }
+
         toast({ title: "Devolución creada", description: `Devolución ${result.returnCode} registrada exitosamente` })
         setSelectedSale(null)
         setReturnItems([])

@@ -301,7 +301,7 @@ export function PurchasesClient() {
 
     startSaving(async () => {
       try {
-        await createPurchase({
+        const purchase = await createPurchase({
           supplierId: supplierId || null,
           supplierName: supplierName || null,
           notes: notes || null,
@@ -316,6 +316,12 @@ export function PurchasesClient() {
           updateProductCost: updateCost,
           updateProductPrice: updatePrice,
         })
+
+        const printUrl = `/receipts/purchase/${purchase.id}`
+        const printWindow = window.open(printUrl, "_blank")
+        if (!printWindow) {
+          window.location.href = printUrl
+        }
 
         toast({ title: "Compra registrada" })
         setSupplierId("")
