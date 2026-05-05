@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter, useSearchParams } from "next/navigation"
-import { useMemo, useEffect } from "react"
+import { useMemo, useEffect, useCallback } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,6 +20,13 @@ export function ReportDateRangeFilter({ basePath, defaultLastDays }: { basePath:
   const router = useRouter()
   const sp = useSearchParams()
   const hasDefaultRange = defaultLastDays !== undefined
+
+  const buildUrl = useCallback((nextFrom: string, nextTo: string) => {
+    const params = new URLSearchParams(sp.toString())
+    params.set("from", nextFrom)
+    params.set("to", nextTo)
+    return `${basePath}?${params.toString()}`
+  }, [basePath, sp])
 
   const getDefaultDates = () => {
     if (hasDefaultRange) {
@@ -48,21 +55,21 @@ export function ReportDateRangeFilter({ basePath, defaultLastDays }: { basePath:
       from.setDate(from.getDate() - (defaultLastDays ?? 0))
       const fromStr = toBusinessDateInputValue(from)
       const toStr = toBusinessDateInputValue(to)
-      router.replace(`${basePath}?from=${fromStr}&to=${toStr}`)
+      router.replace(buildUrl(fromStr, toStr))
     }
-  }, [hasDefaultRange, defaultLastDays, basePath, router, sp])
+  }, [hasDefaultRange, defaultLastDays, router, buildUrl, sp])
 
   return (
     <div className="flex flex-wrap items-end gap-3">
       <div className="grid gap-1">
         <div className="text-xs text-muted-foreground">Desde</div>
-        <Input type="date" value={from} onChange={(e) => router.replace(`${basePath}?from=${e.target.value}&to=${to}`)} />
+        <Input type="date" value={from} onChange={(e) => router.replace(buildUrl(e.target.value, to))} />
       </div>
       <div className="grid gap-1">
         <div className="text-xs text-muted-foreground">Hasta</div>
-        <Input type="date" value={to} onChange={(e) => router.replace(`${basePath}?from=${from}&to=${e.target.value}`)} />
+        <Input type="date" value={to} onChange={(e) => router.replace(buildUrl(from, e.target.value))} />
       </div>
-      <Button variant="secondary" type="button" disabled={!canApply} onClick={() => router.replace(`${basePath}?from=${from}&to=${to}`)}>
+      <Button variant="secondary" type="button" disabled={!canApply} onClick={() => router.replace(buildUrl(from, to))}>
         Aplicar
       </Button>
     </div>

@@ -1968,7 +1968,7 @@ export function ProductsClient() {
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="grid gap-2">
-                            <Label>Código de proveedor (SKU)</Label>
+                            <Label>Código de proveedor (SKU) (opcional)</Label>
                             <Input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Ej: 12345" />
                           </div>
                           <div className="grid gap-2">

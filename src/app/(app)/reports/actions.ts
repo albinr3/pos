@@ -65,7 +65,7 @@ function calculateConsumptionsCostCents(
   }, 0)
 }
 
-export async function getSalesReport(input: { from?: string; to?: string }) {
+export async function getSalesReport(input: { from?: string; to?: string; type?: "CONTADO" | "CREDITO" }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
@@ -80,6 +80,7 @@ export async function getSalesReport(input: { from?: string; to?: string }) {
       accountId: user.accountId,
       soldAt: { gte: from, lte: to },
       cancelledAt: null, // Excluir canceladas
+      ...(input.type ? { type: input.type } : {}),
     },
     orderBy: { soldAt: "desc" },
     include: { customer: true },
