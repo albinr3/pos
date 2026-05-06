@@ -138,6 +138,8 @@ export function TutorialesClient({ initialData }: Props) {
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
   const [isUploadingVideo, setIsUploadingVideo] = useState(false)
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0)
+  const [videoUploadError, setVideoUploadError] = useState<string | null>(null)
   const [categories, setCategories] = useState(initialData.categories)
   const [videos, setVideos] = useState(initialData.videos)
   const [editingCategory, setEditingCategory] = useState<TutorialCategoryAdminItem | null>(null)
@@ -182,6 +184,8 @@ export function TutorialesClient({ initialData }: Props) {
   const resetVideoForm = () => {
     setEditingVideo(null)
     setUploadedVideo(null)
+    setVideoUploadProgress(0)
+    setVideoUploadError(null)
     setShowVideoForm(false)
     setVideoForm({
       ...emptyVideoForm(categories[0]?.id ?? ""),
@@ -341,11 +345,15 @@ export function TutorialesClient({ initialData }: Props) {
 
     if (!url || !key) {
       setIsUploadingVideo(false)
+      setVideoUploadProgress(0)
+      setVideoUploadError("UploadThing no devolvio URL y key.")
       toast({ title: "UploadThing no devolvio URL y key", variant: "destructive" })
       return
     }
     if (mimeType && mimeType !== "video/mp4") {
       setIsUploadingVideo(false)
+      setVideoUploadProgress(0)
+      setVideoUploadError("Solo se aceptan videos MP4.")
       toast({ title: "Solo se aceptan videos MP4", variant: "destructive" })
       setUploadedVideo(null)
       return
@@ -375,11 +383,15 @@ export function TutorialesClient({ initialData }: Props) {
         variant: "destructive",
       })
     }
+    setVideoUploadProgress(100)
+    setVideoUploadError(null)
     setIsUploadingVideo(false)
   }
 
   const clearUploadedVideo = () => {
     setUploadedVideo(null)
+    setVideoUploadProgress(0)
+    setVideoUploadError(null)
     setVideoForm((prev) => ({ ...prev, duration: "" }))
     toast({ title: "Video removido", description: "Ahora puedes subir el video correcto." })
   }
@@ -484,9 +496,21 @@ export function TutorialesClient({ initialData }: Props) {
                     </div>
                     <UploadButton<OurFileRouter, "tutorialVideoUploader">
                       endpoint="tutorialVideoUploader"
-                      onUploadBegin={() => setIsUploadingVideo(true)}
+                      onUploadBegin={() => {
+                        setIsUploadingVideo(true)
+                        setVideoUploadProgress(0)
+                        setVideoUploadError(null)
+                      }}
+                      onUploadProgress={(progress: number) => {
+                        setVideoUploadProgress(Math.max(0, Math.min(100, Math.round(progress))))
+                      }}
                       onClientUploadComplete={onUploadComplete}
-                      onUploadError={(error: Error) => { setIsUploadingVideo(false); toast({ title: "Error al subir video", description: error.message, variant: "destructive" }) }}
+                      onUploadError={(error: Error) => {
+                        setIsUploadingVideo(false)
+                        setVideoUploadProgress(0)
+                        setVideoUploadError(error.message || "Ocurrio un error inesperado al subir el video.")
+                        toast({ title: "Error al subir video", description: error.message, variant: "destructive" })
+                      }}
                       className="absolute inset-0 z-10"
                       appearance={{
                         container: "h-full w-full",
@@ -500,7 +524,21 @@ export function TutorialesClient({ initialData }: Props) {
                       }}
                     />
                   </div>
-                  {isUploadingVideo ? <p className="text-xs text-muted-foreground inline-flex items-center"><Loader2 className="h-3 w-3 mr-2 animate-spin" />Subiendo...</p> : null}
+                  {isUploadingVideo ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-muted-foreground inline-flex items-center">
+                        <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                        Subiendo... {videoUploadProgress}%
+                      </p>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full bg-primary transition-[width] duration-200 ease-out"
+                          style={{ width: `${videoUploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                  {videoUploadError ? <p className="text-xs text-destructive">{videoUploadError}</p> : null}
                   {uploadedVideo ? (
                     <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
                       <p className="text-xs text-muted-foreground">Archivo: {uploadedVideo.name || uploadedVideo.key}</p>
@@ -519,7 +557,7 @@ export function TutorialesClient({ initialData }: Props) {
                 </div>
                 {uploadedVideo ? <video className="w-full max-h-80 rounded border bg-black" src={uploadedVideo.url} controls preload="metadata" /> : null}
                 <div className="flex gap-2">
-                  <Button onClick={saveVideo} disabled={isPending || categories.length === 0}>{isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}{editingVideo ? "Actualizar video" : "Crear video"}</Button>
+                  <Button onClick={saveVideo} disabled={isPending || isUploadingVideo || categories.length === 0}>{isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}{editingVideo ? "Actualizar video" : "Crear video"}</Button>
                   <Button variant="outline" onClick={resetVideoForm}>Cancelar</Button>
                 </div>
               </CardContent>
