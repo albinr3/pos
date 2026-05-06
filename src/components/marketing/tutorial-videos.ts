@@ -1,9 +1,6 @@
 export type TutorialCategory =
   | "primeros-pasos"
-  | "ventas"
-  | "inventario"
-  | "compras"
-  | "configuracion"
+  | "avanzados"
 
 export type TutorialVideo = {
   slug: string
@@ -34,24 +31,9 @@ export const tutorialCategories: Array<{
     description: "Configura tu cuenta y deja la plataforma lista para operar.",
   },
   {
-    value: "ventas",
-    label: "Ventas",
-    description: "Aprende a vender, facturar y cobrar sin fricciones.",
-  },
-  {
-    value: "inventario",
-    label: "Inventario",
-    description: "Controla productos, stock y movimientos clave.",
-  },
-  {
-    value: "compras",
-    label: "Compras",
-    description: "Registra compras y manten trazabilidad del abastecimiento.",
-  },
-  {
-    value: "configuracion",
-    label: "Configuracion",
-    description: "Ajusta permisos, tickets y parametros del negocio.",
+    value: "avanzados",
+    label: "Avanzados",
+    description: "Profundiza en ventas, inventario, compras y configuracion.",
   },
 ]
 
@@ -94,8 +76,8 @@ export const tutorialVideos: TutorialVideo[] = [
     title: "Crea tu primera venta paso a paso",
     description:
       "Descubre como registrar una venta, seleccionar productos y completar el proceso de facturacion en pocos clics.",
-    category: "ventas",
-    categoryLabel: "Ventas",
+    category: "avanzados",
+    categoryLabel: "Avanzados",
     duration: "6 min",
     level: "Basico",
     videoUrl: null,
@@ -110,8 +92,8 @@ export const tutorialVideos: TutorialVideo[] = [
     title: "Facturar e imprimir o compartir el ticket",
     description:
       "Mira como emitir un comprobante, imprimir tickets y compartir el resultado con el cliente segun tu flujo de trabajo.",
-    category: "ventas",
-    categoryLabel: "Ventas",
+    category: "avanzados",
+    categoryLabel: "Avanzados",
     duration: "5 min",
     level: "Intermedio",
     videoUrl: null,
@@ -126,8 +108,8 @@ export const tutorialVideos: TutorialVideo[] = [
     title: "Crea productos y categorias",
     description:
       "Organiza tu catalogo con nombres, precios, categorias y datos clave para que vender sea mas rapido y ordenado.",
-    category: "inventario",
-    categoryLabel: "Inventario",
+    category: "avanzados",
+    categoryLabel: "Avanzados",
     duration: "7 min",
     level: "Basico",
     videoUrl: null,
@@ -142,8 +124,8 @@ export const tutorialVideos: TutorialVideo[] = [
     title: "Ajustes de stock e inventario",
     description:
       "Aprende a corregir existencias, revisar movimientos y mantener el inventario alineado con la realidad de tu negocio.",
-    category: "inventario",
-    categoryLabel: "Inventario",
+    category: "avanzados",
+    categoryLabel: "Avanzados",
     duration: "6 min",
     level: "Intermedio",
     videoUrl: null,
@@ -158,8 +140,8 @@ export const tutorialVideos: TutorialVideo[] = [
     title: "Registrar una compra paso a paso",
     description:
       "Aprende a cargar compras de proveedores para que el inventario y los costos queden actualizados desde el primer registro.",
-    category: "compras",
-    categoryLabel: "Compras",
+    category: "avanzados",
+    categoryLabel: "Avanzados",
     duration: "6 min",
     level: "Intermedio",
     videoUrl: null,
@@ -174,8 +156,8 @@ export const tutorialVideos: TutorialVideo[] = [
     title: "Gestion de proveedores y cuentas pendientes",
     description:
       "Conoce como organizar proveedores, montos por pagar y seguimiento de compromisos relacionados con tus compras.",
-    category: "compras",
-    categoryLabel: "Compras",
+    category: "avanzados",
+    categoryLabel: "Avanzados",
     duration: "5 min",
     level: "Intermedio",
     videoUrl: null,
@@ -190,8 +172,8 @@ export const tutorialVideos: TutorialVideo[] = [
     title: "Crea usuarios y administra permisos",
     description:
       "Configura accesos para tu equipo y asigna permisos segun el rol de cada persona dentro del negocio.",
-    category: "configuracion",
-    categoryLabel: "Configuracion",
+    category: "avanzados",
+    categoryLabel: "Avanzados",
     duration: "5 min",
     level: "Intermedio",
     videoUrl: null,
@@ -206,8 +188,8 @@ export const tutorialVideos: TutorialVideo[] = [
     title: "Personaliza documentos, tickets e impuestos",
     description:
       "Ajusta detalles operativos y visuales para que la plataforma refleje la forma real en que trabaja tu negocio.",
-    category: "configuracion",
-    categoryLabel: "Configuracion",
+    category: "avanzados",
+    categoryLabel: "Avanzados",
     duration: "7 min",
     level: "Avanzado",
     videoUrl: null,

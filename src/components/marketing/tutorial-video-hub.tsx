@@ -383,6 +383,31 @@ export function TutorialVideoHub({ categories, videos }: TutorialVideoHubProps) 
                   ? videos
                   : videos.filter((video) => video.category === category.value)
 
+              const primerosPasosVideos = tabVideos.filter(
+                (video) => video.category === "primeros-pasos"
+              )
+              const avanzadosVideos = tabVideos.filter(
+                (video) => video.category === "avanzados"
+              )
+
+              const renderVideoGrid = (items: PublicTutorialVideo[]) => (
+                <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                  {items.map((video) => (
+                    <div key={video.slug} id={video.slug}>
+                      <VideoCard
+                        video={video}
+                        isActive={video.slug === selectedSlug}
+                        onOpenModal={() => {
+                          setSelectedSlug(video.slug)
+                          setModalVideo(video)
+                          setModalOpen(true)
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )
+
               return (
                 <TabsContent key={category.value} value={category.value} className="mt-6">
                   <div className="mb-6 rounded-2xl border bg-white p-5 shadow-sm">
@@ -398,22 +423,26 @@ export function TutorialVideoHub({ categories, videos }: TutorialVideoHubProps) 
                         Todavia no hay videos en esta categoria.
                       </CardContent>
                     </Card>
-                  ) : (
-                    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                      {tabVideos.map((video) => (
-                        <div key={video.slug} id={video.slug}>
-                          <VideoCard
-                            video={video}
-                            isActive={video.slug === selectedSlug}
-                            onOpenModal={() => {
-                              setSelectedSlug(video.slug)
-                              setModalVideo(video)
-                              setModalOpen(true)
-                            }}
-                          />
-                        </div>
-                      ))}
+                  ) : category.value === "todos" ? (
+                    <div className="space-y-8">
+                      {primerosPasosVideos.length > 0 ? renderVideoGrid(primerosPasosVideos) : null}
+
+                      {avanzadosVideos.length > 0 ? (
+                        <>
+                          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-purple-700">
+                              Pasos avanzados
+                            </p>
+                            <p className="mt-2 text-base text-muted-foreground">
+                              Profundiza en ventas, inventario, compras y configuracion.
+                            </p>
+                          </div>
+                          {renderVideoGrid(avanzadosVideos)}
+                        </>
+                      ) : null}
                     </div>
+                  ) : (
+                    renderVideoGrid(tabVideos)
                   )}
                 </TabsContent>
               )
