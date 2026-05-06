@@ -15,6 +15,12 @@ import { addBatchPayment, addPayment } from "@/app/(app)/ar/actions"
 let isSyncing = false
 let syncListeners: Array<(syncing: boolean) => void> = []
 
+function isAlreadyPaidError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const message = error.message.toLowerCase()
+  return message.includes("ya está pagada") || message.includes("ya esta pagada")
+}
+
 export function onSyncStatusChange(listener: (syncing: boolean) => void) {
   syncListeners.push(listener)
   return () => {
@@ -99,6 +105,7 @@ export async function syncPendingData() {
     const pendingBatchPayments = await getPendingBatchPayments()
     let paymentsSynced = 0
     let paymentsErrors = 0
+    let paymentsDiscardedAlreadyPaid = 0
 
     for (const batchPayment of pendingBatchPayments) {
       try {
@@ -121,6 +128,11 @@ export async function syncPendingData() {
         paymentsSynced++
       } catch (error) {
         console.error("Error sincronizando pago batch:", error)
+        if (isAlreadyPaidError(error)) {
+          await deletePendingBatchPayment(batchPayment.tempId)
+          paymentsDiscardedAlreadyPaid++
+          continue
+        }
         paymentsErrors++
         // Continuar con los demás pagos batch
       }
@@ -144,6 +156,11 @@ export async function syncPendingData() {
         paymentsSynced++
       } catch (error) {
         console.error("Error sincronizando pago:", error)
+        if (isAlreadyPaidError(error)) {
+          await deletePendingPayment(payment.tempId)
+          paymentsDiscardedAlreadyPaid++
+          continue
+        }
         paymentsErrors++
         // Continuar con los demás pagos
       }
@@ -162,6 +179,13 @@ export async function syncPendingData() {
         title: "Algunos elementos no se pudieron sincronizar",
         description: `${salesErrors} venta(s) y ${paymentsErrors} pago(s) con errores`,
         variant: "destructive",
+      })
+    }
+
+    if (paymentsDiscardedAlreadyPaid > 0) {
+      toast({
+        title: "Pagos descartados por factura ya pagada",
+        description: `Se limpiaron ${paymentsDiscardedAlreadyPaid} pago(s) pendientes para evitar reintentos repetidos.`,
       })
     }
 
