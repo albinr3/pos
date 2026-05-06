@@ -52,6 +52,14 @@ async function logPrismaError(error: Error, context: {
   }
 }
 
+function isPrismaRuntimeError(error: unknown): error is Error {
+  if (!(error instanceof Error)) return false
+  const name = error.name || ""
+  // Prisma runtime errors usually use names like:
+  // PrismaClientKnownRequestError, PrismaClientValidationError, etc.
+  return name.startsWith("PrismaClient")
+}
+
 // Store the logger globally to reuse
 if (!globalForPrisma.prismaErrorLogger) {
   globalForPrisma.prismaErrorLogger = logPrismaError
@@ -91,7 +99,7 @@ function wrapPrismaModel(model: any, modelName: string): any {
             }
 
             // Log the error asynchronously (don't block the throw)
-            if (error instanceof Error && globalForPrisma.prismaErrorLogger) {
+            if (isPrismaRuntimeError(error) && globalForPrisma.prismaErrorLogger) {
               // Don't await - log in background
               globalForPrisma.prismaErrorLogger(error, {
                 operation: `${modelName}.${prop}`,
@@ -132,7 +140,7 @@ export const prisma = new Proxy({} as PrismaClient, {
           try {
             return await (value as Function).apply(client, args)
           } catch (error) {
-            if (error instanceof Error && globalForPrisma.prismaErrorLogger) {
+            if (isPrismaRuntimeError(error) && globalForPrisma.prismaErrorLogger) {
               globalForPrisma.prismaErrorLogger(error, {
                 operation: `prisma.${prop}`,
                 args: args[0],

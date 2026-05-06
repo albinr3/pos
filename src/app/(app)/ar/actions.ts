@@ -8,6 +8,7 @@ import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { isDominicanBankName } from "@/lib/dominican-banks"
 import { endOfDay } from "@/lib/dates"
+import { logError, ErrorCodes } from "@/lib/error-logger"
 
 type AuthActor = {
   id: string
@@ -282,18 +283,19 @@ export async function addPayment(input: {
     }
   }
 
-  return prisma.$transaction(async (tx) => {
-    // Verificar que la cuenta por cobrar pertenece al account del usuario
-    const ar = await tx.accountReceivable.findFirst({
-      where: { 
-        id: input.arId,
-        sale: {
-          accountId: currentUser.accountId,
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Verificar que la cuenta por cobrar pertenece al account del usuario
+      const ar = await tx.accountReceivable.findFirst({
+        where: {
+          id: input.arId,
+          sale: {
+            accountId: currentUser.accountId,
+          },
         },
-      },
-    })
-    if (!ar) throw new Error("Cuenta por cobrar no encontrada")
-    if (ar.status === "PAGADA" || ar.balanceCents <= 0) throw new Error("Esta factura ya está pagada")
+      })
+      if (!ar) throw new Error("Cuenta por cobrar no encontrada")
+      if (ar.status === "PAGADA" || ar.balanceCents <= 0) throw new Error("Esta factura ya está pagada")
 
     const amount = Math.min(input.amountCents, ar.balanceCents)
 
@@ -353,13 +355,29 @@ export async function addPayment(input: {
     revalidatePath("/dashboard")
     revalidatePath("/daily-close")
 
-    return { 
-      paymentId: payment.id, 
-      receiptCode: payment.receiptCode,
-      appliedCents: amount, 
-      newBalanceCents: newBalance 
+      return {
+        paymentId: payment.id,
+        receiptCode: payment.receiptCode,
+        appliedCents: amount,
+        newBalanceCents: newBalance
+      }
+    }, TRANSACTION_OPTIONS)
+  } catch (error) {
+    if (error instanceof Error && error.message === "Esta factura ya está pagada") {
+      await logError(error, {
+        code: ErrorCodes.VALIDATION_ERROR,
+        severity: "LOW",
+        accountId: currentUser.accountId,
+        userId: currentUser.id,
+        endpoint: "/ar/actions/addPayment",
+        metadata: {
+          arId: input.arId,
+          method: input.method,
+        },
+      })
     }
-  }, TRANSACTION_OPTIONS)
+    throw error
+  }
 }
 
 export async function addBatchPayment(input: {
@@ -406,15 +424,16 @@ export async function addBatchPayment(input: {
     }
   }
 
-  return prisma.$transaction(async (tx) => {
-    // Cargar todos los AR dentro de la transacción
-    const ars = await tx.accountReceivable.findMany({
-      where: {
-        id: { in: uniqueArIds },
-        sale: { accountId: currentUser.accountId },
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    })
+  try {
+    return await prisma.$transaction(async (tx) => {
+      // Cargar todos los AR dentro de la transacción
+      const ars = await tx.accountReceivable.findMany({
+        where: {
+          id: { in: uniqueArIds },
+          sale: { accountId: currentUser.accountId },
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      })
 
     if (ars.length !== uniqueArIds.length) {
       throw new Error("Algunas cuentas por cobrar no fueron encontradas")
@@ -507,10 +526,30 @@ export async function addBatchPayment(input: {
       )
     }
 
-    revalidatePath("/ar")
-    revalidatePath("/dashboard")
-    revalidatePath("/daily-close")
+      revalidatePath("/ar")
+      revalidatePath("/dashboard")
+      revalidatePath("/daily-close")
 
-    return { receiptCode, paymentIds }
-  }, TRANSACTION_OPTIONS)
+      return { receiptCode, paymentIds }
+    }, TRANSACTION_OPTIONS)
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.message === "Esta factura ya está pagada" || error.message === "La factura ya está pagada")
+    ) {
+      await logError(error, {
+        code: ErrorCodes.VALIDATION_ERROR,
+        severity: "LOW",
+        accountId: currentUser.accountId,
+        userId: currentUser.id,
+        endpoint: "/ar/actions/addBatchPayment",
+        metadata: {
+          arIds: uniqueArIds,
+          method: input.method,
+          count: uniqueArIds.length,
+        },
+      })
+    }
+    throw error
+  }
 }
