@@ -36,6 +36,71 @@ function parseVisualIdQuery(rawQuery: string | undefined): number | null {
   return Number(digits)
 }
 
+type ARDebugSnapshot = {
+  id: string
+  status: string
+  balanceCents: number
+  totalCents: number
+  dueDate: Date | null
+  customerId: string
+  customerName: string | null
+  customerVisualId: number | null
+  saleId: string
+  invoiceCode: string
+  saleType: string
+  soldAt: Date
+}
+
+async function getArDebugSnapshots(accountId: string, arIds: string[]): Promise<ARDebugSnapshot[]> {
+  try {
+    const ars = await prisma.accountReceivable.findMany({
+      where: {
+        id: { in: arIds },
+        sale: { accountId },
+      },
+      select: {
+        id: true,
+        status: true,
+        balanceCents: true,
+        totalCents: true,
+        dueDate: true,
+        customerId: true,
+        customer: {
+          select: {
+            name: true,
+            visualId: true,
+          },
+        },
+        saleId: true,
+        sale: {
+          select: {
+            invoiceCode: true,
+            type: true,
+            soldAt: true,
+          },
+        },
+      },
+    })
+
+    return ars.map((ar) => ({
+      id: ar.id,
+      status: ar.status,
+      balanceCents: ar.balanceCents,
+      totalCents: ar.totalCents,
+      dueDate: ar.dueDate,
+      customerId: ar.customerId,
+      customerName: ar.customer?.name ?? null,
+      customerVisualId: ar.customer?.visualId ?? null,
+      saleId: ar.saleId,
+      invoiceCode: ar.sale.invoiceCode,
+      saleType: ar.sale.type,
+      soldAt: ar.sale.soldAt,
+    }))
+  } catch {
+    return []
+  }
+}
+
 export async function listOpenAR(
   options?: {
     query?: string
@@ -363,16 +428,30 @@ export async function addPayment(input: {
       }
     }, TRANSACTION_OPTIONS)
   } catch (error) {
-    if (error instanceof Error && error.message === "Esta factura ya está pagada") {
+    if (
+      error instanceof Error &&
+      (error.message === "Esta factura ya está pagada" || error.message === "La factura ya está pagada")
+    ) {
+      const snapshots = await getArDebugSnapshots(currentUser.accountId, [input.arId])
+      const arSnapshot = snapshots[0] ?? null
       await logError(error, {
-        code: ErrorCodes.VALIDATION_ERROR,
-        severity: "LOW",
+        code: ErrorCodes.AR_ALREADY_PAID_ATTEMPT,
+        severity: "MEDIUM",
         accountId: currentUser.accountId,
         userId: currentUser.id,
+        userEmail: currentUser.email ?? undefined,
         endpoint: "/ar/actions/addPayment",
         metadata: {
+          event: "AR_ALREADY_PAID_ATTEMPT",
           arId: input.arId,
+          attemptedAmountCents: input.amountCents,
           method: input.method,
+          transferBankName:
+            input.method === PaymentMethod.TRANSFERENCIA
+              ? input.transferBankName?.trim() ?? null
+              : null,
+          attemptedAt: new Date().toISOString(),
+          arSnapshot,
         },
       })
     }
@@ -537,16 +616,29 @@ export async function addBatchPayment(input: {
       error instanceof Error &&
       (error.message === "Esta factura ya está pagada" || error.message === "La factura ya está pagada")
     ) {
+      const snapshots = await getArDebugSnapshots(currentUser.accountId, uniqueArIds)
+      const alreadyPaid = snapshots.filter((ar) => ar.status === "PAGADA" || ar.balanceCents <= 0)
       await logError(error, {
-        code: ErrorCodes.VALIDATION_ERROR,
-        severity: "LOW",
+        code: ErrorCodes.AR_ALREADY_PAID_ATTEMPT,
+        severity: "MEDIUM",
         accountId: currentUser.accountId,
         userId: currentUser.id,
+        userEmail: currentUser.email ?? undefined,
         endpoint: "/ar/actions/addBatchPayment",
         metadata: {
+          event: "AR_ALREADY_PAID_ATTEMPT",
           arIds: uniqueArIds,
+          attemptedAmountCents: input.amountCents,
           method: input.method,
+          transferBankName:
+            input.method === PaymentMethod.TRANSFERENCIA
+              ? input.transferBankName?.trim() ?? null
+              : null,
           count: uniqueArIds.length,
+          attemptedAt: new Date().toISOString(),
+          alreadyPaidArIds: alreadyPaid.map((ar) => ar.id),
+          alreadyPaidInvoices: alreadyPaid.map((ar) => ar.invoiceCode),
+          snapshots,
         },
       })
     }

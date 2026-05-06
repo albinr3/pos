@@ -18,7 +18,10 @@ async function logPrismaError(error: Error, context: {
   try {
     // Dynamic import to avoid circular dependency with error-logger
     const { logError, ErrorCodes } = await import("@/lib/error-logger")
-    
+    let fallbackUser:
+      | { accountId?: string; userId?: string; userEmail?: string }
+      | undefined
+
     // Determine severity based on error type
     let severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" = "HIGH"
     let code: string = ErrorCodes.DB_QUERY_ERROR
@@ -32,15 +35,38 @@ async function logPrismaError(error: Error, context: {
       severity = "CRITICAL" // Schema mismatch is critical
       code = ErrorCodes.DB_QUERY_ERROR
     }
+
+    try {
+      const { getCurrentUser } = await import("@/lib/auth")
+      const user = await getCurrentUser()
+      if (user) {
+        fallbackUser = {
+          accountId: user.accountId,
+          userId: user.id,
+          userEmail: user.email ?? undefined,
+        }
+      }
+    } catch {
+      // Ignore auth resolution errors in logger fallback.
+    }
+
+    const errorCode = getPrismaErrorCode(error)
+    const isTransactionCallback = typeof context.args === "function"
     
     await logError(error, {
       code,
       severity,
+      accountId: fallbackUser?.accountId,
+      userId: fallbackUser?.userId,
+      userEmail: fallbackUser?.userEmail,
       endpoint: context.operation,
       metadata: {
         model: context.model,
         operation: context.operation,
         prismaError: true,
+        errorName: error.name,
+        prismaCode: errorCode,
+        isTransactionCallback,
         // Don't log full args as they may contain sensitive data
         hasArgs: !!context.args,
       },
@@ -58,6 +84,41 @@ function isPrismaRuntimeError(error: unknown): error is Error {
   // Prisma runtime errors usually use names like:
   // PrismaClientKnownRequestError, PrismaClientValidationError, etc.
   return name.startsWith("PrismaClient")
+}
+
+function getPrismaErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined
+  const candidate = (error as { code?: unknown }).code
+  return typeof candidate === "string" ? candidate : undefined
+}
+
+function isExpectedBusinessErrorMessage(message: string): boolean {
+  const normalized = message.toLowerCase()
+  return (
+    normalized.includes("ya está pagada") ||
+    normalized.includes("ya esta pagada") ||
+    normalized.includes("no autenticado") ||
+    normalized.includes("no tienes permiso") ||
+    normalized.includes("no se puede editar una venta") ||
+    normalized.includes("no se puede cancelar")
+  )
+}
+
+function shouldAutoLogPrismaError(
+  error: unknown,
+  context: { operation: string; args?: unknown }
+): error is Error {
+  if (!isPrismaRuntimeError(error)) return false
+  if (isExpectedBusinessErrorMessage(error.message)) return false
+
+  // In interactive transactions, app-level throws can be wrapped by Prisma
+  // without a Prisma error code. Skip those to avoid false DB alarms.
+  if (context.operation === "prisma.$transaction" && typeof context.args === "function") {
+    const prismaCode = getPrismaErrorCode(error)
+    if (!prismaCode) return false
+  }
+
+  return true
 }
 
 // Store the logger globally to reuse
@@ -99,7 +160,7 @@ function wrapPrismaModel(model: any, modelName: string): any {
             }
 
             // Log the error asynchronously (don't block the throw)
-            if (isPrismaRuntimeError(error) && globalForPrisma.prismaErrorLogger) {
+            if (shouldAutoLogPrismaError(error, { operation: `${modelName}.${prop}`, args: args[0] }) && globalForPrisma.prismaErrorLogger) {
               // Don't await - log in background
               globalForPrisma.prismaErrorLogger(error, {
                 operation: `${modelName}.${prop}`,
@@ -140,7 +201,7 @@ export const prisma = new Proxy({} as PrismaClient, {
           try {
             return await (value as Function).apply(client, args)
           } catch (error) {
-            if (isPrismaRuntimeError(error) && globalForPrisma.prismaErrorLogger) {
+            if (shouldAutoLogPrismaError(error, { operation: `prisma.${prop}`, args: args[0] }) && globalForPrisma.prismaErrorLogger) {
               globalForPrisma.prismaErrorLogger(error, {
                 operation: `prisma.${prop}`,
                 args: args[0],
