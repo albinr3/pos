@@ -146,6 +146,8 @@ export function TutorialesClient({ initialData }: Props) {
   const [editingVideo, setEditingVideo] = useState<TutorialVideoAdminItem | null>(null)
   const [showVideoForm, setShowVideoForm] = useState(false)
   const [uploadedVideo, setUploadedVideo] = useState<UploadedVideo | null>(null)
+  const [manualVideoUrl, setManualVideoUrl] = useState("")
+  const [manualVideoKey, setManualVideoKey] = useState("")
 
   const [categoryForm, setCategoryForm] = useState<CategoryForm>({
     ...EMPTY_CATEGORY_FORM,
@@ -184,6 +186,8 @@ export function TutorialesClient({ initialData }: Props) {
   const resetVideoForm = () => {
     setEditingVideo(null)
     setUploadedVideo(null)
+    setManualVideoUrl("")
+    setManualVideoKey("")
     setVideoUploadProgress(0)
     setVideoUploadError(null)
     setShowVideoForm(false)
@@ -207,12 +211,20 @@ export function TutorialesClient({ initialData }: Props) {
   const onVideoEdit = (video: TutorialVideoAdminItem) => {
     setEditingVideo(video)
     setShowVideoForm(true)
-    setUploadedVideo({
-      url: video.videoUrl,
-      key: video.videoFileKey,
-      mimeType: "video/mp4",
-      name: video.slug,
-    })
+    if (video.videoFileKey?.trim()) {
+      setUploadedVideo({
+        url: video.videoUrl,
+        key: video.videoFileKey,
+        mimeType: "video/mp4",
+        name: video.slug,
+      })
+      setManualVideoUrl("")
+      setManualVideoKey("")
+    } else {
+      setUploadedVideo(null)
+      setManualVideoUrl(video.videoUrl)
+      setManualVideoKey("")
+    }
     setVideoForm({
       title: video.title,
       slug: slugifyTutorial(video.title),
@@ -256,6 +268,8 @@ export function TutorialesClient({ initialData }: Props) {
   }
 
   const saveVideo = () => {
+    const resolvedVideoUrl = manualVideoUrl.trim() || uploadedVideo?.url || ""
+    const resolvedVideoKey = manualVideoKey.trim() || uploadedVideo?.key || ""
     const payload = {
       title: videoForm.title.trim(),
       slug: slugifyTutorial(videoForm.title).trim(),
@@ -264,8 +278,8 @@ export function TutorialesClient({ initialData }: Props) {
       duration: videoForm.duration.trim(),
       level: videoForm.level,
       outcomes: parseOutcomes(videoForm.outcomesText),
-      videoUrl: uploadedVideo?.url || "",
-      videoFileKey: uploadedVideo?.key || "",
+      videoUrl: resolvedVideoUrl,
+      videoFileKey: resolvedVideoKey,
       videoMimeType: uploadedVideo?.mimeType,
       isPublished: videoForm.isPublished,
       isFeatured: videoForm.isFeatured,
@@ -285,7 +299,7 @@ export function TutorialesClient({ initialData }: Props) {
       return
     }
     if (!payload.videoUrl || !payload.videoFileKey) {
-      toast({ title: "Sube un video MP4 antes de guardar", variant: "destructive" })
+      toast({ title: "Debes indicar URL y key del video (o subirlo) antes de guardar", variant: "destructive" })
       return
     }
     if (payload.videoMimeType && payload.videoMimeType !== "video/mp4") {
@@ -368,6 +382,8 @@ export function TutorialesClient({ initialData }: Props) {
     }
 
     setUploadedVideo({ url, key, mimeType, name })
+    setManualVideoUrl("")
+    setManualVideoKey("")
     if (detectedDuration) {
       setVideoForm((prev) => ({ ...prev, duration: detectedDuration }))
       toast({
@@ -418,6 +434,8 @@ export function TutorialesClient({ initialData }: Props) {
               onClick={() => {
                 setEditingVideo(null)
                 setUploadedVideo(null)
+                setManualVideoUrl("")
+                setManualVideoKey("")
                 setVideoForm({
                   ...emptyVideoForm(categories[0]?.id ?? ""),
                   displayOrder: (Math.max(0, ...videos.map((item) => item.displayOrder)) || 0) + 1,
@@ -488,6 +506,24 @@ export function TutorialesClient({ initialData }: Props) {
                   <div className="flex items-center justify-between rounded-md border p-3 mt-6"><Label>Destacado</Label><Switch checked={videoForm.isFeatured} onCheckedChange={(checked) => setVideoForm((p) => ({ ...p, isFeatured: checked }))} /></div>
                 </div>
                 <div className="space-y-2">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <Label>URL del video MP4 (opcional si subes archivo)</Label>
+                      <Input
+                        placeholder="https://cdn.ejemplo.com/tutorial.mp4"
+                        value={manualVideoUrl}
+                        onChange={(e) => setManualVideoUrl(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <Label>Key del video (obligatoria si usas URL)</Label>
+                      <Input
+                        placeholder="filekey_o_identificador"
+                        value={manualVideoKey}
+                        onChange={(e) => setManualVideoKey(e.target.value)}
+                      />
+                    </div>
+                  </div>
                   <div className="relative rounded-md border border-dashed p-4">
                     <div className="pointer-events-none flex flex-col items-center justify-center gap-1 text-center">
                       <Upload className="h-6 w-6 text-primary" />

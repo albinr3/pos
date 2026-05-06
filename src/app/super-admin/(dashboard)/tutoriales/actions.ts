@@ -369,8 +369,8 @@ export async function createTutorialVideo(input: CreateVideoInput): Promise<Acti
     if (!duration) return { success: false, error: "La duracion es obligatoria" }
     if (!isTutorialLevel(input.level)) return { success: false, error: "El nivel no es valido" }
     if (outcomes.length === 0) return { success: false, error: "Agrega al menos un outcome" }
-    if (!videoUrl) return { success: false, error: "Debes subir un video" }
-    if (!videoFileKey) return { success: false, error: "Falta la referencia del video" }
+    if (!videoUrl) return { success: false, error: "Debes subir un video o colocar una URL" }
+    if (!videoFileKey) return { success: false, error: "Debes indicar la key del video" }
 
     if (!looksLikeMp4(videoUrl, input.videoMimeType)) {
       return { success: false, error: "Solo se permiten videos MP4" }
@@ -458,8 +458,8 @@ export async function updateTutorialVideo(input: UpdateVideoInput): Promise<Acti
     if (!duration) return { success: false, error: "La duracion es obligatoria" }
     if (!isTutorialLevel(input.level)) return { success: false, error: "El nivel no es valido" }
     if (outcomes.length === 0) return { success: false, error: "Agrega al menos un outcome" }
-    if (!videoUrl) return { success: false, error: "Debes subir un video" }
-    if (!videoFileKey) return { success: false, error: "Falta la referencia del video" }
+    if (!videoUrl) return { success: false, error: "Debes subir un video o colocar una URL" }
+    if (!videoFileKey) return { success: false, error: "Debes indicar la key del video" }
 
     if (!looksLikeMp4(videoUrl, input.videoMimeType)) {
       return { success: false, error: "Solo se permiten videos MP4" }
