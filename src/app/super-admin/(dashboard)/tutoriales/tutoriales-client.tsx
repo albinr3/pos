@@ -148,6 +148,7 @@ export function TutorialesClient({ initialData }: Props) {
   const [uploadedVideo, setUploadedVideo] = useState<UploadedVideo | null>(null)
   const [manualVideoUrl, setManualVideoUrl] = useState("")
   const [manualVideoKey, setManualVideoKey] = useState("")
+  const [isDetectingManualDuration, setIsDetectingManualDuration] = useState(false)
 
   const [categoryForm, setCategoryForm] = useState<CategoryForm>({
     ...EMPTY_CATEGORY_FORM,
@@ -412,6 +413,30 @@ export function TutorialesClient({ initialData }: Props) {
     toast({ title: "Video removido", description: "Ahora puedes subir el video correcto." })
   }
 
+  const detectDurationFromManualUrl = async () => {
+    const url = manualVideoUrl.trim()
+    if (!url) {
+      toast({ title: "Coloca una URL para detectar la duracion", variant: "destructive" })
+      return
+    }
+
+    setIsDetectingManualDuration(true)
+    try {
+      const durationInSeconds = await readVideoDuration(url)
+      const detected = formatVideoDuration(durationInSeconds)
+      setVideoForm((prev) => ({ ...prev, duration: detected }))
+      toast({ title: "Duracion detectada", description: detected })
+    } catch {
+      toast({
+        title: "No se pudo detectar la duracion automaticamente",
+        description: "Puedes escribir la duracion manualmente (ej: 5 min 30 s).",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDetectingManualDuration(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -483,12 +508,22 @@ export function TutorialesClient({ initialData }: Props) {
                     </select>
                   </div>
                   <div>
-                    <Label>Duracion (automatica)</Label>
-                    <Input
-                      value={videoForm.duration}
-                      readOnly
-                      placeholder="Se completa al subir el video"
-                    />
+                    <Label>Duracion</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={videoForm.duration}
+                        onChange={(e) => setVideoForm((p) => ({ ...p, duration: e.target.value }))}
+                        placeholder="Ej: 5 min 30 s"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={detectDurationFromManualUrl}
+                        disabled={isDetectingManualDuration}
+                      >
+                        {isDetectingManualDuration ? <Loader2 className="h-4 w-4 animate-spin" /> : "Auto"}
+                      </Button>
+                    </div>
                   </div>
                   <div>
                     <Label>Nivel</Label>
