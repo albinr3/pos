@@ -124,8 +124,32 @@ function looksLikeMp4(videoUrl: string, mimeType?: string) {
   }
 
   try {
-    const pathname = new URL(videoUrl).pathname.toLowerCase()
+    const parsedUrl = new URL(videoUrl)
+    const pathname = parsedUrl.pathname.toLowerCase()
     if (pathname.endsWith(".mp4")) {
+      return true
+    }
+
+    const rawQueryFileType = parsedUrl.searchParams.get("x-ut-file-type") || parsedUrl.searchParams.get("fileType")
+    if (rawQueryFileType) {
+      let decoded = rawQueryFileType
+      try {
+        decoded = decodeURIComponent(decoded)
+      } catch {
+        // ignore decode errors
+      }
+      try {
+        decoded = decodeURIComponent(decoded)
+      } catch {
+        // ignore decode errors
+      }
+      if (decoded.trim().toLowerCase() === "video/mp4") {
+        return true
+      }
+    }
+
+    const host = parsedUrl.hostname.toLowerCase()
+    if (host.endsWith(".ufs.sh") || host === "utfs.io") {
       return true
     }
   } catch {
