@@ -15,6 +15,14 @@ const STORES = {
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
+function waitForTransaction(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error ?? new Error("Error en transacción IndexedDB"))
+    tx.onabort = () => reject(tx.error ?? new Error("Transacción IndexedDB abortada"))
+  })
+}
+
 function openDB(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise
 
@@ -122,7 +130,8 @@ export async function savePendingSale(sale: {
 }) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_SALES, "readwrite")
-  await tx.objectStore(STORES.PENDING_SALES).put(sale)
+  tx.objectStore(STORES.PENDING_SALES).put(sale)
+  await waitForTransaction(tx)
 }
 
 export async function getPendingSales(): Promise<any[]> {
@@ -140,7 +149,8 @@ export async function getPendingSales(): Promise<any[]> {
 export async function deletePendingSale(tempId: string) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_SALES, "readwrite")
-  await tx.objectStore(STORES.PENDING_SALES).delete(tempId)
+  tx.objectStore(STORES.PENDING_SALES).delete(tempId)
+  await waitForTransaction(tx)
 }
 
 // Pending Payments
@@ -156,7 +166,8 @@ export async function savePendingPayment(payment: {
 }) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_PAYMENTS, "readwrite")
-  await tx.objectStore(STORES.PENDING_PAYMENTS).put(payment)
+  tx.objectStore(STORES.PENDING_PAYMENTS).put(payment)
+  await waitForTransaction(tx)
 }
 
 export async function getPendingPayments(): Promise<any[]> {
@@ -174,7 +185,31 @@ export async function getPendingPayments(): Promise<any[]> {
 export async function deletePendingPayment(tempId: string) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_PAYMENTS, "readwrite")
-  await tx.objectStore(STORES.PENDING_PAYMENTS).delete(tempId)
+  tx.objectStore(STORES.PENDING_PAYMENTS).delete(tempId)
+  await waitForTransaction(tx)
+}
+
+export async function deletePendingPaymentsByArId(arId: string) {
+  const db = await openDB()
+  const tx = db.transaction(STORES.PENDING_PAYMENTS, "readwrite")
+  const store = tx.objectStore(STORES.PENDING_PAYMENTS)
+  const index = store.index("arId")
+
+  await new Promise<void>((resolve, reject) => {
+    const request = index.openCursor(IDBKeyRange.only(arId))
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) {
+        resolve()
+        return
+      }
+      cursor.delete()
+      cursor.continue()
+    }
+    request.onerror = () => reject(request.error)
+  })
+
+  await waitForTransaction(tx)
 }
 
 // Pending Batch Payments
@@ -190,7 +225,8 @@ export async function savePendingBatchPayment(payment: {
 }) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_BATCH_PAYMENTS, "readwrite")
-  await tx.objectStore(STORES.PENDING_BATCH_PAYMENTS).put(payment)
+  tx.objectStore(STORES.PENDING_BATCH_PAYMENTS).put(payment)
+  await waitForTransaction(tx)
 }
 
 export async function getPendingBatchPayments(): Promise<any[]> {
@@ -208,7 +244,35 @@ export async function getPendingBatchPayments(): Promise<any[]> {
 export async function deletePendingBatchPayment(tempId: string) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_BATCH_PAYMENTS, "readwrite")
-  await tx.objectStore(STORES.PENDING_BATCH_PAYMENTS).delete(tempId)
+  tx.objectStore(STORES.PENDING_BATCH_PAYMENTS).delete(tempId)
+  await waitForTransaction(tx)
+}
+
+export async function deletePendingBatchPaymentsByArId(arId: string) {
+  const db = await openDB()
+  const tx = db.transaction(STORES.PENDING_BATCH_PAYMENTS, "readwrite")
+  const store = tx.objectStore(STORES.PENDING_BATCH_PAYMENTS)
+
+  await new Promise<void>((resolve, reject) => {
+    const request = store.openCursor()
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) {
+        resolve()
+        return
+      }
+
+      const value = cursor.value as { arIds?: unknown }
+      const arIds = Array.isArray(value?.arIds) ? value.arIds : []
+      if (arIds.some((id) => id === arId)) {
+        cursor.delete()
+      }
+      cursor.continue()
+    }
+    request.onerror = () => reject(request.error)
+  })
+
+  await waitForTransaction(tx)
 }
 
 // Products Cache

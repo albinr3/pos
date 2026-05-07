@@ -8,6 +8,8 @@ import {
   deletePendingSale,
   deletePendingPayment,
   deletePendingBatchPayment,
+  deletePendingPaymentsByArId,
+  deletePendingBatchPaymentsByArId,
 } from "./indexed-db"
 import { createSale } from "@/app/(app)/sales/actions"
 import { addBatchPayment, addPayment } from "@/app/(app)/ar/actions"
@@ -130,6 +132,13 @@ export async function syncPendingData() {
         console.error("Error sincronizando pago batch:", error)
         if (isAlreadyPaidError(error)) {
           await deletePendingBatchPayment(batchPayment.tempId)
+          const arIds = Array.isArray(batchPayment.arIds)
+            ? batchPayment.arIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
+            : []
+          for (const arId of arIds) {
+            await deletePendingPaymentsByArId(arId)
+            await deletePendingBatchPaymentsByArId(arId)
+          }
           paymentsDiscardedAlreadyPaid++
           continue
         }
@@ -158,6 +167,10 @@ export async function syncPendingData() {
         console.error("Error sincronizando pago:", error)
         if (isAlreadyPaidError(error)) {
           await deletePendingPayment(payment.tempId)
+          if (typeof payment.arId === "string" && payment.arId.length > 0) {
+            await deletePendingPaymentsByArId(payment.arId)
+            await deletePendingBatchPaymentsByArId(payment.arId)
+          }
           paymentsDiscardedAlreadyPaid++
           continue
         }

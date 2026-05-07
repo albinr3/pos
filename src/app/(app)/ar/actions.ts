@@ -101,6 +101,52 @@ async function getArDebugSnapshots(accountId: string, arIds: string[]): Promise<
   }
 }
 
+async function hasRecentAlreadyPaidLog(params: {
+  accountId: string
+  userId: string
+  endpoint: string
+  arIds: string[]
+  windowMinutes?: number
+}): Promise<boolean> {
+  const windowMs = (params.windowMinutes ?? 60) * 60 * 1000
+  const since = new Date(Date.now() - windowMs)
+  const targetIds = new Set(params.arIds)
+
+  try {
+    const recent = await prisma.errorLog.findMany({
+      where: {
+        accountId: params.accountId,
+        userId: params.userId,
+        code: ErrorCodes.AR_ALREADY_PAID_ATTEMPT,
+        endpoint: params.endpoint,
+        createdAt: { gte: since },
+      },
+      select: {
+        metadata: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+    })
+
+    for (const log of recent) {
+      const metadata = log.metadata
+      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) continue
+
+      const arId = (metadata as Record<string, unknown>).arId
+      if (typeof arId === "string" && targetIds.has(arId)) return true
+
+      const arIds = (metadata as Record<string, unknown>).arIds
+      if (Array.isArray(arIds) && arIds.some((id) => typeof id === "string" && targetIds.has(id))) {
+        return true
+      }
+    }
+  } catch {
+    // Si falla la deduplicación, continuar con el logging normal.
+  }
+
+  return false
+}
+
 export async function listOpenAR(
   options?: {
     query?: string
@@ -432,6 +478,17 @@ export async function addPayment(input: {
       error instanceof Error &&
       (error.message === "Esta factura ya está pagada" || error.message === "La factura ya está pagada")
     ) {
+      const shouldSkipLog = await hasRecentAlreadyPaidLog({
+        accountId: currentUser.accountId,
+        userId: currentUser.id,
+        endpoint: "/ar/actions/addPayment",
+        arIds: [input.arId],
+        windowMinutes: 360,
+      })
+      if (shouldSkipLog) {
+        throw error
+      }
+
       const snapshots = await getArDebugSnapshots(currentUser.accountId, [input.arId])
       const arSnapshot = snapshots[0] ?? null
       await logError(error, {
@@ -616,6 +673,17 @@ export async function addBatchPayment(input: {
       error instanceof Error &&
       (error.message === "Esta factura ya está pagada" || error.message === "La factura ya está pagada")
     ) {
+      const shouldSkipLog = await hasRecentAlreadyPaidLog({
+        accountId: currentUser.accountId,
+        userId: currentUser.id,
+        endpoint: "/ar/actions/addBatchPayment",
+        arIds: uniqueArIds,
+        windowMinutes: 360,
+      })
+      if (shouldSkipLog) {
+        throw error
+      }
+
       const snapshots = await getArDebugSnapshots(currentUser.accountId, uniqueArIds)
       const alreadyPaid = snapshots.filter((ar) => ar.status === "PAGADA" || ar.balanceCents <= 0)
       await logError(error, {
