@@ -9,7 +9,7 @@ import { redirect } from "next/navigation"
 import { getTitheReport } from "../actions"
 import { ReportDateRangeFilter } from "../filter-client"
 
-const TITHE_REPORT_ALLOWED_USER_ID = "cmmpbno710002wj9x9txsn3z9"
+const TITHE_REPORT_ALLOWED_EMAIL = "albinmrodriguez@gmail.com"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -24,7 +24,8 @@ export default async function TitheReportPage({
     redirect("/login")
   }
 
-  if (user.id !== TITHE_REPORT_ALLOWED_USER_ID) {
+  const userEmail = (user.email ?? "").trim().toLowerCase()
+  if (userEmail !== TITHE_REPORT_ALLOWED_EMAIL) {
     redirect("/reports")
   }
 

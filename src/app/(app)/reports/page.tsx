@@ -13,7 +13,7 @@ export default async function ReportsPage() {
   const canViewProfit = user
     ? hasPermission(user, "canViewProfitReport", { allowAdminBypass: false })
     : false
-  const canViewTitheReport = user?.id === "cmmpbno710002wj9x9txsn3z9"
+  const canViewTitheReport = (user?.email ?? "").trim().toLowerCase() === "albinmrodriguez@gmail.com"
   
   return (
     <div className="grid gap-6">
