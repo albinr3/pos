@@ -491,6 +491,374 @@ export async function getProfitReport(input: { from?: string; to?: string }) {
   }
 }
 
+export async function getTitheReport(input: { from?: string; to?: string }) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  // Por defecto últimos 30 días
+  const defaultTo = new Date()
+  const defaultFrom = new Date()
+  defaultFrom.setDate(defaultFrom.getDate() - 30)
+
+  let fromDate = defaultFrom
+  let toDate = defaultTo
+
+  if (input.from) {
+    const parsed = parseDateParam(input.from)
+    if (parsed) fromDate = parsed
+  }
+
+  if (input.to) {
+    const parsed = parseDateParam(input.to)
+    if (parsed) toDate = parsed
+  }
+
+  const from = startOfDay(fromDate)
+  const to = endOfDay(toDate)
+
+  const [cashSales, creditPayments, cashReturns, operatingExpenses] = await Promise.all([
+    prisma.sale.findMany({
+      where: {
+        accountId: user.accountId,
+        soldAt: { gte: from, lte: to },
+        cancelledAt: null,
+        type: "CONTADO",
+      },
+      include: {
+        items: {
+          select: {
+            costCents: true,
+            qty: true,
+            consumptions: {
+              select: {
+                ingredientId: true,
+                qty: true,
+                ingredient: {
+                  select: {
+                    costCents: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.payment.findMany({
+      where: {
+        paidAt: { gte: from, lte: to },
+        cancelledAt: null,
+        ar: {
+          sale: {
+            accountId: user.accountId,
+            cancelledAt: null,
+            type: "CREDITO",
+          },
+        },
+      },
+      select: {
+        amountCents: true,
+        ar: {
+          select: {
+            saleId: true,
+          },
+        },
+      },
+    }),
+    prisma.return.findMany({
+      where: {
+        accountId: user.accountId,
+        returnedAt: { gte: from, lte: to },
+        cancelledAt: null,
+        sale: {
+          cancelledAt: null,
+          type: "CONTADO",
+        },
+      },
+      include: {
+        sale: {
+          select: {
+            soldAt: true,
+          },
+        },
+        items: {
+          include: {
+            saleItem: {
+              select: {
+                qty: true,
+                costCents: true,
+                consumptions: {
+                  select: {
+                    ingredientId: true,
+                    qty: true,
+                    ingredient: {
+                      select: {
+                        costCents: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    }),
+    prisma.operatingExpense.findMany({
+      where: {
+        accountId: user.accountId,
+        expenseDate: { gte: from, lte: to },
+      },
+      select: {
+        amountCents: true,
+      },
+    }),
+  ])
+
+  const creditSaleIds = Array.from(new Set(creditPayments.map((payment) => payment.ar.saleId)))
+
+  const creditSales = creditSaleIds.length
+    ? await prisma.sale.findMany({
+        where: {
+          accountId: user.accountId,
+          id: { in: creditSaleIds },
+          cancelledAt: null,
+          type: "CREDITO",
+        },
+        include: {
+          items: {
+            select: {
+              costCents: true,
+              qty: true,
+              consumptions: {
+                select: {
+                  ingredientId: true,
+                  qty: true,
+                  ingredient: {
+                    select: {
+                      costCents: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      })
+    : []
+
+  const soldDatesForCost = [
+    ...cashSales.map((sale) => sale.soldAt),
+    ...creditSales.map((sale) => sale.soldAt),
+    ...cashReturns.map((ret) => ret.sale.soldAt),
+  ]
+
+  const maxSoldAt = soldDatesForCost.length > 0
+    ? soldDatesForCost.reduce((latest, soldAt) => (soldAt > latest ? soldAt : latest))
+    : null
+
+  const soldProductIds = Array.from(
+    new Set([
+      ...cashSales.flatMap((sale) =>
+        sale.items.flatMap((item) => item.consumptions.map((consumption) => consumption.ingredientId))
+      ),
+      ...creditSales.flatMap((sale) =>
+        sale.items.flatMap((item) => item.consumptions.map((consumption) => consumption.ingredientId))
+      ),
+      ...cashReturns.flatMap((ret) =>
+        ret.items.flatMap((item) =>
+          item.saleItem?.consumptions.map((consumption) => consumption.ingredientId) ?? []
+        )
+      ),
+    ])
+  )
+
+  const purchaseCostHistory = maxSoldAt && soldProductIds.length > 0
+    ? await prisma.purchaseItem.findMany({
+        where: {
+          productId: { in: soldProductIds },
+          purchase: {
+            accountId: user.accountId,
+            cancelledAt: null,
+            purchasedAt: { lte: maxSoldAt },
+          },
+        },
+        select: {
+          productId: true,
+          netCostCents: true,
+          purchase: {
+            select: { purchasedAt: true },
+          },
+        },
+        orderBy: [
+          { productId: "asc" },
+          { purchase: { purchasedAt: "asc" } },
+        ],
+      })
+    : []
+
+  const costsByProductId = new Map<string, Array<{ purchasedAt: Date; netCostCents: number }>>()
+  for (const item of purchaseCostHistory) {
+    const list = costsByProductId.get(item.productId) ?? []
+    list.push({
+      purchasedAt: item.purchase.purchasedAt,
+      netCostCents: item.netCostCents,
+    })
+    costsByProductId.set(item.productId, list)
+  }
+
+  const cashSalesTotalCents = cashSales.reduce((sum, sale) => sum + sale.totalCents, 0)
+  const cashSalesLegalTipCents = cashSales.reduce((sum, sale) => sum + (sale.legalTipCents ?? 0), 0)
+  const cashSalesItbisCents = cashSales.reduce((sum, sale) => sum + sale.itbisCents, 0)
+  const cashSalesRevenueNoTipCents = cashSalesTotalCents - cashSalesLegalTipCents
+
+  const cashSalesCostCents = cashSales.reduce((total, sale) => {
+    const saleCost = sale.items.reduce((itemTotal, item) => {
+      if (item.costCents > 0) {
+        return itemTotal + Math.round(item.costCents * toQty(item.qty))
+      }
+      const itemCost = calculateConsumptionsCostCents(
+        costsByProductId,
+        item.consumptions,
+        sale.soldAt,
+      )
+      return itemTotal + itemCost
+    }, 0)
+    return total + saleCost
+  }, 0)
+
+  const cashReturnsTotalCents = cashReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
+  const cashReturnsLegalTipCents = cashReturns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0)
+  const cashReturnsItbisCents = cashReturns.reduce((sum, ret) => sum + ret.itbisCents, 0)
+  const cashReturnsRevenueNoTipCents = cashReturnsTotalCents - cashReturnsLegalTipCents
+
+  const cashReturnsCostCents = cashReturns.reduce((total, ret) => {
+    const returnCost = ret.items.reduce((itemTotal, item) => {
+      const soldQty = item.saleItem ? toQty(item.saleItem.qty) : 0
+      if (!item.saleItem || soldQty <= 0) return itemTotal
+
+      const returnedQty = toQty(item.qty)
+      if (returnedQty <= 0) return itemTotal
+
+      if (item.saleItem.costCents > 0) {
+        return itemTotal + Math.round(item.saleItem.costCents * returnedQty)
+      }
+
+      const ratio = returnedQty / soldQty
+      const proportionalConsumptions = item.saleItem.consumptions.map((consumption) => ({
+        ingredientId: consumption.ingredientId,
+        qty: toQty(consumption.qty) * ratio,
+        ingredient: consumption.ingredient,
+      }))
+      const itemCost = calculateConsumptionsCostCents(
+        costsByProductId,
+        proportionalConsumptions,
+        ret.sale.soldAt,
+      )
+      return itemTotal + itemCost
+    }, 0)
+    return total + returnCost
+  }, 0)
+
+  const paymentsBySaleId = new Map<string, number>()
+  for (const payment of creditPayments) {
+    const saleId = payment.ar.saleId
+    paymentsBySaleId.set(saleId, (paymentsBySaleId.get(saleId) ?? 0) + payment.amountCents)
+  }
+
+  let creditCollectedRevenueNoTipCents = 0
+  let creditCollectedCostCents = 0
+  let creditCollectedItbisCents = 0
+  let creditSalesWithCollectionsCount = 0
+
+  for (const sale of creditSales) {
+    const collectedForSaleCents = paymentsBySaleId.get(sale.id) ?? 0
+    if (collectedForSaleCents <= 0) continue
+
+    if (sale.totalCents <= 0) continue
+    const appliedCollectedCents = Math.min(collectedForSaleCents, sale.totalCents)
+    const ratio = appliedCollectedCents / sale.totalCents
+
+    const saleRevenueNoTipCents = sale.totalCents - (sale.legalTipCents ?? 0)
+    const recognizedRevenueNoTipCents = Math.round(saleRevenueNoTipCents * ratio)
+    const recognizedItbisCents = Math.round(sale.itbisCents * ratio)
+
+    const saleCostCents = sale.items.reduce((itemTotal, item) => {
+      if (item.costCents > 0) {
+        return itemTotal + Math.round(item.costCents * toQty(item.qty))
+      }
+      const itemCost = calculateConsumptionsCostCents(
+        costsByProductId,
+        item.consumptions,
+        sale.soldAt,
+      )
+      return itemTotal + itemCost
+    }, 0)
+    const recognizedCostCents = Math.round(saleCostCents * ratio)
+
+    creditCollectedRevenueNoTipCents += recognizedRevenueNoTipCents
+    creditCollectedCostCents += recognizedCostCents
+    creditCollectedItbisCents += recognizedItbisCents
+    creditSalesWithCollectionsCount += 1
+  }
+
+  const creditPaymentsTotalCents = creditPayments.reduce((sum, payment) => sum + payment.amountCents, 0)
+
+  const collectedRevenueNoTipCents =
+    cashSalesRevenueNoTipCents +
+    creditCollectedRevenueNoTipCents -
+    cashReturnsRevenueNoTipCents
+
+  const collectedCostCents =
+    cashSalesCostCents +
+    creditCollectedCostCents -
+    cashReturnsCostCents
+
+  const collectedGrossProfitCents = collectedRevenueNoTipCents - collectedCostCents
+
+  const operatingExpensesCents = operatingExpenses.reduce((sum, expense) => sum + expense.amountCents, 0)
+  const operatingProfitCollectedCents = collectedGrossProfitCents - operatingExpensesCents
+  const titheBaseCents = Math.max(operatingProfitCollectedCents, 0)
+  const suggestedTitheCents = Math.round(titheBaseCents * 0.1)
+
+  const totalCollectedInHandCents =
+    cashSalesTotalCents +
+    creditPaymentsTotalCents -
+    cashReturnsTotalCents
+
+  const collectedItbisReferenceCents =
+    cashSalesItbisCents +
+    creditCollectedItbisCents -
+    cashReturnsItbisCents
+
+  return {
+    from,
+    to,
+    cashSalesCount: cashSales.length,
+    creditPaymentsCount: creditPayments.length,
+    creditSalesWithCollectionsCount,
+    cashReturnsCount: cashReturns.length,
+    operatingExpensesCount: operatingExpenses.length,
+    cashSalesTotalCents,
+    creditPaymentsTotalCents,
+    cashReturnsTotalCents,
+    totalCollectedInHandCents,
+    cashSalesRevenueNoTipCents,
+    creditCollectedRevenueNoTipCents,
+    cashReturnsRevenueNoTipCents,
+    collectedRevenueNoTipCents,
+    cashSalesCostCents,
+    creditCollectedCostCents,
+    cashReturnsCostCents,
+    collectedCostCents,
+    collectedGrossProfitCents,
+    operatingExpensesCents,
+    operatingProfitCollectedCents,
+    collectedItbisReferenceCents,
+    suggestedTitheCents,
+  }
+}
+
 export async function getInventoryReport() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")

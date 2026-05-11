@@ -13,6 +13,7 @@ export default async function ReportsPage() {
   const canViewProfit = user
     ? hasPermission(user, "canViewProfitReport", { allowAdminBypass: false })
     : false
+  const canViewTitheReport = user?.id === "cmmpbno710002wj9x9txsn3z9"
   
   return (
     <div className="grid gap-6">
@@ -70,6 +71,18 @@ export default async function ReportsPage() {
             <CardContent>
               <Button asChild>
                 <Link href="/reports/profit">Ver estado de resultados</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+        {canViewTitheReport && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Diezmo</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link href="/reports/tithe">Ver reporte de diezmo</Link>
               </Button>
             </CardContent>
           </Card>
