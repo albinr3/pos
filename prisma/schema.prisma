@@ -232,6 +232,7 @@ model Account {
   customerSequence     CustomerSequence?
   paymentSequence      PaymentSequence?
   subUserLoginTokens   SubUserLoginToken[]
+  onboarding           AccountOnboarding?
 
   // Billing
   billingSubscription  BillingSubscription?
@@ -239,6 +240,25 @@ model Account {
   billingNotifications BillingNotification[]
 
   @@index([clerkUserId])
+}
+
+model AccountOnboarding {
+  accountId String  @id
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  firstSeenAt             DateTime?
+  lastSkippedAt           DateTime?
+  completedAt             DateTime?
+  firstProductId          String?
+  firstSaleId             String?
+  productExpressCreatedAt DateTime?
+  firstSaleCreatedAt      DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  @@index([completedAt])
+  @@index([firstProductId])
+  @@index([firstSaleId])
 }
 
 // ==========================================

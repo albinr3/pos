@@ -55,6 +55,13 @@ export type PendingPayment = {
 
 export type DashboardData = {
   kpis: DashboardKPIs
+  activation: {
+    accountsWithoutProducts: number
+    accountsWithProductsNoSales: number
+    accountsWithFirstSale: number
+    avgTimeToFirstProductMs: number | null
+    avgTimeToFirstSaleMs: number | null
+  }
   recentAccounts: RecentAccount[]
   pendingPayments: PendingPayment[]
   statusDistribution: { status: BillingStatus; count: number }[]
@@ -135,7 +142,28 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   // Cuentas nuevas
   const allAccounts = await prisma.account.findMany({
-    select: { createdAt: true },
+    select: {
+      id: true,
+      createdAt: true,
+      products: {
+        where: { isActive: true },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        take: 1,
+        select: { createdAt: true },
+      },
+      sales: {
+        where: { cancelledAt: null },
+        orderBy: [{ soldAt: "asc" }, { id: "asc" }],
+        take: 1,
+        select: { soldAt: true },
+      },
+      _count: {
+        select: {
+          products: { where: { isActive: true } },
+          sales: { where: { cancelledAt: null } },
+        },
+      },
+    },
   })
 
   const newAccountsToday = allAccounts.filter(
@@ -147,6 +175,41 @@ export async function getDashboardData(): Promise<DashboardData> {
   const newAccountsThisMonth = allAccounts.filter(
     (a) => a.createdAt >= startOfMonth
   ).length
+
+  const productActivationDiffs: number[] = []
+  const saleActivationDiffs: number[] = []
+  let accountsWithoutProducts = 0
+  let accountsWithProductsNoSales = 0
+  let accountsWithFirstSale = 0
+
+  for (const account of allAccounts) {
+    const productCount = account._count.products
+    const saleCount = account._count.sales
+
+    if (productCount === 0) {
+      accountsWithoutProducts += 1
+    } else if (saleCount === 0) {
+      accountsWithProductsNoSales += 1
+    }
+    if (saleCount > 0) {
+      accountsWithFirstSale += 1
+    }
+
+    const firstProductAt = account.products[0]?.createdAt
+    if (firstProductAt) {
+      productActivationDiffs.push(Math.max(0, firstProductAt.getTime() - account.createdAt.getTime()))
+    }
+
+    const firstSaleAt = account.sales[0]?.soldAt
+    if (firstSaleAt) {
+      saleActivationDiffs.push(Math.max(0, firstSaleAt.getTime() - account.createdAt.getTime()))
+    }
+  }
+
+  const avg = (values: number[]) =>
+    values.length > 0
+      ? Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
+      : null
 
   // Tasa de conversión de trial
   const convertedFromTrial = await prisma.billingPayment.count({
@@ -204,6 +267,13 @@ export async function getDashboardData(): Promise<DashboardData> {
       newAccountsToday,
       newAccountsThisWeek,
       newAccountsThisMonth,
+    },
+    activation: {
+      accountsWithoutProducts,
+      accountsWithProductsNoSales,
+      accountsWithFirstSale,
+      avgTimeToFirstProductMs: avg(productActivationDiffs),
+      avgTimeToFirstSaleMs: avg(saleActivationDiffs),
     },
     recentAccounts,
     pendingPayments,

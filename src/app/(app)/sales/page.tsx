@@ -3,8 +3,17 @@ import { Button } from "@/components/ui/button"
 import { PosClient } from "./pos-client"
 import { getSettings } from "../settings/actions"
 
-export default async function SalesPage() {
+export default async function SalesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ onboardingProductId?: string | string[] }>
+}) {
   const settings = await getSettings()
+  const params = await searchParams
+  const onboardingProductIdRaw = params.onboardingProductId
+  const onboardingProductId = Array.isArray(onboardingProductIdRaw)
+    ? onboardingProductIdRaw[0]
+    : onboardingProductIdRaw
 
   return (
     <div className="grid gap-6">
@@ -26,6 +35,7 @@ export default async function SalesPage() {
         showItbisOnReceipts={settings.showItbisOnReceipts}
         salePricesIncludeItbis={settings.salePricesIncludeItbis}
         legalTipEnabled={settings.legalTipEnabled}
+        onboardingProductId={onboardingProductId || null}
       />
     </div>
   )

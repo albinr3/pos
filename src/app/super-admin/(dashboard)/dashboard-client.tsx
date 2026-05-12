@@ -18,6 +18,8 @@ import {
   ArrowRight,
   CreditCard,
   Loader2,
+  Package,
+  ShoppingCart,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -71,13 +73,22 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className={className}>{label}</Badge>
 }
 
+function formatAverageTime(ms: number | null) {
+  if (ms === null) return "Sin datos"
+
+  const hours = ms / (1000 * 60 * 60)
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))} min`
+  if (hours < 48) return `${Math.round(hours)} h`
+  return `${Math.round(hours / 24)} días`
+}
+
 export function DashboardClient({ data }: { data: DashboardData }) {
   const { toast } = useToast()
   const router = useRouter()
   const [loadingPayment, setLoadingPayment] = useState<string | null>(null)
   const [rejectPaymentId, setRejectPaymentId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState("")
-  const { kpis, recentAccounts, pendingPayments, statusDistribution } = data
+  const { kpis, activation, recentAccounts, pendingPayments } = data
 
   const handleApprove = async (paymentId: string) => {
     setLoadingPayment(paymentId)
@@ -225,6 +236,54 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{kpis.trialConversionRate.toFixed(1)}%</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Sin productos</CardTitle>
+            <Package className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activation.accountsWithoutProducts}</div>
+            <p className="text-xs text-muted-foreground">Cuentas sin productos activos</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Producto sin venta</CardTitle>
+            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activation.accountsWithProductsNoSales}</div>
+            <p className="text-xs text-muted-foreground">Cuentas listas para primera venta</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Con primera venta</CardTitle>
+            <CheckCircle className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{activation.accountsWithFirstSale}</div>
+            <p className="text-xs text-muted-foreground">Cuentas activadas</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Tiempo a activación</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{formatAverageTime(activation.avgTimeToFirstSaleMs)}</div>
+            <p className="text-xs text-muted-foreground">
+              Producto: {formatAverageTime(activation.avgTimeToFirstProductMs)}
+            </p>
           </CardContent>
         </Card>
       </div>

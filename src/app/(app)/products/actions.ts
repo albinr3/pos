@@ -314,11 +314,12 @@ export async function upsertProduct(input: {
   recipeItems?: RecipeItemInput[]
   unit: UnitType
   user?: any
-}): Promise<{ ok: true } | { ok: false; error: string; code?: "SKU_DUPLICATE" }> {
+}): Promise<{ ok: true; id: string } | { ok: false; error: string; code?: "SKU_DUPLICATE" }> {
   const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   try {
+    let savedProductId: string | null = null
     const name = sanitizeString(input.name)
     if (!name) throw new Error("El nombre del producto es requerido")
     if (!input.priceCents || input.priceCents <= 0) throw new Error("El precio de venta es requerido")
@@ -433,6 +434,7 @@ export async function upsertProduct(input: {
             isAvailableForSale: finalIsAvailableForSale,
           },
         })
+        savedProductId = input.id
 
         await syncRecipeDefinition(tx, input.id, productKind, recipeItems)
 
@@ -482,6 +484,7 @@ export async function upsertProduct(input: {
             isAvailableForSale: input.isAvailableForSale ?? true,
           },
         })
+        savedProductId = created.id
 
         await syncRecipeDefinition(tx, created.id, productKind, recipeItems)
 
@@ -528,7 +531,7 @@ export async function upsertProduct(input: {
     })
 
     safeRevalidate("/products")
-    return { ok: true }
+    return { ok: true, id: savedProductId ?? input.id ?? "" }
   } catch (error) {
     if (error instanceof UpsertProductUserError) {
       return { ok: false, error: error.message, code: error.code }

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { SaleType, PaymentMethod, UnitType } from "@prisma/client"
-import { Plus, Search, Trash2, Grid3x3, List, AlertCircle, X, WifiOff, ChevronDown, ChevronUp } from "lucide-react"
+import { Plus, Search, Trash2, Grid3x3, List, AlertCircle, X, WifiOff, ChevronDown, ChevronUp, ShoppingCart } from "lucide-react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 
@@ -41,7 +41,7 @@ import {
 
 import type { CurrentUser } from "@/lib/auth"
 
-import { createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode } from "./actions"
+import { createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode, getOnboardingProduct } from "./actions"
 
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 
@@ -82,6 +82,7 @@ type DiscountMode = "AUTO" | "MANUAL"
 
 const USER_CACHE_KEY = "tejada-pos-user"
 const POS_FORCE_RESET_KEY = "tejada-pos-force-reset-after-print"
+const ONBOARDING_PRODUCT_ADDED_KEY_PREFIX = "tejada-pos-onboarding-product-added"
 const CREATE_CUSTOMER_OPTION = "__create_customer__"
 
 function clampPercentInput(value: string) {
@@ -152,11 +153,13 @@ export function PosClient({
   showItbisOnReceipts = true,
   salePricesIncludeItbis = true,
   legalTipEnabled = false,
+  onboardingProductId = null,
 }: {
   defaultViewMode?: string
   showItbisOnReceipts?: boolean
   salePricesIncludeItbis?: boolean
   legalTipEnabled?: boolean
+  onboardingProductId?: string | null
 }) {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -215,6 +218,7 @@ export function PosClient({
   const firstKeyPressTime = useRef<number>(0)
   const lastKeyPressTime = useRef<number>(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const onboardingAutoAddRef = useRef(false)
 
   const router = useRouter()
   const pathname = usePathname()
@@ -810,7 +814,7 @@ export function PosClient({
     [itemsTotalCents, shippingCents, legalTipCents]
   )
 
-  function addToCart(p: ProductResult, recipeAdjustments: RecipeAdjustment[] = []) {
+  const addToCart = useCallback((p: ProductResult, recipeAdjustments: RecipeAdjustment[] = []) => {
     const productUnit = (p.unit as UnitType) ?? "UNIDAD"
     const stockNum = decimalToNumber(p.stock)
     const normalizedAdjustments = sortRecipeAdjustments(recipeAdjustments)
@@ -843,7 +847,65 @@ export function PosClient({
         },
       ]
     })
-  }
+  }, [])
+
+  useEffect(() => {
+    if (!onboardingProductId || !isInitialized || onboardingAutoAddRef.current) return
+
+    const addedKey = `${ONBOARDING_PRODUCT_ADDED_KEY_PREFIX}:${onboardingProductId}`
+    const isAlreadyInCart = cart.some((item) => item.productId === onboardingProductId)
+
+    if (isAlreadyInCart) {
+      onboardingAutoAddRef.current = true
+      try {
+        sessionStorage.setItem(addedKey, "1")
+      } catch {
+        // Ignore storage errors.
+      }
+      return
+    }
+
+    try {
+      if (sessionStorage.getItem(addedKey) === "1") {
+        onboardingAutoAddRef.current = true
+        return
+      }
+    } catch {
+      // Continue without session storage.
+    }
+
+    onboardingAutoAddRef.current = true
+
+    getOnboardingProduct(onboardingProductId)
+      .then((result) => {
+        if (!result.ok) {
+          toast({
+            title: "Producto no disponible",
+            description: result.error,
+            variant: "destructive",
+          })
+          return
+        }
+
+        addToCart(result.product)
+        try {
+          sessionStorage.setItem(addedKey, "1")
+        } catch {
+          // Ignore storage errors.
+        }
+        toast({
+          title: "Producto agregado",
+          description: "Ya tienes 1 unidad en el carrito para completar la venta.",
+        })
+      })
+      .catch(() => {
+        toast({
+          title: "No se pudo cargar el producto",
+          description: "Puedes buscarlo manualmente y continuar la venta.",
+          variant: "destructive",
+        })
+      })
+  }, [addToCart, cart, isInitialized, onboardingProductId])
 
   function handleProductSelection(p: ProductResult) {
     addToCart(p)
@@ -1048,23 +1110,29 @@ export function PosClient({
               manualDiscountPercentBp:
                 discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
               salePricesIncludeItbis,
+              onboardingProductId,
               username: user.username,
             })
 
             toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
-            sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
 
-            // Autoimpresión térmica por navegador/OS (impresora predeterminada del sistema).
-            const receiptUrl = `/api/print/sale/${sale.invoiceCode}?autoprint=1`
-            const popup = window.open(receiptUrl, "_blank")
+            if (onboardingProductId) {
+              router.push(`/onboarding/completado?saleId=${encodeURIComponent(sale.id)}`)
+            } else {
+              sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
 
-            // Fallback cuando el navegador bloquea popups.
-            if (!popup || popup.closed || typeof popup.closed === "undefined") {
-              toast({
-                title: "Popup bloqueado",
-                description: "Se abrirá el ticket en esta pestaña para continuar con la impresión.",
-              })
-              router.push(receiptUrl)
+              // Autoimpresión térmica por navegador/OS (impresora predeterminada del sistema).
+              const receiptUrl = `/api/print/sale/${sale.invoiceCode}?autoprint=1`
+              const popup = window.open(receiptUrl, "_blank")
+
+              // Fallback cuando el navegador bloquea popups.
+              if (!popup || popup.closed || typeof popup.closed === "undefined") {
+                toast({
+                  title: "Popup bloqueado",
+                  description: "Se abrirá el ticket en esta pestaña para continuar con la impresión.",
+                })
+                router.push(receiptUrl)
+              }
             }
           } catch (e) {
             if (isLikelyOfflineError(e)) {
@@ -1105,6 +1173,20 @@ export function PosClient({
               {pendingCounts.sales > 0 && pendingCounts.payments > 0 && " • "}
               {pendingCounts.payments > 0 && `${pendingCounts.payments} pago(s) pendiente(s)`}
             </span>
+          </div>
+        </div>
+      )}
+
+      {onboardingProductId && (
+        <div className="col-span-full rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
+          <div className="flex items-start gap-3">
+            <ShoppingCart className="mt-0.5 h-5 w-5 flex-none" />
+            <div>
+              <div className="font-semibold">Primera venta</div>
+              <p className="text-emerald-800 dark:text-emerald-200">
+                Agregamos 1 unidad del producto al carrito. Revisa el total y pulsa Completar venta.
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -2069,7 +2151,7 @@ export function PosClient({
               disabled={isSaving || cart.length === 0}
               onClick={onSave}
             >
-              {isSaving ? "Guardando…" : "Guardar e imprimir"}
+              {isSaving ? "Guardando…" : onboardingProductId ? "Completar venta" : "Guardar e imprimir"}
             </Button>
             <div className="text-xs text-muted-foreground">
               {salePricesIncludeItbis
@@ -2585,4 +2667,3 @@ export function PosClient({
     </div>
   )
 }
-

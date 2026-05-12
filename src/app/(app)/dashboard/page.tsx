@@ -8,13 +8,18 @@ import { cn } from "@/lib/utils"
 
 import { getDashboardStats, getSalesChartData } from "./actions"
 import { SalesChart } from "./sales-chart"
+import { getAccountOnboardingState } from "../onboarding/actions"
+import { OnboardingCard } from "./onboarding-card"
 
 // Marcar como dinámica para evitar prerender (requiere autenticación)
 export const dynamic = "force-dynamic"
 
 export default async function DashboardPage() {
-  const stats = await getDashboardStats()
-  const chartData = await getSalesChartData(7)
+  const [stats, chartData, onboardingState] = await Promise.all([
+    getDashboardStats(),
+    getSalesChartData(7),
+    getAccountOnboardingState(),
+  ])
 
   return (
     <div className="grid gap-6">
@@ -27,6 +32,8 @@ export default async function DashboardPage() {
           <Link href="/daily-close">Ver cuadre diario</Link>
         </Button>
       </div>
+
+      <OnboardingCard state={onboardingState} />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-l-4 border-l-purple-primary">

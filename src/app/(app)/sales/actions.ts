@@ -209,6 +209,71 @@ export async function findProductByBarcode(code: string) {
   }
 }
 
+export async function getOnboardingProduct(productId: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+
+  const id = productId.trim()
+  if (!id) {
+    return { ok: false as const, error: "Producto inválido." }
+  }
+
+  const product = await prisma.product.findFirst({
+    where: {
+      id,
+      accountId: user.accountId,
+      isActive: true,
+      isAvailableForSale: true,
+    },
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      reference: true,
+      priceCents: true,
+      itbisRateBp: true,
+      stock: true,
+      imageUrls: true,
+      unit: true,
+      productKind: true,
+      recipeItems: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: {
+          ingredientId: true,
+          qty: true,
+          ingredient: {
+            select: {
+              name: true,
+              unit: true,
+            },
+          },
+        },
+      },
+    },
+  })
+
+  if (!product) {
+    return {
+      ok: false as const,
+      error: "El producto del onboarding no existe o no está disponible para vender.",
+    }
+  }
+
+  return {
+    ok: true as const,
+    product: {
+      ...product,
+      stock: decimalToNumber(product.stock),
+      recipeItems: product.recipeItems.map((item) => ({
+        ingredientId: item.ingredientId,
+        qty: decimalToNumber(item.qty),
+        ingredientName: item.ingredient.name,
+        ingredientUnit: item.ingredient.unit,
+      })),
+    },
+  }
+}
+
 export async function listCustomers() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -860,6 +925,7 @@ export async function createSale(input: {
   manualDiscountPercentBp?: number
   salePricesIncludeItbis?: boolean
   soldAt?: Date | string | number | null
+  onboardingProductId?: string | null
   username: string
   user?: any
 }) {
@@ -939,6 +1005,11 @@ export async function createSale(input: {
       const code = invoiceCode("A", number)
 
       const resolvedLines = await resolveSaleLines(tx, user.accountId, input.items)
+      const onboardingProductId = input.onboardingProductId?.trim() || null
+      const completesOnboarding = Boolean(
+        onboardingProductId &&
+        resolvedLines.some((line) => line.item.productId === onboardingProductId)
+      )
 
       for (const line of resolvedLines) {
         const originalPriceCents = Number(line.product.priceCents)
@@ -1174,7 +1245,34 @@ export async function createSale(input: {
         })
       }
 
+      if (completesOnboarding) {
+        const existingOnboarding = await tx.accountOnboarding.findUnique({
+          where: { accountId: user.accountId },
+        })
+        const now = new Date()
+
+        await tx.accountOnboarding.upsert({
+          where: { accountId: user.accountId },
+          create: {
+            accountId: user.accountId,
+            firstSeenAt: now,
+            completedAt: now,
+            firstProductId: onboardingProductId,
+            firstSaleId: sale.id,
+            firstSaleCreatedAt: sale.soldAt,
+          },
+          update: {
+            firstSeenAt: existingOnboarding?.firstSeenAt ?? now,
+            completedAt: existingOnboarding?.completedAt ?? now,
+            firstProductId: existingOnboarding?.firstProductId ?? onboardingProductId,
+            firstSaleId: existingOnboarding?.firstSaleId ?? sale.id,
+            firstSaleCreatedAt: existingOnboarding?.firstSaleCreatedAt ?? sale.soldAt,
+          },
+        })
+      }
+
       revalidatePath("/", "layout")
+      revalidatePath("/dashboard")
       revalidatePath("/reports/profit")
 
       return sale

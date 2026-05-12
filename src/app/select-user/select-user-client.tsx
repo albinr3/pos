@@ -51,6 +51,22 @@ function maskEmail(email: string) {
   return `${local[0]}${middle}${local.slice(-1)}@${domain}`
 }
 
+function clearOnboardingSessionState() {
+  try {
+    const prefixes = [
+      "tejada-pos-onboarding-skip:",
+      "tejada-pos-onboarding-product-added:",
+    ]
+    for (const key of Object.keys(sessionStorage)) {
+      if (prefixes.some((prefix) => key.startsWith(prefix))) {
+        sessionStorage.removeItem(key)
+      }
+    }
+  } catch {
+    // Ignore sessionStorage errors.
+  }
+}
+
 export function SelectUserClient({ account, users, shouldClearSession }: Props) {
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
@@ -123,6 +139,7 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
     if (!selectedUser) return
 
     setError("")
+    clearOnboardingSessionState()
 
     const formData = new FormData()
     formData.set("accountId", account.id)
@@ -186,6 +203,7 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
 
     setTempCodeError("")
     setIsVerifyingTempCode(true)
+    clearOnboardingSessionState()
 
     const formData = new FormData()
     formData.set("accountId", account.id)
@@ -230,6 +248,7 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
     }
 
     setError("")
+    clearOnboardingSessionState()
 
     const formData = new FormData()
     formData.set("accountId", account.id)
