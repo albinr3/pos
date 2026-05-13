@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { CheckCircle2, LayoutDashboard, PackagePlus, PlayCircle } from "lucide-react"
+import { CheckCircle2, PlayCircle, Clock3 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -16,29 +16,23 @@ export default async function OnboardingCompletadoPage() {
           </div>
 
           <div className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Ya hiciste tu primera venta.</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">Acabas de dar el primer gran paso de tu negocio.</h1>
             <p className="mx-auto max-w-md text-sm text-muted-foreground">
-              Si quieres aprender más sobre cómo usar la plataforma en solo 30 minutos de video, dirígete al enlace de guía.
+              Si quieres seguir aprendiendo más sobre cómo usar la plataforma, en tan solo 30 minutos de video podrás aprender todo lo básico, haz click en el botón de videotutoriales.
             </p>
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-2">
             <Button asChild size="lg" className="h-12">
-              <Link href="/dashboard">
-                <LayoutDashboard className="mr-2 h-5 w-5" />
-                Dashboard
-              </Link>
-            </Button>
-            <Button asChild variant="secondary" size="lg" className="h-12">
-              <Link href="/products">
-                <PackagePlus className="mr-2 h-5 w-5" />
-                Más productos
+              <Link href="/como-usar-la-plataforma">
+                <PlayCircle className="mr-2 h-5 w-5" />
+                Videotutoriales
               </Link>
             </Button>
             <Button asChild variant="outline" size="lg" className="h-12">
-              <Link href="/como-usar-la-plataforma">
-                <PlayCircle className="mr-2 h-5 w-5" />
-                Guía
+              <Link href="/dashboard">
+                <Clock3 className="mr-2 h-5 w-5" />
+                Ver después
               </Link>
             </Button>
           </div>

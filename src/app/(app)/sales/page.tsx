@@ -2,18 +2,23 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { PosClient } from "./pos-client"
 import { getSettings } from "../settings/actions"
+import { getAccountOnboardingState } from "../onboarding/actions"
 
 export default async function SalesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ onboardingProductId?: string | string[] }>
+  searchParams: Promise<{ onboarding?: string | string[]; onboardingProductId?: string | string[] }>
 }) {
   const settings = await getSettings()
   const params = await searchParams
+  const onboardingRaw = params.onboarding
+  const onboarding = Array.isArray(onboardingRaw) ? onboardingRaw[0] : onboardingRaw
   const onboardingProductIdRaw = params.onboardingProductId
   const onboardingProductId = Array.isArray(onboardingProductIdRaw)
     ? onboardingProductIdRaw[0]
     : onboardingProductIdRaw
+  const isOnboardingSale = onboarding === "sale" || Boolean(onboardingProductId)
+  const onboardingState = isOnboardingSale ? await getAccountOnboardingState() : null
 
   return (
     <div className="grid gap-6">
@@ -35,7 +40,8 @@ export default async function SalesPage({
         showItbisOnReceipts={settings.showItbisOnReceipts}
         salePricesIncludeItbis={settings.salePricesIncludeItbis}
         legalTipEnabled={settings.legalTipEnabled}
-        onboardingProductId={onboardingProductId || null}
+        onboardingSaleGuide={isOnboardingSale && onboardingState?.phase === "SALE"}
+        onboardingAccountId={onboardingState?.accountId ?? null}
       />
     </div>
   )

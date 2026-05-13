@@ -6,10 +6,12 @@ import { CheckCircle2, Circle, PackagePlus, ShoppingCart, X } from "lucide-react
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { OnboardingGuide } from "@/components/app/onboarding-guide"
 import { cn } from "@/lib/utils"
 import { skipAccountOnboarding, type AccountOnboardingState } from "../onboarding/actions"
 
 const SKIP_KEY_PREFIX = "tejada-pos-onboarding-skip"
+const ONBOARDING_PROGRESS_KEY_PREFIX = "tejada-pos-onboarding-progress"
 
 function StepItem({ done, label }: { done: boolean; label: string }) {
   const Icon = done ? CheckCircle2 : Circle
@@ -21,9 +23,18 @@ function StepItem({ done, label }: { done: boolean; label: string }) {
   )
 }
 
-export function OnboardingCard({ state }: { state: AccountOnboardingState }) {
+export function OnboardingCard({
+  state,
+  showProductNavGuide = false,
+}: {
+  state: AccountOnboardingState
+  showProductNavGuide?: boolean
+}) {
   const skipKey = `${SKIP_KEY_PREFIX}:${state.accountId}`
+  const progressKey = `${ONBOARDING_PROGRESS_KEY_PREFIX}:${state.accountId}`
   const [isHidden, setIsHidden] = useState(state.phase === "COMPLETED")
+  const [resumePath, setResumePath] = useState<string | null>(null)
+  const [hasSkippedProgress, setHasSkippedProgress] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   useEffect(() => {
@@ -40,18 +51,35 @@ export function OnboardingCard({ state }: { state: AccountOnboardingState }) {
     return () => window.clearTimeout(timer)
   }, [skipKey, state.phase])
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(progressKey)
+      if (!raw) {
+        setResumePath(null)
+        setHasSkippedProgress(false)
+        return
+      }
+      const parsed = JSON.parse(raw) as { skipped?: boolean; resumePath?: string | null }
+      setResumePath(parsed.resumePath ?? null)
+      setHasSkippedProgress(Boolean(parsed.skipped))
+    } catch {
+      setResumePath(null)
+      setHasSkippedProgress(false)
+    }
+  }, [progressKey])
+
   const primaryAction = useMemo(() => {
     if (state.phase === "PRODUCT") {
       return {
-        href: "/onboarding/primer-producto",
-        label: "Crear mi primer producto",
+        href: resumePath || "/dashboard?onboarding=product",
+        label: "Iniciar guía",
         Icon: PackagePlus,
       }
     }
 
     if (state.saleProductId) {
       return {
-        href: `/sales?onboardingProductId=${encodeURIComponent(state.saleProductId)}`,
+        href: "/sales?onboarding=sale",
         label: "Vender mi primer producto",
         Icon: ShoppingCart,
       }
@@ -62,9 +90,10 @@ export function OnboardingCard({ state }: { state: AccountOnboardingState }) {
       label: "Preparar producto para vender",
       Icon: PackagePlus,
     }
-  }, [state.phase, state.saleProductId])
+  }, [resumePath, state.phase, state.saleProductId])
 
   if (isHidden) return null
+  if (hasSkippedProgress && state.activeProductCount > 0) return null
 
   const PrimaryIcon = primaryAction.Icon
 
@@ -81,55 +110,73 @@ export function OnboardingCard({ state }: { state: AccountOnboardingState }) {
   }
 
   return (
-    <Card className="overflow-hidden border-emerald-200 bg-emerald-50/80 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/30">
-      <CardContent className="p-4 sm:p-6">
-        <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm dark:bg-emerald-950 dark:text-emerald-200">
-                Activación guiada
+    <>
+      {showProductNavGuide ? (
+        <OnboardingGuide
+          accountId={state.accountId}
+          step={{
+            target: "app-nav-products",
+            title: "Entra a Productos",
+            description: "Haz clic en la pestaña Productos del menú. Ahí crearás el producto usando el formulario de productos.",
+          }}
+          stepIndex={0}
+          totalSteps={9}
+          progressKey={progressKey}
+          stepKey="dashboard-products-nav"
+          resumePath="/dashboard?onboarding=product"
+        />
+      ) : null}
+
+      <Card className="overflow-hidden border-emerald-200 bg-emerald-50/80 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/30">
+        <CardContent className="p-4 sm:p-6">
+          <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm dark:bg-emerald-950 dark:text-emerald-200">
+                  Activación guiada
+                </div>
+                <div>
+                  <h2 className="text-2xl font-semibold tracking-tight">Haz tu primera venta en 3 minutos</h2>
+                  <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+                    Primero entra a Productos desde el menú y crea un producto real. Luego haz una venta normal con guía paso a paso.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-2xl font-semibold tracking-tight">Haz tu primera venta en 5 minutos</h2>
-                <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                  Primero crea un producto real de tu negocio. Luego te llevamos directo a venderlo.
+
+              <div className="grid gap-2 sm:grid-cols-3">
+                <StepItem done label="Datos del negocio listos" />
+                <StepItem done={state.activeProductCount > 0} label="Primer producto creado" />
+                <StepItem done={state.saleCount > 0} label="Primera venta registrada" />
+              </div>
+
+              {state.phase === "SALE" && state.saleProductName ? (
+                <p className="text-sm text-emerald-800 dark:text-emerald-200">
+                  Vamos a vender <span className="font-semibold">{state.saleProductName}</span> usando el flujo normal de ventas.
                 </p>
-              </div>
+              ) : null}
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-3">
-              <StepItem done label="Datos del negocio listos" />
-              <StepItem done={state.activeProductCount > 0} label="Primer producto creado" />
-              <StepItem done={state.saleCount > 0} label="Primera venta registrada" />
+            <div className="flex flex-col gap-2 sm:min-w-64">
+              <Button asChild size="lg" className="h-12 w-full bg-emerald-600 text-white hover:bg-emerald-700">
+                <Link href={primaryAction.href}>
+                  <PrimaryIcon className="mr-2 h-5 w-5" />
+                  {primaryAction.label}
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-11 w-full text-muted-foreground"
+                onClick={handleSkip}
+                disabled={isPending}
+              >
+                <X className="mr-2 h-4 w-4" />
+                Saltar por ahora
+              </Button>
             </div>
-
-            {state.phase === "SALE" && state.saleProductName ? (
-              <p className="text-sm text-emerald-800 dark:text-emerald-200">
-                Vamos a vender <span className="font-semibold">{state.saleProductName}</span> con 1 unidad lista en el carrito.
-              </p>
-            ) : null}
           </div>
-
-          <div className="flex flex-col gap-2 sm:min-w-64">
-            <Button asChild size="lg" className="h-12 w-full bg-emerald-600 text-white hover:bg-emerald-700">
-              <Link href={primaryAction.href}>
-                <PrimaryIcon className="mr-2 h-5 w-5" />
-                {primaryAction.label}
-              </Link>
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-11 w-full text-muted-foreground"
-              onClick={handleSkip}
-              disabled={isPending}
-            >
-              <X className="mr-2 h-4 w-4" />
-              Saltar por ahora
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </>
   )
 }

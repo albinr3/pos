@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { PropsWithChildren, useMemo, type ComponentPropsWithoutRef } from "react"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
@@ -104,6 +104,7 @@ type AppShellProps = PropsWithChildren<{
 
 export function AppShell({ children, billingState }: AppShellProps) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
   const { signOut } = useClerk()
   const { theme, resolvedTheme } = useTheme()
@@ -314,6 +315,13 @@ export function AppShell({ children, billingState }: AppShellProps) {
   const logoPath = currentTheme === "light" ? "/movoLogoDark.png" : "/movoLogo.png"
   const salesNavItem = filteredNav.find((item) => item.href === "/sales")
   const regularNavItems = filteredNav.filter((item) => item.href !== "/sales")
+  const isProductOnboardingNavStep = pathname === "/dashboard" && searchParams.get("onboarding") === "product"
+  const isSaleOnboardingNavStep = pathname === "/products" && searchParams.get("onboarding") === "sale-nav"
+  const getNavHref = (href: string) => {
+    if (href === "/products" && isProductOnboardingNavStep) return "/products?onboarding=product"
+    if (href === "/sales" && isSaleOnboardingNavStep) return "/sales?onboarding=sale"
+    return href
+  }
   const isNavItemDisabled = (href: string) => {
     const isOfflineDisabled = !isOnline && !OFFLINE_ALLOWED_ROUTES.has(href)
     const isBillingDisabled = isBillingRestricted && href !== "/billing"
@@ -349,7 +357,11 @@ export function AppShell({ children, billingState }: AppShellProps) {
                     asChild
                     className="mb-2 h-auto w-full justify-start rounded-xl bg-[#22C55E] px-4 py-4 text-left text-base font-black tracking-wide text-white shadow-[0_4px_14px_rgba(34,197,94,0.38)] hover:bg-[#16A34A]"
                   >
-                    <Link href={salesNavItem.href} onClick={(event) => handleNavClick(event, salesNavItem.href)}>
+                    <Link
+                      href={getNavHref(salesNavItem.href)}
+                      onClick={(event) => handleNavClick(event, getNavHref(salesNavItem.href))}
+                      data-onboarding-target="app-nav-sales"
+                    >
                       <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20">
                         <salesNavItem.icon className="h-6 w-6" />
                       </span>
@@ -362,6 +374,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
               {regularNavItems.map((item) => {
                 const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
                 const isDisabled = isNavItemDisabled(item.href)
+                const itemHref = getNavHref(item.href)
                 if (isDisabled) {
                   return (
                     <Button
@@ -385,7 +398,11 @@ export function AppShell({ children, billingState }: AppShellProps) {
                       isActive && "bg-purple-primary/10 text-purple-primary font-semibold hover:bg-purple-primary/20 hover:text-purple-primary"
                     )}
                   >
-                    <Link href={item.href} onClick={(event) => handleNavClick(event, item.href)}>
+                    <Link
+                      href={itemHref}
+                      onClick={(event) => handleNavClick(event, itemHref)}
+                      data-onboarding-target={item.href === "/products" ? "app-nav-products" : undefined}
+                    >
                       <item.icon className="h-5 w-5" />
                       {item.label}
                     </Link>
@@ -457,7 +474,11 @@ export function AppShell({ children, billingState }: AppShellProps) {
                         className="mb-2 h-auto w-full justify-start rounded-xl bg-[#22C55E] px-4 py-4 text-left text-base font-black tracking-wide text-white shadow-[0_4px_14px_rgba(34,197,94,0.38)] hover:bg-[#16A34A]"
                       >
                         <SheetClose asChild>
-                          <Link href={salesNavItem.href} onClick={(event) => handleNavClick(event, salesNavItem.href)}>
+                          <Link
+                            href={getNavHref(salesNavItem.href)}
+                            onClick={(event) => handleNavClick(event, getNavHref(salesNavItem.href))}
+                            data-onboarding-target="app-nav-sales"
+                          >
                             <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/20">
                               <salesNavItem.icon className="h-6 w-6" />
                             </span>
@@ -471,6 +492,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
                   {regularNavItems.map((item) => {
                     const isActive = pathname === item.href || pathname?.startsWith(item.href + "/")
                     const isDisabled = isNavItemDisabled(item.href)
+                    const itemHref = getNavHref(item.href)
                     if (isDisabled) {
                       return (
                         <Button
@@ -495,7 +517,11 @@ export function AppShell({ children, billingState }: AppShellProps) {
                         )}
                       >
                         <SheetClose asChild>
-                          <Link href={item.href} onClick={(event) => handleNavClick(event, item.href)}>
+                          <Link
+                            href={itemHref}
+                            onClick={(event) => handleNavClick(event, itemHref)}
+                            data-onboarding-target={item.href === "/products" ? "app-nav-products" : undefined}
+                          >
                             <item.icon className="h-5 w-5" />
                             {item.label}
                           </Link>

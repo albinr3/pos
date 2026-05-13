@@ -206,6 +206,14 @@ export type AccountDetail = AccountListItem & {
   // Billing Plan
   billingPlanId: string | null
   billingPlanName: string | null
+
+  // Onboarding
+  onboardingCompleted: boolean
+  onboardingCompletedAt: Date | null
+  onboardingFirstSeenAt: Date | null
+  onboardingLastSkippedAt: Date | null
+  onboardingFirstProductId: string | null
+  onboardingFirstSaleId: string | null
 }
 
 // ==========================================
@@ -294,6 +302,7 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
       },
       billingProfile: true,
       companySettings: true,
+      onboarding: true,
       users: {
         orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }],
       },
@@ -328,6 +337,7 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
   if (!account) return null
 
   const sub = account.billingSubscription
+  const onboarding = account.onboarding
   const owner = account.users.find((u) => u.isOwner)
   const lastPayment = sub?.payments.find((p) => p.status === "PAID")
 
@@ -416,6 +426,14 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
     // Billing Plan
     billingPlanId: sub?.billingPlanId || null,
     billingPlanName: sub?.billingPlan?.name || null,
+
+    // Onboarding
+    onboardingCompleted: Boolean(onboarding?.completedAt),
+    onboardingCompletedAt: onboarding?.completedAt ?? null,
+    onboardingFirstSeenAt: onboarding?.firstSeenAt ?? null,
+    onboardingLastSkippedAt: onboarding?.lastSkippedAt ?? null,
+    onboardingFirstProductId: onboarding?.firstProductId ?? null,
+    onboardingFirstSaleId: onboarding?.firstSaleId ?? null,
   }
 }
 

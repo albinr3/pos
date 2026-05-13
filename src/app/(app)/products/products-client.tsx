@@ -25,6 +25,7 @@ import { formatRD, toCents } from "@/lib/money"
 import { UNIT_OPTIONS, formatQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { BarcodeLabel } from "@/components/app/barcode-label"
 import { ProductImageUpload } from "@/components/app/product-image-upload"
+import { OnboardingGuide, type OnboardingGuideStep } from "@/components/app/onboarding-guide"
 import type { CurrentUser } from "@/lib/auth"
 
 import {
@@ -73,6 +74,7 @@ const NONE_SUPPLIER_OPTION = "__none_supplier__"
 const NONE_CATEGORY_OPTION = "__none_category__"
 const CREATE_SUPPLIER_OPTION = "__create_supplier__"
 const CREATE_CATEGORY_OPTION = "__create_category__"
+const ONBOARDING_PROGRESS_KEY_PREFIX = "tejada-pos-onboarding-progress"
 
 const INVENTORY_TEMPLATE_HEADERS = [
   "nombre",
@@ -122,6 +124,11 @@ function createRecipeItemRow(): RecipeItemFormRow {
     ingredientId: "",
     qty: "1",
   }
+}
+
+function clampIndex(index: number, length: number) {
+  if (length <= 0) return 0
+  return Math.max(0, Math.min(index, length - 1))
 }
 
 function getProductFormType(product?: Product | null): ProductFormType {
@@ -477,7 +484,17 @@ function formatInventoryPreviewValue(value: BulkProductImportRow[keyof BulkProdu
   return String(value)
 }
 
-export function ProductsClient() {
+export function ProductsClient({
+  onboardingProductGuide = false,
+  onboardingSaleNavGuide = false,
+  onboardingAccountId = null,
+  onboardingStepOffset = 0,
+}: {
+  onboardingProductGuide?: boolean
+  onboardingSaleNavGuide?: boolean
+  onboardingAccountId?: string | null
+  onboardingStepOffset?: number
+}) {
   const router = useRouter()
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Product[]>([])
@@ -543,7 +560,11 @@ export function ProductsClient() {
   const [recipeItems, setRecipeItems] = useState<RecipeItemFormRow[]>([createRecipeItemRow()])
   const [ingredientPickerOpen, setIngredientPickerOpen] = useState(false)
   const [ingredientPickerSearch, setIngredientPickerSearch] = useState("")
+  const [isOnboardingGuideClosed, setIsOnboardingGuideClosed] = useState(false)
+  const [resumeProductStepIndex, setResumeProductStepIndex] = useState(0)
+  const [hasSkippedProgress, setHasSkippedProgress] = useState(false)
   const ingredientPickerCallbackRef = useRef<((id: string) => void) | null>(null)
+  const progressKey = onboardingAccountId ? `${ONBOARDING_PROGRESS_KEY_PREFIX}:${onboardingAccountId}` : null
 
   function openIngredientPicker(callback: (id: string) => void) {
     ingredientPickerCallbackRef.current = callback
@@ -574,6 +595,30 @@ export function ProductsClient() {
         console.error("Error fetching user")
       })
   }, [])
+
+  useEffect(() => {
+    if (!progressKey) {
+      setResumeProductStepIndex(0)
+      setHasSkippedProgress(false)
+      return
+    }
+    try {
+      const raw = localStorage.getItem(progressKey)
+      if (!raw) {
+        setResumeProductStepIndex(0)
+        setHasSkippedProgress(false)
+        return
+      }
+      const parsed = JSON.parse(raw) as { skipped?: boolean; stepIndex?: number; stepKey?: string | null }
+      setHasSkippedProgress(Boolean(parsed.skipped))
+      const isProductStep = typeof parsed.stepKey === "string" && parsed.stepKey.startsWith("products-")
+      const stepIndex = Number.isFinite(parsed.stepIndex) ? Number(parsed.stepIndex) : 0
+      setResumeProductStepIndex(isProductStep ? Math.max(0, stepIndex - onboardingStepOffset) : 0)
+    } catch {
+      setResumeProductStepIndex(0)
+      setHasSkippedProgress(false)
+    }
+  }, [onboardingStepOffset, progressKey])
 
   function refresh(q?: string) {
     startLoading(async () => {
@@ -728,6 +773,7 @@ export function ProductsClient() {
     const trimmedName = name.trim()
     const priceCents = toCents(price)
     const costCents = toCents(cost)
+    const shouldContinueOnboarding = onboardingProductGuide && !editing
     if (!trimmedName || priceCents <= 0 || costCents <= 0) {
       toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
       return
@@ -785,6 +831,12 @@ export function ProductsClient() {
         toast({ title: "Guardado", description: "Producto actualizado" })
         setOpen(false)
         resetForm(null)
+        if (shouldContinueOnboarding) {
+          refresh(query)
+          listRecipeIngredientOptions().then(setIngredientOptions).catch(() => setIngredientOptions([]))
+          router.push("/products?onboarding=sale-nav")
+          return
+        }
         refresh(query)
         listRecipeIngredientOptions().then(setIngredientOptions).catch(() => setIngredientOptions([]))
       } catch (e) {
@@ -1444,6 +1496,103 @@ export function ProductsClient() {
   const movementPageItems = movementItems.slice(movementStart, movementStart + movementPageSize)
   const inventoryPreviewStart = inventoryRows.length ? inventoryPreviewPage * INVENTORY_PREVIEW_PAGE_SIZE + 1 : 0
   const inventoryPreviewEnd = Math.min((inventoryPreviewPage + 1) * INVENTORY_PREVIEW_PAGE_SIZE, inventoryRows.length)
+  const productGuideState = useMemo(() => {
+    if (!onboardingProductGuide || isOnboardingGuideClosed) return null
+
+    const canSeeCost = Boolean(user?.canViewProductCosts || user?.isOwner)
+    const parsedStock = Number(stock.replace(",", "."))
+    const steps: Array<{ complete: boolean; step: OnboardingGuideStep }> = [
+      {
+        complete: open,
+        step: {
+          target: "products-new-button",
+          title: "Crea el producto desde aquí",
+          description: "Haz clic en Nuevo. Este es el mismo formulario que usarás todos los días para registrar productos.",
+        },
+      },
+      {
+        complete: productType === "basic",
+        step: {
+          target: "products-basic-tab",
+          title: "Mantén Producto básico",
+          description: "Para la primera práctica usa Producto básico. Es el tipo normal para productos que vendes por unidad.",
+        },
+      },
+      {
+        complete: name.trim().length > 0,
+        step: {
+          target: "products-name-input",
+          title: "Escribe el nombre del producto",
+          description: "Usa un nombre que puedas buscar luego a la hora de vender.",
+        },
+      },
+      {
+        complete: toCents(price) > 0,
+        step: {
+          target: "products-price-input",
+          title: "Indica el precio de venta",
+          description: "Este es el precio que verá el cliente cuando vendas el producto.",
+        },
+      },
+      ...(canSeeCost
+        ? [{
+          complete: toCents(cost) > 0,
+          step: {
+            target: "products-cost-input",
+            title: "Registra el costo",
+            description: "El costo permite calcular tu ganancia más luego. Puedes usar un valor aproximado si todavía no tienes el costo exacto.",
+          },
+        }]
+        : []),
+      {
+        complete: Number.isFinite(parsedStock) && parsedStock > 0,
+        step: {
+          target: "products-stock-input",
+          title: "Agrega la cantidad de existencia inicial.",
+          description: "Escribe cuántas unidades tienes disponibles para poder vender este producto.",
+        },
+      },
+      {
+        complete: isAvailableForSale,
+        step: {
+          target: "products-availability-switch",
+          title: "Déjalo disponible para venta",
+          description: "Este interruptor debe estar activo para que el producto aparezca en la pantalla de ventas.",
+        },
+      },
+      {
+        complete: false,
+        step: {
+          target: "products-save-button",
+          title: "Guarda el producto",
+          description: "Al guardar, el producto quedará disponible en inventario y pasaremos a hacer una venta real.",
+        },
+      },
+    ]
+
+    const firstIncompleteIndex = steps.findIndex((item) => !item.complete)
+    const fallbackIndex = firstIncompleteIndex >= 0 ? firstIncompleteIndex : steps.length - 1
+    const activeIndex = clampIndex(Math.max(fallbackIndex, resumeProductStepIndex), steps.length)
+    return {
+      step: steps[activeIndex]?.step ?? null,
+      stepIndex: activeIndex,
+      totalSteps: steps.length,
+      stepKey: `products-step-${activeIndex + onboardingStepOffset}`,
+    }
+  }, [
+    cost,
+    isAvailableForSale,
+    isOnboardingGuideClosed,
+    name,
+    onboardingProductGuide,
+    open,
+    price,
+    productType,
+    resumeProductStepIndex,
+    stock,
+    user?.canViewProductCosts,
+    user?.isOwner,
+  ])
 
   useEffect(() => {
     if (movementsPage > movementPageCount - 1) {
@@ -1453,6 +1602,37 @@ export function ProductsClient() {
 
   return (
     <div className="grid gap-6">
+      {productGuideState?.step ? (
+        <OnboardingGuide
+          accountId={onboardingAccountId}
+          step={productGuideState.step}
+          stepIndex={productGuideState.stepIndex + onboardingStepOffset}
+          totalSteps={productGuideState.totalSteps + onboardingStepOffset}
+          onClose={() => setIsOnboardingGuideClosed(true)}
+          onSkip={() => setHasSkippedProgress(true)}
+          progressKey={progressKey ?? undefined}
+          stepKey={productGuideState.stepKey}
+          resumePath="/products?onboarding=product"
+        />
+      ) : null}
+      {onboardingSaleNavGuide && !isOnboardingGuideClosed && !hasSkippedProgress ? (
+        <OnboardingGuide
+          accountId={onboardingAccountId}
+          step={{
+            target: "app-nav-sales",
+            title: "Ahora entra a Vender",
+            description: "Haz clic en el botón Vender del menú. Ahí harás la primera venta usando el flujo normal.",
+          }}
+          stepIndex={9}
+          totalSteps={10}
+          onClose={() => setIsOnboardingGuideClosed(true)}
+          onSkip={() => setHasSkippedProgress(true)}
+          progressKey={progressKey ?? undefined}
+          stepKey="products-go-to-sales"
+          resumePath="/products?onboarding=sale-nav"
+        />
+      ) : null}
+
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-l-4 border-l-purple-primary bg-purple-50 dark:bg-purple-950/20">
           <CardHeader>
@@ -1927,7 +2107,7 @@ export function ProductsClient() {
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <DialogTrigger asChild>
-                      <Button onClick={() => { resetForm(null); setOpen(true) }}>
+                      <Button data-onboarding-target="products-new-button" onClick={() => { resetForm(null); setOpen(true) }}>
                         <Plus className="mr-2 h-4 w-4" /> Nuevo
                       </Button>
                     </DialogTrigger>
@@ -1943,7 +2123,7 @@ export function ProductsClient() {
 
                   <Tabs value={productType} onValueChange={(v) => setProductType(v as ProductFormType)} className="flex-1 flex flex-col min-h-0">
                     <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="basic">Producto básico</TabsTrigger>
+                      <TabsTrigger value="basic" data-onboarding-target="products-basic-tab">Producto básico</TabsTrigger>
                       <TabsTrigger value="measured">Producto con medidas</TabsTrigger>
                       <TabsTrigger value="recipe">Productos por receta</TabsTrigger>
                     </TabsList>
@@ -1959,11 +2139,16 @@ export function ProductsClient() {
                           />
                         </div>
 
-                        <div className="grid gap-2">
+                        <div className="grid gap-2" data-onboarding-target="products-name-input">
                           <Label>
                             Nombre del producto <span className="text-red-500">*</span>
                           </Label>
-                          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Alfombra" required />
+                          <Input
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            placeholder="Ej: Coca-Cola 20 oz"
+                            required
+                          />
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2044,7 +2229,7 @@ export function ProductsClient() {
                             Los productos básicos se compran y venden por unidad. Las unidades de compra y venta se establecen automáticamente como Unidad.
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="grid gap-2">
+                            <div className="grid gap-2" data-onboarding-target="products-price-input">
                               <Label>
                                 Precio de venta por ({getUnitInfo("UNIDAD").abbr}) (RD$, {salePricesIncludeItbis ? "ITBIS incluido" : "ITBIS no incluido"}) <span className="text-red-500">*</span>
                               </Label>
@@ -2052,13 +2237,14 @@ export function ProductsClient() {
                                 value={price}
                                 onChange={(e) => setPrice(e.target.value)}
                                 inputMode="decimal"
+                                placeholder="Ej: 75.00"
                                 required
                                 disabled={editing ? (!user || (!user.canOverridePrice && !user.isOwner)) : false}
                                 onFocus={selectAllOnFocus}
                               />
                             </div>
                             {(user?.canViewProductCosts || user?.isOwner) && (
-                              <div className="grid gap-2">
+                              <div className="grid gap-2" data-onboarding-target="products-cost-input">
                                 <Label>
                                   Costo por ({getUnitInfo("UNIDAD").abbr}) (RD$) <span className="text-red-500">*</span>
                                 </Label>
@@ -2066,6 +2252,7 @@ export function ProductsClient() {
                                   value={cost}
                                   onChange={(e) => setCost(e.target.value)}
                                   inputMode="decimal"
+                                  placeholder="Ej: 50.00"
                                   required
                                   onFocus={selectAllOnFocus}
                                 />
@@ -2073,7 +2260,7 @@ export function ProductsClient() {
                             )}
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div className="grid gap-2">
+                            <div className="grid gap-2" data-onboarding-target="products-stock-input">
                               <Label>Existencia ({getUnitInfo("UNIDAD").abbr})</Label>
                               <Input
                                 value={stock}
@@ -2296,7 +2483,7 @@ export function ProductsClient() {
 
                         <Separator />
 
-                        <div className="grid gap-2">
+                        <div className="grid gap-2" data-onboarding-target="products-availability-switch">
                           <Label htmlFor="sale-availability">Disponible para venta</Label>
                           <div className="flex items-center justify-between rounded-md border p-3">
                             <div className="text-xs text-muted-foreground pr-3">
@@ -2331,7 +2518,7 @@ export function ProductsClient() {
 
                   <DialogFooter>
                     <Button variant="secondary" onClick={() => setOpen(false)} type="button">Cancelar</Button>
-                    <Button onClick={onSave} disabled={isSaving} type="button">{isSaving ? "Guardando…" : "Guardar"}</Button>
+                    <Button data-onboarding-target="products-save-button" onClick={onSave} disabled={isSaving} type="button">{isSaving ? "Guardando…" : "Guardar"}</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -2676,4 +2863,3 @@ export function ProductsClient() {
     </div >
   )
 }
-

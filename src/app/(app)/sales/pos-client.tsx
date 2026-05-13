@@ -9,6 +9,7 @@ import { useRouter, usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { PriceInput } from "@/components/app/price-input"
+import { OnboardingGuide, type OnboardingGuideStep } from "@/components/app/onboarding-guide"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -41,7 +42,7 @@ import {
 
 import type { CurrentUser } from "@/lib/auth"
 
-import { createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode, getOnboardingProduct } from "./actions"
+import { createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode } from "./actions"
 
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 
@@ -82,8 +83,8 @@ type DiscountMode = "AUTO" | "MANUAL"
 
 const USER_CACHE_KEY = "tejada-pos-user"
 const POS_FORCE_RESET_KEY = "tejada-pos-force-reset-after-print"
-const ONBOARDING_PRODUCT_ADDED_KEY_PREFIX = "tejada-pos-onboarding-product-added"
 const CREATE_CUSTOMER_OPTION = "__create_customer__"
+const ONBOARDING_PROGRESS_KEY_PREFIX = "tejada-pos-onboarding-progress"
 
 function clampPercentInput(value: string) {
   const normalized = value.replace(",", ".").replace(/[^\d.]/g, "")
@@ -153,13 +154,15 @@ export function PosClient({
   showItbisOnReceipts = true,
   salePricesIncludeItbis = true,
   legalTipEnabled = false,
-  onboardingProductId = null,
+  onboardingSaleGuide = false,
+  onboardingAccountId = null,
 }: {
   defaultViewMode?: string
   showItbisOnReceipts?: boolean
   salePricesIncludeItbis?: boolean
   legalTipEnabled?: boolean
-  onboardingProductId?: string | null
+  onboardingSaleGuide?: boolean
+  onboardingAccountId?: string | null
 }) {
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -209,6 +212,10 @@ export function PosClient({
   const [recipeDraftByIngredient, setRecipeDraftByIngredient] = useState<Record<string, "SIN" | "EXTRA">>({})
   const [showNavigationDialog, setShowNavigationDialog] = useState(false)
   const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
+  const [isOnboardingGuideClosed, setIsOnboardingGuideClosed] = useState(false)
+  const [hasSkippedProgress, setHasSkippedProgress] = useState(false)
+  const [hasAcknowledgedSaleDefaults, setHasAcknowledgedSaleDefaults] = useState(false)
+  const [hasReviewedOnboardingCart, setHasReviewedOnboardingCart] = useState(false)
   const recipeDialogCartItem = useMemo(
     () => cart.find((item) => item.lineId === recipeDialogLineId) ?? null,
     [cart, recipeDialogLineId]
@@ -218,11 +225,29 @@ export function PosClient({
   const firstKeyPressTime = useRef<number>(0)
   const lastKeyPressTime = useRef<number>(0)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const onboardingAutoAddRef = useRef(false)
 
   const router = useRouter()
   const pathname = usePathname()
+  const progressKey = onboardingAccountId ? `${ONBOARDING_PROGRESS_KEY_PREFIX}:${onboardingAccountId}` : null
   const shouldUseCustomerSearchModal = customers.length > 12
+
+  useEffect(() => {
+    if (!progressKey) {
+      setHasSkippedProgress(false)
+      return
+    }
+    try {
+      const raw = localStorage.getItem(progressKey)
+      if (!raw) {
+        setHasSkippedProgress(false)
+        return
+      }
+      const parsed = JSON.parse(raw) as { skipped?: boolean }
+      setHasSkippedProgress(Boolean(parsed.skipped))
+    } catch {
+      setHasSkippedProgress(false)
+    }
+  }, [progressKey])
 
   const filteredCustomers = useMemo(() => {
     const q = customerPickerQuery.trim().toLowerCase()
@@ -813,6 +838,98 @@ export function PosClient({
     () => itemsTotalCents + shippingCents + legalTipCents,
     [itemsTotalCents, shippingCents, legalTipCents]
   )
+  const amountPaidCents = useMemo(() => toCents(amountPaidInput), [amountPaidInput])
+  const changeCents = useMemo(() => amountPaidCents - totalCents, [amountPaidCents, totalCents])
+  const exactAmountInput = useMemo(() => (totalCents / 100).toFixed(2), [totalCents])
+  const saleGuideState = useMemo(() => {
+    if (!onboardingSaleGuide || isOnboardingGuideClosed || hasSkippedProgress) return null
+
+    const productTarget = cart.length > 0
+      ? "sales-cart-section"
+      : query.trim() && results.length > 0
+        ? "sales-product-result"
+        : viewMode === "grid" && allProducts.length > 0
+          ? "sales-product-card"
+          : "sales-product-search"
+
+    const steps: Array<{ complete: boolean; step: OnboardingGuideStep }> = [
+      {
+        complete: hasAcknowledgedSaleDefaults,
+        step: {
+          target: isSaleConfigCollapsed ? "sales-config-summary" : "sales-customer-field",
+          title: "Revisa los datos de venta",
+          description: "Para la primera venta puedes dejar el cliente general, tipo Contado y método Efectivo. Si necesitas cambiar algo, abre las opciones.",
+          actionLabel: "Entendido",
+          onAction: () => setHasAcknowledgedSaleDefaults(true),
+        },
+      },
+      {
+        complete: cart.length > 0,
+        step: {
+          target: productTarget,
+          title: "Agrega un producto",
+          description: "Busca por descripción, código o referencia. También puedes hacer clic en una tarjeta si estás en vista de imágenes.",
+        },
+      },
+      {
+        complete: cart.length === 0 || hasReviewedOnboardingCart,
+        step: {
+          target: "sales-cart-section",
+          title: "Revisa cantidad y total",
+          description: "Aquí puedes ajustar la cantidad o el precio si tu usuario tiene permiso. Verifica el total antes de guardar.",
+          actionLabel: "Ya revisé",
+          onAction: () => setHasReviewedOnboardingCart(true),
+        },
+      },
+      {
+        complete: showChangeDialog,
+        step: {
+          target: "sales-save-button",
+          title: "Guarda la factura",
+          description: "Este es el mismo botón de una venta normal. Al guardar, la primera venta queda registrada.",
+        },
+      },
+      {
+        complete: !showChangeDialog || (changeCents >= 0 && amountPaidCents > 0),
+        step: {
+          target: "sales-change-amount",
+          title: "Indica cuánto pagó",
+          description: "Para efectivo, escribe el monto recibido. Si pagó exacto, usa el total de la venta.",
+        },
+      },
+      {
+        complete: !showChangeDialog,
+        step: {
+          target: "sales-change-confirm",
+          title: "Confirma la venta",
+          description: "Al confirmar, la factura se guardará y el tutorial quedará completado.",
+        },
+      },
+    ]
+
+    const activeIndex = steps.findIndex((item) => !item.complete)
+    return {
+      step: steps[activeIndex]?.step ?? null,
+      stepIndex: activeIndex >= 0 ? activeIndex : steps.length - 1,
+      totalSteps: steps.length,
+      stepKey: `sales-step-${activeIndex + 1}`,
+    }
+  }, [
+    allProducts.length,
+    amountPaidCents,
+    cart.length,
+    changeCents,
+    hasAcknowledgedSaleDefaults,
+    hasSkippedProgress,
+    hasReviewedOnboardingCart,
+    isOnboardingGuideClosed,
+    isSaleConfigCollapsed,
+    onboardingSaleGuide,
+    query,
+    results.length,
+    showChangeDialog,
+    viewMode,
+  ])
 
   const addToCart = useCallback((p: ProductResult, recipeAdjustments: RecipeAdjustment[] = []) => {
     const productUnit = (p.unit as UnitType) ?? "UNIDAD"
@@ -849,66 +966,9 @@ export function PosClient({
     })
   }, [])
 
-  useEffect(() => {
-    if (!onboardingProductId || !isInitialized || onboardingAutoAddRef.current) return
-
-    const addedKey = `${ONBOARDING_PRODUCT_ADDED_KEY_PREFIX}:${onboardingProductId}`
-    const isAlreadyInCart = cart.some((item) => item.productId === onboardingProductId)
-
-    if (isAlreadyInCart) {
-      onboardingAutoAddRef.current = true
-      try {
-        sessionStorage.setItem(addedKey, "1")
-      } catch {
-        // Ignore storage errors.
-      }
-      return
-    }
-
-    try {
-      if (sessionStorage.getItem(addedKey) === "1") {
-        onboardingAutoAddRef.current = true
-        return
-      }
-    } catch {
-      // Continue without session storage.
-    }
-
-    onboardingAutoAddRef.current = true
-
-    getOnboardingProduct(onboardingProductId)
-      .then((result) => {
-        if (!result.ok) {
-          toast({
-            title: "Producto no disponible",
-            description: result.error,
-            variant: "destructive",
-          })
-          return
-        }
-
-        addToCart(result.product)
-        try {
-          sessionStorage.setItem(addedKey, "1")
-        } catch {
-          // Ignore storage errors.
-        }
-        toast({
-          title: "Producto agregado",
-          description: "Ya tienes 1 unidad en el carrito para completar la venta.",
-        })
-      })
-      .catch(() => {
-        toast({
-          title: "No se pudo cargar el producto",
-          description: "Puedes buscarlo manualmente y continuar la venta.",
-          variant: "destructive",
-        })
-      })
-  }, [addToCart, cart, isInitialized, onboardingProductId])
-
   function handleProductSelection(p: ProductResult) {
     addToCart(p)
+    setHasReviewedOnboardingCart(false)
   }
 
   function closeRecipeDialog() {
@@ -1110,13 +1170,13 @@ export function PosClient({
               manualDiscountPercentBp:
                 discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
               salePricesIncludeItbis,
-              onboardingProductId,
+              onboardingSale: onboardingSaleGuide,
               username: user.username,
             })
 
             toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
 
-            if (onboardingProductId) {
+            if (onboardingSaleGuide) {
               router.push(`/onboarding/completado?saleId=${encodeURIComponent(sale.id)}`)
             } else {
               sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
@@ -1151,10 +1211,6 @@ export function PosClient({
     })
   }
 
-  const amountPaidCents = useMemo(() => toCents(amountPaidInput), [amountPaidInput])
-  const changeCents = useMemo(() => amountPaidCents - totalCents, [amountPaidCents, totalCents])
-  const exactAmountInput = useMemo(() => (totalCents / 100).toFixed(2), [totalCents])
-
   // Función helper para obtener la cantidad de un producto en el carrito
   function getCartQuantity(productId: string): number {
     return cart.reduce((sum, item) => (item.productId === productId ? sum + item.qty : sum), 0)
@@ -1162,6 +1218,20 @@ export function PosClient({
 
   return (
     <div className={`grid gap-6 ${viewMode === "grid" ? "lg:grid-cols-[1fr_400px]" : "lg:grid-cols-[1fr_380px]"}`}>
+      {saleGuideState?.step ? (
+        <OnboardingGuide
+          accountId={onboardingAccountId}
+          step={saleGuideState.step}
+          stepIndex={saleGuideState.stepIndex}
+          totalSteps={saleGuideState.totalSteps}
+          onClose={() => setIsOnboardingGuideClosed(true)}
+          onSkip={() => setHasSkippedProgress(true)}
+          progressKey={progressKey ?? undefined}
+          stepKey={saleGuideState.stepKey}
+          resumePath="/sales?onboarding=sale"
+        />
+      ) : null}
+
       {/* Indicador de modo offline */}
       {mounted && !isOnline && (
         <div className="col-span-full rounded-md border border-yellow-500 bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">
@@ -1177,14 +1247,14 @@ export function PosClient({
         </div>
       )}
 
-      {onboardingProductId && (
+      {onboardingSaleGuide && (
         <div className="col-span-full rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
           <div className="flex items-start gap-3">
             <ShoppingCart className="mt-0.5 h-5 w-5 flex-none" />
             <div>
               <div className="font-semibold">Primera venta</div>
               <p className="text-emerald-800 dark:text-emerald-200">
-                Agregamos 1 unidad del producto al carrito. Revisa el total y pulsa Completar venta.
+                Hazla como una venta normal: busca un producto, agrégalo al carrito y guarda la factura.
               </p>
             </div>
           </div>
@@ -1203,6 +1273,7 @@ export function PosClient({
                   size="sm"
                   onClick={() => setIsSaleConfigCollapsed((prev) => !prev)}
                   className="h-8 px-2 text-muted-foreground"
+                  data-onboarding-target="sales-options-toggle"
                 >
                   {isSaleConfigCollapsed ? (
                     <>
@@ -1237,7 +1308,7 @@ export function PosClient({
           <CardContent className="grid gap-4">
             {!isSaleConfigCollapsed && (
               <>
-                <div className="grid gap-2">
+                <div className="grid gap-2" data-onboarding-target="sales-customer-field">
                   <Label>Cliente</Label>
                   {shouldUseCustomerSearchModal ? (
                     <>
@@ -1435,6 +1506,7 @@ export function PosClient({
                   type="button"
                   onClick={() => setIsSaleConfigCollapsed(false)}
                   className="flex w-full items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground hover:bg-muted/60 hover:border-foreground/20 transition-colors cursor-pointer text-left"
+                  data-onboarding-target="sales-config-summary"
                 >
                   <span>
                     {selectedCustomerLabel} ·{" "}
@@ -1448,7 +1520,7 @@ export function PosClient({
               </div>
             )}
 
-            <div className="grid gap-2">
+            <div className="grid gap-2" data-onboarding-target="sales-product-search">
               <Label>Buscar producto (descripción / código / referencia)</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
@@ -1523,6 +1595,7 @@ export function PosClient({
                           type="button"
                           key={p.id}
                           onClick={() => handleProductSelection(p)}
+                          data-onboarding-target="sales-product-result"
                           className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-muted"
                         >
                           <div className="min-w-0">
@@ -1560,6 +1633,7 @@ export function PosClient({
                           type="button"
                           key={p.id}
                           onClick={() => handleProductSelection(p)}
+                          data-onboarding-target="sales-product-result"
                           className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
                         >
                           <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
@@ -1626,6 +1700,7 @@ export function PosClient({
                             type="button"
                             key={p.id}
                             onClick={() => handleProductSelection(p)}
+                            data-onboarding-target="sales-product-card"
                             className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
                           >
                             <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
@@ -1677,7 +1752,7 @@ export function PosClient({
         </Card>
 
         {viewMode === "list" && (
-          <Card>
+          <Card data-onboarding-target="sales-cart-section">
             <CardHeader>
               <CardTitle>Carrito</CardTitle>
             </CardHeader>
@@ -1867,7 +1942,7 @@ export function PosClient({
 
       <div className="space-y-4">
         {viewMode === "grid" && (
-          <Card>
+          <Card data-onboarding-target="sales-cart-section">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>Productos</CardTitle>
               {cart.length > 0 && (
@@ -2150,8 +2225,9 @@ export function PosClient({
               size="lg"
               disabled={isSaving || cart.length === 0}
               onClick={onSave}
+              data-onboarding-target="sales-save-button"
             >
-              {isSaving ? "Guardando…" : onboardingProductId ? "Completar venta" : "Guardar e imprimir"}
+              {isSaving ? "Guardando…" : "Guardar e imprimir"}
             </Button>
             <div className="text-xs text-muted-foreground">
               {salePricesIncludeItbis
@@ -2202,7 +2278,7 @@ export function PosClient({
                 className="bg-muted"
               />
             </div>
-            <div className="grid gap-2">
+            <div className="grid gap-2" data-onboarding-target="sales-change-amount">
               <Label>¿Con cuánto paga tu cliente?</Label>
               <Input
                 value={amountPaidInput}
@@ -2253,6 +2329,7 @@ export function PosClient({
             <Button
               onClick={doSave}
               disabled={isSaving || changeCents < 0 || amountPaidCents === 0}
+              data-onboarding-target="sales-change-confirm"
             >
               {isSaving ? "Guardando…" : "Confirmar"}
             </Button>

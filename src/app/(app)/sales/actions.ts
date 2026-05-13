@@ -926,6 +926,7 @@ export async function createSale(input: {
   salePricesIncludeItbis?: boolean
   soldAt?: Date | string | number | null
   onboardingProductId?: string | null
+  onboardingSale?: boolean
   username: string
   user?: any
 }) {
@@ -1006,9 +1007,13 @@ export async function createSale(input: {
 
       const resolvedLines = await resolveSaleLines(tx, user.accountId, input.items)
       const onboardingProductId = input.onboardingProductId?.trim() || null
+      const onboardingFirstProductId = onboardingProductId ?? resolvedLines[0]?.item.productId ?? null
       const completesOnboarding = Boolean(
-        onboardingProductId &&
-        resolvedLines.some((line) => line.item.productId === onboardingProductId)
+        input.onboardingSale ||
+        (
+          onboardingProductId &&
+          resolvedLines.some((line) => line.item.productId === onboardingProductId)
+        )
       )
 
       for (const line of resolvedLines) {
@@ -1257,14 +1262,14 @@ export async function createSale(input: {
             accountId: user.accountId,
             firstSeenAt: now,
             completedAt: now,
-            firstProductId: onboardingProductId,
+            firstProductId: onboardingFirstProductId,
             firstSaleId: sale.id,
             firstSaleCreatedAt: sale.soldAt,
           },
           update: {
             firstSeenAt: existingOnboarding?.firstSeenAt ?? now,
             completedAt: existingOnboarding?.completedAt ?? now,
-            firstProductId: existingOnboarding?.firstProductId ?? onboardingProductId,
+            firstProductId: existingOnboarding?.firstProductId ?? onboardingFirstProductId,
             firstSaleId: existingOnboarding?.firstSaleId ?? sale.id,
             firstSaleCreatedAt: existingOnboarding?.firstSaleCreatedAt ?? sale.soldAt,
           },

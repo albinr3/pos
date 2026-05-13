@@ -14,7 +14,14 @@ import { OnboardingCard } from "./onboarding-card"
 // Marcar como dinámica para evitar prerender (requiere autenticación)
 export const dynamic = "force-dynamic"
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ onboarding?: string | string[] }>
+}) {
+  const params = await searchParams
+  const onboardingRaw = params.onboarding
+  const onboarding = Array.isArray(onboardingRaw) ? onboardingRaw[0] : onboardingRaw
   const [stats, chartData, onboardingState] = await Promise.all([
     getDashboardStats(),
     getSalesChartData(7),
@@ -33,7 +40,10 @@ export default async function DashboardPage() {
         </Button>
       </div>
 
-      <OnboardingCard state={onboardingState} />
+      <OnboardingCard
+        state={onboardingState}
+        showProductNavGuide={onboarding === "product" && onboardingState.phase === "PRODUCT"}
+      />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-l-4 border-l-purple-primary">

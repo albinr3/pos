@@ -834,6 +834,66 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
 
         {/* Sidebar */}
         <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Onboarding</CardTitle>
+              <CardDescription>Estado del recorrido inicial de la cuenta</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Estado</span>
+                {account.onboardingCompleted ? (
+                  <Badge className="bg-green-100 text-green-800 border-green-300">Completado</Badge>
+                ) : (
+                  <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300">Pendiente</Badge>
+                )}
+              </div>
+              <Separator />
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Primera visita onboarding</p>
+                <p className="text-sm font-medium">
+                  {account.onboardingFirstSeenAt
+                    ? formatDateTimeDO(account.onboardingFirstSeenAt, {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "Sin registro"}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Último salto del tutorial</p>
+                <p className="text-sm font-medium">
+                  {account.onboardingLastSkippedAt
+                    ? formatDateTimeDO(account.onboardingLastSkippedAt, {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "Nunca"}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Completado en</p>
+                <p className="text-sm font-medium">
+                  {account.onboardingCompletedAt
+                    ? formatDateTimeDO(account.onboardingCompletedAt, {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "No completado"}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Estadísticas */}
           <Card>
             <CardHeader>
