@@ -4,8 +4,12 @@ import { PaymentMethod } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
-import { isDominicanBankName } from "@/lib/dominican-banks"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
+import {
+  getTransferBankNameFromTreasuryAccount,
+  requireTreasuryAccount,
+  resolveTreasuryAccountFromLegacyBankName,
+} from "@/lib/treasury"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -66,18 +70,35 @@ export async function POST(request: NextRequest) {
     const transferBankNameRaw =
       typeof body?.transferBankName === "string" ? body.transferBankName.trim() : ""
     const transferBankName = transferBankNameRaw || null
-    if (method === PaymentMethod.TRANSFERENCIA) {
-      if (!transferBankName) {
-        return NextResponse.json({ error: "Debes seleccionar el banco de la transferencia" }, { status: 400 })
-      }
-      if (!isDominicanBankName(transferBankName)) {
-        return NextResponse.json({ error: "El banco de transferencia seleccionado no es válido" }, { status: 400 })
-      }
-    }
+    const treasuryAccountId = typeof body?.treasuryAccountId === "string" ? body.treasuryAccountId.trim() : ""
 
     const note = typeof body?.note === "string" ? body.note.trim() || null : null
 
     const result = await prisma.$transaction(async (tx) => {
+      const treasuryAccount =
+        (treasuryAccountId
+          ? await requireTreasuryAccount(tx, {
+              accountId: user.accountId,
+              treasuryAccountId,
+              requireActive: true,
+              message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+            })
+          : null) ??
+        (await resolveTreasuryAccountFromLegacyBankName(tx, {
+          accountId: user.accountId,
+          transferBankName,
+          requireActive: true,
+        }))
+
+      if (!treasuryAccount) {
+        throw new Error("Debes seleccionar una cuenta de tesorería para registrar el cobro")
+      }
+
+      const resolvedTransferBankName =
+        method === PaymentMethod.TRANSFERENCIA
+          ? getTransferBankNameFromTreasuryAccount(treasuryAccount)
+          : null
+
       const ars = await tx.accountReceivable.findMany({
         where: {
           id: { in: arIds },
@@ -149,7 +170,8 @@ export async function POST(request: NextRequest) {
             paidAt,
             amountCents: app.appliedCents,
             method,
-            transferBankName: method === PaymentMethod.TRANSFERENCIA ? transferBankName : null,
+            treasuryAccountId: treasuryAccount.id,
+            transferBankName: resolvedTransferBankName,
             note,
           },
           select: { id: true },
@@ -178,7 +200,8 @@ export async function POST(request: NextRequest) {
             invoiceCode: app.invoiceCode,
             amountCents: app.appliedCents,
             method,
-            transferBankName: method === PaymentMethod.TRANSFERENCIA ? transferBankName : null,
+            treasuryAccountId: treasuryAccount.id,
+            transferBankName: resolvedTransferBankName,
             receiptCode,
             isBatch: true,
           },

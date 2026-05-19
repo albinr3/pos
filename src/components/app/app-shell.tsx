@@ -19,6 +19,7 @@ import {
   Menu,
   Truck,
   DollarSign,
+  Landmark,
   Receipt,
   Building2,
   RotateCcw,
@@ -67,6 +68,7 @@ const nav = [
   { href: "/reports", label: "Reportes", icon: BarChart3 },
   { href: "/shipping-labels", label: "Etiquetas de envío", icon: Truck },
   { href: "/operating-expenses", label: "Gastos operativos", icon: DollarSign },
+  { href: "/treasury", label: "Tesorería", icon: Landmark },
   { href: "/billing", label: "Planes Y facturacion", icon: CreditCard },
   { href: "/settings", label: "Ajustes", icon: Settings },
   { href: "/backups", label: "Backups", icon: Database },
@@ -214,6 +216,16 @@ export function AppShell({ children, billingState }: AppShellProps) {
           !user.isOwner &&
           !user.canManageExpenses &&
           !user.canCancelExpenses
+        ) {
+          return null
+        }
+        if (
+          item.href === "/treasury" &&
+          !user.isOwner &&
+          !user.canViewTreasury &&
+          !user.canManageTreasuryAccounts &&
+          !user.canCreateTreasuryTransfers &&
+          !user.canReverseTreasuryTransfers
         ) {
           return null
         }

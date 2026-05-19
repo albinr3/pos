@@ -6,9 +6,14 @@ import { getCurrentUser } from "@/lib/auth"
 import { PaymentMethod } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
-import { isDominicanBankName } from "@/lib/dominican-banks"
 import { endOfDay } from "@/lib/dates"
 import { logError, ErrorCodes } from "@/lib/error-logger"
+import {
+  ensureDefaultTreasuryAccount,
+  getTransferBankNameFromTreasuryAccount,
+  requireTreasuryAccount,
+  resolveTreasuryAccountFromLegacyBankName,
+} from "@/lib/treasury"
 
 type AuthActor = {
   id: string
@@ -375,6 +380,7 @@ export async function addPayment(input: {
   amountCents: number
   method: PaymentMethod
   transferBankName?: string | null
+  treasuryAccountId?: string | null
   note?: string | null
 }, actor?: AuthActor) {
   const currentUser = actor ?? await getCurrentUser()
@@ -384,16 +390,6 @@ export async function addPayment(input: {
   if (input.method === PaymentMethod.DIVIDIR_PAGO) {
     throw new Error("Dividir pago no es un metodo valido para registrar un cobro.")
   }
-  if (input.method === PaymentMethod.TRANSFERENCIA) {
-    const trimmedBankName = input.transferBankName?.trim()
-    if (!trimmedBankName) {
-      throw new Error("Debes seleccionar el banco de la transferencia.")
-    }
-    if (!isDominicanBankName(trimmedBankName)) {
-      throw new Error("El banco de transferencia seleccionado no es valido.")
-    }
-  }
-
   try {
     return await prisma.$transaction(async (tx) => {
       // Verificar que la cuenta por cobrar pertenece al account del usuario
@@ -407,6 +403,32 @@ export async function addPayment(input: {
       })
       if (!ar) throw new Error("Cuenta por cobrar no encontrada")
       if (ar.status === "PAGADA" || ar.balanceCents <= 0) throw new Error("Esta factura ya está pagada")
+
+    const explicitTreasuryAccountId = input.treasuryAccountId?.trim() ?? null
+    const treasuryAccount =
+      (explicitTreasuryAccountId
+        ? await requireTreasuryAccount(tx, {
+            accountId: currentUser.accountId,
+            treasuryAccountId: explicitTreasuryAccountId,
+            requireActive: true,
+            message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+          })
+        : null) ??
+      (await resolveTreasuryAccountFromLegacyBankName(tx, {
+        accountId: currentUser.accountId,
+        transferBankName: input.transferBankName,
+        requireActive: true,
+      })) ??
+      (await ensureDefaultTreasuryAccount(tx, currentUser.accountId, currentUser.id))
+
+    if (!treasuryAccount) {
+      throw new Error("Debes seleccionar una cuenta de tesorería para registrar el cobro.")
+    }
+
+    const resolvedTransferBankName =
+      input.method === PaymentMethod.TRANSFERENCIA
+        ? getTransferBankNameFromTreasuryAccount(treasuryAccount)
+        : null
 
     const amount = Math.min(input.amountCents, ar.balanceCents)
 
@@ -428,7 +450,8 @@ export async function addPayment(input: {
         receiptCode,
         amountCents: amount,
         method: input.method,
-        transferBankName: input.method === PaymentMethod.TRANSFERENCIA ? input.transferBankName?.trim() ?? null : null,
+        treasuryAccountId: treasuryAccount.id,
+        transferBankName: resolvedTransferBankName,
         note: input.note || null,
       },
       select: { id: true, receiptCode: true },
@@ -456,7 +479,8 @@ export async function addPayment(input: {
       details: {
         amountCents: amount,
         method: input.method,
-        transferBankName: input.method === PaymentMethod.TRANSFERENCIA ? input.transferBankName?.trim() ?? null : null,
+        treasuryAccountId: treasuryAccount.id,
+        transferBankName: resolvedTransferBankName,
         arId: ar.id,
         receiptCode: payment.receiptCode,
       },
@@ -521,6 +545,7 @@ export async function addBatchPayment(input: {
   amountCents: number
   method: PaymentMethod
   transferBankName?: string | null
+  treasuryAccountId?: string | null
   note?: string | null
 }) {
   const currentUser = await getCurrentUser()
@@ -535,16 +560,6 @@ export async function addBatchPayment(input: {
   if (input.method === PaymentMethod.DIVIDIR_PAGO) {
     throw new Error("Dividir pago no es un método válido para registrar un cobro.")
   }
-  if (input.method === PaymentMethod.TRANSFERENCIA) {
-    const trimmedBankName = input.transferBankName?.trim()
-    if (!trimmedBankName) {
-      throw new Error("Debes seleccionar el banco de la transferencia.")
-    }
-    if (!isDominicanBankName(trimmedBankName)) {
-      throw new Error("El banco de transferencia seleccionado no es válido.")
-    }
-  }
-
   // Si solo es una factura, delegar al flujo individual
   if (uniqueArIds.length === 1) {
     const result = await addPayment({
@@ -552,6 +567,7 @@ export async function addBatchPayment(input: {
       amountCents: input.amountCents,
       method: input.method,
       transferBankName: input.transferBankName,
+      treasuryAccountId: input.treasuryAccountId,
       note: input.note,
     })
     return {
@@ -588,6 +604,32 @@ export async function addBatchPayment(input: {
       }
     }
 
+    const explicitTreasuryAccountId = input.treasuryAccountId?.trim() ?? null
+    const treasuryAccount =
+      (explicitTreasuryAccountId
+        ? await requireTreasuryAccount(tx, {
+            accountId: currentUser.accountId,
+            treasuryAccountId: explicitTreasuryAccountId,
+            requireActive: true,
+            message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+          })
+        : null) ??
+      (await resolveTreasuryAccountFromLegacyBankName(tx, {
+        accountId: currentUser.accountId,
+        transferBankName: input.transferBankName,
+        requireActive: true,
+      })) ??
+      (await ensureDefaultTreasuryAccount(tx, currentUser.accountId, currentUser.id))
+
+    if (!treasuryAccount) {
+      throw new Error("Debes seleccionar una cuenta de tesorería para registrar el cobro.")
+    }
+
+    const resolvedTransferBankName =
+      input.method === PaymentMethod.TRANSFERENCIA
+        ? getTransferBankNameFromTreasuryAccount(treasuryAccount)
+        : null
+
     const totalBalance = ars.reduce((sum, ar) => sum + ar.balanceCents, 0)
     const totalToApply = Math.min(input.amountCents, totalBalance)
 
@@ -617,10 +659,8 @@ export async function addBatchPayment(input: {
           receiptCode,
           amountCents: amount,
           method: input.method,
-          transferBankName:
-            input.method === PaymentMethod.TRANSFERENCIA
-              ? input.transferBankName?.trim() ?? null
-              : null,
+          treasuryAccountId: treasuryAccount.id,
+          transferBankName: resolvedTransferBankName,
           note: input.note || null,
         },
         select: { id: true },
@@ -649,10 +689,8 @@ export async function addBatchPayment(input: {
           details: {
             amountCents: amount,
             method: input.method,
-            transferBankName:
-              input.method === PaymentMethod.TRANSFERENCIA
-                ? input.transferBankName?.trim() ?? null
-                : null,
+            treasuryAccountId: treasuryAccount.id,
+            transferBankName: resolvedTransferBankName,
             arId: ar.id,
             receiptCode,
             batchPayment: true,

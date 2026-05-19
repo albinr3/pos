@@ -24,7 +24,13 @@ import {
   normalizeDiscountPercentBp,
   toCents,
 } from "@/lib/money"
-import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
+import {
+  CREATE_TREASURY_ACCOUNT_OPTION_VALUE,
+  CREATE_TREASURY_ACCOUNT_URL,
+  filterTreasuryAccountsByPaymentMethod,
+  isCreateTreasuryAccountOption,
+  pickTreasuryAccountIdForPaymentMethod,
+} from "@/lib/treasury-account-selection"
 import { formatQty, formatQtyNumber, parseQty, decimalToNumber, unitAllowsDecimals, getUnitInfo } from "@/lib/units"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { formatCustomerLabel } from "@/lib/customer-display"
@@ -43,6 +49,7 @@ import {
 import type { CurrentUser } from "@/lib/auth"
 
 import { createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode } from "./actions"
+import { listTreasuryAccounts } from "../treasury/actions"
 
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 
@@ -72,11 +79,13 @@ type CartItem = {
 }
 
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
+type TreasuryAccountOption = Awaited<ReturnType<typeof listTreasuryAccounts>>[number]
 
 type PaymentSplit = {
   method: PaymentMethod
   amountCents: number
   transferBankName?: string | null
+  treasuryAccountId?: string | null
 }
 
 type DiscountMode = "AUTO" | "MANUAL"
@@ -108,6 +117,13 @@ function formatAdjustmentLabel(adjustment: RecipeAdjustment) {
 function getRecipeVariantLabels(recipeAdjustments: RecipeAdjustment[]) {
   if (recipeAdjustments.length === 0) return ["Normal"]
   return recipeAdjustments.map(formatAdjustmentLabel)
+}
+
+function formatTreasuryAccountLabel(account: { name: string; bankName: string | null }) {
+  if (account.bankName && account.bankName !== account.name) {
+    return `${account.name} (${account.bankName})`
+  }
+  return account.name
 }
 
 function serializeCartItem(item: CartItem) {
@@ -186,7 +202,13 @@ export function PosClient({
   const [customerPickerQuery, setCustomerPickerQuery] = useState("")
   const [saleType, setSaleType] = useState<SaleType>(SaleType.CONTADO)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>([])
+  const [treasuryAccountId, setTreasuryAccountId] = useState("")
   const [transferBankName, setTransferBankName] = useState<string>("")
+  const availableTreasuryAccounts = useMemo(
+    () => filterTreasuryAccountsByPaymentMethod(treasuryAccounts, paymentMethod),
+    [treasuryAccounts, paymentMethod]
+  )
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
 
   const [cart, setCart] = useState<CartItem[]>([])
@@ -309,11 +331,14 @@ export function PosClient({
     setShowSplitPaymentDialog(false)
     setAmountPaidInput("")
     setPaymentSplits([])
+    setTreasuryAccountId(
+      pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, PaymentMethod.EFECTIVO)
+    )
     setTransferBankName("")
     setEditingPaymentAmounts({})
     setPaymentMethod(PaymentMethod.EFECTIVO)
     localStorage.removeItem("posCartState")
-  }, [legalTipEnabled])
+  }, [legalTipEnabled, treasuryAccounts])
 
   useEffect(() => {
     setApplyLegalTip(legalTipEnabled)
@@ -414,6 +439,17 @@ export function PosClient({
         return sorted
       }
 
+      const loadTreasuryAccountsForSale = async () => {
+        try {
+          const accounts = await listTreasuryAccounts()
+          setTreasuryAccounts(accounts)
+          return accounts
+        } catch {
+          setTreasuryAccounts([])
+          return [] as TreasuryAccountOption[]
+        }
+      }
+
       // Cargar clientes (desde servidor o cache)
       if (isOnline) {
         listCustomers()
@@ -431,6 +467,13 @@ export function PosClient({
           })
       } else {
         await loadCustomersFromCache()
+      }
+
+      const treasuryAccountsList = await loadTreasuryAccountsForSale()
+      if (treasuryAccountsList[0]) {
+        setTreasuryAccountId((current) =>
+          current || pickTreasuryAccountIdForPaymentMethod(treasuryAccountsList, PaymentMethod.EFECTIVO)
+        )
       }
 
       // Cargar preferencia de vista desde localStorage
@@ -468,6 +511,16 @@ export function PosClient({
             setSaleType(state.saleType)
             setPaymentMethod(state.paymentMethod)
             setTransferBankName(state.transferBankName || "")
+            const paymentMethodForSavedState =
+              state.saleType === SaleType.CONTADO ? (state.paymentMethod as PaymentMethod | null) : null
+            const savedTreasuryAccountId =
+              typeof state.treasuryAccountId === "string" ? state.treasuryAccountId : ""
+            const validTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
+              treasuryAccountsList,
+              paymentMethodForSavedState,
+              savedTreasuryAccountId
+            )
+            setTreasuryAccountId(validTreasuryAccountId)
             setShippingInput(state.shippingInput || "")
             setApplyLegalTip(legalTipEnabled ? state.applyLegalTip !== false : false)
             setDiscountMode(state.discountMode === "MANUAL" ? "MANUAL" : "AUTO")
@@ -478,6 +531,16 @@ export function PosClient({
                   method: split.method as PaymentMethod,
                   amountCents: typeof split.amountCents === "number" ? split.amountCents : Number(split.amountCents) || 0,
                   transferBankName: split.transferBankName ? String(split.transferBankName) : null,
+                  treasuryAccountId: (() => {
+                    const splitTreasuryAccountId =
+                      typeof split.treasuryAccountId === "string" ? split.treasuryAccountId : null
+                    const validSplitTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
+                      treasuryAccountsList,
+                      split.method as PaymentMethod,
+                      splitTreasuryAccountId
+                    )
+                    return validSplitTreasuryAccountId || validTreasuryAccountId || null
+                  })(),
                 }))
                 : []
             )
@@ -573,6 +636,20 @@ export function PosClient({
   }, [isOnline, legalTipEnabled])
 
   useEffect(() => {
+    if (saleType !== SaleType.CONTADO) return
+    if (!paymentMethod || paymentMethod === PaymentMethod.DIVIDIR_PAGO) return
+
+    const nextTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
+      treasuryAccounts,
+      paymentMethod,
+      treasuryAccountId
+    )
+    if (nextTreasuryAccountId !== treasuryAccountId) {
+      setTreasuryAccountId(nextTreasuryAccountId)
+    }
+  }, [saleType, paymentMethod, treasuryAccounts, treasuryAccountId])
+
+  useEffect(() => {
     // Cargar todos los productos cuando se cambia a vista de grid
     if (viewMode === "grid") {
       startLoadingProducts(async () => {
@@ -626,6 +703,7 @@ export function PosClient({
           customerId,
           saleType,
           paymentMethod,
+          treasuryAccountId,
           transferBankName,
           paymentSplits,
           shippingInput,
@@ -649,6 +727,7 @@ export function PosClient({
     customerId,
     saleType,
     paymentMethod,
+    treasuryAccountId,
     transferBankName,
     paymentSplits,
     shippingInput,
@@ -693,6 +772,7 @@ export function PosClient({
             customerId,
             saleType,
             paymentMethod,
+            treasuryAccountId,
             transferBankName,
             paymentSplits,
             shippingInput,
@@ -722,6 +802,7 @@ export function PosClient({
     customerId,
     saleType,
     paymentMethod,
+    treasuryAccountId,
     transferBankName,
     paymentSplits,
     shippingInput,
@@ -1067,8 +1148,12 @@ export function PosClient({
       return
     }
 
-    if (saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && !transferBankName) {
-      toast({ title: "Banco", description: "Debes seleccionar el banco de la transferencia." })
+    if (
+      saleType === SaleType.CONTADO &&
+      paymentMethod !== PaymentMethod.DIVIDIR_PAGO &&
+      !availableTreasuryAccounts.some((account) => account.id === treasuryAccountId)
+    ) {
+      toast({ title: "Cuenta", description: "Debes seleccionar una cuenta de tesorería." })
       return
     }
 
@@ -1095,8 +1180,42 @@ export function PosClient({
       toast({ title: "Error", description: "Usuario no disponible. Por favor, recarga la p gina.", variant: "destructive" })
       return
     }
+    if (saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.DIVIDIR_PAGO) {
+      if (
+        paymentSplits.length === 0 ||
+        paymentSplits.some((split) => {
+          const availableAccounts = filterTreasuryAccountsByPaymentMethod(treasuryAccounts, split.method)
+          const selectedId = split.treasuryAccountId?.trim() ?? ""
+          return !availableAccounts.some((account) => account.id === selectedId)
+        })
+      ) {
+        toast({ title: "Cuenta", description: "Cada pago dividido debe incluir una cuenta de tesorería." })
+        return
+      }
+    }
 
     const discountModeForSave: DiscountMode = canApplyDiscounts ? "MANUAL" : "AUTO"
+    const resolveTransferBankNameForAccount = (accountId?: string | null) => {
+      if (!accountId) return null
+      const account = treasuryAccounts.find((item) => item.id === accountId)
+      if (!account) return null
+      return account.bankName?.trim() || account.name
+    }
+    const normalizedPaymentSplits =
+      paymentSplits.length > 0
+        ? paymentSplits.map((split) => ({
+            ...split,
+            treasuryAccountId: split.treasuryAccountId?.trim() || null,
+            transferBankName:
+              split.method === PaymentMethod.TRANSFERENCIA
+                ? resolveTransferBankNameForAccount(split.treasuryAccountId)
+                : null,
+          }))
+        : []
+    const saleTransferBankName =
+      saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
+        ? resolveTransferBankNameForAccount(treasuryAccountId)
+        : null
 
     const saveSaleOffline = async () => {
       const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -1105,11 +1224,10 @@ export function PosClient({
         customerId: customerId === "generic" ? null : customerId,
         type: saleType,
         paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
-        transferBankName:
-          saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
-            ? transferBankName
-            : null,
-        paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
+        treasuryAccountId:
+          saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? treasuryAccountId : null,
+        transferBankName: saleTransferBankName,
+        paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
         items: cart.map((c) => ({
           productId: c.productId,
           qty: c.qty,
@@ -1149,11 +1267,10 @@ export function PosClient({
               customerId: customerId === "generic" ? null : customerId,
               type: saleType,
               paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
-              transferBankName:
-                saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
-                  ? transferBankName
-                  : null,
-              paymentSplits: paymentSplits.length > 0 ? paymentSplits : undefined,
+              treasuryAccountId:
+                saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? treasuryAccountId : null,
+              transferBankName: saleTransferBankName,
+              paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
               items: cart.map((c) => ({
                 productId: c.productId,
                 qty: c.qty,
@@ -1415,7 +1532,11 @@ export function PosClient({
                     variant={saleType === SaleType.CONTADO ? "default" : "secondary"}
                     onClick={() => {
                       setSaleType(SaleType.CONTADO)
-                      if (!paymentMethod) setPaymentMethod(PaymentMethod.EFECTIVO)
+                      const nextMethod = paymentMethod ?? PaymentMethod.EFECTIVO
+                      if (!paymentMethod) setPaymentMethod(nextMethod)
+                      setTreasuryAccountId((current) =>
+                        pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, current)
+                      )
                     }}
                   >
                     Contado
@@ -1438,8 +1559,10 @@ export function PosClient({
                       onChange={(e) => {
                         const nextMethod = e.target.value as PaymentMethod
                         setPaymentMethod(nextMethod)
-                        if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
-                          setTransferBankName("")
+                        if (nextMethod !== PaymentMethod.DIVIDIR_PAGO) {
+                          setTreasuryAccountId((current) =>
+                            pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, current)
+                          )
                         }
                       }}
                     >
@@ -1451,20 +1574,28 @@ export function PosClient({
                   </div>
                 )}
 
-                {saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && (
+                {saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO && (
                   <div className="grid gap-2">
-                    <Label>Banco de la transferencia</Label>
+                    <Label>Cuenta de tesorería</Label>
                     <select
                       className="h-10 rounded-md border bg-background px-3 text-sm"
-                      value={transferBankName}
-                      onChange={(e) => setTransferBankName(e.target.value)}
+                      value={treasuryAccountId}
+                      onChange={(e) => {
+                        const nextValue = e.target.value
+                        if (isCreateTreasuryAccountOption(nextValue)) {
+                          router.push(CREATE_TREASURY_ACCOUNT_URL)
+                          return
+                        }
+                        setTreasuryAccountId(nextValue)
+                      }}
                     >
-                      <option value="">Selecciona un banco</option>
-                      {DOMINICAN_BANKS.map((bankName) => (
-                        <option key={bankName} value={bankName}>
-                          {bankName}
+                      <option value="">Selecciona una cuenta</option>
+                      {availableTreasuryAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {formatTreasuryAccountLabel(account)}
                         </option>
                       ))}
+                      <option value={CREATE_TREASURY_ACCOUNT_OPTION_VALUE}>+ Crear nueva cuenta</option>
                     </select>
                   </div>
                 )}
@@ -2361,7 +2492,21 @@ export function PosClient({
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    setPaymentSplits([...paymentSplits, { method: PaymentMethod.EFECTIVO, amountCents: 0, transferBankName: null }])
+                    const initialMethod = PaymentMethod.EFECTIVO
+                    setPaymentSplits([
+                      ...paymentSplits,
+                      {
+                        method: initialMethod,
+                        amountCents: 0,
+                        transferBankName: null,
+                        treasuryAccountId:
+                          pickTreasuryAccountIdForPaymentMethod(
+                            treasuryAccounts,
+                            initialMethod,
+                            treasuryAccountId
+                          ) || null,
+                      },
+                    ])
                   }}
                 >
                   <Plus className="h-4 w-4 mr-1" />
@@ -2387,10 +2532,14 @@ export function PosClient({
                             value={split.method}
                             onChange={(e) => {
                               const newSplits = [...paymentSplits]
-                              newSplits[index].method = e.target.value as PaymentMethod
-                              if (newSplits[index].method !== PaymentMethod.TRANSFERENCIA) {
-                                newSplits[index].transferBankName = null
-                              }
+                              const nextMethod = e.target.value as PaymentMethod
+                              newSplits[index].method = nextMethod
+                              newSplits[index].treasuryAccountId =
+                                pickTreasuryAccountIdForPaymentMethod(
+                                  treasuryAccounts,
+                                  nextMethod,
+                                  newSplits[index].treasuryAccountId
+                                ) || null
                               setPaymentSplits(newSplits)
                             }}
                           >
@@ -2400,27 +2549,30 @@ export function PosClient({
                             <option value={PaymentMethod.OTRO}>Otro</option>
                           </select>
                         </div>
-                        {split.method === PaymentMethod.TRANSFERENCIA && (
-                          <div className="flex-1 grid gap-2">
-                            <Label>Banco</Label>
-                            <select
-                              className="h-10 rounded-md border bg-background px-3 text-sm"
-                              value={split.transferBankName ?? ""}
-                              onChange={(e) => {
-                                const newSplits = [...paymentSplits]
-                                newSplits[index].transferBankName = e.target.value || null
-                                setPaymentSplits(newSplits)
-                              }}
-                            >
-                              <option value="">Selecciona un banco</option>
-                              {DOMINICAN_BANKS.map((bankName) => (
-                                <option key={bankName} value={bankName}>
-                                  {bankName}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
+                        <div className="flex-1 grid gap-2">
+                          <Label>Cuenta</Label>
+                          <select
+                            className="h-10 rounded-md border bg-background px-3 text-sm"
+                            value={split.treasuryAccountId ?? ""}
+                            onChange={(e) => {
+                              if (isCreateTreasuryAccountOption(e.target.value)) {
+                                router.push(CREATE_TREASURY_ACCOUNT_URL)
+                                return
+                              }
+                              const newSplits = [...paymentSplits]
+                              newSplits[index].treasuryAccountId = e.target.value || null
+                              setPaymentSplits(newSplits)
+                            }}
+                          >
+                            <option value="">Selecciona una cuenta</option>
+                            {filterTreasuryAccountsByPaymentMethod(treasuryAccounts, split.method).map((account) => (
+                              <option key={account.id} value={account.id}>
+                                {formatTreasuryAccountLabel(account)}
+                              </option>
+                            ))}
+                            <option value={CREATE_TREASURY_ACCOUNT_OPTION_VALUE}>+ Crear nueva cuenta</option>
+                          </select>
+                        </div>
                         <div className="flex-1 grid gap-2">
                           <Label>Monto (RD$)</Label>
                           <Input
@@ -2519,7 +2671,11 @@ export function PosClient({
                 isSaving ||
                 paymentSplits.length === 0 ||
                 paymentSplits.reduce((sum, s) => sum + s.amountCents, 0) !== totalCents ||
-                paymentSplits.some((s) => s.amountCents <= 0 || (s.method === PaymentMethod.TRANSFERENCIA && !s.transferBankName))
+                paymentSplits.some((s) => {
+                  const availableAccounts = filterTreasuryAccountsByPaymentMethod(treasuryAccounts, s.method)
+                  const selectedId = s.treasuryAccountId?.trim() ?? ""
+                  return s.amountCents <= 0 || !availableAccounts.some((account) => account.id === selectedId)
+                })
               }
             >
               {isSaving ? "Guardando…" : "Confirmar"}
@@ -2691,6 +2847,7 @@ export function PosClient({
                       customerId,
                       saleType,
                       paymentMethod,
+                      treasuryAccountId,
                       transferBankName,
                       paymentSplits,
                       shippingInput,

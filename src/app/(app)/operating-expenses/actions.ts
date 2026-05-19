@@ -6,6 +6,8 @@ import { startOfDay, endOfDay, parseDateParam } from "@/lib/dates"
 import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { ensurePermission } from "@/lib/permission-guard"
+import { PaymentMethod } from "@prisma/client"
+import { ensureDefaultTreasuryAccount, requireTreasuryAccount } from "@/lib/treasury"
 
 export async function listOperatingExpenses(input?: { from?: string; to?: string }) {
   const user = await getCurrentUser()
@@ -55,6 +57,8 @@ export async function listOperatingExpenseCategories() {
 export async function createOperatingExpense(input: {
   description: string
   amountCents: number
+  paymentMethod?: PaymentMethod | null
+  treasuryAccountId?: string | null
   expenseDate?: Date
   category?: string | null
   notes?: string | null
@@ -69,12 +73,26 @@ export async function createOperatingExpense(input: {
   const description = input.description.trim()
   if (!description) throw new Error("La descripcion es requerida")
   if (input.amountCents <= 0) throw new Error("El monto debe ser mayor a 0")
+  if (input.paymentMethod === PaymentMethod.DIVIDIR_PAGO) {
+    throw new Error("Dividir pago no es un método válido para gastos operativos")
+  }
+
+  const treasuryAccount = input.treasuryAccountId?.trim()
+    ? await requireTreasuryAccount(prisma, {
+        accountId: currentUser.accountId,
+        treasuryAccountId: input.treasuryAccountId.trim(),
+        requireActive: true,
+        message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+      })
+    : await ensureDefaultTreasuryAccount(prisma, currentUser.accountId, currentUser.id)
 
   const created = await prisma.operatingExpense.create({
     data: {
       accountId: currentUser.accountId,
       description,
       amountCents: input.amountCents,
+      paymentMethod: input.paymentMethod ?? PaymentMethod.OTRO,
+      treasuryAccountId: treasuryAccount.id,
       expenseDate: input.expenseDate ?? new Date(),
       category: input.category?.trim() || null,
       notes: input.notes?.trim() || null,
@@ -107,6 +125,8 @@ export async function updateOperatingExpense(input: {
   id: string
   description: string
   amountCents: number
+  paymentMethod?: PaymentMethod | null
+  treasuryAccountId?: string | null
   expenseDate: Date
   category?: string | null
   notes?: string | null
@@ -122,17 +142,37 @@ export async function updateOperatingExpense(input: {
   const description = input.description.trim()
   if (!description) throw new Error("La descripción es requerida")
   if (input.amountCents <= 0) throw new Error("El monto debe ser mayor a 0")
+  if (input.paymentMethod === PaymentMethod.DIVIDIR_PAGO) {
+    throw new Error("Dividir pago no es un método válido para gastos operativos")
+  }
 
   const existing = await prisma.operatingExpense.findFirst({ 
     where: { accountId: user.accountId, id: input.id } 
   })
   if (!existing) throw new Error("Gasto operativo no encontrado")
 
+  const treasuryAccount = input.treasuryAccountId?.trim()
+    ? await requireTreasuryAccount(prisma, {
+        accountId: user.accountId,
+        treasuryAccountId: input.treasuryAccountId.trim(),
+        requireActive: true,
+        message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+      })
+    : existing.treasuryAccountId
+      ? await requireTreasuryAccount(prisma, {
+          accountId: user.accountId,
+          treasuryAccountId: existing.treasuryAccountId,
+          message: "La cuenta de tesorería del gasto no existe.",
+        })
+      : await ensureDefaultTreasuryAccount(prisma, user.accountId, user.id)
+
   await prisma.operatingExpense.update({
     where: { id: input.id },
     data: {
       description,
       amountCents: input.amountCents,
+      paymentMethod: input.paymentMethod ?? existing.paymentMethod ?? PaymentMethod.OTRO,
+      treasuryAccountId: treasuryAccount.id,
       expenseDate: input.expenseDate,
       category: input.category?.trim() || null,
       notes: input.notes?.trim() || null,
@@ -221,7 +261,6 @@ export async function getOperatingExpensesTotal(input?: { from?: string; to?: st
     count: result._count ?? 0,
   }
 }
-
 
 
 

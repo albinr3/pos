@@ -3,11 +3,13 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcDiscountedLineTotalsByTaxMode, calcPercentAmountCents } from "@/lib/money"
+import { PaymentMethod } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { isGenericCustomerQuery } from "@/lib/customer-display"
+import { ensureDefaultTreasuryAccount, requireTreasuryAccount } from "@/lib/treasury"
 
 function returnCode(number: number): string {
   return `DEV-${String(number).padStart(5, "0")}`
@@ -299,6 +301,8 @@ export async function createReturn(input: {
   saleId: string
   items: ReturnItemInput[]
   notes?: string | null
+  refundMethod?: PaymentMethod | null
+  refundTreasuryAccountId?: string | null
 }, currentUserArg?: unknown) {
   const currentUser = currentUserArg ?? await getCurrentUser()
   assertReturnUserLike(currentUser)
@@ -418,6 +422,8 @@ export async function createReturn(input: {
         : 0
     const totalCents = itemsTotalCents + legalTipCents
     let creditAr: { id: string; totalCents: number; balanceCents: number; status: string } | null = null
+    let refundMethod: PaymentMethod | null = null
+    let refundTreasuryAccountId: string | null = null
 
     if (sale.type === "CREDITO") {
       if (!sale.ar) {
@@ -434,6 +440,28 @@ export async function createReturn(input: {
           `El total de la devolución (${totalCents}) no puede exceder el balance pendiente (${creditAr.balanceCents})`
         )
       }
+    } else {
+      if (input.refundMethod === PaymentMethod.DIVIDIR_PAGO) {
+        throw new Error("Dividir pago no es un método válido para devoluciones.")
+      }
+
+      refundMethod = input.refundMethod ?? sale.paymentMethod ?? PaymentMethod.OTRO
+      const refundTreasuryAccount = input.refundTreasuryAccountId?.trim()
+        ? await requireTreasuryAccount(tx, {
+            accountId: currentUser.accountId,
+            treasuryAccountId: input.refundTreasuryAccountId.trim(),
+            requireActive: true,
+            message: "La cuenta de tesorería seleccionada para la devolución no existe o está inactiva.",
+          })
+        : sale.treasuryAccountId
+          ? await requireTreasuryAccount(tx, {
+              accountId: currentUser.accountId,
+              treasuryAccountId: sale.treasuryAccountId,
+              message: "La cuenta de tesorería de la venta no existe.",
+            })
+          : await ensureDefaultTreasuryAccount(tx, currentUser.accountId, currentUser.id)
+
+      refundTreasuryAccountId = refundTreasuryAccount.id
     }
 
     // Secuencia de devolución por account
@@ -454,6 +482,8 @@ export async function createReturn(input: {
         returnCode: code,
         saleId: input.saleId,
         userId: dbUser.id,
+        refundMethod,
+        refundTreasuryAccountId,
         subtotalCents,
         itbisCents,
         discountPercentBp,
@@ -489,6 +519,8 @@ export async function createReturn(input: {
         returnCode: returnRecord.returnCode,
         saleId: input.saleId,
         totalCents,
+        refundMethod,
+        refundTreasuryAccountId,
         legalTipCents,
         itemsCount: input.items.length,
       },
@@ -705,7 +737,6 @@ export async function searchSalesForReturn(
 
   return sales
 }
-
 
 
 

@@ -78,9 +78,12 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
       canViewAuditLogs: user.canViewAuditLogs,
       canManageUsers: user.canManageUsers,
       canManageSettings: user.canManageSettings,
+      canViewTreasury: user.canViewTreasury,
+      canManageTreasuryAccounts: user.canManageTreasuryAccounts,
+      canCreateTreasuryTransfers: user.canCreateTreasuryTransfers,
+      canReverseTreasuryTransfers: user.canReverseTreasuryTransfers,
     }
   }
   // Si no hay headers de Clerk, usar el método normal (para web)
   return await getCurrentUser(subUserToken)
 }
-

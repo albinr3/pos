@@ -21,9 +21,14 @@ import { getCurrentUser } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
-import { isDominicanBankName } from "@/lib/dominican-banks"
 import { ensureGenericCustomer } from "@/lib/customer-helpers"
 import { isGenericCustomerQuery } from "@/lib/customer-display"
+import {
+  ensureDefaultTreasuryAccount,
+  getTransferBankNameFromTreasuryAccount,
+  requireTreasuryAccount,
+  resolveTreasuryAccountFromLegacyBankName,
+} from "@/lib/treasury"
 
 // Helper para convertir Decimal a número
 function decimalToNumber(decimal: unknown): number {
@@ -403,6 +408,7 @@ type PaymentSplitInput = {
   method: PaymentMethod
   amountCents: number
   transferBankName?: string | null
+  treasuryAccountId?: string | null
 }
 
 type DiscountModeInput = "AUTO" | "MANUAL"
@@ -437,9 +443,6 @@ function validateTransferBankName(method: PaymentMethod | null | undefined, tran
   if (!trimmedBankName) {
     throw new Error("Debes seleccionar el banco de la transferencia.")
   }
-  if (!isDominicanBankName(trimmedBankName)) {
-    throw new Error("El banco de transferencia seleccionado no es valido.")
-  }
 }
 
 function validatePaymentSplits(paymentSplits: PaymentSplitInput[] | undefined, totalCents: number) {
@@ -457,7 +460,6 @@ function validatePaymentSplits(paymentSplits: PaymentSplitInput[] | undefined, t
     if (split.method === PaymentMethod.DIVIDIR_PAGO) {
       throw new Error("Dividir pago no es un metodo valido dentro del desglose.")
     }
-    validateTransferBankName(split.method, split.transferBankName)
   }
 }
 
@@ -917,6 +919,7 @@ export async function createSale(input: {
   type: SaleType
   paymentMethod?: PaymentMethod | null
   transferBankName?: string | null
+  treasuryAccountId?: string | null
   paymentSplits?: PaymentSplitInput[]
   applyLegalTip?: boolean
   items: CartItemInput[]
@@ -1112,8 +1115,86 @@ export async function createSale(input: {
       const paymentSplits = input.paymentSplits ?? []
       const hasPaymentSplits = paymentSplits.length > 0
 
-      validateTransferBankName(input.paymentMethod, input.transferBankName)
+      if (input.type !== SaleType.CONTADO && hasPaymentSplits) {
+        throw new Error("Solo las ventas al contado pueden registrar pagos divididos.")
+      }
+
+      if (input.transferBankName?.trim()) {
+        validateTransferBankName(input.paymentMethod, input.transferBankName)
+      }
       validatePaymentSplits(paymentSplits, totalCents)
+
+      let saleTreasuryAccountId: string | null = null
+      let saleTransferBankName: string | null = null
+      const normalizedPaymentSplits: Array<{
+        method: PaymentMethod
+        amountCents: number
+        treasuryAccountId: string
+        transferBankName: string | null
+      }> = []
+
+      if (input.type === SaleType.CONTADO) {
+        if (hasPaymentSplits) {
+          for (const split of paymentSplits) {
+            const splitTreasuryAccountId = split.treasuryAccountId?.trim() || null
+            const treasuryAccount =
+              (splitTreasuryAccountId
+                ? await requireTreasuryAccount(tx, {
+                    accountId: user.accountId,
+                    treasuryAccountId: splitTreasuryAccountId,
+                    requireActive: true,
+                    message: "La cuenta de tesorería del pago dividido no existe o está inactiva.",
+                  })
+                : null) ??
+              (await resolveTreasuryAccountFromLegacyBankName(tx, {
+                accountId: user.accountId,
+                transferBankName: split.transferBankName,
+                requireActive: true,
+              })) ??
+              (await ensureDefaultTreasuryAccount(tx, user.accountId, user.id))
+
+            normalizedPaymentSplits.push({
+              method: split.method,
+              amountCents: split.amountCents,
+              treasuryAccountId: treasuryAccount.id,
+              transferBankName:
+                split.method === PaymentMethod.TRANSFERENCIA
+                  ? getTransferBankNameFromTreasuryAccount(treasuryAccount)
+                  : null,
+            })
+          }
+        } else {
+          if (!input.paymentMethod) {
+            throw new Error("Debes seleccionar un método de pago para ventas al contado.")
+          }
+
+          const explicitTreasuryAccountId = input.treasuryAccountId?.trim() ?? null
+          const treasuryAccount =
+            (explicitTreasuryAccountId
+              ? await requireTreasuryAccount(tx, {
+                  accountId: user.accountId,
+                  treasuryAccountId: explicitTreasuryAccountId,
+                  requireActive: true,
+                  message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+                })
+              : null) ??
+            (await resolveTreasuryAccountFromLegacyBankName(tx, {
+              accountId: user.accountId,
+              transferBankName: input.transferBankName,
+              requireActive: true,
+            })) ??
+            (await ensureDefaultTreasuryAccount(tx, user.accountId, user.id))
+
+          if (!treasuryAccount) {
+            throw new Error("Debes seleccionar una cuenta de tesorería para ventas al contado.")
+          }
+
+          saleTreasuryAccountId = treasuryAccount.id
+          if (input.paymentMethod === PaymentMethod.TRANSFERENCIA) {
+            saleTransferBankName = getTransferBankNameFromTreasuryAccount(treasuryAccount)
+          }
+        }
+      }
 
       const sale = await tx.sale.create({
         data: {
@@ -1125,11 +1206,12 @@ export async function createSale(input: {
           soldAt,
           type: input.type,
           paymentMethod: input.type === SaleType.CONTADO && !hasPaymentSplits ? input.paymentMethod : null,
+          treasuryAccountId: input.type === SaleType.CONTADO && !hasPaymentSplits ? saleTreasuryAccountId : null,
           transferBankName:
             input.type === SaleType.CONTADO &&
             !hasPaymentSplits &&
             input.paymentMethod === PaymentMethod.TRANSFERENCIA
-              ? input.transferBankName?.trim() ?? null
+              ? saleTransferBankName
               : null,
           customerId: finalCustomerId,
           userId: user.id,
@@ -1172,10 +1254,11 @@ export async function createSale(input: {
               },
             })),
           },
-          payments: hasPaymentSplits ? {
-            create: paymentSplits.map((split) => ({
+          payments: hasPaymentSplits && input.type === SaleType.CONTADO ? {
+            create: normalizedPaymentSplits.map((split) => ({
               method: split.method,
-              transferBankName: split.method === PaymentMethod.TRANSFERENCIA ? split.transferBankName?.trim() ?? null : null,
+              treasuryAccountId: split.treasuryAccountId,
+              transferBankName: split.transferBankName,
               amountCents: split.amountCents,
             })),
           } : undefined,
@@ -1185,6 +1268,7 @@ export async function createSale(input: {
           invoiceCode: true,
           type: true,
           soldAt: true,
+          treasuryAccountId: true,
           transferBankName: true,
           salePricesIncludeItbis: true,
           legalTipApplied: true,
@@ -1477,6 +1561,7 @@ export async function updateSale(input: {
   type: SaleType
   paymentMethod?: PaymentMethod | null
   transferBankName?: string | null
+  treasuryAccountId?: string | null
   paymentSplits?: PaymentSplitInput[]
   applyLegalTip?: boolean
   items: CartItemInput[]
@@ -1657,10 +1742,140 @@ export async function updateSale(input: {
       subtotalCents,
     })
     const totalCents = itemsTotalCents + shippingCents + legalTipCents
-    const hasPaymentSplits = Boolean(input.paymentSplits && input.paymentSplits.length > 0)
+    const hasInputPaymentSplits = input.paymentSplits !== undefined
+    const inputPaymentSplits: PaymentSplitInput[] = input.paymentSplits ?? []
+    const existingHasPaymentSplits = existingSale.payments.length > 0
+    const hasPaymentSplits =
+      input.type === SaleType.CONTADO
+        ? hasInputPaymentSplits
+          ? inputPaymentSplits.length > 0
+          : existingHasPaymentSplits
+        : false
 
-    validateTransferBankName(input.paymentMethod, input.transferBankName)
-    validatePaymentSplits(input.paymentSplits, totalCents)
+    if (input.type !== SaleType.CONTADO && hasInputPaymentSplits && inputPaymentSplits.length > 0) {
+      throw new Error("Solo las ventas al contado pueden registrar pagos divididos.")
+    }
+
+    if (input.transferBankName?.trim()) {
+      validateTransferBankName(input.paymentMethod, input.transferBankName)
+    }
+    validatePaymentSplits(hasInputPaymentSplits ? inputPaymentSplits : undefined, totalCents)
+
+    let saleTreasuryAccountId: string | null = null
+    let saleTransferBankName: string | null = null
+    const normalizedPaymentSplits: Array<{
+      method: PaymentMethod
+      amountCents: number
+      treasuryAccountId: string
+      transferBankName: string | null
+    }> = []
+
+    if (input.type === SaleType.CONTADO) {
+      if (hasInputPaymentSplits && inputPaymentSplits.length > 0) {
+        for (const split of inputPaymentSplits) {
+          const splitTreasuryAccountId = split.treasuryAccountId?.trim() || null
+          const treasuryAccount =
+            (splitTreasuryAccountId
+              ? await requireTreasuryAccount(tx, {
+                  accountId: user.accountId,
+                  treasuryAccountId: splitTreasuryAccountId,
+                  requireActive: true,
+                  message: "La cuenta de tesorería del pago dividido no existe o está inactiva.",
+                })
+              : null) ??
+            (await resolveTreasuryAccountFromLegacyBankName(tx, {
+              accountId: user.accountId,
+              transferBankName: split.transferBankName,
+              requireActive: true,
+            })) ??
+            (await ensureDefaultTreasuryAccount(tx, user.accountId, user.id))
+
+          normalizedPaymentSplits.push({
+            method: split.method,
+            amountCents: split.amountCents,
+            treasuryAccountId: treasuryAccount.id,
+            transferBankName:
+              split.method === PaymentMethod.TRANSFERENCIA
+                ? getTransferBankNameFromTreasuryAccount(treasuryAccount)
+                : null,
+          })
+        }
+      } else if (!hasInputPaymentSplits && existingHasPaymentSplits) {
+        const existingSplitTotal = existingSale.payments.reduce((sum, split) => sum + split.amountCents, 0)
+        if (existingSplitTotal !== totalCents) {
+          throw new Error(
+            "La venta tiene pagos divididos y el total cambió. Debes editarla desde la pantalla de venta para ajustar la división."
+          )
+        }
+
+        for (const split of existingSale.payments) {
+          const splitTreasuryAccountId = split.treasuryAccountId?.trim() || null
+          const treasuryAccount =
+            (splitTreasuryAccountId
+              ? await requireTreasuryAccount(tx, {
+                  accountId: user.accountId,
+                  treasuryAccountId: splitTreasuryAccountId,
+                  requireActive: true,
+                  message: "La cuenta de tesorería del pago dividido no existe o está inactiva.",
+                })
+              : null) ??
+            (await resolveTreasuryAccountFromLegacyBankName(tx, {
+              accountId: user.accountId,
+              transferBankName: split.transferBankName || existingSale.transferBankName,
+              requireActive: true,
+            })) ??
+            (existingSale.treasuryAccountId
+              ? await requireTreasuryAccount(tx, {
+                  accountId: user.accountId,
+                  treasuryAccountId: existingSale.treasuryAccountId,
+                  requireActive: true,
+                  message: "La cuenta de tesorería de la venta no existe o está inactiva.",
+                })
+              : null) ??
+            (await ensureDefaultTreasuryAccount(tx, user.accountId, user.id))
+
+          normalizedPaymentSplits.push({
+            method: split.method,
+            amountCents: split.amountCents,
+            treasuryAccountId: treasuryAccount.id,
+            transferBankName:
+              split.method === PaymentMethod.TRANSFERENCIA
+                ? getTransferBankNameFromTreasuryAccount(treasuryAccount)
+                : null,
+          })
+        }
+      } else {
+        if (!input.paymentMethod) {
+          throw new Error("Debes seleccionar un método de pago para ventas al contado.")
+        }
+
+        const explicitTreasuryAccountId = input.treasuryAccountId?.trim() ?? existingSale.treasuryAccountId ?? null
+        const treasuryAccount =
+          (explicitTreasuryAccountId
+            ? await requireTreasuryAccount(tx, {
+                accountId: user.accountId,
+                treasuryAccountId: explicitTreasuryAccountId,
+                requireActive: true,
+                message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+              })
+            : null) ??
+          (await resolveTreasuryAccountFromLegacyBankName(tx, {
+            accountId: user.accountId,
+            transferBankName: input.transferBankName || existingSale.transferBankName,
+            requireActive: true,
+          })) ??
+          (await ensureDefaultTreasuryAccount(tx, user.accountId, user.id))
+
+        if (!treasuryAccount) {
+          throw new Error("Debes seleccionar una cuenta de tesorería para ventas al contado.")
+        }
+
+        saleTreasuryAccountId = treasuryAccount.id
+        if (input.paymentMethod === PaymentMethod.TRANSFERENCIA) {
+          saleTransferBankName = getTransferBankNameFromTreasuryAccount(treasuryAccount)
+        }
+      }
+    }
 
     await tx.salePayment.deleteMany({
       where: { saleId: input.id },
@@ -1673,11 +1888,12 @@ export async function updateSale(input: {
         soldAt,
         type: input.type,
         paymentMethod: input.type === SaleType.CONTADO && !hasPaymentSplits ? input.paymentMethod : null,
+        treasuryAccountId: input.type === SaleType.CONTADO && !hasPaymentSplits ? saleTreasuryAccountId : null,
         transferBankName:
           input.type === SaleType.CONTADO &&
           !hasPaymentSplits &&
           input.paymentMethod === PaymentMethod.TRANSFERENCIA
-            ? input.transferBankName?.trim() ?? null
+            ? saleTransferBankName
             : null,
         customerId: finalCustomerId,
         subtotalCents,
@@ -1744,13 +1960,14 @@ export async function updateSale(input: {
       })
     }
 
-    if (hasPaymentSplits) {
+    if (input.type === SaleType.CONTADO && hasPaymentSplits) {
       await tx.salePayment.createMany({
-        data: input.paymentSplits!.map((split) => ({
+        data: normalizedPaymentSplits.map((split) => ({
           saleId: input.id,
           method: split.method,
           amountCents: split.amountCents,
-          transferBankName: split.method === PaymentMethod.TRANSFERENCIA ? split.transferBankName?.trim() ?? null : null,
+          treasuryAccountId: split.treasuryAccountId,
+          transferBankName: split.transferBankName,
         })),
       })
     }

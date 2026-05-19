@@ -97,6 +97,10 @@ export type CurrentUser = {
   canViewAuditLogs: boolean
   canManageUsers: boolean
   canManageSettings: boolean
+  canViewTreasury: boolean
+  canManageTreasuryAccounts: boolean
+  canCreateTreasuryTransfers: boolean
+  canReverseTreasuryTransfers: boolean
 }
 
 export type AccountInfo = {
@@ -576,6 +580,10 @@ export async function authenticateSubUser(
         canViewAuditLogs: user.canViewAuditLogs,
         canManageUsers: user.canManageUsers,
         canManageSettings: user.canManageSettings,
+        canViewTreasury: user.canViewTreasury,
+        canManageTreasuryAccounts: user.canManageTreasuryAccounts,
+        canCreateTreasuryTransfers: user.canCreateTreasuryTransfers,
+        canReverseTreasuryTransfers: user.canReverseTreasuryTransfers,
       },
     }
   } catch (error) {
@@ -628,6 +636,10 @@ export async function createSubUser(
       canViewAuditLogs: boolean
       canManageUsers: boolean
       canManageSettings: boolean
+      canViewTreasury: boolean
+      canManageTreasuryAccounts: boolean
+      canCreateTreasuryTransfers: boolean
+      canReverseTreasuryTransfers: boolean
     }>
   }
 ): Promise<{ success: boolean; user?: SubUser; error?: string }> {
@@ -649,6 +661,7 @@ export async function createSubUser(
 
     const passwordHash = await bcrypt.hash(data.password, 10)
     const isOwner = data.isOwner ?? false
+    const permissions = data.permissions ?? {}
 
     const user = await prisma.user.create({
       data: {
@@ -658,7 +671,11 @@ export async function createSubUser(
         passwordHash,
         role: data.role,
         isOwner,
-        ...data.permissions,
+        ...permissions,
+        canViewTreasury: permissions.canViewTreasury ?? isOwner,
+        canManageTreasuryAccounts: permissions.canManageTreasuryAccounts ?? isOwner,
+        canCreateTreasuryTransfers: permissions.canCreateTreasuryTransfers ?? isOwner,
+        canReverseTreasuryTransfers: permissions.canReverseTreasuryTransfers ?? isOwner,
       },
     })
 
@@ -850,6 +867,10 @@ export async function getCurrentUser(
     canViewAuditLogs: user.canViewAuditLogs,
     canManageUsers: user.canManageUsers,
     canManageSettings: user.canManageSettings,
+    canViewTreasury: user.canViewTreasury,
+    canManageTreasuryAccounts: user.canManageTreasuryAccounts,
+    canCreateTreasuryTransfers: user.canCreateTreasuryTransfers,
+    canReverseTreasuryTransfers: user.canReverseTreasuryTransfers,
   }
   
   return currentUser

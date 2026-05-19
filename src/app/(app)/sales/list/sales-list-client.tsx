@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition, useMemo } from "react"
 import { Edit, Receipt, Trash2, Search, Printer, Plus } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { SaleType, PaymentMethod } from "@prisma/client"
 
 
@@ -16,16 +17,23 @@ import { PriceInput } from "@/components/app/price-input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
-import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
 import {
   calcDiscountedDocumentTotalsByTaxMode,
   formatRD,
   normalizeDiscountPercentBp,
 } from "@/lib/money"
+import {
+  CREATE_TREASURY_ACCOUNT_OPTION_VALUE,
+  CREATE_TREASURY_ACCOUNT_URL,
+  filterTreasuryAccountsByPaymentMethod,
+  isCreateTreasuryAccountOption,
+  pickTreasuryAccountIdForPaymentMethod,
+} from "@/lib/treasury-account-selection"
 import { applyRecipeAdjustmentsWithScope, sortRecipeAdjustments, type RecipeApplyScope } from "@/lib/recipe-adjustment-scope"
 import { formatCustomerLabel, isGenericCustomer } from "@/lib/customer-display"
 import { cn } from "@/lib/utils"
 import type { CurrentUser } from "@/lib/auth"
+import { listTreasuryAccounts } from "../../treasury/actions"
 
 import { cancelSale, getSaleById, listSales, updateSale, searchProducts, listCustomers } from "../actions"
 
@@ -33,6 +41,7 @@ type Sale = Awaited<ReturnType<typeof listSales>>["items"][number]
 type SaleDetail = Awaited<ReturnType<typeof getSaleById>>
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 type Customer = Awaited<ReturnType<typeof listCustomers>>[number]
+type TreasuryAccountOption = Awaited<ReturnType<typeof listTreasuryAccounts>>[number]
 
 type RecipeAdjustment = {
   ingredientId: string
@@ -77,6 +86,13 @@ function getRecipeVariantLabels(recipeAdjustments: RecipeAdjustment[]) {
   return recipeAdjustments.map(formatAdjustmentLabel)
 }
 
+function formatTreasuryAccountLabel(account: { name: string; bankName: string | null }) {
+  if (account.bankName && account.bankName !== account.name) {
+    return `${account.name} (${account.bankName})`
+  }
+  return account.name
+}
+
 const PAGE_SIZE = 50
 
 function clampPercentInput(value: string) {
@@ -92,6 +108,7 @@ function toInt(v: string) {
 }
 
 export function SalesListClient() {
+  const router = useRouter()
   const [sales, setSales] = useState<Sale[]>([])
   const [isLoading, startLoading] = useTransition()
   const [query, setQuery] = useState("")
@@ -103,7 +120,12 @@ export function SalesListClient() {
   const [customerId, setCustomerId] = useState<string | null>(null)
   const [saleType, setSaleType] = useState<SaleType>(SaleType.CONTADO)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
-  const [transferBankName, setTransferBankName] = useState("")
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>([])
+  const [treasuryAccountId, setTreasuryAccountId] = useState("")
+  const availableTreasuryAccounts = useMemo(
+    () => filterTreasuryAccountsByPaymentMethod(treasuryAccounts, paymentMethod),
+    [treasuryAccounts, paymentMethod]
+  )
   const [manualDiscountInput, setManualDiscountInput] = useState("")
   const [cart, setCart] = useState<CartItem[]>([])
   const [isSaving, startSaving] = useTransition()
@@ -183,7 +205,32 @@ export function SalesListClient() {
   useEffect(() => {
     refresh("")
     listCustomers().then(setCustomers).catch(() => { })
+    listTreasuryAccounts()
+      .then((accounts) => {
+        setTreasuryAccounts(accounts)
+        if (accounts[0]) {
+          setTreasuryAccountId((current) =>
+            current || pickTreasuryAccountIdForPaymentMethod(accounts, PaymentMethod.EFECTIVO)
+          )
+        }
+      })
+      .catch(() => {
+        setTreasuryAccounts([])
+      })
   }, [])
+
+  useEffect(() => {
+    if (saleType !== SaleType.CONTADO || !paymentMethod) return
+
+    const nextTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
+      treasuryAccounts,
+      paymentMethod,
+      treasuryAccountId
+    )
+    if (nextTreasuryAccountId !== treasuryAccountId) {
+      setTreasuryAccountId(nextTreasuryAccountId)
+    }
+  }, [saleType, paymentMethod, treasuryAccounts, treasuryAccountId])
 
   useEffect(() => {
     const q = query.trim()
@@ -236,8 +283,15 @@ export function SalesListClient() {
       setDocumentSalePricesIncludeItbis(sale.salePricesIncludeItbis ?? true)
       setCustomerId(sale.customerId ?? genericCustomer?.id ?? null)
       setSaleType(sale.type)
-      setPaymentMethod(sale.paymentMethod || PaymentMethod.EFECTIVO)
-      setTransferBankName(sale.transferBankName || "")
+      const resolvedMethod = sale.paymentMethod || PaymentMethod.EFECTIVO
+      setPaymentMethod(resolvedMethod)
+      setTreasuryAccountId(
+        pickTreasuryAccountIdForPaymentMethod(
+          treasuryAccounts,
+          sale.type === SaleType.CONTADO ? resolvedMethod : null,
+          sale.treasuryAccountId
+        )
+      )
       setManualDiscountInput(
         sale.discountPercentBp > 0
           ? (sale.discountPercentBp / 100).toFixed(2)
@@ -360,23 +414,29 @@ export function SalesListClient() {
       toast({ title: "Error", description: "Debes seleccionar un método de pago para ventas al contado" })
       return
     }
-    if (saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && !transferBankName) {
-      toast({ title: "Error", description: "Debes seleccionar el banco de la transferencia" })
+    if (
+      saleType === SaleType.CONTADO &&
+      !availableTreasuryAccounts.some((account) => account.id === treasuryAccountId)
+    ) {
+      toast({ title: "Error", description: "Debes seleccionar una cuenta de tesorería" })
       return
     }
 
     startSaving(async () => {
       try {
         const discountModeForSave: DiscountMode = canApplyDiscounts ? "MANUAL" : "AUTO"
+        const selectedTreasuryAccount = treasuryAccounts.find((account) => account.id === treasuryAccountId)
+        const resolvedTransferBankName =
+          saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
+            ? selectedTreasuryAccount?.bankName?.trim() || selectedTreasuryAccount?.name || null
+            : null
         await updateSale({
           id: editingSale.id,
           customerId: effectiveCustomerId,
           type: saleType,
           paymentMethod: saleType === SaleType.CONTADO ? paymentMethod : null,
-          transferBankName:
-            saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
-              ? transferBankName
-              : null,
+          treasuryAccountId: saleType === SaleType.CONTADO ? treasuryAccountId : null,
+          transferBankName: resolvedTransferBankName,
           items: cart.map((c) => ({
             productId: c.productId,
             qty: c.qty,
@@ -602,8 +662,11 @@ export function SalesListClient() {
                       if (e.target.value === SaleType.CONTADO && !paymentMethod) {
                         setPaymentMethod(PaymentMethod.EFECTIVO)
                       }
-                      if (e.target.value !== SaleType.CONTADO) {
-                        setTransferBankName("")
+                      if (e.target.value === SaleType.CONTADO) {
+                        const nextMethod = paymentMethod ?? PaymentMethod.EFECTIVO
+                        setTreasuryAccountId((current) =>
+                          pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, current)
+                        )
                       }
                     }}
                     disabled={!user || (!user.canChangeSaleType && !user.isOwner)}
@@ -637,9 +700,9 @@ export function SalesListClient() {
                     onChange={(e) => {
                       const nextMethod = e.target.value as PaymentMethod
                       setPaymentMethod(nextMethod)
-                      if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
-                        setTransferBankName("")
-                      }
+                      setTreasuryAccountId((current) =>
+                        pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, current)
+                      )
                     }}
                   >
                     <option value={PaymentMethod.EFECTIVO}>Efectivo</option>
@@ -648,20 +711,28 @@ export function SalesListClient() {
                   </select>
                 </div>
               )}
-              {saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA && (
+              {saleType === SaleType.CONTADO && (
                 <div className="grid gap-2">
-                  <Label>Banco de la transferencia</Label>
+                  <Label>Cuenta de tesorería</Label>
                   <select
                     className="h-10 rounded-md border bg-background px-3 text-sm"
-                    value={transferBankName}
-                    onChange={(e) => setTransferBankName(e.target.value)}
+                    value={treasuryAccountId}
+                    onChange={(e) => {
+                      const nextValue = e.target.value
+                      if (isCreateTreasuryAccountOption(nextValue)) {
+                        router.push(CREATE_TREASURY_ACCOUNT_URL)
+                        return
+                      }
+                      setTreasuryAccountId(nextValue)
+                    }}
                   >
-                    <option value="">Selecciona un banco</option>
-                    {DOMINICAN_BANKS.map((bankName) => (
-                      <option key={bankName} value={bankName}>
-                        {bankName}
+                    <option value="">Selecciona una cuenta</option>
+                    {availableTreasuryAccounts.map((account) => (
+                      <option key={account.id} value={account.id}>
+                        {formatTreasuryAccountLabel(account)}
                       </option>
                     ))}
+                    <option value={CREATE_TREASURY_ACCOUNT_OPTION_VALUE}>+ Crear nueva cuenta</option>
                   </select>
                 </div>
               )}
@@ -955,5 +1026,3 @@ export function SalesListClient() {
     </div>
   )
 }
-
-

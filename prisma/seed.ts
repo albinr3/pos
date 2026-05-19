@@ -98,6 +98,10 @@ async function main() {
       canChangeSaleType: true,
       canSellWithoutStock: true,
       canManageBackups: true,
+      canViewTreasury: true,
+      canManageTreasuryAccounts: true,
+      canCreateTreasuryTransfers: true,
+      canReverseTreasuryTransfers: true,
       isActive: true,
     },
   })

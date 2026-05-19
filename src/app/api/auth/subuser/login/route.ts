@@ -108,6 +108,10 @@ export async function POST(request: NextRequest) {
         canViewAuditLogs: result.user.canViewAuditLogs,
         canManageUsers: result.user.canManageUsers,
         canManageSettings: result.user.canManageSettings,
+        canViewTreasury: result.user.canViewTreasury,
+        canManageTreasuryAccounts: result.user.canManageTreasuryAccounts,
+        canCreateTreasuryTransfers: result.user.canCreateTreasuryTransfers,
+        canReverseTreasuryTransfers: result.user.canReverseTreasuryTransfers,
       },
     })
   } catch (error: any) {

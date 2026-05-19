@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
+import { PaymentMethod } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
 import { parseDateParam } from "@/lib/dates"
+import { ensureDefaultTreasuryAccount, requireTreasuryAccount } from "@/lib/treasury"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -15,6 +17,15 @@ function getErrorMessage(error: unknown) {
 function normalizeDateInput(value: unknown): Date | null {
   if (!value) return null
   return parseDateParam(String(value))
+}
+
+function parsePaymentMethod(value: unknown): PaymentMethod {
+  const raw = String(value || "").toUpperCase()
+  if (raw === "EFECTIVO") return PaymentMethod.EFECTIVO
+  if (raw === "TRANSFERENCIA") return PaymentMethod.TRANSFERENCIA
+  if (raw === "TARJETA") return PaymentMethod.TARJETA
+  if (raw === "OTRO") return PaymentMethod.OTRO
+  return PaymentMethod.OTRO
 }
 
 // GET /api/operating-expenses/:id - Obtener gasto operativo
@@ -49,6 +60,8 @@ export async function GET(
       id: item.id,
       description: item.description,
       amountCents: item.amountCents,
+      paymentMethod: item.paymentMethod,
+      treasuryAccountId: item.treasuryAccountId,
       expenseDate: item.expenseDate.toISOString(),
       category: item.category,
       notes: item.notes,
@@ -88,6 +101,12 @@ export async function PUT(
     const description = String(body?.description || "").trim()
     const amountCents = Number(body?.amountCents || 0)
     const expenseDate = normalizeDateInput(body?.expenseDate)
+    const paymentMethod = parsePaymentMethod(body?.paymentMethod)
+    if (paymentMethod === PaymentMethod.DIVIDIR_PAGO) {
+      return NextResponse.json({ error: "Método de pago inválido" }, { status: 400 })
+    }
+    const treasuryAccountIdRaw =
+      typeof body?.treasuryAccountId === "string" ? body.treasuryAccountId.trim() : ""
     const category =
       typeof body?.category === "string" && body.category.trim()
         ? String(body.category).trim()
@@ -117,11 +136,28 @@ export async function PUT(
       return NextResponse.json({ error: "Gasto operativo no encontrado" }, { status: 404 })
     }
 
+    const treasuryAccount = treasuryAccountIdRaw
+      ? await requireTreasuryAccount(prisma, {
+          accountId: user.accountId,
+          treasuryAccountId: treasuryAccountIdRaw,
+          requireActive: true,
+          message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+        })
+      : existing.treasuryAccountId
+        ? await requireTreasuryAccount(prisma, {
+            accountId: user.accountId,
+            treasuryAccountId: existing.treasuryAccountId,
+            message: "La cuenta de tesorería del gasto no existe.",
+          })
+        : await ensureDefaultTreasuryAccount(prisma, user.accountId, user.id)
+
     const updated = await prisma.operatingExpense.update({
       where: { id },
       data: {
         description,
         amountCents: Math.round(amountCents),
+        paymentMethod,
+        treasuryAccountId: treasuryAccount.id,
         expenseDate,
         category,
         notes,
@@ -148,6 +184,8 @@ export async function PUT(
       id: updated.id,
       description: updated.description,
       amountCents: updated.amountCents,
+      paymentMethod: updated.paymentMethod,
+      treasuryAccountId: updated.treasuryAccountId,
       expenseDate: updated.expenseDate.toISOString(),
       category: updated.category,
       notes: updated.notes,

@@ -62,6 +62,7 @@ export async function syncPendingData() {
           type: sale.type,
           paymentMethod: sale.paymentMethod || undefined,
           transferBankName: sale.transferBankName || undefined,
+          treasuryAccountId: sale.treasuryAccountId || undefined,
           paymentSplits: sale.paymentSplits,
           items: (sale.items ?? []).map((item: any) => ({
             productId: String(item.productId || ""),
@@ -123,6 +124,7 @@ export async function syncPendingData() {
           amountCents: Number(batchPayment.amountCents ?? 0),
           method: batchPayment.method as any,
           transferBankName: batchPayment.transferBankName || undefined,
+          treasuryAccountId: batchPayment.treasuryAccountId || undefined,
           note: batchPayment.note || undefined,
         })
 
@@ -157,6 +159,7 @@ export async function syncPendingData() {
           amountCents: payment.amountCents,
           method: payment.method as any,
           transferBankName: payment.transferBankName || undefined,
+          treasuryAccountId: payment.treasuryAccountId || undefined,
           note: payment.note || undefined,
         })
 

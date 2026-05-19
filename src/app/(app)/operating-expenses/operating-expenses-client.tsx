@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { Edit, Plus, Search, Trash2, DollarSign, Filter } from "lucide-react"
+import { PaymentMethod } from "@prisma/client"
+import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +14,14 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
+import {
+  CREATE_TREASURY_ACCOUNT_OPTION_VALUE,
+  CREATE_TREASURY_ACCOUNT_URL,
+  filterTreasuryAccountsByPaymentMethod,
+  isCreateTreasuryAccountOption,
+  pickTreasuryAccountIdForPaymentMethod,
+} from "@/lib/treasury-account-selection"
+import { listTreasuryAccounts } from "../treasury/actions"
 
 import {
   createOperatingExpense,
@@ -22,6 +32,7 @@ import {
 } from "./actions"
 
 type Expense = Awaited<ReturnType<typeof listOperatingExpenses>>[number]
+type TreasuryAccountOption = Awaited<ReturnType<typeof listTreasuryAccounts>>[number]
 const BUSINESS_TZ_OFFSET_MS = -4 * 60 * 60 * 1000
 
 function toInputDateValue(value: Date | string) {
@@ -39,6 +50,7 @@ function fromInputDateValue(value: string) {
 }
 
 export function OperatingExpensesClient() {
+  const router = useRouter()
   const today = toInputDateValue(new Date())
   const [query, setQuery] = useState("")
   const [filterCategory, setFilterCategory] = useState<string>("__all__")
@@ -57,6 +69,10 @@ export function OperatingExpensesClient() {
   const [category, setCategory] = useState("")
   const [expenseDate, setExpenseDate] = useState("")
   const [notes, setNotes] = useState("")
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
+  const [treasuryAccountId, setTreasuryAccountId] = useState("")
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>([])
+  const availableTreasuryAccounts = filterTreasuryAccountsByPaymentMethod(treasuryAccounts, paymentMethod)
   const [isSaving, startSaving] = useTransition()
 
   function refresh(input?: { from?: string; to?: string }) {
@@ -85,6 +101,33 @@ export function OperatingExpensesClient() {
     })
   }, [])
 
+  useEffect(() => {
+    startLoading(async () => {
+      try {
+        const accounts = await listTreasuryAccounts()
+        setTreasuryAccounts(accounts)
+        if (accounts[0]) {
+          setTreasuryAccountId((current) =>
+            current || pickTreasuryAccountIdForPaymentMethod(accounts, PaymentMethod.EFECTIVO)
+          )
+        }
+      } catch {
+        setTreasuryAccounts([])
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    const nextTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
+      treasuryAccounts,
+      paymentMethod,
+      treasuryAccountId
+    )
+    if (nextTreasuryAccountId !== treasuryAccountId) {
+      setTreasuryAccountId(nextTreasuryAccountId)
+    }
+  }, [treasuryAccounts, paymentMethod, treasuryAccountId])
+
   function resetForm(e?: Expense | null) {
     const x = e ?? null
     setEditing(x)
@@ -93,6 +136,11 @@ export function OperatingExpensesClient() {
     setCategory(x?.category ?? "")
     setExpenseDate(x?.expenseDate ? toInputDateValue(x.expenseDate) : toInputDateValue(new Date()))
     setNotes(x?.notes ?? "")
+    const nextMethod = (x?.paymentMethod as PaymentMethod) ?? PaymentMethod.EFECTIVO
+    setPaymentMethod(nextMethod)
+    setTreasuryAccountId(
+      pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, x?.treasuryAccountId ?? treasuryAccountId)
+    )
   }
 
   const title = editing ? "Editar gasto operativo" : "Nuevo gasto operativo"
@@ -102,12 +150,17 @@ export function OperatingExpensesClient() {
       try {
         const amountCents = toCents(amount)
         const date = expenseDate ? fromInputDateValue(expenseDate) : new Date()
+        if (!availableTreasuryAccounts.some((account) => account.id === treasuryAccountId)) {
+          throw new Error("Selecciona una cuenta de tesorería")
+        }
 
         if (editing) {
           await updateOperatingExpense({
             id: editing.id,
             description,
             amountCents,
+            paymentMethod,
+            treasuryAccountId,
             expenseDate: date,
             category: category || null,
             notes: notes || null,
@@ -117,6 +170,8 @@ export function OperatingExpensesClient() {
           await createOperatingExpense({
             description,
             amountCents,
+            paymentMethod,
+            treasuryAccountId,
             expenseDate: date,
             category: category || null,
             notes: notes || null,
@@ -214,6 +269,57 @@ export function OperatingExpensesClient() {
                   <div className="grid gap-2">
                     <Label>Fecha *</Label>
                     <Input type="date" value={expenseDate} onChange={(e) => setExpenseDate(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid gap-2">
+                    <Label>Método de pago *</Label>
+                    <Select
+                      value={paymentMethod}
+                      onValueChange={(value) => {
+                        const nextMethod = value as PaymentMethod
+                        setPaymentMethod(nextMethod)
+                        setTreasuryAccountId((current) =>
+                          pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, current)
+                        )
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={PaymentMethod.EFECTIVO}>Efectivo</SelectItem>
+                        <SelectItem value={PaymentMethod.TRANSFERENCIA}>Transferencia</SelectItem>
+                        <SelectItem value={PaymentMethod.TARJETA}>Tarjeta</SelectItem>
+                        <SelectItem value={PaymentMethod.OTRO}>Otro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Cuenta de tesorería *</Label>
+                    <Select
+                      value={treasuryAccountId}
+                      onValueChange={(value) => {
+                        if (isCreateTreasuryAccountOption(value)) {
+                          router.push(CREATE_TREASURY_ACCOUNT_URL)
+                          return
+                        }
+                        setTreasuryAccountId(value)
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecciona una cuenta" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableTreasuryAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value={CREATE_TREASURY_ACCOUNT_OPTION_VALUE}>+ Crear nueva cuenta</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
@@ -345,10 +451,6 @@ export function OperatingExpensesClient() {
     </div>
   )
 }
-
-
-
-
 
 
 

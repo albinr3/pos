@@ -27,6 +27,7 @@ type SalePaymentSplitBody = {
   amountCents?: number
   amount?: number
   transferBankName?: string | null
+  treasuryAccountId?: string | null
 }
 
 type SaleCreateBody = {
@@ -36,6 +37,7 @@ type SaleCreateBody = {
   type?: string
   paymentMethod?: string
   transferBankName?: string | null
+  treasuryAccountId?: string | null
   paymentSplits?: SalePaymentSplitBody[]
   customerId?: string | null
   soldAt?: string | number | null
@@ -192,6 +194,7 @@ export async function GET(request: NextRequest) {
         createdAt: sale.soldAt.toISOString(),
         type: sale.type,
         paymentMethod: sale.paymentMethod,
+        treasuryAccountId: sale.treasuryAccountId ?? null,
         transferBankName: sale.transferBankName,
         customerId: sale.customerId,
         customerVisualId: sale.customer?.visualId ?? null,
@@ -299,6 +302,7 @@ export async function POST(request: NextRequest) {
           split.amountCents ??
           (typeof split.amount === "number" ? Math.round(split.amount * 100) : 0),
         transferBankName: split.transferBankName || null,
+        treasuryAccountId: split.treasuryAccountId || null,
       }))
       : undefined
 
@@ -317,6 +321,7 @@ export async function POST(request: NextRequest) {
       type: saleType,
       paymentMethod: saleType === SaleType.CONTADO ? paymentMethod : null,
       transferBankName: body.transferBankName || null,
+      treasuryAccountId: body.treasuryAccountId || null,
       paymentSplits: paymentSplits && paymentSplits.length > 0 ? paymentSplits : undefined,
       items,
       shippingCents,
@@ -336,6 +341,7 @@ export async function POST(request: NextRequest) {
       type: sale.type,
       soldAt: sale.soldAt.toISOString(),
       createdAt: sale.soldAt.toISOString(),
+      treasuryAccountId: sale.treasuryAccountId ?? null,
       transferBankName: sale.transferBankName ?? null,
       salePricesIncludeItbis: sale.salePricesIncludeItbis ?? true,
       legalTipApplied: sale.legalTipApplied ?? false,

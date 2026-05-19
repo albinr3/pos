@@ -41,6 +41,16 @@ enum PaymentMethod {
   DIVIDIR_PAGO // Solo para UI, no se guarda en BD
 }
 
+enum TreasuryAccountType {
+  CAJA
+  BANCO
+}
+
+enum TreasuryTransferStatus {
+  ACTIVE
+  REVERSED
+}
+
 enum AuditAction {
   LOGIN_SUCCESS
   LOGIN_FAILED
@@ -88,6 +98,8 @@ enum AuditAction {
   BACKUP_DELETED
   BACKUP_RESTORED
   BACKUP_DOWNLOADED
+  TREASURY_TRANSFER_CREATED
+  TREASURY_TRANSFER_REVERSED
   // Billing actions
   BILLING_SUBSCRIPTION_CREATED
   BILLING_SUBSCRIPTION_UPDATED
@@ -231,6 +243,9 @@ model Account {
   categorySequence     CategorySequence?
   customerSequence     CustomerSequence?
   paymentSequence      PaymentSequence?
+  treasuryAccounts     TreasuryAccount[]
+  treasuryOpeningBalances TreasuryOpeningBalance[]
+  treasuryTransfers    TreasuryTransfer[]
   subUserLoginTokens   SubUserLoginToken[]
   onboarding           AccountOnboarding?
 
@@ -313,6 +328,10 @@ model User {
   canViewAuditLogs    Boolean @default(false)
   canManageUsers      Boolean @default(false)
   canManageSettings   Boolean @default(false)
+  canViewTreasury             Boolean @default(false)
+  canManageTreasuryAccounts   Boolean @default(false)
+  canCreateTreasuryTransfers  Boolean @default(false)
+  canReverseTreasuryTransfers Boolean @default(false)
 
   isActive           Boolean             @default(true)
   subUserLoginTokens SubUserLoginToken[]
@@ -333,12 +352,100 @@ model User {
   inventoryAdjustments InventoryAdjustment[]
   inventoryBulkOperations         InventoryBulkOperation[] @relation("InventoryBulkOperationUser")
   revertedInventoryBulkOperations InventoryBulkOperation[] @relation("InventoryBulkOperationRevertedBy")
+  treasuryAccountsCreated        TreasuryAccount[]         @relation("TreasuryAccountCreatedBy")
+  treasuryOpeningBalancesCreated TreasuryOpeningBalance[]  @relation("TreasuryOpeningBalanceCreatedBy")
+  treasuryTransfersCreated       TreasuryTransfer[]        @relation("TreasuryTransferCreatedBy")
 
   // Username único dentro del mismo account
   @@unique([accountId, username])
   @@index([accountId])
   @@index([whatsappNumber])
   @@index([email])
+}
+
+model TreasuryAccount {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  name          String
+  type          TreasuryAccountType
+  currency      String @default("DOP")
+  bankName      String?
+  accountNumber String?
+  isActive      Boolean @default(true)
+
+  createdByUserId String?
+  createdByUser   User? @relation("TreasuryAccountCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  sales             Sale[]             @relation("SaleTreasuryAccount")
+  salePayments      SalePayment[]      @relation("SalePaymentTreasuryAccount")
+  payments          Payment[]          @relation("PaymentTreasuryAccount")
+  purchases         Purchase[]         @relation("PurchaseTreasuryAccount")
+  operatingExpenses OperatingExpense[] @relation("OperatingExpenseTreasuryAccount")
+  returnRefunds     Return[]           @relation("ReturnRefundTreasuryAccount")
+  openingBalances   TreasuryOpeningBalance[]
+  outgoingTransfers TreasuryTransfer[] @relation("TreasuryTransferFromAccount")
+  incomingTransfers TreasuryTransfer[] @relation("TreasuryTransferToAccount")
+
+  @@unique([accountId, name])
+  @@index([accountId, isActive])
+  @@index([accountId, type, isActive])
+}
+
+model TreasuryOpeningBalance {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  treasuryAccountId String
+  treasuryAccount   TreasuryAccount @relation(fields: [treasuryAccountId], references: [id], onDelete: Cascade)
+
+  amountCents Int
+  effectiveAt DateTime
+  note        String?
+
+  createdByUserId String?
+  createdByUser   User? @relation("TreasuryOpeningBalanceCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([accountId, effectiveAt])
+  @@index([treasuryAccountId, effectiveAt])
+}
+
+model TreasuryTransfer {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  fromTreasuryAccountId String
+  fromTreasuryAccount   TreasuryAccount @relation("TreasuryTransferFromAccount", fields: [fromTreasuryAccountId], references: [id], onDelete: Restrict)
+
+  toTreasuryAccountId String
+  toTreasuryAccount   TreasuryAccount @relation("TreasuryTransferToAccount", fields: [toTreasuryAccountId], references: [id], onDelete: Restrict)
+
+  amountCents   Int
+  transferredAt DateTime
+  note          String?
+
+  createdByUserId String
+  createdByUser   User @relation("TreasuryTransferCreatedBy", fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  status TreasuryTransferStatus @default(ACTIVE)
+
+  reversesTransferId String? @unique
+  reversesTransfer   TreasuryTransfer? @relation("TreasuryTransferReversal", fields: [reversesTransferId], references: [id], onDelete: Restrict)
+  reversedByTransfer TreasuryTransfer? @relation("TreasuryTransferReversal")
+
+  @@index([accountId, transferredAt])
+  @@index([fromTreasuryAccountId, transferredAt])
+  @@index([toTreasuryAccountId, transferredAt])
 }
 
 model SubUserLoginToken {
@@ -766,6 +873,8 @@ model Sale {
 
   paymentMethod    PaymentMethod?
   transferBankName String?
+  treasuryAccountId String?
+  treasuryAccount   TreasuryAccount? @relation("SaleTreasuryAccount", fields: [treasuryAccountId], references: [id], onDelete: SetNull)
 
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id])
@@ -805,6 +914,7 @@ model Sale {
   @@index([customerId])
   @@index([cancelledAt])
   @@index([invoiceCode])
+  @@index([treasuryAccountId])
 }
 
 model SaleItem {
@@ -873,9 +983,12 @@ model SalePayment {
 
   method           PaymentMethod
   transferBankName String?
+  treasuryAccountId String?
+  treasuryAccount   TreasuryAccount? @relation("SalePaymentTreasuryAccount", fields: [treasuryAccountId], references: [id], onDelete: SetNull)
   amountCents      Int
 
   @@index([saleId])
+  @@index([treasuryAccountId])
 }
 
 // ==========================================
@@ -922,6 +1035,8 @@ model Payment {
   amountCents      Int
   method           PaymentMethod @default(EFECTIVO)
   transferBankName String?
+  treasuryAccountId String?
+  treasuryAccount   TreasuryAccount? @relation("PaymentTreasuryAccount", fields: [treasuryAccountId], references: [id], onDelete: SetNull)
   note             String?
 
   cancelledAt   DateTime?
@@ -931,6 +1046,7 @@ model Payment {
   @@index([paidAt])
   @@index([cancelledAt])
   @@index([receiptCode])
+  @@index([treasuryAccountId])
 }
 
 // ==========================================
@@ -975,6 +1091,9 @@ model Purchase {
 
   purchasedAt  DateTime @default(now())
   supplierName String?
+  paymentMethod PaymentMethod?
+  treasuryAccountId String?
+  treasuryAccount   TreasuryAccount? @relation("PurchaseTreasuryAccount", fields: [treasuryAccountId], references: [id], onDelete: SetNull)
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
@@ -991,6 +1110,7 @@ model Purchase {
   @@index([accountId])
   @@index([accountId, purchasedAt])
   @@index([cancelledAt])
+  @@index([treasuryAccountId])
 }
 
 model PurchaseItem {
@@ -1027,6 +1147,9 @@ model OperatingExpense {
 
   description String
   amountCents Int
+  paymentMethod PaymentMethod?
+  treasuryAccountId String?
+  treasuryAccount   TreasuryAccount? @relation("OperatingExpenseTreasuryAccount", fields: [treasuryAccountId], references: [id], onDelete: SetNull)
   expenseDate DateTime @default(now())
   category    String?
 
@@ -1037,6 +1160,7 @@ model OperatingExpense {
 
   @@index([accountId])
   @@index([accountId, expenseDate])
+  @@index([treasuryAccountId])
 }
 
 // ==========================================
@@ -1057,6 +1181,10 @@ model Return {
 
   saleId String
   sale   Sale   @relation(fields: [saleId], references: [id])
+
+  refundMethod           PaymentMethod?
+  refundTreasuryAccountId String?
+  refundTreasuryAccount   TreasuryAccount? @relation("ReturnRefundTreasuryAccount", fields: [refundTreasuryAccountId], references: [id], onDelete: SetNull)
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
@@ -1085,6 +1213,7 @@ model Return {
   @@index([accountId, returnedAt])
   @@index([saleId])
   @@index([cancelledAt])
+  @@index([refundTreasuryAccountId])
 }
 
 model ReturnItem {

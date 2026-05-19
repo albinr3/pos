@@ -19,6 +19,7 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "prisma db seed",
+    "whatsapp:test": "tsx scripts/test-whatsapp.ts",
     "sales:normalize-timestamps": "tsx scripts/normalize-sales-timestamps.ts",
     "phase0:baseline": "tsx scripts/phase0-baseline.ts",
     "upload:apk": "tsx scripts/upload-apk-uploadthing.ts"

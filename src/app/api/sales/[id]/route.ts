@@ -29,6 +29,7 @@ type UpdateSalePaymentSplitBody = {
   amountCents?: number
   amount?: number
   transferBankName?: string | null
+  treasuryAccountId?: string | null
 }
 
 type UpdateSaleBody = {
@@ -39,6 +40,7 @@ type UpdateSaleBody = {
   customerId?: string | null
   paymentMethod?: string
   transferBankName?: string | null
+  treasuryAccountId?: string | null
   paymentSplits?: UpdateSalePaymentSplitBody[]
   soldAt?: string | number | null
   createdAt?: string | number | null
@@ -151,6 +153,7 @@ export async function GET(
             method: true,
             amountCents: true,
             transferBankName: true,
+            treasuryAccountId: true,
           },
         },
         items: {
@@ -179,12 +182,14 @@ export async function GET(
       createdAt: sale.soldAt.toISOString(),
       type: sale.type,
       paymentMethod: sale.paymentMethod,
+      treasuryAccountId: sale.treasuryAccountId ?? null,
       transferBankName: sale.transferBankName,
       paymentSplits: sale.payments.map((payment) => ({
         id: payment.id,
         method: payment.method,
         amountCents: payment.amountCents,
         transferBankName: payment.transferBankName,
+        treasuryAccountId: payment.treasuryAccountId ?? null,
       })),
       customerId: sale.customerId,
       customerVisualId: sale.customer?.visualId ?? null,
@@ -334,6 +339,7 @@ export async function PUT(
             split.amountCents ??
             (typeof split.amount === "number" ? Math.round(split.amount * 100) : 0),
           transferBankName: split.transferBankName || null,
+          treasuryAccountId: split.treasuryAccountId || null,
         }))
       : undefined
     const discountModeRaw = String(body?.discountMode || "").toUpperCase()
@@ -356,6 +362,7 @@ export async function PUT(
       type,
       paymentMethod,
       transferBankName: body?.transferBankName || null,
+      treasuryAccountId: body?.treasuryAccountId || null,
       paymentSplits,
       applyLegalTip,
       items,
@@ -378,6 +385,7 @@ export async function PUT(
       invoiceCode: updatedSale?.invoiceCode,
       type: updatedSale?.type,
       paymentMethod: updatedSale?.paymentMethod,
+      treasuryAccountId: updatedSale?.treasuryAccountId ?? null,
       transferBankName: updatedSale?.transferBankName ?? null,
       customerId: updatedSale?.customerId,
       customerVisualId: updatedSale?.customer?.visualId ?? null,

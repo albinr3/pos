@@ -24,6 +24,10 @@ export const PERMISSION_LABELS = {
   canViewAuditLogs: "Ver registro de auditoria",
   canManageUsers: "Gestionar empleados",
   canManageSettings: "Modificar ajustes de empresa",
+  canViewTreasury: "Ver tesoreria",
+  canManageTreasuryAccounts: "Gestionar cuentas de tesoreria",
+  canCreateTreasuryTransfers: "Crear transferencias de tesoreria",
+  canReverseTreasuryTransfers: "Reversar transferencias de tesoreria",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSION_LABELS
@@ -64,6 +68,16 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     id: "operating_expenses",
     label: "Gastos Operativos",
     permissions: ["canManageExpenses", "canCancelExpenses"],
+  },
+  {
+    id: "treasury",
+    label: "Tesoreria",
+    permissions: [
+      "canViewTreasury",
+      "canManageTreasuryAccounts",
+      "canCreateTreasuryTransfers",
+      "canReverseTreasuryTransfers",
+    ],
   },
   {
     id: "quotes",

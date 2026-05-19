@@ -2,13 +2,14 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
-import { Prisma, ProductKind } from "@prisma/client"
+import { PaymentMethod, Prisma, ProductKind } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentUser } from "@/lib/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
 import { ensurePermission } from "@/lib/permission-guard"
+import { ensureDefaultTreasuryAccount, requireTreasuryAccount } from "@/lib/treasury"
 
 function toNumber(value: Decimal | number) {
   return value instanceof Decimal ? value.toNumber() : Number(value)
@@ -146,6 +147,8 @@ export async function createPurchase(input: {
   supplierId?: string | null
   supplierName?: string | null
   notes?: string | null
+  paymentMethod?: PaymentMethod | null
+  treasuryAccountId?: string | null
   items: PurchaseItemInput[]
   updateProductCost?: boolean
   updateProductPrice?: boolean
@@ -176,6 +179,19 @@ export async function createPurchase(input: {
       items: input.items,
     })
 
+    if (input.paymentMethod === PaymentMethod.DIVIDIR_PAGO) {
+      throw new Error("Dividir pago no es un método válido para compras.")
+    }
+
+    const purchaseTreasuryAccount = input.treasuryAccountId?.trim()
+      ? await requireTreasuryAccount(tx, {
+          accountId: currentUser.accountId,
+          treasuryAccountId: input.treasuryAccountId.trim(),
+          requireActive: true,
+          message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+        })
+      : await ensureDefaultTreasuryAccount(tx, currentUser.accountId, currentUser.id)
+
     const totalCents = itemsWithNetCost.reduce((s, i) => s + i.lineTotalCents, 0)
     const updateProductPrice = input.updateProductPrice !== false
 
@@ -184,6 +200,8 @@ export async function createPurchase(input: {
       data: {
         accountId: currentUser.accountId,
         supplierName,
+        paymentMethod: input.paymentMethod ?? PaymentMethod.OTRO,
+        treasuryAccountId: purchaseTreasuryAccount.id,
         notes: input.notes?.trim() || null,
         userId: currentUser.id,
         totalCents,
@@ -377,6 +395,8 @@ export async function updatePurchase(input: {
   supplierId?: string | null
   supplierName?: string | null
   notes?: string | null
+  paymentMethod?: PaymentMethod | null
+  treasuryAccountId?: string | null
   items: PurchaseItemInput[]
   updateProductCost?: boolean
   updateProductPrice?: boolean
@@ -434,6 +454,25 @@ export async function updatePurchase(input: {
       items: input.items,
     })
 
+    if (input.paymentMethod === PaymentMethod.DIVIDIR_PAGO) {
+      throw new Error("Dividir pago no es un método válido para compras.")
+    }
+
+    const resolvedTreasuryAccount = input.treasuryAccountId?.trim()
+      ? await requireTreasuryAccount(tx, {
+          accountId: currentUser.accountId,
+          treasuryAccountId: input.treasuryAccountId.trim(),
+          requireActive: true,
+          message: "La cuenta de tesorería seleccionada no existe o está inactiva.",
+        })
+      : existingPurchase.treasuryAccountId
+        ? await requireTreasuryAccount(tx, {
+            accountId: currentUser.accountId,
+            treasuryAccountId: existingPurchase.treasuryAccountId,
+            message: "La cuenta de tesorería de la compra no existe.",
+          })
+        : await ensureDefaultTreasuryAccount(tx, currentUser.accountId, currentUser.id)
+
     // Calcular nuevo total
     const totalCents = itemsWithNetCost.reduce((s, i) => s + i.lineTotalCents, 0)
     const updateProductPrice = input.updateProductPrice !== false
@@ -444,6 +483,8 @@ export async function updatePurchase(input: {
       where: { id: input.id, accountId: currentUser.accountId },
       data: {
         supplierName,
+        paymentMethod: input.paymentMethod ?? existingPurchase.paymentMethod ?? PaymentMethod.OTRO,
+        treasuryAccountId: resolvedTreasuryAccount.id,
         notes: input.notes?.trim() || null,
         totalCents,
       },

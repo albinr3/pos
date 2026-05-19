@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { Search, ShoppingBag, Trash2 } from "lucide-react"
+import { PaymentMethod } from "@prisma/client"
+import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -11,10 +13,18 @@ import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
 import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
+import {
+  CREATE_TREASURY_ACCOUNT_OPTION_VALUE,
+  CREATE_TREASURY_ACCOUNT_URL,
+  filterTreasuryAccountsByPaymentMethod,
+  isCreateTreasuryAccountOption,
+  pickTreasuryAccountIdForPaymentMethod,
+} from "@/lib/treasury-account-selection"
 
 import { createPurchase, listPurchases, searchProductsForPurchase } from "./actions"
 import { getAllSuppliers } from "../suppliers/actions"
 import { getSettings } from "../settings/actions"
+import { listTreasuryAccounts } from "../treasury/actions"
 
 type Purchase = Awaited<ReturnType<typeof listPurchases>>[number]
 
@@ -37,6 +47,7 @@ type CartItem = {
 }
 
 type Supplier = Awaited<ReturnType<typeof getAllSuppliers>>[number] & { chargesItbis?: boolean }
+type TreasuryAccountOption = Awaited<ReturnType<typeof listTreasuryAccounts>>[number]
 
 function toInt(v: string) {
   const n = Number(v || 0)
@@ -68,10 +79,18 @@ function calculatePricing(input: {
 }
 
 export function PurchasesClient() {
+  const router = useRouter()
   const [supplierId, setSupplierId] = useState<string>("")
   const [supplierName, setSupplierName] = useState("")
   const [notes, setNotes] = useState("")
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>([])
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
+  const [treasuryAccountId, setTreasuryAccountId] = useState("")
+  const availableTreasuryAccounts = useMemo(
+    () => filterTreasuryAccountsByPaymentMethod(treasuryAccounts, paymentMethod),
+    [treasuryAccounts, paymentMethod]
+  )
   const [defaultProfitMarginBp, setDefaultProfitMarginBp] = useState(3000)
   const [itbisRateBp, setItbisRateBp] = useState(1800)
   const [salePricesIncludeItbis, setSalePricesIncludeItbis] = useState(true)
@@ -143,15 +162,32 @@ export function PurchasesClient() {
 
   useEffect(() => {
     refreshPurchases()
-    Promise.all([getAllSuppliers(), getSettings()])
-      .then(([supplierList, settings]) => {
+    Promise.all([getAllSuppliers(), getSettings(), listTreasuryAccounts()])
+      .then(([supplierList, settings, treasuryAccountsResult]) => {
         setSuppliers(supplierList)
         setDefaultProfitMarginBp(settings.defaultProfitMarginBp)
         setItbisRateBp(settings.itbisRateBp)
         setSalePricesIncludeItbis(settings.salePricesIncludeItbis)
+        setTreasuryAccounts(treasuryAccountsResult)
+        if (treasuryAccountsResult[0]) {
+          setTreasuryAccountId(
+            pickTreasuryAccountIdForPaymentMethod(treasuryAccountsResult, PaymentMethod.EFECTIVO)
+          )
+        }
       })
       .catch(() => { })
   }, [])
+
+  useEffect(() => {
+    const nextTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
+      treasuryAccounts,
+      paymentMethod,
+      treasuryAccountId
+    )
+    if (nextTreasuryAccountId !== treasuryAccountId) {
+      setTreasuryAccountId(nextTreasuryAccountId)
+    }
+  }, [treasuryAccounts, paymentMethod, treasuryAccountId])
 
   function applySupplierSelection(nextSupplierId: string) {
     setSupplierId(nextSupplierId)
@@ -298,6 +334,10 @@ export function PurchasesClient() {
       toast({ title: "Proveedor requerido", description: "Debes seleccionar un proveedor para guardar la compra." })
       return
     }
+    if (!availableTreasuryAccounts.some((account) => account.id === treasuryAccountId)) {
+      toast({ title: "Cuenta requerida", description: "Debes seleccionar una cuenta de tesorería." })
+      return
+    }
 
     startSaving(async () => {
       try {
@@ -305,6 +345,8 @@ export function PurchasesClient() {
           supplierId: supplierId || null,
           supplierName: supplierName || null,
           notes: notes || null,
+          paymentMethod,
+          treasuryAccountId,
           items: cart.map((c) => ({
             productId: c.productId,
             qty: c.qty,
@@ -327,6 +369,7 @@ export function PurchasesClient() {
         setSupplierId("")
         setSupplierName("")
         setNotes("")
+        setPaymentMethod(PaymentMethod.EFECTIVO)
         setCart([])
         setQuery("")
         setResults([])
@@ -379,6 +422,50 @@ export function PurchasesClient() {
             <div className="grid gap-2">
               <Label>Nota (opcional)</Label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>Método de pago</Label>
+                <select
+                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  value={paymentMethod}
+                  onChange={(e) => {
+                    const nextMethod = e.target.value as PaymentMethod
+                    setPaymentMethod(nextMethod)
+                    setTreasuryAccountId((current) =>
+                      pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, current)
+                    )
+                  }}
+                >
+                  <option value={PaymentMethod.EFECTIVO}>Efectivo</option>
+                  <option value={PaymentMethod.TRANSFERENCIA}>Transferencia</option>
+                  <option value={PaymentMethod.TARJETA}>Tarjeta</option>
+                  <option value={PaymentMethod.OTRO}>Otro</option>
+                </select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Cuenta de tesorería</Label>
+                <select
+                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  value={treasuryAccountId}
+                  onChange={(e) => {
+                    const nextValue = e.target.value
+                    if (isCreateTreasuryAccountOption(nextValue)) {
+                      router.push(CREATE_TREASURY_ACCOUNT_URL)
+                      return
+                    }
+                    setTreasuryAccountId(nextValue)
+                  }}
+                >
+                  <option value="">Selecciona una cuenta</option>
+                  {availableTreasuryAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}
+                    </option>
+                  ))}
+                  <option value={CREATE_TREASURY_ACCOUNT_OPTION_VALUE}>+ Crear nueva cuenta</option>
+                </select>
+              </div>
             </div>
 
             <div className="rounded-md border p-3">

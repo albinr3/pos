@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { Search, Plus, Minus, X } from "lucide-react"
+import { PaymentMethod } from "@prisma/client"
+import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,11 +15,20 @@ import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
 import { calcDiscountedLineTotalsByTaxMode, formatRD } from "@/lib/money"
 import { formatCustomerName } from "@/lib/customer-display"
+import {
+  CREATE_TREASURY_ACCOUNT_OPTION_VALUE,
+  CREATE_TREASURY_ACCOUNT_URL,
+  filterTreasuryAccountsByPaymentMethod,
+  isCreateTreasuryAccountOption,
+  pickTreasuryAccountIdForPaymentMethod,
+} from "@/lib/treasury-account-selection"
 
 import { createReturn, getSaleForReturn, searchSalesForReturn } from "./actions"
+import { listTreasuryAccounts } from "../treasury/actions"
 
 type SaleForReturn = NonNullable<Awaited<ReturnType<typeof getSaleForReturn>>>
 type SaleSearchResult = Awaited<ReturnType<typeof searchSalesForReturn>>[number]
+type TreasuryAccountOption = Awaited<ReturnType<typeof listTreasuryAccounts>>[number]
 
 type ReturnItem = {
   saleItemId: string
@@ -32,12 +43,20 @@ type ReturnItem = {
 }
 
 export function ReturnsClient() {
+  const router = useRouter()
   const [saleSearchQuery, setSaleSearchQuery] = useState("")
   const [saleSearchResults, setSaleSearchResults] = useState<SaleSearchResult[]>([])
   const [isSearching, startSearch] = useTransition()
   const [selectedSale, setSelectedSale] = useState<SaleForReturn | null>(null)
   const [returnItems, setReturnItems] = useState<ReturnItem[]>([])
   const [notes, setNotes] = useState("")
+  const [refundMethod, setRefundMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
+  const [refundTreasuryAccountId, setRefundTreasuryAccountId] = useState("")
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>([])
+  const availableRefundTreasuryAccounts = useMemo(
+    () => filterTreasuryAccountsByPaymentMethod(treasuryAccounts, refundMethod),
+    [treasuryAccounts, refundMethod]
+  )
   const [isSaving, startSaving] = useTransition()
 
   useEffect(() => {
@@ -60,6 +79,33 @@ export function ReturnsClient() {
     return () => clearTimeout(t)
   }, [saleSearchQuery])
 
+  useEffect(() => {
+    startSearch(async () => {
+      try {
+        const accounts = await listTreasuryAccounts()
+        setTreasuryAccounts(accounts)
+        if (accounts[0]) {
+          setRefundTreasuryAccountId(
+            pickTreasuryAccountIdForPaymentMethod(accounts, PaymentMethod.EFECTIVO)
+          )
+        }
+      } catch {
+        setTreasuryAccounts([])
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    const nextTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
+      treasuryAccounts,
+      refundMethod,
+      refundTreasuryAccountId
+    )
+    if (nextTreasuryAccountId !== refundTreasuryAccountId) {
+      setRefundTreasuryAccountId(nextTreasuryAccountId)
+    }
+  }, [treasuryAccounts, refundMethod, refundTreasuryAccountId])
+
   async function selectSale(sale: SaleSearchResult) {
     try {
       const saleDetail = await getSaleForReturn(sale.id)
@@ -71,6 +117,15 @@ export function ReturnsClient() {
       setReturnItems([])
       setSaleSearchQuery("")
       setSaleSearchResults([])
+      const nextRefundMethod = (saleDetail.paymentMethod as PaymentMethod) ?? PaymentMethod.EFECTIVO
+      setRefundMethod(nextRefundMethod)
+      setRefundTreasuryAccountId(
+        pickTreasuryAccountIdForPaymentMethod(
+          treasuryAccounts,
+          nextRefundMethod,
+          saleDetail.treasuryAccountId ?? refundTreasuryAccountId
+        )
+      )
       if (!saleDetail.returnPolicy.canCreateReturn) {
         toast({
           title: "Devolución bloqueada",
@@ -182,6 +237,16 @@ export function ReturnsClient() {
       })
       return
     }
+    if (
+      selectedSale.type === "CONTADO" &&
+      !availableRefundTreasuryAccounts.some((account) => account.id === refundTreasuryAccountId)
+    ) {
+      toast({
+        title: "Cuenta requerida",
+        description: "Debes seleccionar una cuenta de tesorería para la devolución al contado.",
+      })
+      return
+    }
 
     startSaving(async () => {
       try {
@@ -194,6 +259,8 @@ export function ReturnsClient() {
             unitPriceCents: item.unitPriceCents,
           })),
           notes: notes || null,
+          refundMethod: selectedSale.type === "CONTADO" ? refundMethod : null,
+          refundTreasuryAccountId: selectedSale.type === "CONTADO" ? refundTreasuryAccountId : null,
         })
 
         const printUrl = `/api/print/return/${result.returnCode}`
@@ -517,6 +584,54 @@ export function ReturnsClient() {
                   disabled={isReturnBlocked}
                 />
               </div>
+              {selectedSale?.type === "CONTADO" && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-1">
+                    <Label>Método de devolución</Label>
+                    <select
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                      value={refundMethod}
+                      onChange={(e) => {
+                        const nextMethod = e.target.value as PaymentMethod
+                        setRefundMethod(nextMethod)
+                        setRefundTreasuryAccountId((current) =>
+                          pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, current)
+                        )
+                      }}
+                      disabled={isReturnBlocked}
+                    >
+                      <option value={PaymentMethod.EFECTIVO}>Efectivo</option>
+                      <option value={PaymentMethod.TRANSFERENCIA}>Transferencia</option>
+                      <option value={PaymentMethod.TARJETA}>Tarjeta</option>
+                      <option value={PaymentMethod.OTRO}>Otro</option>
+                    </select>
+                  </div>
+                  <div className="grid gap-1">
+                    <Label>Cuenta de tesorería</Label>
+                    <select
+                      className="h-10 rounded-md border bg-background px-3 text-sm"
+                      value={refundTreasuryAccountId}
+                      onChange={(e) => {
+                        const nextValue = e.target.value
+                        if (isCreateTreasuryAccountOption(nextValue)) {
+                          router.push(CREATE_TREASURY_ACCOUNT_URL)
+                          return
+                        }
+                        setRefundTreasuryAccountId(nextValue)
+                      }}
+                      disabled={isReturnBlocked}
+                    >
+                      <option value="">Selecciona una cuenta</option>
+                      {availableRefundTreasuryAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                      <option value={CREATE_TREASURY_ACCOUNT_OPTION_VALUE}>+ Crear nueva cuenta</option>
+                    </select>
+                  </div>
+                </div>
+              )}
               {exceedsCreditLimit && maxReturnCents !== null && (
                 <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">
                   El total de la devolución ({formatRD(totalCents)}) excede el balance pendiente permitido (
@@ -542,11 +657,6 @@ export function ReturnsClient() {
     </div>
   )
 }
-
-
-
-
-
 
 
 

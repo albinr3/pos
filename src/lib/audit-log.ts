@@ -47,6 +47,8 @@ export type AuditAction =
   | "BACKUP_DELETED"
   | "BACKUP_RESTORED"
   | "BACKUP_DOWNLOADED"
+  | "TREASURY_TRANSFER_CREATED"
+  | "TREASURY_TRANSFER_REVERSED"
 
 interface AuditLogData {
   accountId: string

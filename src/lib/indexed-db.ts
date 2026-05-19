@@ -109,7 +109,8 @@ export async function savePendingSale(sale: {
   type: "CONTADO" | "CREDITO"
   paymentMethod?: string | null
   transferBankName?: string | null
-  paymentSplits?: Array<{ method: string; amountCents: number; transferBankName?: string | null }>
+  treasuryAccountId?: string | null
+  paymentSplits?: Array<{ method: string; amountCents: number; transferBankName?: string | null; treasuryAccountId?: string | null }>
   items: Array<{
     productId: string
     qty: number
@@ -160,6 +161,7 @@ export async function savePendingPayment(payment: {
   amountCents: number
   method: string
   transferBankName?: string | null
+  treasuryAccountId?: string | null
   note?: string | null
   username: string
   createdAt: number
@@ -219,6 +221,7 @@ export async function savePendingBatchPayment(payment: {
   amountCents: number
   method: string
   transferBankName?: string | null
+  treasuryAccountId?: string | null
   note?: string | null
   username: string
   createdAt: number

@@ -88,6 +88,7 @@ export async function GET(request: NextRequest) {
         receiptCode: p.receiptCode,
         amountCents: p.amountCents,
         method: p.method,
+        treasuryAccountId: p.treasuryAccountId ?? null,
         transferBankName: p.transferBankName,
         note: p.note,
         paidAt: p.paidAt.toISOString(),
@@ -189,6 +190,7 @@ export async function POST(request: NextRequest) {
       amountCents,
       method,
       transferBankName: body.transferBankName || null,
+      treasuryAccountId: body.treasuryAccountId || null,
       note: body.note || null,
     }, user)
 
@@ -209,6 +211,7 @@ export async function POST(request: NextRequest) {
       receiptCode: payment.receiptCode,
       amountCents: payment.amountCents,
       method: payment.method,
+      treasuryAccountId: payment.treasuryAccountId ?? null,
       transferBankName: payment.transferBankName,
       paidAt: payment.paidAt.toISOString(),
       appliedCents: paymentResult.appliedCents,

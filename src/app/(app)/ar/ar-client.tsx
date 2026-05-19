@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 import { CheckSquare, Clock3, CreditCard, HandCoins, Printer, Receipt, Search, WifiOff } from "lucide-react"
 import { PaymentMethod } from "@prisma/client"
@@ -13,10 +14,16 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DOMINICAN_BANKS } from "@/lib/dominican-banks"
 import { formatCustomerName, GENERIC_CUSTOMER_NAME } from "@/lib/customer-display"
 import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatPaymentWithBank, getPaymentMethodLabel } from "@/lib/payment-methods"
+import {
+  CREATE_TREASURY_ACCOUNT_OPTION_VALUE,
+  CREATE_TREASURY_ACCOUNT_URL,
+  filterTreasuryAccountsByPaymentMethod,
+  isCreateTreasuryAccountOption,
+  pickTreasuryAccountIdForPaymentMethod,
+} from "@/lib/treasury-account-selection"
 import { toast } from "@/hooks/use-toast"
 import { formatRD } from "@/lib/money"
 import { PriceInput } from "@/components/app/price-input"
@@ -29,14 +36,23 @@ import {
 } from "@/lib/indexed-db"
 import { syncARToIndexedDB } from "@/app/(app)/sync/actions"
 import { saveARCache } from "@/lib/indexed-db"
+import { listTreasuryAccounts } from "../treasury/actions"
 
 import { addPayment, addBatchPayment, getARSummaryStats, listOpenAR } from "./actions"
 
 type AR = Awaited<ReturnType<typeof listOpenAR>>[number]
 type ARSortBy = "alphabetical" | "dueDate" | "amount"
+type TreasuryAccountOption = Awaited<ReturnType<typeof listTreasuryAccounts>>[number]
 
 function methodLabel(m: PaymentMethod) {
   return getPaymentMethodLabel(m)
+}
+
+function formatTreasuryAccountLabel(account: { name: string; bankName: string | null }) {
+  if (account.bankName && account.bankName !== account.name) {
+    return `${account.name} (${account.bankName})`
+  }
+  return account.name
 }
 
 function formatCustomerLabel(customer?: { visualId?: number | null; name?: string | null } | null) {
@@ -121,6 +137,7 @@ function sortARItems<T extends { customer?: { name?: string | null } | null; due
 }
 
 export function ARClient() {
+  const router = useRouter()
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
   const [items, setItems] = useState<AR[]>([])
@@ -141,7 +158,8 @@ export function ARClient() {
   const [selected, setSelected] = useState<AR | null>(null)
   const [amountCents, setAmountCents] = useState(0)
   const [method, setMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
-  const [transferBankName, setTransferBankName] = useState("")
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>([])
+  const [treasuryAccountId, setTreasuryAccountId] = useState("")
   const [note, setNote] = useState("")
   const [isSaving, startSaving] = useTransition()
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
@@ -159,7 +177,7 @@ export function ARClient() {
   const [openBatch, setOpenBatch] = useState(false)
   const [batchAmountCents, setBatchAmountCents] = useState(0)
   const [batchMethod, setBatchMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
-  const [batchTransferBankName, setBatchTransferBankName] = useState("")
+  const [batchTreasuryAccountId, setBatchTreasuryAccountId] = useState("")
   const [batchNote, setBatchNote] = useState("")
   const [isBatchSaving, startBatchSaving] = useTransition()
   const paymentMethods = [
@@ -168,6 +186,14 @@ export function ARClient() {
     PaymentMethod.TARJETA,
     PaymentMethod.OTRO,
   ]
+  const availableTreasuryAccounts = useMemo(
+    () => filterTreasuryAccountsByPaymentMethod(treasuryAccounts, method),
+    [treasuryAccounts, method]
+  )
+  const availableBatchTreasuryAccounts = useMemo(
+    () => filterTreasuryAccountsByPaymentMethod(treasuryAccounts, batchMethod),
+    [treasuryAccounts, batchMethod]
+  )
 
   function isLikelyOfflineError(error: unknown) {
     if (typeof navigator !== "undefined" && !navigator.onLine) return true
@@ -291,6 +317,54 @@ export function ARClient() {
     return () => clearInterval(interval)
   }, [query, sortBy, overdueOnly, isOnline])
 
+  useEffect(() => {
+    startLoading(async () => {
+      try {
+        const accounts = await listTreasuryAccounts()
+        setTreasuryAccounts(accounts)
+        if (accounts[0]) {
+          setTreasuryAccountId((current) =>
+            current || pickTreasuryAccountIdForPaymentMethod(accounts, PaymentMethod.EFECTIVO)
+          )
+          setBatchTreasuryAccountId((current) =>
+            current || pickTreasuryAccountIdForPaymentMethod(accounts, PaymentMethod.EFECTIVO)
+          )
+        }
+      } catch {
+        setTreasuryAccounts([])
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    const nextTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
+      treasuryAccounts,
+      method,
+      treasuryAccountId
+    )
+    if (nextTreasuryAccountId !== treasuryAccountId) {
+      setTreasuryAccountId(nextTreasuryAccountId)
+    }
+  }, [treasuryAccounts, method, treasuryAccountId])
+
+  useEffect(() => {
+    const nextBatchTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
+      treasuryAccounts,
+      batchMethod,
+      batchTreasuryAccountId
+    )
+    if (nextBatchTreasuryAccountId !== batchTreasuryAccountId) {
+      setBatchTreasuryAccountId(nextBatchTreasuryAccountId)
+    }
+  }, [treasuryAccounts, batchMethod, batchTreasuryAccountId])
+
+  const resolveTransferBankNameForAccount = (accountId?: string | null) => {
+    if (!accountId) return null
+    const account = treasuryAccounts.find((item) => item.id === accountId)
+    if (!account) return null
+    return account.bankName?.trim() || account.name
+  }
+
   // Multi-select helpers
   const selectedItems = useMemo(() => items.filter((i) => selectedIds.has(i.id)), [items, selectedIds])
   const selectedCustomerId = selectedItems.length > 0 ? selectedItems[0].customerId : null
@@ -347,7 +421,14 @@ export function ARClient() {
     if (selectedItems.length === 0) return
     setBatchAmountCents(selectedTotalBalance)
     setBatchMethod(PaymentMethod.EFECTIVO)
-    setBatchTransferBankName("")
+    const firstSaleTreasuryAccountId = selectedItems[0]?.sale?.treasuryAccountId ?? ""
+    setBatchTreasuryAccountId(
+      pickTreasuryAccountIdForPaymentMethod(
+        treasuryAccounts,
+        PaymentMethod.EFECTIVO,
+        firstSaleTreasuryAccountId
+      )
+    )
     setBatchNote("")
     setOpenBatch(true)
   }
@@ -363,8 +444,8 @@ export function ARClient() {
       toast({ title: "Error", description: `No puedes pagar más del balance pendiente (${formatRD(selectedTotalBalance)})`, variant: "destructive" })
       return
     }
-    if (batchMethod === PaymentMethod.TRANSFERENCIA && !batchTransferBankName) {
-      toast({ title: "Banco requerido", description: "Debes seleccionar el banco de la transferencia", variant: "destructive" })
+    if (!availableBatchTreasuryAccounts.some((account) => account.id === batchTreasuryAccountId)) {
+      toast({ title: "Cuenta requerida", description: "Debes seleccionar una cuenta de tesorería", variant: "destructive" })
       return
     }
 
@@ -378,7 +459,11 @@ export function ARClient() {
             arIds: sortedItems.map((i) => i.id),
             amountCents: batchAmountCents,
             method: batchMethod as string,
-            transferBankName: batchMethod === PaymentMethod.TRANSFERENCIA ? batchTransferBankName : null,
+            transferBankName:
+              batchMethod === PaymentMethod.TRANSFERENCIA
+                ? resolveTransferBankNameForAccount(batchTreasuryAccountId)
+                : null,
+            treasuryAccountId: batchTreasuryAccountId,
             note: batchNote || null,
             username: "admin",
             createdAt: Date.now(),
@@ -391,7 +476,11 @@ export function ARClient() {
             arIds: selectedItems.map((i) => i.id),
             amountCents: batchAmountCents,
             method: batchMethod,
-            transferBankName: batchMethod === PaymentMethod.TRANSFERENCIA ? batchTransferBankName : null,
+            transferBankName:
+              batchMethod === PaymentMethod.TRANSFERENCIA
+                ? resolveTransferBankNameForAccount(batchTreasuryAccountId)
+                : null,
+            treasuryAccountId: batchTreasuryAccountId,
             note: batchNote || null,
           })
           toast({ title: "Pago registrado", description: `${selectedItems.length} factura(s) cobradas correctamente` })
@@ -411,7 +500,13 @@ export function ARClient() {
     setSelected(ar)
     setAmountCents(ar.balanceCents ?? 0)
     setMethod(PaymentMethod.EFECTIVO)
-    setTransferBankName("")
+    setTreasuryAccountId(
+      pickTreasuryAccountIdForPaymentMethod(
+        treasuryAccounts,
+        PaymentMethod.EFECTIVO,
+        ar.sale.treasuryAccountId
+      )
+    )
     setNote("")
     setOpen(true)
   }
@@ -438,10 +533,10 @@ export function ARClient() {
       return
     }
 
-    if (method === PaymentMethod.TRANSFERENCIA && !transferBankName) {
+    if (!availableTreasuryAccounts.some((account) => account.id === treasuryAccountId)) {
       toast({
-        title: "Banco requerido",
-        description: "Debes seleccionar el banco de la transferencia",
+        title: "Cuenta requerida",
+        description: "Debes seleccionar una cuenta de tesorería",
         variant: "destructive",
       })
       return
@@ -454,7 +549,9 @@ export function ARClient() {
         arId: selected.id,
         amountCents: finalAmount,
         method: method as string,
-        transferBankName: method === PaymentMethod.TRANSFERENCIA ? transferBankName : null,
+        transferBankName:
+          method === PaymentMethod.TRANSFERENCIA ? resolveTransferBankNameForAccount(treasuryAccountId) : null,
+        treasuryAccountId,
         note: note || null,
         username: "admin",
         createdAt: Date.now(),
@@ -495,7 +592,9 @@ export function ARClient() {
               arId: selected.id,
               amountCents: finalAmount,
               method,
-              transferBankName: method === PaymentMethod.TRANSFERENCIA ? transferBankName : null,
+              transferBankName:
+                method === PaymentMethod.TRANSFERENCIA ? resolveTransferBankNameForAccount(treasuryAccountId) : null,
+              treasuryAccountId,
               note: note || null,
             })
             toast({ title: "Pago registrado", description: "Abono aplicado correctamente" })
@@ -511,7 +610,6 @@ export function ARClient() {
 
         setOpen(false)
         setSelected(null)
-        setTransferBankName("")
         refresh()
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo registrar el pago" })
@@ -851,9 +949,9 @@ export function ARClient() {
                   onChange={(e) => {
                     const nextMethod = e.target.value as PaymentMethod
                     setMethod(nextMethod)
-                    if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
-                      setTransferBankName("")
-                    }
+                    setTreasuryAccountId((current) =>
+                      pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, current)
+                    )
                   }}
                 >
                   {paymentMethods.map((m) => (
@@ -864,23 +962,29 @@ export function ARClient() {
                 </select>
               </div>
 
-              {method === PaymentMethod.TRANSFERENCIA && (
-                <div className="grid gap-2">
-                  <Label>Banco de la transferencia</Label>
-                  <select
-                    className="h-10 rounded-md border bg-background px-3 text-sm"
-                    value={transferBankName}
-                    onChange={(e) => setTransferBankName(e.target.value)}
-                  >
-                    <option value="">Selecciona un banco</option>
-                    {DOMINICAN_BANKS.map((bankName) => (
-                      <option key={bankName} value={bankName}>
-                        {bankName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div className="grid gap-2">
+                <Label>Cuenta de tesorería</Label>
+                <select
+                  className="h-10 rounded-md border bg-background px-3 text-sm"
+                  value={treasuryAccountId}
+                  onChange={(e) => {
+                    const nextValue = e.target.value
+                    if (isCreateTreasuryAccountOption(nextValue)) {
+                      router.push(CREATE_TREASURY_ACCOUNT_URL)
+                      return
+                    }
+                    setTreasuryAccountId(nextValue)
+                  }}
+                >
+                  <option value="">Selecciona una cuenta</option>
+                  {availableTreasuryAccounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {formatTreasuryAccountLabel(account)}
+                    </option>
+                  ))}
+                  <option value={CREATE_TREASURY_ACCOUNT_OPTION_VALUE}>+ Crear nueva cuenta</option>
+                </select>
+              </div>
 
               <div className="grid gap-2">
                 <Label>Nota (opcional)</Label>
@@ -919,7 +1023,13 @@ export function ARClient() {
             <Button 
               type="button" 
               onClick={onPay} 
-              disabled={isSaving || !selected || amountCents <= 0 || amountCents > (selected?.balanceCents ?? 0)}
+              disabled={
+                isSaving ||
+                !selected ||
+                amountCents <= 0 ||
+                amountCents > (selected?.balanceCents ?? 0) ||
+                !availableTreasuryAccounts.some((account) => account.id === treasuryAccountId)
+              }
             >
               {isSaving ? "Guardando…" : "Guardar pago"}
             </Button>
@@ -1079,9 +1189,9 @@ export function ARClient() {
                 onChange={(e) => {
                   const nextMethod = e.target.value as PaymentMethod
                   setBatchMethod(nextMethod)
-                  if (nextMethod !== PaymentMethod.TRANSFERENCIA) {
-                    setBatchTransferBankName("")
-                  }
+                  setBatchTreasuryAccountId((current) =>
+                    pickTreasuryAccountIdForPaymentMethod(treasuryAccounts, nextMethod, current)
+                  )
                 }}
               >
                 {paymentMethods.map((m) => (
@@ -1092,23 +1202,29 @@ export function ARClient() {
               </select>
             </div>
 
-            {batchMethod === PaymentMethod.TRANSFERENCIA && (
-              <div className="grid gap-2">
-                <Label>Banco de la transferencia</Label>
-                <select
-                  className="h-10 rounded-md border bg-background px-3 text-sm"
-                  value={batchTransferBankName}
-                  onChange={(e) => setBatchTransferBankName(e.target.value)}
-                >
-                  <option value="">Selecciona un banco</option>
-                  {DOMINICAN_BANKS.map((bankName) => (
-                    <option key={bankName} value={bankName}>
-                      {bankName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div className="grid gap-2">
+              <Label>Cuenta de tesorería</Label>
+              <select
+                className="h-10 rounded-md border bg-background px-3 text-sm"
+                value={batchTreasuryAccountId}
+                onChange={(e) => {
+                  const nextValue = e.target.value
+                  if (isCreateTreasuryAccountOption(nextValue)) {
+                    router.push(CREATE_TREASURY_ACCOUNT_URL)
+                    return
+                  }
+                  setBatchTreasuryAccountId(nextValue)
+                }}
+              >
+                <option value="">Selecciona una cuenta</option>
+                {availableBatchTreasuryAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {formatTreasuryAccountLabel(account)}
+                  </option>
+                ))}
+                <option value={CREATE_TREASURY_ACCOUNT_OPTION_VALUE}>+ Crear nueva cuenta</option>
+              </select>
+            </div>
 
             <div className="grid gap-2">
               <Label>Nota (opcional)</Label>
@@ -1123,7 +1239,13 @@ export function ARClient() {
             <Button
               type="button"
               onClick={onBatchPay}
-              disabled={isBatchSaving || selectedItems.length === 0 || batchAmountCents <= 0 || batchAmountCents > selectedTotalBalance}
+              disabled={
+                isBatchSaving ||
+                selectedItems.length === 0 ||
+                batchAmountCents <= 0 ||
+                batchAmountCents > selectedTotalBalance ||
+                !availableBatchTreasuryAccounts.some((account) => account.id === batchTreasuryAccountId)
+              }
             >
               {isBatchSaving ? "Guardando…" : "Guardar pago"}
             </Button>
@@ -1133,4 +1255,3 @@ export function ARClient() {
     </div>
   )
 }
-

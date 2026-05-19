@@ -265,6 +265,10 @@ export async function createFirstUser(formData: FormData) {
       canViewAuditLogs: true,
       canManageUsers: true,
       canManageSettings: true,
+      canViewTreasury: true,
+      canManageTreasuryAccounts: true,
+      canCreateTreasuryTransfers: true,
+      canReverseTreasuryTransfers: true,
     },
   })
 
