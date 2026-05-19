@@ -899,6 +899,8 @@ model Sale {
   notes String?
 
   cancelledAt   DateTime?
+  // Motivo obligatorio al cancelar para trazabilidad y control operativo.
+  cancellationReason String?
   cancelledBy   String?
   cancelledUser User?     @relation("CancelledSales", fields: [cancelledBy], references: [id])
 
@@ -1040,6 +1042,8 @@ model Payment {
   note             String?
 
   cancelledAt   DateTime?
+  // Motivo obligatorio al cancelar para trazabilidad y control operativo.
+  cancellationReason String?
   cancelledBy   String?
   cancelledUser User?     @relation("CancelledPayments", fields: [cancelledBy], references: [id])
 

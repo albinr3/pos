@@ -35,6 +35,9 @@ type UpdateSalePaymentSplitBody = {
 type UpdateSaleBody = {
   status?: string
   cancel?: boolean
+  cancellationReason?: string
+  cancelReason?: string
+  reason?: string
   items?: EditableSaleItem[]
   type?: string
   customerId?: string | null
@@ -255,7 +258,9 @@ export async function PUT(
       body?.cancel === true
 
     if (shouldCancel) {
-      const result = await cancelSale(id, user.username || user.name || "api", user)
+      // Acepta alias para mantener compatibilidad con clientes existentes.
+      const cancellationReason = String(body?.cancellationReason || body?.cancelReason || body?.reason || "").trim()
+      const result = await cancelSale(id, user.username || user.name || "api", cancellationReason, user)
       if (!result.success) {
         return NextResponse.json({ error: result.error || "No se pudo cancelar la venta" }, { status: 400 })
       }
@@ -425,7 +430,9 @@ export async function DELETE(
     }
 
     const { id } = await params
-    const result = await cancelSale(id, user.username || user.name || "api", user)
+    const body = await request.json().catch(() => ({} as { cancellationReason?: string; cancelReason?: string; reason?: string }))
+    const cancellationReason = String(body?.cancellationReason || body?.cancelReason || body?.reason || "").trim()
+    const result = await cancelSale(id, user.username || user.name || "api", cancellationReason, user)
     if (!result.success) {
       return NextResponse.json({ error: result.error || "No se pudo cancelar la venta" }, { status: 400 })
     }

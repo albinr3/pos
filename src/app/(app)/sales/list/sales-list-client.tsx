@@ -463,8 +463,14 @@ export function SalesListClient() {
 
   async function handleCancel(id: string) {
     if (!confirm("¿Cancelar esta venta? Se revertirá el stock descontado.")) return
+    const reason = prompt("Indica el motivo de cancelación:")
+    // Validación en cliente para evitar enviar cancelaciones sin motivo.
+    if (reason === null || !reason.trim()) {
+      toast({ title: "Motivo requerido", description: "Debes indicar un motivo para cancelar la factura." })
+      return
+    }
     try {
-      const result = await cancelSale(id, "admin")
+      const result = await cancelSale(id, "admin", reason.trim())
       if (result.success) {
         toast({ title: "Listo", description: "Venta cancelada" })
         refresh(query)

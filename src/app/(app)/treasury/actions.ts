@@ -70,7 +70,8 @@ export async function createTreasuryAccount(input: {
   currency?: string
   bankName?: string | null
   accountNumber?: string | null
-  openingBalanceCents?: number | null
+  openingBalanceCents: number
+  openingBalanceDate?: Date | null
 }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
@@ -83,6 +84,10 @@ export async function createTreasuryAccount(input: {
 
   const name = input.name.trim()
   if (!name) throw new Error("El nombre de la cuenta es requerido")
+  // Validación preventiva: evita crear cuentas sin saldo inicial trazable.
+  if (!Number.isInteger(input.openingBalanceCents) || input.openingBalanceCents < 0) {
+    throw new Error("El saldo inicial es obligatorio y debe ser un monto válido")
+  }
 
   const exists = await prisma.treasuryAccount.findFirst({
     where: {
@@ -94,17 +99,30 @@ export async function createTreasuryAccount(input: {
 
   if (exists) throw new Error("Ya existe una cuenta con ese nombre")
 
-  await prisma.treasuryAccount.create({
-    data: {
-      accountId: user.accountId,
-      name,
-      type: input.type,
-      currency: input.currency?.trim() || "DOP",
-      bankName: input.bankName?.trim() || null,
-      accountNumber: input.accountNumber?.trim() || null,
-      isActive: true,
-      createdByUserId: user.id,
-    },
+  await prisma.$transaction(async (tx) => {
+    const createdAccount = await tx.treasuryAccount.create({
+      data: {
+        accountId: user.accountId,
+        name,
+        type: input.type,
+        currency: input.currency?.trim() || "DOP",
+        bankName: input.bankName?.trim() || null,
+        accountNumber: input.accountNumber?.trim() || null,
+        isActive: true,
+        createdByUserId: user.id,
+      },
+    })
+
+    await tx.treasuryOpeningBalance.create({
+      data: {
+        accountId: user.accountId,
+        treasuryAccountId: createdAccount.id,
+        amountCents: input.openingBalanceCents,
+        effectiveAt: input.openingBalanceDate ?? new Date(),
+        note: "Saldo inicial al crear cuenta",
+        createdByUserId: user.id,
+      },
+    })
   })
 
   revalidatePath("/treasury")

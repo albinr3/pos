@@ -27,6 +27,12 @@ export async function POST(
     }
 
     const { id } = await params
+    const body = await request.json().catch(() => ({} as { cancellationReason?: string; cancelReason?: string; reason?: string }))
+    // Acepta alias para compatibilidad y obliga motivo de cancelación.
+    const cancellationReason = String(body?.cancellationReason || body?.cancelReason || body?.reason || "").trim()
+    if (!cancellationReason) {
+      return NextResponse.json({ error: "Debes indicar un motivo de cancelación" }, { status: 400 })
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findFirst({
@@ -74,6 +80,7 @@ export async function POST(
         data: {
           cancelledAt: new Date(),
           cancelledBy: user.id,
+          cancellationReason,
         },
       })
 
@@ -90,6 +97,7 @@ export async function POST(
             amountCents: payment.amountCents,
             method: payment.method,
             arId: payment.arId,
+            reason: cancellationReason,
           },
         },
         tx

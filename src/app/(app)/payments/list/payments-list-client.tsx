@@ -59,8 +59,14 @@ export function PaymentsListClient() {
 
   async function handleCancel(id: string) {
     if (!confirm("¿Cancelar este recibo? Se recalculará el balance de la cuenta por cobrar.")) return
+    const reason = prompt("Indica el motivo de cancelación:")
+    // Evita enviar solicitudes incompletas y reduce errores de operación.
+    if (reason === null || !reason.trim()) {
+      toast({ title: "Motivo requerido", description: "Debes indicar un motivo para cancelar el recibo." })
+      return
+    }
     try {
-      await cancelPayment(id)
+      await cancelPayment(id, reason.trim())
       toast({ title: "Listo", description: "Recibo cancelado" })
       refresh()
     } catch (e) {
@@ -178,7 +184,6 @@ export function PaymentsListClient() {
     </div>
   )
 }
-
 
 
 

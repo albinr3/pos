@@ -258,9 +258,12 @@ export async function getARSummaryStats(actor?: AuthActor) {
   }
 }
 
-export async function cancelPayment(id: string) {
+export async function cancelPayment(id: string, reason: string) {
   const currentUser = await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
+  const normalizedReason = reason.trim()
+  // Validación defensiva: exige motivo para evitar cancelaciones sin trazabilidad.
+  if (!normalizedReason) throw new Error("Debes indicar un motivo de cancelación")
 
   return prisma.$transaction(async (tx) => {
     // Verificar que el pago pertenece al account del usuario
@@ -320,6 +323,7 @@ export async function cancelPayment(id: string) {
       data: {
         cancelledAt: new Date(),
         cancelledBy: user.id,
+        cancellationReason: normalizedReason,
       },
     })
     if (cancelled.count === 0) throw new Error("Pago no encontrado")
@@ -336,6 +340,7 @@ export async function cancelPayment(id: string) {
         amountCents: payment.amountCents,
         method: payment.method,
         arId: payment.arId,
+        reason: normalizedReason,
       },
     }, tx)
 

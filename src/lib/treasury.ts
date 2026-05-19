@@ -1,25 +1,39 @@
 import type { Prisma, TreasuryAccount } from "@prisma/client"
 
-import { prisma } from "@/lib/db"
+import { getRawPrismaClient, prisma } from "@/lib/db"
 
 export type TreasuryMovementDirection = "IN" | "OUT"
 
 const DEFAULT_CASH_ACCOUNT_NAME = "Caja Efectivo"
 const LEGACY_CASH_ACCOUNT_NAMES = new Set(["Caja principal", "CaJA efectivo"])
 
+function getTreasuryAccountDelegate(db: Prisma.TransactionClient | typeof prisma) {
+  const delegate = (db as any)?.treasuryAccount
+  if (delegate) return delegate
+
+  const rawDelegate = (getRawPrismaClient() as any)?.treasuryAccount
+  if (rawDelegate) return rawDelegate
+
+  // Comentario preventivo: si esto falla, normalmente el cliente Prisma quedó desactualizado.
+  throw new Error(
+    "Cliente Prisma sin modelo treasuryAccount. Ejecuta `npx prisma generate` y reinicia el servidor."
+  )
+}
+
 export async function ensureDefaultTreasuryAccount(
   db: Prisma.TransactionClient | typeof prisma,
   accountId: string,
   createdByUserId?: string | null
 ): Promise<TreasuryAccount> {
-  const existing = await db.treasuryAccount.findFirst({
+  const treasuryAccount = getTreasuryAccountDelegate(db)
+  const existing = await treasuryAccount.findFirst({
     where: { accountId },
     orderBy: [{ isActive: "desc" }, { createdAt: "asc" }],
   })
 
   if (existing) {
     if (existing.type === "CAJA" && LEGACY_CASH_ACCOUNT_NAMES.has(existing.name)) {
-      return db.treasuryAccount.update({
+      return treasuryAccount.update({
         where: { id: existing.id },
         data: { name: DEFAULT_CASH_ACCOUNT_NAME },
       })
@@ -27,7 +41,7 @@ export async function ensureDefaultTreasuryAccount(
     return existing
   }
 
-  return db.treasuryAccount.create({
+  return treasuryAccount.create({
     data: {
       accountId,
       name: DEFAULT_CASH_ACCOUNT_NAME,
@@ -60,7 +74,8 @@ export async function requireTreasuryAccount(
     message?: string
   }
 ): Promise<TreasuryAccount> {
-  const account = await db.treasuryAccount.findFirst({
+  const treasuryAccount = getTreasuryAccountDelegate(db)
+  const account = await treasuryAccount.findFirst({
     where: {
       id: input.treasuryAccountId,
       accountId: input.accountId,
@@ -86,7 +101,8 @@ export async function resolveTreasuryAccountFromLegacyBankName(
   const bankName = input.transferBankName?.trim()
   if (!bankName) return null
 
-  return db.treasuryAccount.findFirst({
+  const treasuryAccount = getTreasuryAccountDelegate(db)
+  return treasuryAccount.findFirst({
     where: {
       accountId: input.accountId,
       ...(input.requireActive ? { isActive: true } : {}),

@@ -1457,9 +1457,12 @@ export async function getSaleById(id: string) {
   }
 }
 
-export async function cancelSale(id: string, username: string, currentUserArg?: any) {
+export async function cancelSale(id: string, username: string, reason: string, currentUserArg?: any) {
   const user = currentUserArg ?? await getCurrentUser()
   if (!user) return { success: false, error: "No autenticado" }
+  const normalizedReason = reason.trim()
+  // Validación defensiva: evita cancelar sin motivo desde UI o API.
+  if (!normalizedReason) return { success: false, error: "Debes indicar un motivo de cancelación" }
 
   try {
     return await prisma.$transaction(async (tx) => {
@@ -1519,6 +1522,7 @@ export async function cancelSale(id: string, username: string, currentUserArg?: 
         data: {
           cancelledAt: new Date(),
           cancelledBy: user.id,
+          cancellationReason: normalizedReason,
         },
       })
       if (cancelled.count === 0) return { success: false, error: "Error al actualizar estado de venta" }
@@ -1534,6 +1538,7 @@ export async function cancelSale(id: string, username: string, currentUserArg?: 
         details: {
           invoiceCode: sale.invoiceCode,
           totalCents: sale.totalCents,
+          reason: normalizedReason,
         },
       }, tx)
 

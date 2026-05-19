@@ -141,6 +141,11 @@ function getPrismaClient(): PrismaClient {
   return globalForPrisma.prisma
 }
 
+// Solo para utilidades internas que necesiten saltarse el Proxy de `prisma`.
+export function getRawPrismaClient(): PrismaClient {
+  return getPrismaClient()
+}
+
 /**
  * Wraps a Prisma model/operation to automatically log errors
  */

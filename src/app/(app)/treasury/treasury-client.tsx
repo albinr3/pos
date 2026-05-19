@@ -96,6 +96,8 @@ export function TreasuryClient() {
   const [openingAmount, setOpeningAmount] = useState("0")
   const [openingDate, setOpeningDate] = useState(TODAY)
   const [openingNote, setOpeningNote] = useState("")
+  const [newAccountOpeningAmount, setNewAccountOpeningAmount] = useState("")
+  const [newAccountOpeningDate, setNewAccountOpeningDate] = useState(TODAY)
   const [transferFromAccountId, setTransferFromAccountId] = useState("")
   const [transferToAccountId, setTransferToAccountId] = useState("")
   const [transferAmount, setTransferAmount] = useState("")
@@ -177,6 +179,8 @@ export function TreasuryClient() {
 
   function resetAccountForm() {
     setAccountForm(EMPTY_FORM)
+    setNewAccountOpeningAmount("")
+    setNewAccountOpeningDate(TODAY)
   }
 
   function openCreateAccount() {
@@ -202,6 +206,11 @@ export function TreasuryClient() {
       toast({ title: "Error", description: "El nombre es requerido", variant: "destructive" })
       return
     }
+    if (!accountForm.id && !newAccountOpeningAmount.trim()) {
+      // Validación preventiva: al crear cuenta el saldo inicial es obligatorio.
+      toast({ title: "Error", description: "El saldo inicial es obligatorio", variant: "destructive" })
+      return
+    }
 
     startSaving(async () => {
       try {
@@ -223,6 +232,8 @@ export function TreasuryClient() {
             currency: accountForm.currency,
             bankName: accountForm.bankName || null,
             accountNumber: accountForm.accountNumber || null,
+            openingBalanceCents: toCents(newAccountOpeningAmount || "0"),
+            openingBalanceDate: new Date(`${newAccountOpeningDate}T00:00:00`),
           })
           toast({ title: "Cuenta creada" })
         }
@@ -747,6 +758,27 @@ export function TreasuryClient() {
                 />
               </div>
             </div>
+            {!accountForm.id && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="grid gap-1">
+                  <Label>Saldo inicial RD$ (obligatorio)</Label>
+                  <Input
+                    value={newAccountOpeningAmount}
+                    onChange={(e) => setNewAccountOpeningAmount(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label>Fecha saldo inicial</Label>
+                  <Input
+                    type="date"
+                    value={newAccountOpeningDate}
+                    onChange={(e) => setNewAccountOpeningDate(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
 
             {accountForm.id && (
               <div className="flex items-center justify-between rounded-md border p-3">
