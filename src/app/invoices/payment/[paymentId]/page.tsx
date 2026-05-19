@@ -101,6 +101,10 @@ export default async function PaymentCartaPrintPage({
             Cancelado el {fmtDate(payment.cancelledAt)}
             {payment.cancelledUser && ` por ${payment.cancelledUser.name}`}
           </div>
+          {/* Mostrar motivo aquí evita ambigüedad cuando el recibo se revisa fuera del módulo de auditoría. */}
+          <div className="mt-1 text-sm text-red-700">
+            Motivo: {payment.cancellationReason?.trim() || "No especificado"}
+          </div>
         </div>
       )}
 

@@ -110,6 +110,10 @@ export default async function InvoicePrintPage({
             Cancelada el {fmtDate(sale.cancelledAt)}
             {sale.cancelledUser && ` por ${sale.cancelledUser.name}`}
           </div>
+          {/* Mostrar motivo en el documento evita depender solo del audit log para validar anulaciones. */}
+          <div className="mt-1 text-sm text-red-700">
+            Motivo: {sale.cancellationReason?.trim() || "No especificado"}
+          </div>
         </div>
       )}
 

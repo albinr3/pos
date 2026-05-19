@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { AlertTriangle, ArrowLeftRight, Landmark, Plus, RefreshCw, RotateCcw } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -84,13 +84,14 @@ function getMovementSourceLabel(source: string) {
 }
 
 export function TreasuryClient() {
-  const didAutoOpenCreateDialogRef = useRef(false)
+  const shouldAutoOpenCreateDialog =
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("newAccount") === "1"
   const [accounts, setAccounts] = useState<TreasuryAccountRow[]>([])
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
   const [fromDate, setFromDate] = useState(TODAY)
   const [toDate, setToDate] = useState(TODAY)
 
-  const [openAccountDialog, setOpenAccountDialog] = useState(false)
+  const [openAccountDialog, setOpenAccountDialog] = useState(shouldAutoOpenCreateDialog)
   const [accountForm, setAccountForm] = useState<AccountForm>(EMPTY_FORM)
   const [openingAccountId, setOpeningAccountId] = useState("")
   const [openingAmount, setOpeningAmount] = useState("0")
@@ -118,12 +119,23 @@ export function TreasuryClient() {
       ? [accountForm.bankName, ...RD_BANK_OPTIONS]
       : RD_BANK_OPTIONS
 
-  function load() {
+  const load = useCallback(
+    ({
+      fromDate: selectedFromDate,
+      toDate: selectedToDate,
+      transferFromAccountId: selectedTransferFromAccountId,
+      transferToAccountId: selectedTransferToAccountId,
+    }: {
+      fromDate: string
+      toDate: string
+      transferFromAccountId: string
+      transferToAccountId: string
+    }) => {
     startLoading(async () => {
       try {
         const [accountsResult, dashboardResult] = await Promise.all([
           listTreasuryAccounts(true),
-          getTreasuryDashboard({ from: fromDate, to: toDate }),
+          getTreasuryDashboard({ from: selectedFromDate, to: selectedToDate }),
         ])
         setAccounts(accountsResult)
         setDashboard(dashboardResult)
@@ -138,12 +150,14 @@ export function TreasuryClient() {
         }
 
         if (activeAccounts.length > 0) {
-          const fromExists = activeAccounts.some((account) => account.id === transferFromAccountId)
-          const nextFrom = fromExists ? transferFromAccountId : activeAccounts[0].id
+          const fromExists = activeAccounts.some((account) => account.id === selectedTransferFromAccountId)
+          const nextFrom = fromExists ? selectedTransferFromAccountId : activeAccounts[0].id
           const toExists =
-            transferToAccountId &&
-            activeAccounts.some((account) => account.id === transferToAccountId && account.id !== nextFrom)
-          const nextTo = toExists ? transferToAccountId : (activeAccounts.find((account) => account.id !== nextFrom)?.id ?? "")
+            selectedTransferToAccountId &&
+            activeAccounts.some((account) => account.id === selectedTransferToAccountId && account.id !== nextFrom)
+          const nextTo = toExists
+            ? selectedTransferToAccountId
+            : (activeAccounts.find((account) => account.id !== nextFrom)?.id ?? "")
 
           setTransferFromAccountId(nextFrom)
           setTransferToAccountId(nextTo)
@@ -156,26 +170,9 @@ export function TreasuryClient() {
         })
       }
     })
-  }
-
-  useEffect(() => {
-    load()
-  }, [])
-
-  useEffect(() => {
-    if (didAutoOpenCreateDialogRef.current) return
-    if (typeof window === "undefined") return
-
-    const params = new URLSearchParams(window.location.search)
-    if (params.get("newAccount") !== "1") return
-
-    didAutoOpenCreateDialogRef.current = true
-    openCreateAccount()
-    params.delete("newAccount")
-    const nextQuery = params.toString()
-    const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname
-    window.history.replaceState({}, "", nextUrl)
-  }, [])
+    },
+    [startLoading]
+  )
 
   function resetAccountForm() {
     setAccountForm(EMPTY_FORM)
@@ -187,6 +184,27 @@ export function TreasuryClient() {
     resetAccountForm()
     setOpenAccountDialog(true)
   }
+
+  useEffect(() => {
+    load({
+      fromDate: TODAY,
+      toDate: TODAY,
+      transferFromAccountId: "",
+      transferToAccountId: "",
+    })
+  }, [load])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.get("newAccount") !== "1") return
+
+    params.delete("newAccount")
+    const nextQuery = params.toString()
+    const nextUrl = nextQuery ? `${window.location.pathname}?${nextQuery}` : window.location.pathname
+    window.history.replaceState({}, "", nextUrl)
+  }, [])
 
   function openEditAccount(account: TreasuryAccountRow) {
     setAccountForm({
@@ -240,7 +258,12 @@ export function TreasuryClient() {
 
         setOpenAccountDialog(false)
         resetAccountForm()
-        load()
+        load({
+          fromDate,
+          toDate,
+          transferFromAccountId,
+          transferToAccountId,
+        })
       } catch (error) {
         toast({
           title: "Error",
@@ -272,7 +295,12 @@ export function TreasuryClient() {
         toast({ title: "Saldo inicial registrado" })
         setOpeningAmount("0")
         setOpeningNote("")
-        load()
+        load({
+          fromDate,
+          toDate,
+          transferFromAccountId,
+          transferToAccountId,
+        })
       } catch (error) {
         toast({
           title: "Error",
@@ -340,7 +368,12 @@ export function TreasuryClient() {
         toast({ title: "Transferencia registrada", description: result.reference })
         setTransferAmount("")
         setTransferNote("")
-        load()
+        load({
+          fromDate,
+          toDate,
+          transferFromAccountId,
+          transferToAccountId,
+        })
       } catch (error) {
         toast({
           title: "Error",
@@ -370,7 +403,12 @@ export function TreasuryClient() {
           title: "Transferencia anulada",
           description: `${result.originalReference} -> ${result.reverseReference}`,
         })
-        load()
+        load({
+          fromDate,
+          toDate,
+          transferFromAccountId,
+          transferToAccountId,
+        })
       } catch (error) {
         toast({
           title: "Error",
@@ -395,7 +433,19 @@ export function TreasuryClient() {
           <Label className="text-xs text-muted-foreground">Hasta</Label>
           <Input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
         </div>
-        <Button type="button" variant="secondary" onClick={load} disabled={isLoading}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() =>
+            load({
+              fromDate,
+              toDate,
+              transferFromAccountId,
+              transferToAccountId,
+            })
+          }
+          disabled={isLoading}
+        >
           <RefreshCw className="mr-2 h-4 w-4" />
           Actualizar
         </Button>
@@ -741,7 +791,10 @@ export function TreasuryClient() {
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona un banco" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent
+                    // Evita que el dropdown se salga de la pantalla: limita su alto al espacio disponible del viewport.
+                    className="max-h-[var(--radix-select-content-available-height)]"
+                  >
                     {bankOptions.map((bank) => (
                       <SelectItem key={bank} value={bank}>
                         {bank}
