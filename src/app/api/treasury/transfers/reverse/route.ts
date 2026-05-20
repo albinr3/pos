@@ -7,6 +7,11 @@ import { getCurrentUserFromRequest } from "../../../_helpers/auth"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function getSafeErrorMessage(error: unknown, fallback: string): string {
+  // Evita usar `.message` sobre `unknown` en bloques `catch` y mantiene el tipado estricto.
+  return error instanceof Error ? error.message : fallback
+}
+
 function parseDate(value: unknown): Date | null {
   if (!value) return null
   const parsed = new Date(String(value))
@@ -101,12 +106,13 @@ export async function POST(request: NextRequest) {
       reverseReference: formatTransferReference(result.reverseId),
     })
   } catch (error: unknown) {
-    const message = String(error?.message || "").toLowerCase()
+    const errorMessage = getSafeErrorMessage(error, "")
+    const message = errorMessage.toLowerCase()
     if (message.includes("no encontrada") || message.includes("ya fue reversada") || message.includes("ya es reverso")) {
-      return NextResponse.json({ error: error?.message || "No se pudo anular transferencia" }, { status: 400 })
+      return NextResponse.json({ error: errorMessage || "No se pudo anular transferencia" }, { status: 400 })
     }
     console.error("Error en POST /api/treasury/transfers/reverse:", error)
-    return NextResponse.json({ error: error?.message || "Error al anular transferencia" }, { status: 500 })
+    return NextResponse.json({ error: errorMessage || "Error al anular transferencia" }, { status: 500 })
   }
 }
 

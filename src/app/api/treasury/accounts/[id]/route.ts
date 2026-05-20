@@ -8,6 +8,11 @@ import { getCurrentUserFromRequest } from "../../../_helpers/auth"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function getSafeErrorMessage(error: unknown, fallback: string): string {
+  // En TypeScript, `catch` debe tratarse como `unknown`; así evitamos asumir `.message` sin validar el tipo.
+  return error instanceof Error ? error.message : fallback
+}
+
 function parseAccountType(value: unknown): TreasuryAccountType | null {
   const raw = String(value || "").trim().toUpperCase()
   if (raw === "CAJA") return TreasuryAccountType.CAJA
@@ -103,7 +108,10 @@ export async function PUT(
     })
   } catch (error: unknown) {
     console.error("Error en PUT /api/treasury/accounts/[id]:", error)
-    return NextResponse.json({ error: error?.message || "Error al actualizar cuenta de tesorería" }, { status: 500 })
+    return NextResponse.json(
+      { error: getSafeErrorMessage(error, "Error al actualizar cuenta de tesorería") },
+      { status: 500 }
+    )
   }
 }
 

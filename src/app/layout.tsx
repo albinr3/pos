@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import { ClerkProvider } from "@clerk/nextjs";
 import { esES } from "@clerk/localizations";
 import Script from "next/script";
@@ -8,14 +8,22 @@ import { MetaPixelProvider } from "@/components/analytics/meta-pixel-provider";
 import { ServiceWorkerRegistrar } from "@/components/app/service-worker-registrar";
 import "./globals.css";
 
-const geistSans = Geist({
+const geistSans = localFont({
+  // Fuente local para evitar dependencias de red en build (Google Fonts bloqueado/intermitente en CI).
+  src: [
+    { path: "./fonts/geist-latin.woff2" },
+    { path: "./fonts/geist-latin-ext.woff2" },
+  ],
   variable: "--font-geist-sans",
-  subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
+const geistMono = localFont({
+  // Mantiene la misma familia Geist Mono, servida localmente para builds determinísticos.
+  src: [
+    { path: "./fonts/geist-mono-latin.woff2" },
+    { path: "./fonts/geist-mono-latin-ext.woff2" },
+  ],
   variable: "--font-geist-mono",
-  subsets: ["latin"],
 });
 
 const siteUrl = "https://movopos.com";

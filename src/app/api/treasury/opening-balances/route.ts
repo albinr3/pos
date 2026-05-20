@@ -7,6 +7,11 @@ import { getCurrentUserFromRequest } from "../../_helpers/auth"
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
+function getSafeErrorMessage(error: unknown, fallback: string): string {
+  // Evita usar `.message` sobre `unknown` en bloques `catch` y mantiene el tipado estricto.
+  return error instanceof Error ? error.message : fallback
+}
+
 function parseSkip(value: string | null): number | null {
   if (value === null) return null
   const parsed = Number.parseInt(value, 10)
@@ -79,7 +84,10 @@ export async function GET(request: NextRequest) {
     })
   } catch (error: unknown) {
     console.error("Error en GET /api/treasury/opening-balances:", error)
-    return NextResponse.json({ error: error?.message || "Error al listar saldos iniciales" }, { status: 500 })
+    return NextResponse.json(
+      { error: getSafeErrorMessage(error, "Error al listar saldos iniciales") },
+      { status: 500 }
+    )
   }
 }
 
@@ -155,7 +163,10 @@ export async function POST(request: NextRequest) {
     )
   } catch (error: unknown) {
     console.error("Error en POST /api/treasury/opening-balances:", error)
-    return NextResponse.json({ error: error?.message || "Error al crear saldo inicial" }, { status: 500 })
+    return NextResponse.json(
+      { error: getSafeErrorMessage(error, "Error al crear saldo inicial") },
+      { status: 500 }
+    )
   }
 }
 
