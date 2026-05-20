@@ -60,6 +60,9 @@ type RecipeItemFormRow = {
   qty: string
 }
 
+type OnboardingFieldKey = "name" | "price" | "cost" | "stock"
+type OnboardingFieldCompletionState = Record<OnboardingFieldKey, boolean>
+
 const PAGE_SIZE = 50
 const INVENTORY_IMPORT_MAX_ROWS = 5000
 const INVENTORY_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -123,6 +126,15 @@ function createRecipeItemRow(): RecipeItemFormRow {
     id: createLocalRowId(),
     ingredientId: "",
     qty: "1",
+  }
+}
+
+function createOnboardingFieldCompletionState(): OnboardingFieldCompletionState {
+  return {
+    name: false,
+    price: false,
+    cost: false,
+    stock: false,
   }
 }
 
@@ -563,6 +575,9 @@ export function ProductsClient({
   const [isOnboardingGuideClosed, setIsOnboardingGuideClosed] = useState(false)
   const [resumeProductStepIndex, setResumeProductStepIndex] = useState(0)
   const [hasSkippedProgress, setHasSkippedProgress] = useState(false)
+  const [onboardingFieldCompletion, setOnboardingFieldCompletion] = useState<OnboardingFieldCompletionState>(
+    createOnboardingFieldCompletionState()
+  )
   const ingredientPickerCallbackRef = useRef<((id: string) => void) | null>(null)
   const progressKey = onboardingAccountId ? `${ONBOARDING_PROGRESS_KEY_PREFIX}:${onboardingAccountId}` : null
 
@@ -580,6 +595,13 @@ export function ProductsClient({
 
   const selectAllOnFocus = (event: FocusEvent<HTMLInputElement>) => {
     event.target.select()
+  }
+
+  function confirmOnboardingField(field: OnboardingFieldKey, isValid: boolean) {
+    // Evita que la guía salte al siguiente paso con el primer carácter.
+    // Solo confirmamos el paso cuando el usuario sale del campo (onBlur) con valor válido.
+    if (!onboardingProductGuide || !!editing) return
+    setOnboardingFieldCompletion((prev) => (prev[field] === isValid ? prev : { ...prev, [field]: isValid }))
   }
 
   useEffect(() => {
@@ -669,6 +691,7 @@ export function ProductsClient({
   function resetForm(p?: Product | null) {
     const x = p ?? null
     setEditing(x)
+    setOnboardingFieldCompletion(createOnboardingFieldCompletionState())
     setName(x?.name ?? "")
     setSku(x?.sku ?? "")
     setReference(x?.reference ?? "")
@@ -1519,7 +1542,7 @@ export function ProductsClient({
         },
       },
       {
-        complete: name.trim().length > 0,
+        complete: onboardingFieldCompletion.name && name.trim().length > 0,
         step: {
           target: "products-name-input",
           title: "Escribe el nombre del producto",
@@ -1527,7 +1550,7 @@ export function ProductsClient({
         },
       },
       {
-        complete: toCents(price) > 0,
+        complete: onboardingFieldCompletion.price && toCents(price) > 0,
         step: {
           target: "products-price-input",
           title: "Indica el precio de venta",
@@ -1536,7 +1559,7 @@ export function ProductsClient({
       },
       ...(canSeeCost
         ? [{
-          complete: toCents(cost) > 0,
+          complete: onboardingFieldCompletion.cost && toCents(cost) > 0,
           step: {
             target: "products-cost-input",
             title: "Registra el costo",
@@ -1545,7 +1568,7 @@ export function ProductsClient({
         }]
         : []),
       {
-        complete: Number.isFinite(parsedStock) && parsedStock > 0,
+        complete: onboardingFieldCompletion.stock && Number.isFinite(parsedStock) && parsedStock > 0,
         step: {
           target: "products-stock-input",
           title: "Agrega la cantidad de existencia inicial.",
@@ -1586,6 +1609,10 @@ export function ProductsClient({
     name,
     onboardingProductGuide,
     open,
+    onboardingFieldCompletion.cost,
+    onboardingFieldCompletion.name,
+    onboardingFieldCompletion.price,
+    onboardingFieldCompletion.stock,
     price,
     productType,
     resumeProductStepIndex,
@@ -2146,6 +2173,7 @@ export function ProductsClient({
                           <Input
                             value={name}
                             onChange={(e) => setName(e.target.value)}
+                            onBlur={(e) => confirmOnboardingField("name", e.target.value.trim().length > 0)}
                             placeholder="Ej: Coca-Cola 20 oz"
                             required
                           />
@@ -2236,6 +2264,7 @@ export function ProductsClient({
                               <Input
                                 value={price}
                                 onChange={(e) => setPrice(e.target.value)}
+                                onBlur={(e) => confirmOnboardingField("price", toCents(e.target.value) > 0)}
                                 inputMode="decimal"
                                 placeholder="Ej: 75.00"
                                 required
@@ -2251,6 +2280,7 @@ export function ProductsClient({
                                 <Input
                                   value={cost}
                                   onChange={(e) => setCost(e.target.value)}
+                                  onBlur={(e) => confirmOnboardingField("cost", toCents(e.target.value) > 0)}
                                   inputMode="decimal"
                                   placeholder="Ej: 50.00"
                                   required
@@ -2265,6 +2295,10 @@ export function ProductsClient({
                               <Input
                                 value={stock}
                                 onChange={(e) => setStock(e.target.value)}
+                                onBlur={(e) => {
+                                  const parsed = Number(e.target.value.replace(",", "."))
+                                  confirmOnboardingField("stock", Number.isFinite(parsed) && parsed > 0)
+                                }}
                                 inputMode="numeric"
                                 placeholder="Ej: 100"
                                 disabled={!!editing}
@@ -2320,6 +2354,7 @@ export function ProductsClient({
                               <Input
                                 value={price}
                                 onChange={(e) => setPrice(e.target.value)}
+                                onBlur={(e) => confirmOnboardingField("price", toCents(e.target.value) > 0)}
                                 inputMode="decimal"
                                 required
                                 disabled={editing ? (!user || (!user.canOverridePrice && !user.isOwner)) : false}
@@ -2334,6 +2369,7 @@ export function ProductsClient({
                                 <Input
                                   value={cost}
                                   onChange={(e) => setCost(e.target.value)}
+                                  onBlur={(e) => confirmOnboardingField("cost", toCents(e.target.value) > 0)}
                                   inputMode="decimal"
                                   required
                                   onFocus={selectAllOnFocus}
@@ -2347,6 +2383,10 @@ export function ProductsClient({
                               <Input
                                 value={stock}
                                 onChange={(e) => setStock(e.target.value)}
+                                onBlur={(e) => {
+                                  const parsed = Number(e.target.value.replace(",", "."))
+                                  confirmOnboardingField("stock", Number.isFinite(parsed) && parsed > 0)
+                                }}
                                 inputMode="decimal"
                                 placeholder="Ej: 45.5"
                                 disabled={!!editing}
@@ -2379,6 +2419,7 @@ export function ProductsClient({
                               <Input
                                 value={price}
                                 onChange={(e) => setPrice(e.target.value)}
+                                onBlur={(e) => confirmOnboardingField("price", toCents(e.target.value) > 0)}
                                 inputMode="decimal"
                                 required
                                 disabled={editing ? (!user || (!user.canOverridePrice && !user.isOwner)) : false}
@@ -2393,6 +2434,7 @@ export function ProductsClient({
                                 <Input
                                   value={cost}
                                   onChange={(e) => setCost(e.target.value)}
+                                  onBlur={(e) => confirmOnboardingField("cost", toCents(e.target.value) > 0)}
                                   inputMode="decimal"
                                   required
                                   onFocus={selectAllOnFocus}

@@ -138,7 +138,7 @@ export function OnboardingCard({
                 <div>
                   <h2 className="text-2xl font-semibold tracking-tight">Haz tu primera venta en 3 minutos</h2>
                   <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                    Primero entra a Productos desde el menú y crea un producto real. Luego haz una venta normal con guía paso a paso.
+                    ¡Felicidades!, ya estas a pocos pasos de organizar tu negocio. Haz click en iniciar guia para empezar el recorrido.
                   </p>
                 </div>
               </div>
