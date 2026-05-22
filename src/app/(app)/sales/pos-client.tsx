@@ -135,7 +135,7 @@ function serializeCartItem(item: CartItem) {
     reference: item.reference ? String(item.reference) : null,
     stock: Number(item.stock),
     qty: Number(item.qty),
-    unitPriceCents: Number(item.unitPriceCents),
+    unitPriceCents: normalizeUnitPriceCents(item.unitPriceCents),
     wasPriceOverridden: Boolean(item.wasPriceOverridden),
     unit: String(item.unit),
     itbisRateBp: Number(item.itbisRateBp ?? 1800),
@@ -143,6 +143,13 @@ function serializeCartItem(item: CartItem) {
     recipeItems: item.recipeItems,
     recipeAdjustments: item.recipeAdjustments,
   }
+}
+
+function normalizeUnitPriceCents(value: unknown): number {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return 0
+  // Comentario preventivo: algunos estados legacy guardaron decimales en centavos.
+  return Math.round(parsed)
 }
 
 function cacheUser(user: CurrentUser) {
@@ -569,7 +576,8 @@ export function PosClient({
               reference: item.reference ? String(item.reference) : null,
               stock: typeof item.stock === "number" ? item.stock : Number(item.stock) || 0,
               qty: typeof item.qty === "number" ? item.qty : Number(item.qty) || 1,
-              unitPriceCents: typeof item.unitPriceCents === "number" ? item.unitPriceCents : Number(item.unitPriceCents) || 0,
+              // Forzamos entero en centavos para no propagar valores corruptos al guardar/sincronizar.
+              unitPriceCents: normalizeUnitPriceCents(item.unitPriceCents),
               wasPriceOverridden: Boolean(item.wasPriceOverridden),
               unit: item.unit || "UNIDAD",
               itbisRateBp: typeof item.itbisRateBp === "number" ? item.itbisRateBp : Number(item.itbisRateBp) || 1800,
@@ -1035,7 +1043,7 @@ export function PosClient({
           reference: p.reference ?? null,
           stock: stockNum,
           qty: 1,
-          unitPriceCents: p.priceCents,
+          unitPriceCents: normalizeUnitPriceCents(p.priceCents),
           wasPriceOverridden: false,
           unit: productUnit,
           itbisRateBp: p.itbisRateBp ?? 1800,
@@ -1216,6 +1224,26 @@ export function PosClient({
       saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
         ? resolveTransferBankNameForAccount(treasuryAccountId)
         : null
+    const normalizedSaleItems = cart.map((c) => ({
+      productId: c.productId,
+      qty: c.qty,
+      unitPriceCents: normalizeUnitPriceCents(c.unitPriceCents),
+      wasPriceOverridden: c.wasPriceOverridden,
+      recipeAdjustments: c.recipeAdjustments.map((adjustment) => ({
+        ingredientId: adjustment.ingredientId,
+        adjustmentType: adjustment.adjustmentType,
+      })),
+    }))
+    const invalidPriceItem = normalizedSaleItems.find((item) => item.unitPriceCents <= 0)
+    if (invalidPriceItem) {
+      const invalidProduct = cart.find((item) => item.productId === invalidPriceItem.productId)
+      toast({
+        title: "Precio inválido",
+        description: `El producto "${invalidProduct?.name ?? "sin nombre"}" debe tener un precio mayor a RD$0.00.`,
+        variant: "destructive",
+      })
+      return
+    }
 
     const saveSaleOffline = async () => {
       const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -1228,16 +1256,7 @@ export function PosClient({
           saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? treasuryAccountId : null,
         transferBankName: saleTransferBankName,
         paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
-        items: cart.map((c) => ({
-          productId: c.productId,
-          qty: c.qty,
-          unitPriceCents: c.unitPriceCents,
-          wasPriceOverridden: c.wasPriceOverridden,
-          recipeAdjustments: c.recipeAdjustments.map((adjustment) => ({
-            ingredientId: adjustment.ingredientId,
-            adjustmentType: adjustment.adjustmentType,
-          })),
-        })),
+        items: normalizedSaleItems,
         shippingCents: shippingCents > 0 ? shippingCents : undefined,
         applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
         discountMode: discountModeForSave,
@@ -1271,16 +1290,7 @@ export function PosClient({
                 saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? treasuryAccountId : null,
               transferBankName: saleTransferBankName,
               paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
-              items: cart.map((c) => ({
-                productId: c.productId,
-                qty: c.qty,
-                unitPriceCents: c.unitPriceCents,
-                wasPriceOverridden: c.wasPriceOverridden,
-                recipeAdjustments: c.recipeAdjustments.map((adjustment) => ({
-                  ingredientId: adjustment.ingredientId,
-                  adjustmentType: adjustment.adjustmentType,
-                })),
-              })),
+              items: normalizedSaleItems,
               shippingCents: shippingCents > 0 ? shippingCents : undefined,
               applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
               discountMode: discountModeForSave,

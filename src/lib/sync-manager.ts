@@ -17,6 +17,44 @@ import { addBatchPayment, addPayment } from "@/app/(app)/ar/actions"
 let isSyncing = false
 let syncListeners: Array<(syncing: boolean) => void> = []
 
+function toPositiveInteger(value: unknown): number {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 0
+  return Math.round(numeric)
+}
+
+function normalizePendingSaleItems(items: unknown): Array<{
+  productId: string
+  qty: number
+  unitPriceCents: number
+  wasPriceOverridden: boolean
+  recipeAdjustments: Array<{ ingredientId: string; adjustmentType: "SIN" | "EXTRA" }>
+}> {
+  if (!Array.isArray(items)) return []
+
+  return items
+    .map((item: any) => ({
+      productId: String(item?.productId || ""),
+      qty: Number(item?.qty ?? 0),
+      // Importante: redondear aquí evita reintentos infinitos por centavos decimales legacy.
+      unitPriceCents: toPositiveInteger(item?.unitPriceCents),
+      wasPriceOverridden: Boolean(item?.wasPriceOverridden),
+      recipeAdjustments: Array.isArray(item?.recipeAdjustments)
+        ? item.recipeAdjustments
+            .map((adjustment: any) => ({
+              ingredientId: String(adjustment?.ingredientId || ""),
+              adjustmentType: String(adjustment?.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
+            }))
+            .filter(
+              (adjustment: { ingredientId: string; adjustmentType: string }) =>
+                adjustment.ingredientId.length > 0 &&
+                (adjustment.adjustmentType === "SIN" || adjustment.adjustmentType === "EXTRA")
+            )
+        : [],
+    }))
+    .filter((item) => item.productId.length > 0 && item.qty > 0 && item.unitPriceCents > 0)
+}
+
 function isAlreadyPaidError(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   const message = error.message.toLowerCase()
@@ -53,9 +91,18 @@ export async function syncPendingData() {
     const pendingSales = await getPendingSales()
     let salesSynced = 0
     let salesErrors = 0
+    let salesDiscardedInvalid = 0
 
     for (const sale of pendingSales) {
       try {
+        const normalizedItems = normalizePendingSaleItems(sale.items)
+        if (normalizedItems.length === 0) {
+          // Si toda la venta está corrupta/inválida, se descarta para no bloquear la cola.
+          await deletePendingSale(sale.tempId)
+          salesDiscardedInvalid++
+          continue
+        }
+
         // Convertir la venta offline al formato esperado por createSale
         await createSale({
           customerId: sale.customerId,
@@ -64,24 +111,7 @@ export async function syncPendingData() {
           transferBankName: sale.transferBankName || undefined,
           treasuryAccountId: sale.treasuryAccountId || undefined,
           paymentSplits: sale.paymentSplits,
-          items: (sale.items ?? []).map((item: any) => ({
-            productId: String(item.productId || ""),
-            qty: Number(item.qty ?? 0),
-            unitPriceCents: Number(item.unitPriceCents ?? 0),
-            wasPriceOverridden: Boolean(item.wasPriceOverridden),
-            recipeAdjustments: Array.isArray(item.recipeAdjustments)
-              ? item.recipeAdjustments
-                  .map((adjustment: any) => ({
-                    ingredientId: String(adjustment.ingredientId || ""),
-                    adjustmentType: String(adjustment.adjustmentType || "").toUpperCase() as "SIN" | "EXTRA",
-                  }))
-                  .filter(
-                    (adjustment: { ingredientId: string; adjustmentType: string }) =>
-                      adjustment.ingredientId.length > 0 &&
-                      (adjustment.adjustmentType === "SIN" || adjustment.adjustmentType === "EXTRA")
-                  )
-              : [],
-          })),
+          items: normalizedItems,
           shippingCents: sale.shippingCents || 0,
           discountMode: sale.discountMode === "MANUAL" ? "MANUAL" : sale.discountMode === "AUTO" ? "AUTO" : undefined,
           manualDiscountPercentBp:
@@ -194,6 +224,14 @@ export async function syncPendingData() {
       toast({
         title: "Algunos elementos no se pudieron sincronizar",
         description: `${salesErrors} venta(s) y ${paymentsErrors} pago(s) con errores`,
+        variant: "destructive",
+      })
+    }
+
+    if (salesDiscardedInvalid > 0) {
+      toast({
+        title: "Ventas pendientes descartadas",
+        description: `Se descartaron ${salesDiscardedInvalid} venta(s) con datos inválidos para evitar errores repetidos.`,
         variant: "destructive",
       })
     }
