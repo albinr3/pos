@@ -57,7 +57,7 @@ export default function FacturacionOnlinePage() {
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link href="/pricing">Ver precios</Link>
+              <Link href="/precios">Ver precios</Link>
             </Button>
           </div>
         </div>

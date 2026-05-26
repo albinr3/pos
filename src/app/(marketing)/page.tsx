@@ -1,5 +1,7 @@
 import type { Metadata } from "next"
 import Image from "next/image"
+import Link from "next/link"
+import { ArrowRight, Smartphone } from "lucide-react"
 import { Hero } from "@/components/marketing/hero"
 import { Features } from "@/components/marketing/features"
 import { BusinessTypesSection } from "@/components/marketing/business-types-section"
@@ -9,28 +11,27 @@ import { FAQSection } from "@/components/marketing/faq-section"
 import { faqItems } from "@/components/marketing/faq-data"
 import { PricingCard } from "@/components/marketing/pricing-card"
 import { Button } from "@/components/ui/button"
-import Link from "next/link"
-import { ArrowRight, Smartphone } from "lucide-react"
 
 export const metadata: Metadata = {
-  title: "Sistema de facturación en República Dominicana | MOVOPos",
+  // Nota SEO: no repetir marca aquí porque el layout aplica el template "%s | MOVOPos".
+  title: "Sistema POS en República Dominicana | Facturación, Inventario y Ventas",
   description:
-    "Sistema de facturación en República Dominicana para negocios, colmados y tiendas: factura en RD$, controla inventario y usa tu punto de venta con prueba gratis de 15 días.",
+    "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Administra ventas, caja, clientes, cuentas por cobrar y reportes con MOVOPos. Prueba gratis 15 días.",
   alternates: {
     canonical: "/",
   },
   openGraph: {
-    title: "Sistema de facturación en República Dominicana | MOVOPos",
+    title: "Sistema POS en República Dominicana | Facturación, Inventario y Ventas",
     description:
-      "Factura en RD$, controla inventario y vende con un sistema de facturación y POS en la nube para negocios en República Dominicana.",
+      "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Administra ventas, caja, clientes, cuentas por cobrar y reportes con MOVOPos. Prueba gratis 15 días.",
     url: "/",
   },
   twitter: {
-    title: "Sistema de facturación en República Dominicana | MOVOPos",
+    title: "Sistema POS en República Dominicana | Facturación, Inventario y Ventas",
     description:
-      "Factura en RD$, controla inventario y vende con un sistema de facturación y POS en la nube para negocios en República Dominicana.",
+      "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Administra ventas, caja, clientes, cuentas por cobrar y reportes con MOVOPos. Prueba gratis 15 días.",
   },
-};
+}
 
 const jsonLd = [
   {
@@ -44,10 +45,10 @@ const jsonLd = [
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    name: "Sistema de facturación en República Dominicana | MOVOPos",
+    name: "Sistema POS en República Dominicana | Facturación e Inventario | MOVOPos",
     url: "https://movopos.com/",
     description:
-      "Sistema de facturación en República Dominicana con punto de venta, inventario, cuentas por cobrar para negocios locales.",
+      "Sistema POS en República Dominicana para facturar, vender y controlar inventario con caja, clientes, cuentas por cobrar y reportes.",
   },
   {
     "@context": "https://schema.org",
@@ -61,13 +62,13 @@ const jsonLd = [
       },
     })),
   },
-];
+]
 
 const previewPlans = [
   {
     name: "Plan Mensual",
     price: "RD$ 1,300",
-    description: "Sistema de facturación, POS e inventario con acceso completo",
+    description: "Sistema POS completo con facturación, inventario y ventas",
     features: [
       "Productos ilimitados",
       "Ventas ilimitadas",
@@ -88,25 +89,25 @@ const solutionPages = [
   {
     title: "Sistema POS",
     description:
-      "Conoce cómo funciona un sistema punto de venta o programa punto de venta para facturar rápido y cobrar con más control.",
+      "Conoce cómo funciona un sistema punto de venta para vender más rápido y cobrar con más control.",
     href: "/sistema-pos",
   },
   {
-    title: "Sistema de inventario",
+    title: "Facturación e inventario",
     description:
-      "Descubre una solución para controlar stock, compras y productos si estás evaluando un programa de inventario o software de inventario.",
+      "Mira cómo centralizar facturación, ventas e inventario en una sola plataforma para tu negocio.",
     href: "/sistema-de-inventario",
   },
   {
     title: "Facturación online",
     description:
-      "Ideal para negocios que buscan un programa para hacer facturas o un programa para facturar desde cualquier dispositivo.",
+      "Ideal para negocios que quieren facturar en la nube desde laptop, tablet o celular.",
     href: "/facturacion-online",
   },
   {
-    title: "Punto de venta para abarrotes",
+    title: "Punto de venta para colmados",
     description:
-      "Pensado para colmados, abarrotes y puntos de venta para negocios pequeños con alta rotación.",
+      "Una guía para colmados y negocios de alta rotación que necesitan caja e inventario ordenado.",
     href: "/punto-de-venta-abarrotes",
   },
 ]
@@ -191,7 +192,6 @@ export default function LandingPage() {
       <Hero />
       <Features />
       <BusinessTypesSection />
-      <DesktopSectionCTA />
       <POSDemoSection />
       <DesktopSectionCTA />
 
@@ -199,12 +199,11 @@ export default function LandingPage() {
         <div className="container">
           <div className="mx-auto max-w-3xl text-center mb-8">
             <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-              Soluciones para cada tipo de búsqueda
+              Guías para elegir tu sistema POS
             </h2>
             <p className="mt-6 text-xl text-muted-foreground">
-              Además de nuestro sistema de facturación en República Dominicana, aquí encontrarás
-              contenido útil si estás comparando un software de facturacion, un programa de
-              facturacion, un sistema de ventas o un sistema de ventas para negocio.
+              Explora páginas por necesidad para comparar opciones y elegir el mejor sistema POS
+              para tu tipo de negocio en República Dominicana.
             </p>
           </div>
 
@@ -231,12 +230,11 @@ export default function LandingPage() {
         <div className="container">
           <div className="mx-auto max-w-2xl text-center mb-8">
             <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-              Precio simple para tu sistema de facturación
+              Un sistema POS completo por RD$1,300 al mes
             </h2>
             <p className="mt-6 text-xl text-muted-foreground">
-              Un solo plan con todas las funcionalidades que necesitas si buscas software
-              facturacion, software de ventas e inventario o un sistema de ventas e inventario para
-              operar mejor. Prueba gratis por 15 días y cancela cuando quieras.
+              Prueba MOVOPos gratis durante 15 días. Luego continúa con todas las funcionalidades
+              incluidas por RD$1,300 al mes, sin comisiones por transacción.
             </p>
           </div>
 
@@ -250,13 +248,10 @@ export default function LandingPage() {
 
       <MobileAppTeaserSection />
       <FAQSection />
-      <DesktopSectionCTA />
-
       <CTASection />
+
       <div className="h-20 md:hidden" />
       <MobileStickyCTA />
     </>
   )
 }
-
-

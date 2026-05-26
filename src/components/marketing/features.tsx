@@ -2,26 +2,36 @@
 
 import {
   ShoppingCart,
+  ReceiptText,
   Package,
   CreditCard,
   BarChart3,
   Users,
   FileText,
-  Truck,
-  Shield,
+  RotateCcw,
 } from "lucide-react"
 import { FeatureCard } from "./feature-card"
 
 const features = [
   {
     name: "Punto de Venta",
-    description: "Facturación térmica rápida con clientes, impuestos y métodos de pago locales.",
+    description: "Cobra rápido en caja, registra ventas y reduce filas en el mostrador.",
     icon: ShoppingCart,
   },
   {
+    name: "Facturación",
+    description: "Emite facturas en RD$ con una operación ágil para ventas diarias.",
+    icon: ReceiptText,
+  },
+  {
     name: "Control de Inventario",
-    description: "Productos, stock mínimo, proveedores y compras centralizados en tiempo real.",
+    description: "Controla productos, stock y movimientos para evitar faltantes o sobreinventario.",
     icon: Package,
+  },
+  {
+    name: "Ventas y Reportes",
+    description: "Monitorea resultados, márgenes y productos más vendidos con reportes claros.",
+    icon: BarChart3,
   },
   {
     name: "Cuentas por Cobrar",
@@ -29,13 +39,8 @@ const features = [
     icon: CreditCard,
   },
   {
-    name: "Reportes y Análisis",
-    description: "Dashboard con métricas clave, ventas por periodo y resultados del negocio.",
-    icon: BarChart3,
-  },
-  {
-    name: "Gestión de Clientes",
-    description: "Historial de compras, datos de contacto y segmentación para fidelizar.",
+    name: "Clientes",
+    description: "Mantén historial de compras, datos de contacto y estado de cuenta por cliente.",
     icon: Users,
   },
   {
@@ -45,13 +50,8 @@ const features = [
   },
   {
     name: "Devoluciones",
-    description: "Procesa devoluciones y ajusta inventario automáticamente sin errores.",
-    icon: Truck,
-  },
-  {
-    name: "Seguro y Confiable",
-    description: "Respaldos automáticos, roles y permisos para proteger tu operación.",
-    icon: Shield,
+    description: "Registra devoluciones y ajusta inventario automáticamente con trazabilidad.",
+    icon: RotateCcw,
   },
 ]
 
@@ -61,12 +61,11 @@ export function Features() {
       <div className="container">
         <div className="mx-auto max-w-2xl text-center mb-8">
           <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Funciones clave de nuestro sistema de facturación en República Dominicana
+            Un sistema POS completo para administrar tu negocio
           </h2>
           <p className="mt-6 text-xl text-muted-foreground">
-            Factura, vende y cobra en RD$ desde un solo software de inventario y sistema de control
-            de inventarios pensado para negocios dominicanos que también necesitan vender con más
-            orden.
+            MOVOPos integra punto de venta, facturación, inventario, ventas, clientes y cuentas
+            por cobrar en una sola plataforma para negocios en República Dominicana.
           </p>
         </div>
 
@@ -84,5 +83,4 @@ export function Features() {
     </section>
   )
 }
-
 

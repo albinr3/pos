@@ -5,53 +5,53 @@ export type FAQItem = {
 
 export const faqItems: FAQItem[] = [
   {
-    question: "¿Qué es MOVOPos y para quién está diseñado en República Dominicana?",
+    question: "¿Qué es un sistema POS?",
     answer:
-      "MOVOPos es un sistema de facturación en República Dominicana para colmados, tiendas, repuestos, salones y otros negocios que necesitan controlar ventas, inventario, compras y cuentas por cobrar desde un solo lugar.",
+      "Un sistema POS es una plataforma para vender, facturar, cobrar y controlar operaciones como inventario, caja y clientes desde un solo lugar.",
   },
   {
-    question: "¿Funciona con pesos RD$?",
+    question: "¿Qué incluye MOVOPos?",
     answer:
-      "Sí. Puedes trabajar en RD$ y registrar múltiples métodos de pago para tu operación diaria.",
+      "MOVOPos incluye punto de venta, facturación, inventario, clientes, cuentas por cobrar, cotizaciones, devoluciones y reportes para operar tu negocio con más control.",
   },
   {
-    question: "¿Puedo usarlo como facturación online sin instalar programas complejos?",
+    question: "¿MOVOPos incluye facturación e inventario?",
     answer:
-      "Sí. MOVOPos funciona 100% web, así que puedes entrar desde laptop, tablet o móvil. Solo conectas tu impresora  y empiezas a facturar.",
+      "Sí. Registra ventas, emite facturas en RD$ y descuenta inventario automáticamente en cada transacción.",
   },
   {
-    question: "¿Qué métodos de pago aceptamos?",
+    question: "¿Puedo usar MOVOPos en República Dominicana?",
     answer:
-      "Aceptamos tarjetas de crédito y transferencias bancarias.",
+      "Sí. MOVOPos está pensado para negocios dominicanos y su operación diaria.",
   },
   {
-    question: "¿Tienen aplicación móvil?",
+    question: "¿El sistema funciona en RD$?",
     answer:
-      "Sí, tenemos aplicación móvil, pero actualmente solo está disponible para celulares Android.",
+      "Sí. Puedes facturar y registrar cobros en pesos dominicanos (RD$).",
   },
   {
-    question: "¿Incluye sistema POS y control de inventario?",
+    question: "¿Puedo usarlo sin instalar programas?",
     answer:
-      "Sí. Además de facturación, incluye sistema POS, control de inventario, compras, clientes, cuentas por cobrar, cotizaciones y devoluciones.",
+      "Sí. MOVOPos funciona en la nube, así que entras desde navegador en laptop, tablet o móvil sin instalaciones complejas.",
   },
   {
-    question: "¿Puedo probarlo gratis y cuánto cuesta?",
+    question: "¿Cuánto cuesta MOVOPos?",
     answer:
       "Tienes 15 días de prueba gratis. Luego pagas RD$1,300 al mes con todas las funcionalidades incluidas y sin comisiones por transacción.",
   },
   {
-    question: "¿Puedo usarlo con varios usuarios y roles?",
+    question: "¿Sirve para colmados, tiendas y repuestos?",
     answer:
-      "Sí. Agrega múltiples usuarios con permisos por rol como cajero, administrador o inventario para mantener el control de tu operación.",
+      "Sí. MOVOPos se adapta a colmados, tiendas, repuestos, salones, ferreterías, farmacias y otros negocios con alta rotación de ventas.",
   },
   {
-    question: "¿Necesito internet todo el tiempo?",
+    question: "¿Puedo trabajar con varios usuarios?",
     answer:
-      "No necesariamente, Necesitas conexión para sincronizar ventas e inventario en tiempo real y mantener tus datos siempre actualizados en la nube. pero si se te corta el internet, puedes seguir facturando y cobrando y cuando te conectes a internet se sincroniza.",
+      "Sí. Puedes crear usuarios con permisos por rol, por ejemplo para caja, inventario y administración.",
   },
   {
-    question: "¿Cómo protegen mis datos y qué soporte ofrecen?",
+    question: "¿Qué pasa si se va el internet?",
     answer:
-      "Usamos infraestructura en la nube con respaldos automáticos y control de permisos. Además, ofrecemos soporte y acompañamiento para negocios en República Dominicana.",
+      "Puedes seguir operando y luego sincronizar la información cuando vuelva la conexión, manteniendo tus datos actualizados.",
   },
 ]

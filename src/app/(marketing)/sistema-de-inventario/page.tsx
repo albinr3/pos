@@ -51,7 +51,7 @@ export default function SistemaDeInventarioPage() {
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Button asChild size="lg">
-              <Link href="/pricing">
+              <Link href="/precios">
                 Ver plan
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Link>

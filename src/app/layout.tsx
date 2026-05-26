@@ -26,16 +26,19 @@ const GTAG_LOADER_ID = GA_MEASUREMENT_ID ?? GOOGLE_ADS_ID;
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "MOVOPos - Sistema de facturación en República Dominicana",
+    default: "MOVOPos - Sistema POS en República Dominicana",
     template: "%s | MOVOPos",
   },
   description:
-    "Sistema de facturación en República Dominicana con punto de venta, inventario, compras y cuentas por cobrar. Factura en RD$ desde cualquier dispositivo.",
+    "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Administra caja, clientes, cuentas por cobrar y reportes en la nube.",
   keywords: [
+    "sistema pos en república dominicana",
     "sistema de facturación en república dominicana",
     "sistema de facturación",
     "sistema pos",
     "sistema punto de venta",
+    "sistema de facturación e inventario",
+    "software de ventas e inventario",
     "facturación online",
     "inventario",
     "sistema de inventario",
@@ -58,27 +61,27 @@ export const metadata: Metadata = {
     locale: "es_DO",
     url: siteUrl,
     siteName: "MOVOPos",
-    title: "MOVOPos - Sistema de facturación en República Dominicana",
+    title: "MOVOPos - Sistema POS en República Dominicana",
     description:
-      "Sistema de facturación en República Dominicana con punto de venta, inventario, compras y cuentas por cobrar para negocios locales.",
+      "Sistema POS en República Dominicana para facturar, vender y controlar inventario con caja, clientes, cuentas por cobrar y reportes.",
     images: [
       {
         url: "/hero-img.svg",
         width: 1200,
         height: 630,
-        alt: "Sistema de facturación en República Dominicana",
+        alt: "Sistema POS en República Dominicana",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "MOVOPos - Sistema de facturación en República Dominicana",
+    title: "MOVOPos - Sistema POS en República Dominicana",
     description:
-      "Sistema de facturación en República Dominicana con punto de venta, inventario, compras y cuentas por cobrar para negocios locales.",
+      "Sistema POS en República Dominicana para facturar, vender y controlar inventario con caja, clientes, cuentas por cobrar y reportes.",
     images: [
       {
         url: "/hero-img.svg",
-        alt: "Sistema de facturación en República Dominicana",
+        alt: "Sistema POS en República Dominicana",
       },
     ],
   },

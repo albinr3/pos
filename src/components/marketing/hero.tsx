@@ -15,16 +15,15 @@ export function Hero() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center">
           <div className="text-center lg:text-left">
             <h1 className="text-5xl font-bold tracking-tight text-white sm:text-7xl">
-              Sistema de facturación
+              Sistema POS en República Dominicana
               <span className="block mt-3 text-white">
-                en República Dominicana
+                para facturación, inventario y ventas
               </span>
             </h1>
             <p className="mt-8 text-xl leading-8 text-white/90 sm:text-2xl">
-              Sistema de facturación en la nube para negocios en República Dominicana con un
-              software de facturacion, sistema de ventas e inventario, cuentas por cobrar.
-              Prueba gratis 15 días y administra ventas en RD$ desde cualquier
-              dispositivo.
+              MOVOPos es un sistema POS en la nube para negocios dominicanos que necesitan vender,
+              facturar en RD$, controlar inventario, manejar cuentas por cobrar y consultar
+              reportes desde cualquier dispositivo.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-start gap-3 sm:gap-x-6 px-4 sm:px-0">
               <Button
@@ -43,7 +42,7 @@ export function Hero() {
                 size="lg"
                 className="border-2 border-white text-white bg-transparent hover:bg-white/10 hover:text-white w-full sm:w-auto"
               >
-                <Link href="/sistema-pos">Ver sistema POS</Link>
+                <Link href="#demo-pos">Ver demo</Link>
               </Button>
             </div>
           </div>

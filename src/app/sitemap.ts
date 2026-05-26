@@ -5,7 +5,8 @@ const siteUrl = "https://movopos.com"
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages = [
     "/",
-    "/pricing",
+    // Canonical de precios para indexación; /pricing redirige de forma permanente.
+    "/precios",
     "/about",
     "/como-usar-la-plataforma",
     "/contact",

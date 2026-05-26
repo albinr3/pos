@@ -3,14 +3,15 @@
 
 export function POSDemoSection() {
   return (
-    <section className="py-12 sm:py-16 bg-gradient-to-b from-white via-gray-50/50 to-white">
+    <section id="demo-pos" className="py-12 sm:py-16 bg-gradient-to-b from-white via-gray-50/50 to-white">
       <div className="container">
         <div className="mx-auto max-w-3xl text-center mb-10">
           <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-            Factura de la forma que prefieras
+            Vende y factura más rápido desde tu punto de venta
           </h2>
           <p className="mt-6 text-xl text-muted-foreground">
-            Dos modos de visualización para adaptarse a tu estilo de trabajo
+            Usa MOVOPos en modo lista o modo imágenes según la forma en que trabaja tu negocio.
+            Registra productos, cobra y factura de manera rápida desde una pantalla sencilla.
           </p>
         </div>
 
@@ -23,7 +24,8 @@ export function POSDemoSection() {
                   Modo Lista
                 </h3>
                 <p className="text-lg text-muted-foreground leading-relaxed">
-                  Visualización tradicional en formato tabla. Perfecto para búsquedas rápidas y gestión eficiente de productos.
+                  Visualización tradicional en formato tabla para buscar productos rápido y cobrar
+                  sin fricción.
                 </p>
               </div>
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-gray-200/80 bg-white transform transition-transform duration-300 group-hover:scale-[1.02]">
@@ -31,7 +33,7 @@ export function POSDemoSection() {
                 <div className="absolute top-0 left-0 right-0 h-12 bg-gradient-to-b from-white/80 to-transparent pointer-events-none z-20"></div>
                 <img
                   src="/ventatipolista.gif"
-                  alt="Proceso de facturación en modo lista"
+                  alt="Proceso de venta y facturación en modo lista"
                   className="w-full h-auto relative z-10"
                   decoding="async"
                   loading="lazy"
@@ -46,7 +48,8 @@ export function POSDemoSection() {
                   Modo Imágenes
                 </h3>
                 <p className="text-lg text-muted-foreground leading-relaxed">
-                  Vista visual con fotos de productos. Ideal para tiendas donde la imagen del producto es clave en la venta.
+                  Vista visual con fotos para negocios donde la imagen del producto acelera la
+                  decisión de compra.
                 </p>
               </div>
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border border-gray-200/80 bg-white transform transition-transform duration-300 group-hover:scale-[1.02]">
@@ -54,7 +57,7 @@ export function POSDemoSection() {
                 <div className="absolute top-0 left-0 right-0 h-12 bg-gradient-to-b from-white/80 to-transparent pointer-events-none z-20"></div>
                 <img
                   src="/ventatipoimagenes.gif"
-                  alt="Proceso de facturación en modo imágenes"
+                  alt="Proceso de venta y facturación en modo imágenes"
                   className="w-full h-auto relative z-10"
                   decoding="async"
                   loading="lazy"
@@ -65,7 +68,7 @@ export function POSDemoSection() {
 
           <div className="mt-8 text-center">
             <p className="text-lg text-muted-foreground">
-              Cambia entre modos en cualquier momento según tus necesidades
+              Cambia entre modos en cualquier momento según tus necesidades de venta
             </p>
           </div>
         </div>
