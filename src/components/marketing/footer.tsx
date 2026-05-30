@@ -4,11 +4,7 @@ const footerLinks = {
   producto: [
     { href: "/", label: "Sistema POS" },
     { href: "/como-usar-la-plataforma", label: "Tutoriales" },
-    { href: "/sistema-pos", label: "Sistema POS" },
-    { href: "/sistema-de-inventario", label: "Sistema de inventario" },
-    { href: "/facturacion-online", label: "Facturación online" },
-    { href: "/punto-de-venta-abarrotes", label: "Punto de venta abarrotes" },
-    { href: "/app-movil", label: "App Móvil Android" },
+    { href: "/app-ventas-inventario", label: "App ventas e inventario" },
     { href: "/precios", label: "Precios" },
     { href: "/about", label: "Nosotros" },
   ],

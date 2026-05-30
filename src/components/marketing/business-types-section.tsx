@@ -112,6 +112,11 @@ export function BusinessTypesSection() {
             Negocios de todo el país confían en MOVOPos para gestionar ventas, inventario y caja
             en República Dominicana.
           </p>
+          {/* SEO: keyword de tercer nivel; mantener fuera de titles, H1 y metas principales. */}
+          <p className="mx-auto mt-4 max-w-3xl text-base sm:text-lg text-white/80">
+            Si buscas un programa de venta para negocio que sea fácil de usar, MOVOPos centraliza
+            la operación diaria sin complicar el trabajo del equipo.
+          </p>
         </div>
       </div>
     </section>

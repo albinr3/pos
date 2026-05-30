@@ -22,7 +22,7 @@ export function Hero() {
             </h1>
             <p className="mt-8 text-xl leading-8 text-white/90 sm:text-2xl">
               MOVOPos es un sistema POS en la nube para negocios dominicanos que necesitan vender,
-              facturar en RD$, controlar inventario, manejar cuentas por cobrar y consultar
+              facturar en pesos, controlar inventario, manejar cuentas por cobrar y consultar
               reportes desde cualquier dispositivo.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-start gap-3 sm:gap-x-6 px-4 sm:px-0">
@@ -61,5 +61,3 @@ export function Hero() {
     </section>
   )
 }
-
-

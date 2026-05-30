@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
-import { ArrowRight, Smartphone } from "lucide-react"
+import { ArrowRight, BarChart3, PackageCheck, ReceiptText, ShoppingCart, Smartphone } from "lucide-react"
 import { Hero } from "@/components/marketing/hero"
 import { Features } from "@/components/marketing/features"
 import { BusinessTypesSection } from "@/components/marketing/business-types-section"
@@ -85,30 +85,30 @@ const previewPlans = [
   },
 ]
 
-const solutionPages = [
+const integratedModules = [
   {
-    title: "Sistema POS",
+    title: "Vende desde el punto de venta",
     description:
-      "Conoce cómo funciona un sistema punto de venta para vender más rápido y cobrar con más control.",
-    href: "/sistema-pos",
+      "Registra productos, cobra rápido, aplica métodos de pago y factura tus ventas desde una pantalla sencilla.",
+    icon: ShoppingCart,
   },
   {
-    title: "Facturación e inventario",
+    title: "Facturación para negocios en RD",
     description:
-      "Mira cómo centralizar facturación, ventas e inventario en una sola plataforma para tu negocio.",
-    href: "/sistema-de-inventario",
+      "Emite facturas en pesos dominicanos y mantén tus ventas organizadas sin depender de procesos manuales.",
+    icon: ReceiptText,
   },
   {
-    title: "Facturación online",
+    title: "Inventario actualizado",
     description:
-      "Ideal para negocios que quieren facturar en la nube desde laptop, tablet o celular.",
-    href: "/facturacion-online",
+      "Controla productos, existencias, entradas, salidas y movimientos de inventario en tiempo real.",
+    icon: PackageCheck,
   },
   {
-    title: "Punto de venta para colmados",
+    title: "Reportes para decidir mejor",
     description:
-      "Una guía para colmados y negocios de alta rotación que necesitan caja e inventario ordenado.",
-    href: "/punto-de-venta-abarrotes",
+      "Consulta ventas, cuentas por cobrar, productos más vendidos y resultados de tu negocio cuando lo necesites.",
+    icon: BarChart3,
   },
 ]
 
@@ -140,6 +140,53 @@ function MobileStickyCTA() {
   )
 }
 
+function IntegratedPOSSection() {
+  return (
+    <section className="py-12 sm:py-16 bg-slate-50">
+      <div className="container">
+        <div className="mx-auto max-w-3xl text-center mb-8 sm:mb-10">
+          <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            Todo conectado en un solo sistema POS, excelente como programa de venta para negocio.
+
+          </h2>
+          <p className="mt-6 text-xl text-muted-foreground">
+            MOVOPos une punto de venta, facturación, inventario, caja, clientes, cuentas por cobrar
+            y reportes para que puedas administrar tu negocio desde una sola plataforma.
+          </p>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          {integratedModules.map((module) => {
+            const Icon = module.icon
+            return (
+              <div key={module.title} className="rounded-lg border bg-white p-6 shadow-sm">
+                <div className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="text-xl font-semibold leading-snug text-foreground">
+                  {module.title}
+                </h3>
+                <p className="mt-3 text-base leading-7 text-muted-foreground">
+                  {module.description}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-8 flex justify-center">
+          <Button asChild size="lg" className="font-semibold">
+            <Link href="/app">
+              Comenzar prueba gratis
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function MobileAppTeaserSection() {
   return (
     <section className="py-12 sm:py-16 bg-slate-50">
@@ -159,8 +206,8 @@ function MobileAppTeaserSection() {
                 internet desde tu celular.
               </p>
               <Button asChild size="lg" className="mt-6 font-semibold">
-                <Link href="/app-movil">
-                  Ver app móvil
+                <Link href="/app-ventas-inventario">
+                  Ver app para ventas e inventario
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
@@ -194,37 +241,7 @@ export default function LandingPage() {
       <BusinessTypesSection />
       <POSDemoSection />
       <DesktopSectionCTA />
-
-      <section className="py-12 sm:py-16 bg-slate-50">
-        <div className="container">
-          <div className="mx-auto max-w-3xl text-center mb-8">
-            <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-              Guías para elegir tu sistema POS
-            </h2>
-            <p className="mt-6 text-xl text-muted-foreground">
-              Explora páginas por necesidad para comparar opciones y elegir el mejor sistema POS
-              para tu tipo de negocio en República Dominicana.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-            {solutionPages.map((page) => (
-              <Link
-                key={page.href}
-                href={page.href}
-                className="rounded-2xl border bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
-              >
-                <h3 className="text-2xl font-semibold text-foreground">{page.title}</h3>
-                <p className="mt-3 text-base text-muted-foreground">{page.description}</p>
-                <span className="mt-6 inline-flex items-center text-sm font-semibold text-violet-700">
-                  Ver más
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
+      <IntegratedPOSSection />
 
       <section className="py-12 sm:py-16 bg-white">
         <div className="container">
