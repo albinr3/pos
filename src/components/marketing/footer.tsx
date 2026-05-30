@@ -3,6 +3,7 @@ import Link from "next/link"
 const footerLinks = {
   producto: [
     { href: "/como-usar-la-plataforma", label: "Tutoriales" },
+    { href: "/blog", label: "Blog" },
     { href: "/app-ventas-inventario", label: "App Movil" },
     { href: "/precios", label: "Precios" },
     { href: "/about", label: "Nosotros" },
@@ -15,6 +16,7 @@ const footerLinks = {
   empresa: [
     { href: "/about", label: "Nosotros" },
     { href: "/como-usar-la-plataforma", label: "Tutoriales" },
+    { href: "/blog", label: "Blog" },
   ],
 }
 

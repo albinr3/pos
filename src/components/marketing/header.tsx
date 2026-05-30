@@ -12,6 +12,7 @@ const navItems = [
   { href: "/app-ventas-inventario", label: "App Movil" },
   { href: "/about", label: "Acerca de nosotros" },
   { href: "/como-usar-la-plataforma", label: "Tutoriales" },
+  { href: "/blog", label: "Blog" },
 ]
 
 export function MarketingHeader() {

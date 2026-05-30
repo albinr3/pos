@@ -22,6 +22,7 @@
     "whatsapp:test": "tsx scripts/test-whatsapp.ts",
     "sales:normalize-timestamps": "tsx scripts/normalize-sales-timestamps.ts",
     "phase0:baseline": "tsx scripts/phase0-baseline.ts",
+    "blog:images": "node scripts/fetch-pexels.mjs",
     "upload:apk": "tsx scripts/upload-apk-uploadthing.ts",
     "sync:main-to-dev": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch main -TargetBranch dev",
     "sync:dev-to-main": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch dev -TargetBranch main",

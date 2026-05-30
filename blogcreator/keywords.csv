@@ -1,0 +1,6 @@
+Order,Keyword,Seed keyword,Page type,Topic,Intent,Region,Priority,Status,Content angle,Notes
+1,que es un sistema de facturacion,sistema de facturacion,blog,facturacion,Informacional,DO,Alta,used,"Explicar qué es, para qué sirve y cuándo un negocio pequeño lo necesita","Derivada de sistema de facturacion"
+2,que es un sistema pos,sistema pos,blog,punto-de-venta,Informacional,DO,Alta,pending,"Explicar qué hace un POS y cómo ayuda en ventas, caja e inventario","Derivada de sistema pos"
+3,como funciona un punto de venta para abarrotes,punto de venta abarrotes,blog,punto-de-venta,Informacional,DO,Alta,pending,"Guía práctica para negocios tipo abarrotes, colmados y tiendas pequeñas","Derivada de punto de venta abarrotes"
+4,que es la facturacion online,facturacion online,blog,facturacion,Informacional,DO,Media,pending,"Explicar facturación online con ejemplos simples y sin lenguaje técnico","Derivada de facturacion online"
+5,como llevar el control de inventarios,control de inventarios,blog,inventario,Informacional,DO,Alta,pending,"Pasos simples para saber qué entra, qué sale y qué queda en un negocio","Derivada de control de inventarios"
