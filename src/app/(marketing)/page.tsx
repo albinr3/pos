@@ -1,5 +1,7 @@
 import type { Metadata } from "next"
 import Image from "next/image"
+import Link from "next/link"
+import { ArrowRight, BarChart3, PackageCheck, ReceiptText, ShoppingCart, Smartphone } from "lucide-react"
 import { Hero } from "@/components/marketing/hero"
 import { Features } from "@/components/marketing/features"
 import { BusinessTypesSection } from "@/components/marketing/business-types-section"
@@ -9,28 +11,38 @@ import { FAQSection } from "@/components/marketing/faq-section"
 import { faqItems } from "@/components/marketing/faq-data"
 import { PricingCard } from "@/components/marketing/pricing-card"
 import { Button } from "@/components/ui/button"
-import Link from "next/link"
-import { ArrowRight, Smartphone } from "lucide-react"
+
+const homeSeoDescription =
+  "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Maneja caja, clientes, cuentas por cobrar y reportes. Prueba gratis 15 días."
+
+const homeSocialImage = {
+  url: "/hero-img.svg",
+  width: 1200,
+  height: 630,
+  alt: "Sistema POS en República Dominicana",
+}
 
 export const metadata: Metadata = {
-  title: "Sistema de facturación en República Dominicana | MOVOPos",
-  description:
-    "Sistema de facturación en República Dominicana para negocios, colmados y tiendas: factura en RD$, controla inventario y usa tu punto de venta con prueba gratis de 15 días.",
+  // Nota SEO: no repetir marca aquí porque el layout aplica el template "%s | MOVOPos".
+  title: "Sistema POS en República Dominicana | Facturación, Inventario y Ventas",
+  description: homeSeoDescription,
   alternates: {
     canonical: "/",
   },
+  // SEO: al sobrescribir openGraph/twitter en una página, Next no conserva las imágenes del layout.
   openGraph: {
-    title: "Sistema de facturación en República Dominicana | MOVOPos",
-    description:
-      "Factura en RD$, controla inventario y vende con un sistema de facturación y POS en la nube para negocios en República Dominicana.",
+    title: "Sistema POS en República Dominicana | Facturación, Inventario y Ventas",
+    description: homeSeoDescription,
     url: "/",
+    images: [homeSocialImage],
   },
   twitter: {
-    title: "Sistema de facturación en República Dominicana | MOVOPos",
-    description:
-      "Factura en RD$, controla inventario y vende con un sistema de facturación y POS en la nube para negocios en República Dominicana.",
+    card: "summary_large_image",
+    title: "Sistema POS en República Dominicana | Facturación, Inventario y Ventas",
+    description: homeSeoDescription,
+    images: [homeSocialImage],
   },
-};
+}
 
 const jsonLd = [
   {
@@ -44,10 +56,10 @@ const jsonLd = [
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
-    name: "Sistema de facturación en República Dominicana | MOVOPos",
+    name: "Sistema POS en República Dominicana | Facturación e Inventario | MOVOPos",
     url: "https://movopos.com/",
     description:
-      "Sistema de facturación en República Dominicana con punto de venta, inventario, cuentas por cobrar para negocios locales.",
+      "Sistema POS en República Dominicana para facturar, vender y controlar inventario con caja, clientes, cuentas por cobrar y reportes.",
   },
   {
     "@context": "https://schema.org",
@@ -61,13 +73,14 @@ const jsonLd = [
       },
     })),
   },
-];
+]
 
 const previewPlans = [
   {
     name: "Plan Mensual",
     price: "RD$ 1,300",
-    description: "Sistema de facturación, POS e inventario con acceso completo",
+    secondaryPrice: "USD 20/mes",
+    description: "Sistema POS completo con facturación, inventario y ventas",
     features: [
       "Productos ilimitados",
       "Ventas ilimitadas",
@@ -84,30 +97,30 @@ const previewPlans = [
   },
 ]
 
-const solutionPages = [
+const integratedModules = [
   {
-    title: "Sistema POS",
+    title: "Vende desde el punto de venta",
     description:
-      "Conoce cómo funciona un sistema punto de venta o programa punto de venta para facturar rápido y cobrar con más control.",
-    href: "/sistema-pos",
+      "Registra productos, cobra rápido, aplica métodos de pago y factura tus ventas desde una pantalla sencilla.",
+    icon: ShoppingCart,
   },
   {
-    title: "Sistema de inventario",
+    title: "Facturación para negocios en RD",
     description:
-      "Descubre una solución para controlar stock, compras y productos si estás evaluando un programa de inventario o software de inventario.",
-    href: "/sistema-de-inventario",
+      "Emite facturas en pesos dominicanos y mantén tus ventas organizadas sin depender de procesos manuales.",
+    icon: ReceiptText,
   },
   {
-    title: "Facturación online",
+    title: "Inventario actualizado",
     description:
-      "Ideal para negocios que buscan un programa para hacer facturas o un programa para facturar desde cualquier dispositivo.",
-    href: "/facturacion-online",
+      "Controla productos, existencias, entradas, salidas y movimientos de inventario en tiempo real.",
+    icon: PackageCheck,
   },
   {
-    title: "Punto de venta para abarrotes",
+    title: "Reportes para decidir mejor",
     description:
-      "Pensado para colmados, abarrotes y puntos de venta para negocios pequeños con alta rotación.",
-    href: "/punto-de-venta-abarrotes",
+      "Consulta ventas, cuentas por cobrar, productos más vendidos y resultados de tu negocio cuando lo necesites.",
+    icon: BarChart3,
   },
 ]
 
@@ -139,6 +152,53 @@ function MobileStickyCTA() {
   )
 }
 
+function IntegratedPOSSection() {
+  return (
+    <section className="py-12 sm:py-16 bg-slate-50">
+      <div className="container">
+        <div className="mx-auto max-w-3xl text-center mb-8 sm:mb-10">
+          <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
+            Todo conectado en un solo sistema POS, excelente como programa de venta para negocio.
+
+          </h2>
+          <p className="mt-6 text-xl text-muted-foreground">
+            MOVOPos une punto de venta, facturación, inventario, caja, clientes, cuentas por cobrar
+            y reportes para que puedas administrar tu negocio desde una sola plataforma.
+          </p>
+        </div>
+
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          {integratedModules.map((module) => {
+            const Icon = module.icon
+            return (
+              <div key={module.title} className="rounded-lg border bg-white p-6 shadow-sm">
+                <div className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-violet-100 text-violet-700">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h3 className="text-xl font-semibold leading-snug text-foreground">
+                  {module.title}
+                </h3>
+                <p className="mt-3 text-base leading-7 text-muted-foreground">
+                  {module.description}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-8 flex justify-center">
+          <Button asChild size="lg" className="font-semibold">
+            <Link href="/app">
+              Comenzar prueba gratis
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function MobileAppTeaserSection() {
   return (
     <section className="py-12 sm:py-16 bg-slate-50">
@@ -158,8 +218,8 @@ function MobileAppTeaserSection() {
                 internet desde tu celular.
               </p>
               <Button asChild size="lg" className="mt-6 font-semibold">
-                <Link href="/app-movil">
-                  Ver app móvil
+                <Link href="/app-ventas-inventario">
+                  Ver app para ventas e inventario
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
@@ -191,52 +251,19 @@ export default function LandingPage() {
       <Hero />
       <Features />
       <BusinessTypesSection />
-      <DesktopSectionCTA />
       <POSDemoSection />
       <DesktopSectionCTA />
-
-      <section className="py-12 sm:py-16 bg-slate-50">
-        <div className="container">
-          <div className="mx-auto max-w-3xl text-center mb-8">
-            <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-              Soluciones para cada tipo de búsqueda
-            </h2>
-            <p className="mt-6 text-xl text-muted-foreground">
-              Además de nuestro sistema de facturación en República Dominicana, aquí encontrarás
-              contenido útil si estás comparando un software de facturacion, un programa de
-              facturacion, un sistema de ventas o un sistema de ventas para negocio.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-            {solutionPages.map((page) => (
-              <Link
-                key={page.href}
-                href={page.href}
-                className="rounded-2xl border bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-md"
-              >
-                <h3 className="text-2xl font-semibold text-foreground">{page.title}</h3>
-                <p className="mt-3 text-base text-muted-foreground">{page.description}</p>
-                <span className="mt-6 inline-flex items-center text-sm font-semibold text-violet-700">
-                  Ver más
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
+      <IntegratedPOSSection />
 
       <section className="py-12 sm:py-16 bg-white">
         <div className="container">
           <div className="mx-auto max-w-2xl text-center mb-8">
             <h2 className="text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
-              Precio simple para tu sistema de facturación
+              Un sistema POS completo por RD$1,300 al mes
             </h2>
             <p className="mt-6 text-xl text-muted-foreground">
-              Un solo plan con todas las funcionalidades que necesitas si buscas software
-              facturacion, software de ventas e inventario o un sistema de ventas e inventario para
-              operar mejor. Prueba gratis por 15 días y cancela cuando quieras.
+              Prueba MOVOPos gratis durante 15 días. Luego continúa con todas las funcionalidades
+              incluidas por RD$1,300 al mes, sin comisiones por transacción.
             </p>
           </div>
 
@@ -250,13 +277,10 @@ export default function LandingPage() {
 
       <MobileAppTeaserSection />
       <FAQSection />
-      <DesktopSectionCTA />
-
       <CTASection />
+
       <div className="h-20 md:hidden" />
       <MobileStickyCTA />
     </>
   )
 }
-
-

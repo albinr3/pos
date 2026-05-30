@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button"
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 
 const navItems = [
-  { href: "/pricing", label: "Precios" },
-  { href: "/app-movil", label: "App Móvil" },
+  { href: "/precios", label: "Precios" },
+  { href: "/app-ventas-inventario", label: "App Movil" },
   { href: "/about", label: "Acerca de nosotros" },
   { href: "/como-usar-la-plataforma", label: "Tutoriales" },
 ]
@@ -142,4 +142,3 @@ export function MarketingHeader() {
     </header>
   )
 }
-

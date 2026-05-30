@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 export interface PricingPlan {
   name: string
   price: string
+  secondaryPrice?: string
   description: string
   features: string[]
   cta: string
@@ -46,8 +47,16 @@ export function PricingCard({ plan }: PricingCardProps) {
         <CardTitle className="text-3xl">{plan.name}</CardTitle>
         <CardDescription className="text-base">{plan.description}</CardDescription>
         <div className="mt-4">
-          <span className="text-5xl font-bold">{plan.price}</span>
-          <span className="text-muted-foreground text-lg">/mes</span>
+          <div className="flex items-end gap-2">
+            <span className="text-5xl font-bold">{plan.price}</span>
+            <span className="text-muted-foreground text-lg">/mes</span>
+          </div>
+          {plan.secondaryPrice && (
+            <div className="mt-1">
+              <div className="text-xs text-muted-foreground">o</div>
+              <div className="text-sm font-bold text-foreground">{plan.secondaryPrice}</div>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent className="flex-1">

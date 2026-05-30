@@ -2,14 +2,10 @@ import Link from "next/link"
 
 const footerLinks = {
   producto: [
-    { href: "/", label: "Sistema de facturación" },
+    { href: "/", label: "Sistema POS" },
     { href: "/como-usar-la-plataforma", label: "Tutoriales" },
-    { href: "/sistema-pos", label: "Sistema POS" },
-    { href: "/sistema-de-inventario", label: "Sistema de inventario" },
-    { href: "/facturacion-online", label: "Facturación online" },
-    { href: "/punto-de-venta-abarrotes", label: "Punto de venta abarrotes" },
-    { href: "/app-movil", label: "App Móvil Android" },
-    { href: "/pricing", label: "Precios" },
+    { href: "/app-ventas-inventario", label: "App Movil" },
+    { href: "/precios", label: "Precios" },
     { href: "/about", label: "Nosotros" },
   ],
   legal: [

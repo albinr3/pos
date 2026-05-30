@@ -17,6 +17,16 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async redirects() {
+    return [
+      // SEO: conservar autoridad de la URL anterior de la app móvil hacia la nueva ruta.
+      {
+        source: "/app-movil",
+        destination: "/app-ventas-inventario",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {

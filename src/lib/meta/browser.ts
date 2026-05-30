@@ -95,7 +95,7 @@ export function trackMetaEvent(
 }
 
 export function shouldTrackViewContent(pathname: string) {
-  return ["/", "/pricing", "/login", "/billing"].includes(pathname)
+  return ["/", "/precios", "/pricing", "/login", "/billing"].includes(pathname)
 }
 
 export function buildViewContentPayload({
@@ -111,6 +111,7 @@ export function buildViewContentPayload({
         content_category: "marketing",
         content_type: "product",
       }
+    case "/precios":
     case "/pricing":
       return {
         content_name: `Precios MOVOPos - ${authLabel}`,

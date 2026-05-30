@@ -17,7 +17,7 @@ export function FAQSection({ items = faqItems }: { items?: FAQItem[] }) {
             Preguntas frecuentes
           </h2>
           <p className="mt-6 text-xl text-muted-foreground">
-            Encuentra respuestas a las preguntas más comunes sobre MOVOPos
+            Respuestas rápidas sobre nuestro sistema POS de facturación e inventario en RD.
           </p>
         </div>
 

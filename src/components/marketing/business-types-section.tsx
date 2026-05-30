@@ -1,38 +1,47 @@
 /* eslint-disable @next/next/no-img-element */
 "use client"
 
-import { Store, Car, Wrench, Shirt, Scissors, Home, GlassWater } from "lucide-react"
+import {
+  Store,
+  Car,
+  Wrench,
+  Shirt,
+  Scissors,
+  Home,
+  GlassWater,
+} from "lucide-react"
 
 const businessTypes = [
   { name: "Colmados", icon: Store },
-  { name: "Auto Adorno", icon: Car },
+  { name: "Auto Adornos", icon: Car },
   { name: "Repuestos", icon: Wrench },
-  { name: "Tienda de Ropa", icon: Shirt },
+  { name: "Tiendas de Ropa", icon: Shirt },
   { name: "Salones", icon: Scissors },
-  { name: "Tienda de Hogar", icon: Home },
-  { name: "Tienda de Bebidas", icon: GlassWater },
+  { name: "Tiendas de Hogar", icon: Home },
+  { name: "Tiendas de Bebidas", icon: GlassWater },
 ]
 
 export function BusinessTypesSection() {
   return (
-    <section 
+    <section
       className="py-16 sm:py-24"
       style={{
-        background: 'linear-gradient(35deg, rgb(6, 0, 151) 0%, rgb(130, 4, 255) 73%, rgb(193, 15, 255) 100%)'
+        background:
+          "linear-gradient(35deg, rgb(6, 0, 151) 0%, rgb(130, 4, 255) 73%, rgb(193, 15, 255) 100%)",
       }}
     >
       <div className="container">
-        {/* Encabezado */}
         <div className="mx-auto max-w-3xl text-center mb-12 sm:mb-16">
           <h2 className="text-4xl font-bold tracking-tight text-white sm:text-5xl mb-6">
-            Perfecto para cualquier tipo de negocio
+            Sistema POS para diferentes tipos de negocios en República Dominicana
           </h2>
           <p className="text-xl text-white/90 leading-relaxed">
-            MOVOPos se adapta a negocios en República Dominicana: colmados, auto adornos, repuestos, tiendas de ropa, salones, hogar y más, con las funciones que necesitas para crecer.
+            MOVOPos se adapta a la forma de vender de cada sector: colmados, repuestos,
+            ferreterías, farmacias, ropa y más. Elige tu industria y mira cómo aplicar el sistema
+            en tu negocio.
           </p>
         </div>
 
-        {/* Lista de Tipos de Negocios */}
         <div className="mx-auto max-w-5xl mb-16 sm:mb-20">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4 sm:gap-6">
             {businessTypes.map((business) => {
@@ -54,17 +63,14 @@ export function BusinessTypesSection() {
           </div>
         </div>
 
-        {/* Galería de Imágenes */}
         <div className="mx-auto max-w-7xl">
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-12 items-start">
-            {/* Imagen Colmadero */}
             <div className="flex flex-col group">
               <div className="mb-6">
-                <h3 className="text-2xl sm:text-3xl font-bold text-white mb-3">
-                  Colmados
-                </h3>
+                <h3 className="text-2xl sm:text-3xl font-bold text-white mb-3">Colmados</h3>
                 <p className="text-lg text-white/90 leading-relaxed">
-                  Gestión eficiente de inventario y ventas para colmados. Control total de productos, precios y facturación desde cualquier dispositivo.
+                  Gestión eficiente de inventario y ventas para colmados. Control total de
+                  productos, precios y facturación desde cualquier dispositivo.
                 </p>
               </div>
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border-2 border-white/20 bg-white transform transition-transform duration-300 group-hover:scale-[1.02] group-hover:shadow-3xl">
@@ -79,14 +85,12 @@ export function BusinessTypesSection() {
               </div>
             </div>
 
-            {/* Imagen Auto Adorno */}
             <div className="flex flex-col group">
               <div className="mb-6">
-                <h3 className="text-2xl sm:text-3xl font-bold text-white mb-3">
-                  Auto Adorno
-                </h3>
+                <h3 className="text-2xl sm:text-3xl font-bold text-white mb-3">Auto Adornos</h3>
                 <p className="text-lg text-white/90 leading-relaxed">
-                  Sistema completo para tiendas de auto adorno. Organiza tu inventario de accesorios, maneja clientes y cotizaciones profesionales.
+                  Sistema completo para tiendas de auto adornos. Organiza inventario de
+                  accesorios, maneja clientes y crea cotizaciones profesionales.
                 </p>
               </div>
               <div className="relative rounded-2xl overflow-hidden shadow-2xl border-2 border-white/20 bg-white transform transition-transform duration-300 group-hover:scale-[1.02] group-hover:shadow-3xl">
@@ -103,14 +107,18 @@ export function BusinessTypesSection() {
           </div>
         </div>
 
-        {/* Texto Final */}
         <div className="mt-12 sm:mt-16 text-center">
           <p className="text-lg sm:text-xl text-white/90 font-medium">
-            Negocios de todo el país confían en MOVOPos para gestionar sus ventas diarias en República Dominicana
+            Negocios de todo el país confían en MOVOPos para gestionar ventas, inventario y caja
+            en República Dominicana.
+          </p>
+          {/* SEO: keyword de tercer nivel; mantener fuera de titles, H1 y metas principales. */}
+          <p className="mx-auto mt-4 max-w-3xl text-base sm:text-lg text-white/80">
+            Si buscas un programa de venta para negocio que sea fácil de usar, MOVOPos centraliza
+            la operación diaria sin complicar el trabajo del equipo.
           </p>
         </div>
       </div>
     </section>
   )
 }
-
