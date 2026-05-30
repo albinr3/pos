@@ -4,7 +4,7 @@ const footerLinks = {
   producto: [
     { href: "/", label: "Sistema POS" },
     { href: "/como-usar-la-plataforma", label: "Tutoriales" },
-    { href: "/app-ventas-inventario", label: "App ventas e inventario" },
+    { href: "/app-ventas-inventario", label: "App Movil" },
     { href: "/precios", label: "Precios" },
     { href: "/about", label: "Nosotros" },
   ],

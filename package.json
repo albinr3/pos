@@ -22,7 +22,11 @@
     "whatsapp:test": "tsx scripts/test-whatsapp.ts",
     "sales:normalize-timestamps": "tsx scripts/normalize-sales-timestamps.ts",
     "phase0:baseline": "tsx scripts/phase0-baseline.ts",
-    "upload:apk": "tsx scripts/upload-apk-uploadthing.ts"
+    "upload:apk": "tsx scripts/upload-apk-uploadthing.ts",
+    "sync:main-to-dev": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch main -TargetBranch dev",
+    "sync:dev-to-main": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch dev -TargetBranch main",
+    "sync:main-to-dev:dry": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch main -TargetBranch dev -DryRun",
+    "sync:dev-to-main:dry": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch dev -TargetBranch main -DryRun"
   },
   "dependencies": {
     "@clerk/localizations": "^3.35.1",

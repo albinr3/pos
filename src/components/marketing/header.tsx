@@ -9,7 +9,7 @@ import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs"
 
 const navItems = [
   { href: "/precios", label: "Precios" },
-  { href: "/app-ventas-inventario", label: "App ventas e inventario" },
+  { href: "/app-ventas-inventario", label: "App Movil" },
   { href: "/about", label: "Acerca de nosotros" },
   { href: "/como-usar-la-plataforma", label: "Tutoriales" },
 ]

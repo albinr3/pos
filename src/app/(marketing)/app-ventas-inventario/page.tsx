@@ -284,6 +284,64 @@ export default function AppMovilPage() {
 
       <section className="bg-slate-50 py-16 sm:py-24">
         <div className="container px-4 md:px-6">
+          <div className="mx-auto max-w-3xl">
+            <div className="mb-12 text-center">
+              <h2 className="text-3xl font-bold text-slate-950">
+                Cómo instalar la app de MOVOPos en Android
+              </h2>
+              <p className="mt-4 text-lg leading-8 text-slate-600">
+                Descarga la app Android en formato APK, instala MOVOPos y entra con tu cuenta para
+                empezar a vender, facturar y controlar inventario.
+              </p>
+            </div>
+            <div className="space-y-6">
+              {[
+                {
+                  title: "Descarga el APK",
+                  description:
+                    "Toca el botón de descarga y espera que el archivo APK de MOVOPos termine de bajar en tu celular.",
+                },
+                {
+                  title: "Permite la instalación",
+                  description:
+                    "Android puede pedir permiso para instalar apps desde el navegador o gestor de archivos. Activa el permiso solo para completar la instalación.",
+                },
+                {
+                  title: "Abre MOVOPos",
+                  description:
+                    "Instala la app, inicia sesión con tu cuenta y usa la aplicación para punto de venta, facturación e inventario.",
+                },
+              ].map((step, index) => (
+                <article key={step.title} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:grid-cols-[3rem_1fr]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600 font-semibold text-white">
+                    {index + 1}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-slate-950">{step.title}</h3>
+                    {index === 0 ? (
+                      <p className="mt-2 text-sm leading-7 text-slate-600">
+                        Toca el botón de{" "}
+                        <a
+                          href={appDownloadUrl}
+                          className="font-semibold text-violet-700 underline underline-offset-2 hover:text-violet-800"
+                        >
+                          descarga
+                        </a>{" "}
+                        y espera que el archivo APK de MOVOPos termine de bajar en tu celular.
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-sm leading-7 text-slate-600">{step.description}</p>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-slate-50 py-16 sm:py-24">
+        <div className="container px-4 md:px-6">
           <div className="mx-auto mb-12 max-w-3xl text-center">
             <h2 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
               Una app para administrar ventas, inventario y facturación
@@ -393,51 +451,6 @@ export default function AppMovilPage() {
                   <PackageCheck className="mr-2 h-4 w-4 text-violet-600" />
                   {feature}
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-slate-50 py-16 sm:py-24">
-        <div className="container px-4 md:px-6">
-          <div className="mx-auto max-w-3xl">
-            <div className="mb-12 text-center">
-              <h2 className="text-3xl font-bold text-slate-950">
-                Cómo instalar la app de MOVOPos en Android
-              </h2>
-              <p className="mt-4 text-lg leading-8 text-slate-600">
-                Descarga la app Android en formato APK, instala MOVOPos y entra con tu cuenta para
-                empezar a vender, facturar y controlar inventario.
-              </p>
-            </div>
-            <div className="space-y-6">
-              {[
-                {
-                  title: "Descarga el APK",
-                  description:
-                    "Toca el botón de descarga y espera que el archivo APK de MOVOPos termine de bajar en tu celular.",
-                },
-                {
-                  title: "Permite la instalación",
-                  description:
-                    "Android puede pedir permiso para instalar apps desde el navegador o gestor de archivos. Activa el permiso solo para completar la instalación.",
-                },
-                {
-                  title: "Abre MOVOPos",
-                  description:
-                    "Instala la app, inicia sesión con tu cuenta y usa la aplicación para punto de venta, facturación e inventario.",
-                },
-              ].map((step, index) => (
-                <article key={step.title} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:grid-cols-[3rem_1fr]">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600 font-semibold text-white">
-                    {index + 1}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-950">{step.title}</h3>
-                    <p className="mt-2 text-sm leading-7 text-slate-600">{step.description}</p>
-                  </div>
-                </article>
               ))}
             </div>
           </div>

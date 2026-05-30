@@ -12,24 +12,35 @@ import { faqItems } from "@/components/marketing/faq-data"
 import { PricingCard } from "@/components/marketing/pricing-card"
 import { Button } from "@/components/ui/button"
 
+const homeSeoDescription =
+  "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Maneja caja, clientes, cuentas por cobrar y reportes. Prueba gratis 15 días."
+
+const homeSocialImage = {
+  url: "/hero-img.svg",
+  width: 1200,
+  height: 630,
+  alt: "Sistema POS en República Dominicana",
+}
+
 export const metadata: Metadata = {
   // Nota SEO: no repetir marca aquí porque el layout aplica el template "%s | MOVOPos".
   title: "Sistema POS en República Dominicana | Facturación, Inventario y Ventas",
-  description:
-    "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Administra ventas, caja, clientes, cuentas por cobrar y reportes con MOVOPos. Prueba gratis 15 días.",
+  description: homeSeoDescription,
   alternates: {
     canonical: "/",
   },
+  // SEO: al sobrescribir openGraph/twitter en una página, Next no conserva las imágenes del layout.
   openGraph: {
     title: "Sistema POS en República Dominicana | Facturación, Inventario y Ventas",
-    description:
-      "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Administra ventas, caja, clientes, cuentas por cobrar y reportes con MOVOPos. Prueba gratis 15 días.",
+    description: homeSeoDescription,
     url: "/",
+    images: [homeSocialImage],
   },
   twitter: {
+    card: "summary_large_image",
     title: "Sistema POS en República Dominicana | Facturación, Inventario y Ventas",
-    description:
-      "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Administra ventas, caja, clientes, cuentas por cobrar y reportes con MOVOPos. Prueba gratis 15 días.",
+    description: homeSeoDescription,
+    images: [homeSocialImage],
   },
 }
 
@@ -68,6 +79,7 @@ const previewPlans = [
   {
     name: "Plan Mensual",
     price: "RD$ 1,300",
+    secondaryPrice: "USD 20/mes",
     description: "Sistema POS completo con facturación, inventario y ventas",
     features: [
       "Productos ilimitados",
