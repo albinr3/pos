@@ -2,7 +2,6 @@ import Link from "next/link"
 
 const footerLinks = {
   producto: [
-    { href: "/", label: "Sistema POS" },
     { href: "/como-usar-la-plataforma", label: "Tutoriales" },
     { href: "/app-ventas-inventario", label: "App Movil" },
     { href: "/precios", label: "Precios" },

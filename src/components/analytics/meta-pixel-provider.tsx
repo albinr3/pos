@@ -91,7 +91,8 @@ export function MetaPixelProvider() {
     <>
       <Script
         id="meta-pixel-base"
-        strategy="afterInteractive"
+        // Evita que el script de terceros compita con el hero y afecte el render inicial/LCP.
+        strategy="lazyOnload"
       >
         {`
           !function(f,b,e,v,n,t,s)

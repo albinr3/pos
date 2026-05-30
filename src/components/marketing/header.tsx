@@ -29,11 +29,12 @@ export function MarketingHeader() {
           <Image
             src="/movoLogo.png?v=1"
             alt="MOVOPos"
-            width={150}
-            height={50}
+            // Mantener la proporción real y declarar sizes deja que Next entregue un logo reducido/optimizado.
+            width={872}
+            height={234}
+            sizes="(min-width: 640px) 209px, 179px"
             className="h-12 w-auto sm:h-14"
             priority
-            unoptimized
           />
         </Link>
 

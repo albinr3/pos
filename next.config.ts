@@ -2,6 +2,18 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   images: {
+    localPatterns: [
+      // Las imagenes locales de /public sin query deben seguir funcionando con next/image.
+      {
+        pathname: "/**",
+        search: "",
+      },
+      // El logo usa ?v=1 para cache-busting; Next debe permitirlo para poder optimizarlo.
+      {
+        pathname: "/movoLogo.png",
+        search: "?v=1",
+      },
+    ],
     remotePatterns: [
       {
         protocol: "https",
