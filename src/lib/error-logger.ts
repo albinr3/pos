@@ -259,8 +259,14 @@ export async function logError(
       })
     }
 
-    // Enviar notificación por correo si no es un error de email
-    if (options.code !== ErrorCodes.EXTERNAL_EMAIL_ERROR) {
+    const shouldSendEmailNotification =
+      options.code !== ErrorCodes.EXTERNAL_EMAIL_ERROR &&
+      // AR_ALREADY_PAID_ATTEMPT es una validación esperada/reintento offline viejo;
+      // notificarlo por correo causa alertas repetidas sin indicar un error nuevo.
+      options.code !== ErrorCodes.AR_ALREADY_PAID_ATTEMPT
+
+    // Enviar notificación por correo solo para errores accionables.
+    if (shouldSendEmailNotification) {
       try {
         // Importación dinámica para evitar dependencias circulares
         const { sendResendEmail } = await import("@/lib/resend")

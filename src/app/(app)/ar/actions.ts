@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
-import { PaymentMethod } from "@prisma/client"
+import { PaymentMethod, type Prisma } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { endOfDay } from "@/lib/dates"
@@ -22,10 +22,11 @@ type AuthActor = {
   username?: string | null
 }
 
-function assertAuthActor(actor: any): asserts actor is AuthActor {
+function assertAuthActor(actor: unknown): asserts actor is AuthActor {
   if (!actor || typeof actor !== "object") throw new Error("No autenticado")
-  if (typeof actor.id !== "string" || actor.id.length === 0) throw new Error("No autenticado")
-  if (typeof actor.accountId !== "string" || actor.accountId.length === 0) throw new Error("No autenticado")
+  const candidate = actor as Partial<AuthActor>
+  if (typeof candidate.id !== "string" || candidate.id.length === 0) throw new Error("No autenticado")
+  if (typeof candidate.accountId !== "string" || candidate.accountId.length === 0) throw new Error("No autenticado")
 }
 
 function parseVisualIdQuery(rawQuery: string | undefined): number | null {
@@ -55,6 +56,10 @@ type ARDebugSnapshot = {
   saleType: string
   soldAt: Date
 }
+
+// Estos intentos suelen venir de pagos offline viejos en IndexedDB; no deben
+// volver a generar ruido varias veces al día por la misma factura.
+const ALREADY_PAID_LOG_WINDOW_MINUTES = 60 * 24 * 30
 
 async function getArDebugSnapshots(accountId: string, arIds: string[]): Promise<ARDebugSnapshot[]> {
   try {
@@ -172,7 +177,7 @@ export async function listOpenAR(
   const skip = options?.skip ?? 0
   const take = options?.take ?? 10
 
-  const where: any = {
+  const where: Prisma.AccountReceivableWhereInput = {
     status: { in: ["PENDIENTE", "PARCIAL"] },
     sale: { 
       accountId: user.accountId,
@@ -512,7 +517,7 @@ export async function addPayment(input: {
         userId: currentUser.id,
         endpoint: "/ar/actions/addPayment",
         arIds: [input.arId],
-        windowMinutes: 360,
+        windowMinutes: ALREADY_PAID_LOG_WINDOW_MINUTES,
       })
       if (shouldSkipLog) {
         throw error
@@ -522,7 +527,7 @@ export async function addPayment(input: {
       const arSnapshot = snapshots[0] ?? null
       await logError(error, {
         code: ErrorCodes.AR_ALREADY_PAID_ATTEMPT,
-        severity: "MEDIUM",
+        severity: "LOW",
         accountId: currentUser.accountId,
         userId: currentUser.id,
         userEmail: currentUser.email ?? undefined,
@@ -721,7 +726,7 @@ export async function addBatchPayment(input: {
         userId: currentUser.id,
         endpoint: "/ar/actions/addBatchPayment",
         arIds: uniqueArIds,
-        windowMinutes: 360,
+        windowMinutes: ALREADY_PAID_LOG_WINDOW_MINUTES,
       })
       if (shouldSkipLog) {
         throw error
@@ -731,7 +736,7 @@ export async function addBatchPayment(input: {
       const alreadyPaid = snapshots.filter((ar) => ar.status === "PAGADA" || ar.balanceCents <= 0)
       await logError(error, {
         code: ErrorCodes.AR_ALREADY_PAID_ATTEMPT,
-        severity: "MEDIUM",
+        severity: "LOW",
         accountId: currentUser.accountId,
         userId: currentUser.id,
         userEmail: currentUser.email ?? undefined,
