@@ -2,6 +2,7 @@
 
 import { prisma } from "@/lib/db"
 import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-auth"
+import { normalizeInternationalPhone, sendKapsoTemplateMessage } from "@/lib/kapso-whatsapp"
 import { revalidatePath } from "next/cache"
 import type { BillingStatus, BillingCurrency, BillingProvider } from "@prisma/client"
 
@@ -527,5 +528,63 @@ export async function extendTrial(
   } catch (error) {
     console.error("Error extending trial:", error)
     return { success: false, error: "Error al extender el trial" }
+  }
+}
+
+export async function sendKapsoTestTemplate(input: {
+  to: string
+  templateName: string
+  languageCode: string
+}): Promise<{ success: boolean; error?: string; providerMessageId?: string }> {
+  try {
+    const admin = await getCurrentSuperAdmin()
+    if (!admin) {
+      return { success: false, error: "Sesión expirada. Inicia sesión nuevamente." }
+    }
+
+    if (!(admin.role === "OWNER" || admin.role === "ADMIN")) {
+      return { success: false, error: "No tienes permisos para ejecutar esta prueba." }
+    }
+
+    const to = normalizeInternationalPhone(input.to)
+    if (!to) {
+      return { success: false, error: "Número inválido. Usa formato internacional, por ejemplo 584121234567." }
+    }
+
+    const templateName = input.templateName.trim()
+    const languageCode = input.languageCode.trim()
+    if (!templateName) {
+      return { success: false, error: "El nombre del template es obligatorio." }
+    }
+    if (!languageCode) {
+      return { success: false, error: "El código de idioma es obligatorio." }
+    }
+
+    // Esta prueba usa solo templates porque WhatsApp puede rechazar texto libre al iniciar conversación.
+    // Mantener esta ruta separada evita mezclar credenciales Meta directas con las de Kapso.
+    const result = await sendKapsoTemplateMessage({ to, templateName, languageCode })
+
+    await logSuperAdminAction(admin.id, "sent_kapso_test_template", {
+      metadata: {
+        toMasked: to.length > 4 ? `${"*".repeat(to.length - 4)}${to.slice(-4)}` : "****",
+        templateName,
+        languageCode,
+        success: result.success,
+        providerMessageId: result.providerMessageId ?? null,
+        error: result.error ?? null,
+      },
+    })
+
+    if (!result.success) {
+      return { success: false, error: result.error || "Error al enviar la prueba de Kapso." }
+    }
+
+    revalidatePath("/super-admin")
+    return { success: true, providerMessageId: result.providerMessageId }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Error inesperado al enviar prueba Kapso.",
+    }
   }
 }

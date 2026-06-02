@@ -20,6 +20,7 @@ import {
   Loader2,
   Package,
   ShoppingCart,
+  Send,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -35,7 +36,7 @@ import {
 } from "@/components/ui/table"
 import { useToast } from "@/hooks/use-toast"
 import type { DashboardData } from "./actions"
-import { approvePayment, rejectPayment } from "./actions"
+import { approvePayment, rejectPayment, sendKapsoTestTemplate } from "./actions"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -88,6 +89,10 @@ export function DashboardClient({ data }: { data: DashboardData }) {
   const [loadingPayment, setLoadingPayment] = useState<string | null>(null)
   const [rejectPaymentId, setRejectPaymentId] = useState<string | null>(null)
   const [rejectReason, setRejectReason] = useState("")
+  const [kapsoTo, setKapsoTo] = useState("")
+  const [kapsoTemplateName, setKapsoTemplateName] = useState("hello_world")
+  const [kapsoLanguageCode, setKapsoLanguageCode] = useState("en_US")
+  const [sendingKapso, setSendingKapso] = useState(false)
   const { kpis, activation, recentAccounts, pendingPayments } = data
 
   const handleApprove = async (paymentId: string) => {
@@ -132,6 +137,46 @@ export function DashboardClient({ data }: { data: DashboardData }) {
       setLoadingPayment(null)
       setRejectPaymentId(null)
       setRejectReason("")
+    }
+  }
+
+  const handleKapsoSend = async () => {
+    if (!kapsoTo.trim()) {
+      toast({ title: "Campo requerido", description: "Debes indicar un teléfono destino.", variant: "destructive" })
+      return
+    }
+    if (!kapsoTemplateName.trim()) {
+      toast({ title: "Campo requerido", description: "Debes indicar el template.", variant: "destructive" })
+      return
+    }
+    if (!kapsoLanguageCode.trim()) {
+      toast({ title: "Campo requerido", description: "Debes indicar el código de idioma.", variant: "destructive" })
+      return
+    }
+
+    setSendingKapso(true)
+    try {
+      const result = await sendKapsoTestTemplate({
+        to: kapsoTo,
+        templateName: kapsoTemplateName,
+        languageCode: kapsoLanguageCode,
+      })
+      if (!result.success) {
+        toast({ title: "Error al enviar", description: result.error || "No se pudo enviar la prueba.", variant: "destructive" })
+        return
+      }
+
+      toast({
+        title: "Prueba enviada",
+        description: result.providerMessageId
+          ? `Kapso aceptó el envío. ID: ${result.providerMessageId}`
+          : "Kapso aceptó el envío.",
+      })
+      router.refresh()
+    } catch {
+      toast({ title: "Error", description: "Ocurrió un error al enviar la prueba Kapso.", variant: "destructive" })
+    } finally {
+      setSendingKapso(false)
     }
   }
 
@@ -196,6 +241,39 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Prueba WhatsApp (Kapso)</CardTitle>
+          <CardDescription>
+            Envía un template manual para validar credenciales y conectividad.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-4">
+          <Input
+            placeholder="Teléfono (ej: 584121234567)"
+            value={kapsoTo}
+            onChange={(e) => setKapsoTo(e.target.value)}
+            disabled={sendingKapso}
+          />
+          <Input
+            placeholder="Template name"
+            value={kapsoTemplateName}
+            onChange={(e) => setKapsoTemplateName(e.target.value)}
+            disabled={sendingKapso}
+          />
+          <Input
+            placeholder="Language code (ej: en_US)"
+            value={kapsoLanguageCode}
+            onChange={(e) => setKapsoLanguageCode(e.target.value)}
+            disabled={sendingKapso}
+          />
+          <Button onClick={handleKapsoSend} disabled={sendingKapso}>
+            {sendingKapso ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+            Enviar prueba
+          </Button>
+        </CardContent>
+      </Card>
 
       {/* Segunda fila de KPIs */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

@@ -128,6 +128,36 @@ export async function renderWelcomeOwnerEmail(data: WelcomeOwnerTemplateData) {
   return { subject, html }
 }
 
+type CustomerInactivityTemplateData = {
+  accountName: string
+}
+
+export async function renderCustomerInactivityEmail(
+  data: CustomerInactivityTemplateData
+) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const loginUrl = `${appUrl}/login`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MovoPos"
+  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportWhatsapp = "849-925-4434"
+  const supportWhatsappUrl = `https://wa.me/18499254434`
+
+  const html = await renderTemplate("customer-inactivity.html", {
+    brandName,
+    accountName: data.accountName,
+    loginUrl,
+    appUrl,
+    supportEmail,
+    supportWhatsapp,
+    supportWhatsappUrl,
+    year: new Date().getFullYear().toString(),
+  })
+
+  const subject = `¿Necesitas ayuda para seguir usando ${brandName}?`
+  return { subject, html }
+}
+
 // ==========================================
 // BILLING EMAIL TEMPLATES
 // ==========================================

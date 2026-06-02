@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { toast } from "@/hooks/use-toast"
+import { buildSupportWhatsAppUrl, SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_E164 } from "@/lib/contact-info"
 
 export default function ContactPage() {
   const [name, setName] = useState("")
@@ -225,10 +226,10 @@ export default function ContactPage() {
                     <div>
                       <h3 className="font-semibold text-foreground mb-1">Teléfono</h3>
                       <a
-                        href="tel:+18499254434"
+                        href={`tel:${SUPPORT_PHONE_E164}`}
                         className="text-muted-foreground hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
                       >
-                        +1 (849) 925-4434
+                        {SUPPORT_PHONE_DISPLAY}
                       </a>
                     </div>
                   </div>
@@ -276,14 +277,14 @@ export default function ContactPage() {
                     </a>
                   </Button>
                   <Button asChild variant="outline" className="flex-1">
-                    <a href="tel:+18499254434">
+                    <a href={`tel:${SUPPORT_PHONE_E164}`}>
                       <Phone className="h-4 w-4 mr-2" />
                       Llamar ahora
                     </a>
                   </Button>
                   <Button asChild variant="outline" className="flex-1">
                     <a
-                      href="https://wa.me/18499254434?text=Hola%20tengo%20una%20duda"
+                      href={buildSupportWhatsAppUrl("Hola tengo una duda")}
                       target="_blank"
                       rel="noreferrer"
                     >

@@ -41,6 +41,7 @@ import { ThemeToggle } from "@/components/app/theme-toggle"
 import { HeaderLogoClient } from "@/components/app/header-logo-client"
 import { initAutoSync, syncCacheData } from "@/lib/auto-sync"
 import { syncPendingData } from "@/lib/sync-manager"
+import { buildSupportWhatsAppUrl } from "@/lib/contact-info"
 import { Badge } from "@/components/ui/badge"
 import {
   DropdownMenu,
@@ -423,7 +424,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
               })}
               <Button asChild variant="outline" className="mt-2 w-full justify-start gap-2 text-base">
                 <a
-                  href="https://wa.me/18499254434?text=Hola%20MOVOPos"
+                  href={buildSupportWhatsAppUrl("Hola MOVOPos")}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -544,7 +545,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
                   <Button asChild variant="outline" className="mt-2 w-full justify-start gap-2 text-base">
                     <SheetClose asChild>
                       <a
-                        href="https://wa.me/18499254434?text=Hola%20necesito%20ayuda%20MOVOPos"
+                        href={buildSupportWhatsAppUrl("Hola necesito ayuda MOVOPos")}
                         target="_blank"
                         rel="noreferrer"
                       >

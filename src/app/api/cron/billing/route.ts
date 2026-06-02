@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { processBillingEngine } from "@/lib/billing"
 import { sendBillingNotifications } from "@/lib/billing-notifications"
+import { sendCustomerInactivityNotifications } from "@/lib/customer-inactivity-notifications"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -14,6 +15,7 @@ export const runtime = "nodejs"
  * 3. Verificar grace vencida -> blocked
  * 4. Aplicar cambios pendientes de moneda/método
  * 5. Enviar notificaciones según calendario
+ * 6. Enviar recordatorio unico a cuentas con mas de 5 dias sin login
  * 
  * Configuración en Vercel (vercel.json):
  * {
@@ -49,11 +51,22 @@ export async function GET(request: NextRequest) {
       notificationResults.errors = 1
     }
 
+    // 3. Enviar recordatorios de inactividad (se marcan una sola vez por cuenta)
+    let inactivityNotificationResults = { sent: 0, errors: 0 }
+    try {
+      inactivityNotificationResults = await sendCustomerInactivityNotifications()
+      console.log("Inactivity notification results:", inactivityNotificationResults)
+    } catch (inactivityError) {
+      console.error("Error sending inactivity notifications:", inactivityError)
+      inactivityNotificationResults.errors = 1
+    }
+
     return NextResponse.json({
       success: true,
       timestamp: new Date().toISOString(),
       engine: engineResults,
       notifications: notificationResults,
+      inactivityNotifications: inactivityNotificationResults,
     })
   } catch (error) {
     console.error("Error in billing cron job:", error)
