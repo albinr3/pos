@@ -26,6 +26,12 @@ function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => map[char] ?? char)
 }
 
+function extractEmailAddress(value: string) {
+  // EMAIL_FROM puede venir como "Nombre <correo@dominio>"; mailto necesita solo la direccion.
+  const match = value.match(/<([^<>@\s]+@[^<>@\s]+)>/)
+  return (match?.[1] ?? value).trim()
+}
+
 async function renderTemplate(
   templateName: string,
   variables: Record<string, string>
@@ -140,6 +146,7 @@ export async function renderCustomerInactivityEmail(
   const loginUrl = `${appUrl}/login`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MovoPos"
   const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportEmailAddress = extractEmailAddress(supportEmail)
   const supportWhatsapp = "849-925-4434"
   const supportWhatsappUrl = `https://wa.me/18499254434`
 
@@ -149,6 +156,7 @@ export async function renderCustomerInactivityEmail(
     loginUrl,
     appUrl,
     supportEmail,
+    supportEmailAddress,
     supportWhatsapp,
     supportWhatsappUrl,
     year: new Date().getFullYear().toString(),

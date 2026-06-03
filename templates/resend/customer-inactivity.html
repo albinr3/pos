@@ -29,7 +29,8 @@
     }
     .hero {
       padding: 34px 32px 28px;
-      background: linear-gradient(135deg, #0f766e, #2563eb);
+      /* Mantener el CTA en morado para evitar volver al degradado azul anterior. */
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
       color: white;
     }
     .hero .pill {
@@ -71,7 +72,8 @@
       align-items: center;
       justify-content: center;
       padding: 14px 22px;
-      background: linear-gradient(135deg, #0f766e, #2563eb);
+      /* Debe coincidir con el hero para que el email mantenga la paleta morada. */
+      background: linear-gradient(135deg, #7c3aed, #a855f7);
       border-radius: 10px;
       text-decoration: none;
       color: white;
@@ -88,7 +90,7 @@
       color: #334155;
     }
     .support a {
-      color: #0f766e;
+      color: #7c3aed;
       text-decoration: none;
       font-weight: 700;
     }
@@ -124,12 +126,13 @@
         Si por alguna razon no has entendido algo de la plataforma o necesitas
         ayuda para usarla, no dudes en contactar con nosotros a traves de este
         correo o del numero de WhatsApp
-        <a href="{{supportWhatsappUrl}}">{{supportWhatsapp}}</a> 849-925-4434.
+        <a href="{{supportWhatsappUrl}}">{{supportWhatsapp}}</a>.
       </p>
       <a class="button" href="{{loginUrl}}">Volver a {{brandName}}</a>
       <div class="support">
-        Tambien puedes responder directamente este correo:
-        <a href="mailto:{{supportEmail}}">{{supportEmail}}</a>
+        Tambien puedes responder directamente a este email:
+        <!-- Usar supportEmailAddress en mailto evita enlaces rotos cuando EMAIL_FROM incluye un nombre. -->
+        <a href="mailto:{{supportEmailAddress}}">{{supportEmailAddress}}</a>
       </div>
     </div>
     <div class="footer">
