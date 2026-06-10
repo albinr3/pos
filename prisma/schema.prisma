@@ -253,6 +253,8 @@ model Account {
   billingSubscription  BillingSubscription?
   billingProfile       BillingProfile?
   billingNotifications BillingNotification[]
+  pushDeviceTokens     PushDeviceToken[]
+  pushNotificationLogs PushNotificationLog[]
 
   @@index([clerkUserId])
 }
@@ -355,6 +357,7 @@ model User {
   treasuryAccountsCreated        TreasuryAccount[]         @relation("TreasuryAccountCreatedBy")
   treasuryOpeningBalancesCreated TreasuryOpeningBalance[]  @relation("TreasuryOpeningBalanceCreatedBy")
   treasuryTransfersCreated       TreasuryTransfer[]        @relation("TreasuryTransferCreatedBy")
+  pushDeviceTokens               PushDeviceToken[]
 
   // Username único dentro del mismo account
   @@unique([accountId, username])
@@ -1051,6 +1054,46 @@ model Payment {
   @@index([cancelledAt])
   @@index([receiptCode])
   @@index([treasuryAccountId])
+}
+
+model PushDeviceToken {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  expoPushToken String   @unique
+  platform      String?
+  deviceName    String?
+  appVersion    String?
+  enabled       Boolean  @default(true)
+  lastSeenAt    DateTime @default(now())
+
+  @@index([accountId])
+  @@index([userId])
+  @@index([enabled])
+  @@index([lastSeenAt])
+}
+
+model PushNotificationLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  type        String
+  sentForDate String
+  sentAt      DateTime @default(now())
+
+  @@unique([accountId, type, sentForDate])
+  @@index([accountId])
+  @@index([type, sentForDate])
 }
 
 // ==========================================

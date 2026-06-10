@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/billing",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/ar-overdue-push",
+      "schedule": "30 12 * * *"
     }
   ]
 }
