@@ -3,6 +3,17 @@
 
 export type CurrentUser = {
   username: string
+  canAccessSales: boolean
+  canAccessDashboard: boolean
+  canAccessReturns: boolean
+  canAccessProducts: boolean
+  canAccessAccountsReceivable: boolean
+  canAccessPayments: boolean
+  canAccessDailyClose: boolean
+  canAccessReports: boolean
+  canAccessShippingLabels: boolean
+  canAccessBilling: boolean
+  canAccessSettings: boolean
   canOverridePrice: boolean
   canCancelSales: boolean
   canCancelReturns: boolean
@@ -39,6 +50,17 @@ export function getCurrentUserStub(): CurrentUser {
   // For now, admin has all permissions
   return {
     username: "admin",
+    canAccessSales: true,
+    canAccessDashboard: true,
+    canAccessReturns: true,
+    canAccessProducts: true,
+    canAccessAccountsReceivable: true,
+    canAccessPayments: true,
+    canAccessDailyClose: true,
+    canAccessReports: true,
+    canAccessShippingLabels: true,
+    canAccessBilling: true,
+    canAccessSettings: true,
     canOverridePrice: true,
     canCancelSales: true,
     canCancelReturns: true,

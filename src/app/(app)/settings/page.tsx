@@ -1,4 +1,5 @@
 import { getCurrentUser } from "@/lib/auth"
+import { requireModuleAccess } from "@/lib/module-access"
 import { redirect } from "next/navigation"
 import { SettingsClient } from "./settings-client"
 
@@ -6,6 +7,8 @@ import { SettingsClient } from "./settings-client"
 export const dynamic = "force-dynamic"
 
 export default async function SettingsPage() {
+  await requireModuleAccess("canAccessSettings")
+
   const user = await getCurrentUser()
   
   if (!user) {

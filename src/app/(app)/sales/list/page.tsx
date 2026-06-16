@@ -1,6 +1,9 @@
 import { SalesListClient } from "./sales-list-client"
+import { requireModuleAccess } from "@/lib/module-access"
 
-export default function SalesListPage() {
+export default async function SalesListPage() {
+  await requireModuleAccess("canAccessSales")
+
   return (
     <div className="grid gap-6">
       <div>

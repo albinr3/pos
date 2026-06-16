@@ -3,12 +3,15 @@ import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { getCurrentUser } from "@/lib/auth"
+import { requireModuleAccess } from "@/lib/module-access"
 import { hasPermission } from "@/lib/permissions"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
 
 export default async function ReportsPage() {
+  await requireModuleAccess("canAccessReports")
+
   const user = await getCurrentUser()
   const canViewProfit = user
     ? hasPermission(user, "canViewProfitReport", { allowAdminBypass: false })

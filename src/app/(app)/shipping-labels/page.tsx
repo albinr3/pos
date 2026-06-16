@@ -1,6 +1,9 @@
 import { ShippingLabelsClient } from "./shipping-labels-client"
+import { requireModuleAccess } from "@/lib/module-access"
 
-export default function ShippingLabelsPage() {
+export default async function ShippingLabelsPage() {
+  await requireModuleAccess("canAccessShippingLabels")
+
   return (
     <div className="grid gap-6">
       <div>

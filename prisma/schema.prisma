@@ -304,6 +304,19 @@ model User {
   whatsappNumber     String? // Número de WhatsApp en formato E.164
   whatsappVerifiedAt DateTime? // Fecha de verificación del número
 
+  // Module access permissions
+  canAccessSales              Boolean @default(false)
+  canAccessDashboard          Boolean @default(false)
+  canAccessReturns            Boolean @default(false)
+  canAccessProducts           Boolean @default(false)
+  canAccessAccountsReceivable Boolean @default(false)
+  canAccessPayments           Boolean @default(false)
+  canAccessDailyClose         Boolean @default(false)
+  canAccessReports            Boolean @default(false)
+  canAccessShippingLabels     Boolean @default(false)
+  canAccessBilling            Boolean @default(false)
+  canAccessSettings           Boolean @default(false)
+
   // Granular permissions
   canOverridePrice    Boolean @default(false)
   canCancelSales      Boolean @default(false)

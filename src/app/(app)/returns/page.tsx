@@ -1,8 +1,11 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { requireModuleAccess } from "@/lib/module-access"
 import { ReturnsClient } from "./returns-client"
 
-export default function ReturnsPage() {
+export default async function ReturnsPage() {
+  await requireModuleAccess("canAccessReturns")
+
   return (
     <div className="grid gap-6">
       <div className="flex items-start justify-between gap-4">

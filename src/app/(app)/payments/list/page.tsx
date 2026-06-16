@@ -1,6 +1,9 @@
 import { PaymentsListClient } from "./payments-list-client"
+import { requireModuleAccess } from "@/lib/module-access"
 
-export default function PaymentsListPage() {
+export default async function PaymentsListPage() {
+  await requireModuleAccess("canAccessPayments")
+
   return (
     <div className="grid gap-6">
       <div>

@@ -1,4 +1,15 @@
 export const PERMISSION_LABELS = {
+  canAccessSales: "Acceder a vender",
+  canAccessDashboard: "Acceder a dashboard",
+  canAccessReturns: "Acceder a devoluciones",
+  canAccessProducts: "Acceder a productos",
+  canAccessAccountsReceivable: "Acceder a cuentas por cobrar",
+  canAccessPayments: "Acceder a recibos de pago",
+  canAccessDailyClose: "Acceder a cuadre diario",
+  canAccessReports: "Acceder a reportes",
+  canAccessShippingLabels: "Acceder a etiquetas de envío",
+  canAccessBilling: "Acceder a planes y facturación",
+  canAccessSettings: "Acceder a ajustes",
   canOverridePrice: "Modificar precios",
   canCancelSales: "Cancelar facturas",
   canCancelReturns: "Cancelar devoluciones",
@@ -34,6 +45,22 @@ export type PermissionKey = keyof typeof PERMISSION_LABELS
 
 export const ALL_PERMISSION_KEYS = Object.keys(PERMISSION_LABELS) as PermissionKey[]
 
+// Los permisos canAccess... controlan visibilidad/navegación del módulo.
+// Los demás permisos controlan acciones internas dentro de módulos visibles.
+export const MODULE_ACCESS_PERMISSION_KEYS = [
+  "canAccessSales",
+  "canAccessDashboard",
+  "canAccessReturns",
+  "canAccessProducts",
+  "canAccessAccountsReceivable",
+  "canAccessPayments",
+  "canAccessDailyClose",
+  "canAccessReports",
+  "canAccessShippingLabels",
+  "canAccessBilling",
+  "canAccessSettings",
+] as const satisfies readonly PermissionKey[]
+
 export const CRITICAL_PERMISSION_KEYS = [
   "canManageUsers",
   "canManageSettings",
@@ -50,19 +77,62 @@ export type PermissionModule = {
 
 export const PERMISSION_MODULES: PermissionModule[] = [
   {
-    id: "inventory_products",
-    label: "Inventario y Productos",
-    permissions: ["canEditProducts", "canViewProductCosts", "canAdjustInventory", "canManageCategories"],
+    id: "sales",
+    label: "Ventas",
+    permissions: [
+      "canAccessSales",
+      "canOverridePrice",
+      "canApplyDiscounts",
+      "canEditSales",
+      "canCancelSales",
+      "canChangeSaleType",
+      "canSellWithoutStock",
+    ],
   },
   {
-    id: "purchases_suppliers",
-    label: "Compras y Proveedores",
-    permissions: ["canManagePurchases", "canCancelPurchases", "canManageSuppliers"],
+    id: "dashboard",
+    label: "Dashboard",
+    permissions: ["canAccessDashboard"],
+  },
+  {
+    id: "returns",
+    label: "Devoluciones",
+    permissions: ["canAccessReturns", "canCancelReturns"],
+  },
+  {
+    id: "inventory_products",
+    label: "Productos e inventario",
+    permissions: ["canAccessProducts", "canEditProducts", "canViewProductCosts", "canAdjustInventory", "canManageCategories"],
   },
   {
     id: "customers_credit",
-    label: "Clientes y Creditos",
-    permissions: ["canManageCustomers", "canApproveCredit", "canChangeSaleType"],
+    label: "Clientes y cuentas por cobrar",
+    permissions: ["canManageCustomers", "canApproveCredit", "canAccessAccountsReceivable"],
+  },
+  {
+    id: "payments",
+    label: "Recibos de pago",
+    permissions: ["canAccessPayments", "canCancelPayments"],
+  },
+  {
+    id: "daily_close",
+    label: "Cuadre diario",
+    permissions: ["canAccessDailyClose"],
+  },
+  {
+    id: "reports",
+    label: "Reportes",
+    permissions: ["canAccessReports", "canViewProfitReport"],
+  },
+  {
+    id: "shipping_labels",
+    label: "Etiquetas de envío",
+    permissions: ["canAccessShippingLabels"],
+  },
+  {
+    id: "purchases_suppliers",
+    label: "Compras y proveedores",
+    permissions: ["canManagePurchases", "canCancelPurchases", "canManageSuppliers"],
   },
   {
     id: "operating_expenses",
@@ -85,28 +155,24 @@ export const PERMISSION_MODULES: PermissionModule[] = [
     permissions: ["canManageQuotes"],
   },
   {
-    id: "sales_cash",
-    label: "Ventas y Caja",
-    permissions: [
-      "canOverridePrice",
-      "canApplyDiscounts",
-      "canEditSales",
-      "canCancelSales",
-      "canCancelReturns",
-      "canCancelPayments",
-      "canSellWithoutStock",
-    ],
+    id: "billing",
+    label: "Planes y facturación",
+    permissions: ["canAccessBilling"],
   },
   {
     id: "audit_settings",
-    label: "Auditoria y Configuracion",
+    label: "Ajustes, usuarios y auditoría",
     permissions: [
+      "canAccessSettings",
       "canViewAuditLogs",
       "canManageUsers",
       "canManageSettings",
-      "canManageBackups",
-      "canViewProfitReport",
     ],
+  },
+  {
+    id: "backups",
+    label: "Backups",
+    permissions: ["canManageBackups"],
   },
 ]
 

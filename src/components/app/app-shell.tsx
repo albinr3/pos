@@ -70,7 +70,7 @@ const nav = [
   { href: "/shipping-labels", label: "Etiquetas de envío", icon: Truck },
   { href: "/operating-expenses", label: "Gastos operativos", icon: DollarSign },
   { href: "/treasury", label: "Tesorería", icon: Landmark },
-  { href: "/billing", label: "Planes Y facturacion", icon: CreditCard },
+  { href: "/billing", label: "Planes y facturación", icon: CreditCard },
   { href: "/settings", label: "Ajustes", icon: Settings },
   { href: "/backups", label: "Backups", icon: Database },
 ]
@@ -80,6 +80,37 @@ const OFFLINE_ALLOWED_ROUTES = new Set(["/sales", "/ar"])
 
 const USER_CACHE_KEY = "tejada-pos-user"
 const DISABLE_BACKUPS_NAV = true
+
+function canAccessNavItem(user: CurrentUser, href: string) {
+  if (user.isOwner) return true
+
+  switch (href) {
+    case "/sales":
+      return user.canAccessSales ?? true
+    case "/dashboard":
+      return user.canAccessDashboard ?? true
+    case "/returns":
+      return user.canAccessReturns ?? true
+    case "/products":
+      return user.canAccessProducts ?? true
+    case "/ar":
+      return user.canAccessAccountsReceivable ?? true
+    case "/payments/list":
+      return user.canAccessPayments ?? true
+    case "/daily-close":
+      return user.canAccessDailyClose ?? true
+    case "/reports":
+      return user.canAccessReports ?? true
+    case "/shipping-labels":
+      return user.canAccessShippingLabels ?? true
+    case "/billing":
+      return user.canAccessBilling ?? true
+    case "/settings":
+      return user.canAccessSettings ?? true
+    default:
+      return true
+  }
+}
 
 function cacheUser(user: CurrentUser) {
   if (typeof window === "undefined") return
@@ -172,6 +203,11 @@ export function AppShell({ children, billingState }: AppShellProps) {
 
     return nav
       .map((item) => {
+        // Los canAccess... controlan si el módulo aparece en el menú.
+        if (!canAccessNavItem(user, item.href)) {
+          return null
+        }
+
         if (
           item.href === "/purchases" &&
           !user.isOwner

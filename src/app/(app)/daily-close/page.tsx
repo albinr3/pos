@@ -4,6 +4,7 @@ import { formatRD } from "@/lib/money"
 import { getDailyClose } from "./actions"
 
 import { DateRangeFilter } from "./filter-client"
+import { requireModuleAccess } from "@/lib/module-access"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -13,6 +14,8 @@ export default async function DailyClosePage({
 }: {
   searchParams: Promise<{ from?: string; to?: string }>
 }) {
+  await requireModuleAccess("canAccessDailyClose")
+
   const sp = await searchParams
   const data = await getDailyClose({ from: sp.from, to: sp.to })
 

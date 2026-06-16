@@ -73,6 +73,11 @@ const DEFAULT_PERMISSIONS = ALL_PERMISSION_KEYS.reduce<PermissionState>((acc, ke
   return acc
 }, {} as PermissionState)
 
+const DEFAULT_NEW_USER_PERMISSIONS: PermissionState = {
+  ...DEFAULT_PERMISSIONS,
+  canAccessSales: true,
+}
+
 const NON_CRITICAL_PERMISSION_KEYS = ALL_PERMISSION_KEYS.filter(
   (permission) => !(CRITICAL_PERMISSION_KEYS as readonly string[]).includes(permission)
 )
@@ -83,7 +88,7 @@ const DEFAULT_NEW_USER: NewUserForm = {
   password: "",
   email: "",
   role: "CAJERO",
-  permissions: DEFAULT_PERMISSIONS,
+  permissions: DEFAULT_NEW_USER_PERMISSIONS,
 }
 
 function getPermissionValue(user: UserWithPermissions, permission: PermissionKey): boolean {

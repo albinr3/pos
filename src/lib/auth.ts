@@ -72,6 +72,17 @@ export type CurrentUser = {
   email?: string | null
   role: UserRole
   isOwner: boolean
+  canAccessSales: boolean
+  canAccessDashboard: boolean
+  canAccessReturns: boolean
+  canAccessProducts: boolean
+  canAccessAccountsReceivable: boolean
+  canAccessPayments: boolean
+  canAccessDailyClose: boolean
+  canAccessReports: boolean
+  canAccessShippingLabels: boolean
+  canAccessBilling: boolean
+  canAccessSettings: boolean
   canOverridePrice: boolean
   canCancelSales: boolean
   canCancelReturns: boolean
@@ -555,6 +566,17 @@ export async function authenticateSubUser(
         email: user.email,
         role: user.role,
         isOwner: user.isOwner,
+        canAccessSales: user.canAccessSales,
+        canAccessDashboard: user.canAccessDashboard,
+        canAccessReturns: user.canAccessReturns,
+        canAccessProducts: user.canAccessProducts,
+        canAccessAccountsReceivable: user.canAccessAccountsReceivable,
+        canAccessPayments: user.canAccessPayments,
+        canAccessDailyClose: user.canAccessDailyClose,
+        canAccessReports: user.canAccessReports,
+        canAccessShippingLabels: user.canAccessShippingLabels,
+        canAccessBilling: user.canAccessBilling,
+        canAccessSettings: user.canAccessSettings,
         canOverridePrice: user.canOverridePrice,
         canCancelSales: user.canCancelSales,
         canCancelReturns: user.canCancelReturns,
@@ -611,6 +633,17 @@ export async function createSubUser(
     role: UserRole
     isOwner?: boolean
     permissions?: Partial<{
+      canAccessSales: boolean
+      canAccessDashboard: boolean
+      canAccessReturns: boolean
+      canAccessProducts: boolean
+      canAccessAccountsReceivable: boolean
+      canAccessPayments: boolean
+      canAccessDailyClose: boolean
+      canAccessReports: boolean
+      canAccessShippingLabels: boolean
+      canAccessBilling: boolean
+      canAccessSettings: boolean
       canOverridePrice: boolean
       canCancelSales: boolean
       canCancelReturns: boolean
@@ -672,6 +705,17 @@ export async function createSubUser(
         role: data.role,
         isOwner,
         ...permissions,
+        canAccessSales: permissions.canAccessSales ?? true,
+        canAccessDashboard: permissions.canAccessDashboard ?? isOwner,
+        canAccessReturns: permissions.canAccessReturns ?? isOwner,
+        canAccessProducts: permissions.canAccessProducts ?? isOwner,
+        canAccessAccountsReceivable: permissions.canAccessAccountsReceivable ?? isOwner,
+        canAccessPayments: permissions.canAccessPayments ?? isOwner,
+        canAccessDailyClose: permissions.canAccessDailyClose ?? isOwner,
+        canAccessReports: permissions.canAccessReports ?? isOwner,
+        canAccessShippingLabels: permissions.canAccessShippingLabels ?? isOwner,
+        canAccessBilling: permissions.canAccessBilling ?? isOwner,
+        canAccessSettings: permissions.canAccessSettings ?? isOwner,
         canViewTreasury: permissions.canViewTreasury ?? isOwner,
         canManageTreasuryAccounts: permissions.canManageTreasuryAccounts ?? isOwner,
         canCreateTreasuryTransfers: permissions.canCreateTreasuryTransfers ?? isOwner,
@@ -842,6 +886,17 @@ export async function getCurrentUser(
     email: user.email,
     role: user.role,
     isOwner: user.isOwner,
+    canAccessSales: user.canAccessSales,
+    canAccessDashboard: user.canAccessDashboard,
+    canAccessReturns: user.canAccessReturns,
+    canAccessProducts: user.canAccessProducts,
+    canAccessAccountsReceivable: user.canAccessAccountsReceivable,
+    canAccessPayments: user.canAccessPayments,
+    canAccessDailyClose: user.canAccessDailyClose,
+    canAccessReports: user.canAccessReports,
+    canAccessShippingLabels: user.canAccessShippingLabels,
+    canAccessBilling: user.canAccessBilling,
+    canAccessSettings: user.canAccessSettings,
     canOverridePrice: user.canOverridePrice,
     canCancelSales: user.canCancelSales,
     canCancelReturns: user.canCancelReturns,

@@ -2,10 +2,13 @@ import { getBillingData } from "./actions"
 import { BillingClient } from "./billing-client"
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
+import { requireModuleAccess } from "@/lib/module-access"
 
 export const dynamic = "force-dynamic"
 
 export default async function BillingPage() {
+  await requireModuleAccess("canAccessBilling")
+
   if (process.env.NODE_ENV === "development") {
     const h = await headers()
     console.log("[Billing:Page]", {

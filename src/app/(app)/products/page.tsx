@@ -1,11 +1,14 @@
 import { ProductsClient } from "./products-client"
 import { getAccountOnboardingState } from "../onboarding/actions"
+import { requireModuleAccess } from "@/lib/module-access"
 
 export default async function ProductsPage({
   searchParams,
 }: {
   searchParams: Promise<{ onboarding?: string | string[] }>
 }) {
+  await requireModuleAccess("canAccessProducts")
+
   const params = await searchParams
   const onboardingRaw = params.onboarding
   const onboarding = Array.isArray(onboardingRaw) ? onboardingRaw[0] : onboardingRaw

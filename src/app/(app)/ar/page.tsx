@@ -2,9 +2,12 @@ import Link from "next/link"
 import { Receipt } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { requireModuleAccess } from "@/lib/module-access"
 import { ARClient } from "./ar-client"
 
-export default function AccountsReceivablePage() {
+export default async function AccountsReceivablePage() {
+  await requireModuleAccess("canAccessAccountsReceivable")
+
   return (
     <div className="grid gap-6">
       <div className="flex items-start justify-between gap-4">

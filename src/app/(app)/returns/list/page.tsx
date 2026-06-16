@@ -1,6 +1,9 @@
 import { ReturnsListClient } from "./returns-list-client"
+import { requireModuleAccess } from "@/lib/module-access"
 
-export default function ReturnsListPage() {
+export default async function ReturnsListPage() {
+  await requireModuleAccess("canAccessReturns")
+
   return (
     <div className="grid gap-6">
       <div>

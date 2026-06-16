@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { formatRD } from "@/lib/money"
 import { cn } from "@/lib/utils"
+import { requireModuleAccess } from "@/lib/module-access"
 
 import { getDashboardStats, getSalesChartData } from "./actions"
 import { SalesChart } from "./sales-chart"
@@ -19,6 +20,8 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ onboarding?: string | string[] }>
 }) {
+  await requireModuleAccess("canAccessDashboard")
+
   const params = await searchParams
   const onboardingRaw = params.onboarding
   const onboarding = Array.isArray(onboardingRaw) ? onboardingRaw[0] : onboardingRaw

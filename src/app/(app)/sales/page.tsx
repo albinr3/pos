@@ -3,12 +3,14 @@ import { Button } from "@/components/ui/button"
 import { PosClient } from "./pos-client"
 import { getSettings } from "../settings/actions"
 import { getAccountOnboardingState } from "../onboarding/actions"
+import { requireModuleAccess } from "@/lib/module-access"
 
 export default async function SalesPage({
   searchParams,
 }: {
   searchParams: Promise<{ onboarding?: string | string[]; onboardingProductId?: string | string[] }>
 }) {
+  await requireModuleAccess("canAccessSales")
   const settings = await getSettings()
   const params = await searchParams
   const onboardingRaw = params.onboarding
