@@ -5,7 +5,11 @@ import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
 import { endOfDay, parseDateParam, startOfDay } from "@/lib/dates"
-import { ensureDefaultTreasuryAccount, requireTreasuryAccount } from "@/lib/treasury"
+import {
+  ensureDefaultTreasuryAccount,
+  requireTreasuryAccount,
+  TreasuryAccountValidationError,
+} from "@/lib/treasury"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -210,6 +214,11 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error: unknown) {
+    if (error instanceof TreasuryAccountValidationError) {
+      // Comentario preventivo: si el móvil manda una cuenta eliminada o inactiva desde caché,
+      // debe tratarse como validación recuperable y no como 500 reportable por Gmail.
+      return NextResponse.json({ error: getErrorMessage(error) }, { status: 400 })
+    }
     console.error("Error en POST /api/operating-expenses:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al crear gasto operativo" },

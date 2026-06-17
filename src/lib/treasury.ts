@@ -7,6 +7,13 @@ export type TreasuryMovementDirection = "IN" | "OUT"
 const DEFAULT_CASH_ACCOUNT_NAME = "Caja Efectivo"
 const LEGACY_CASH_ACCOUNT_NAMES = new Set(["Caja principal", "CaJA efectivo"])
 
+export class TreasuryAccountValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "TreasuryAccountValidationError"
+  }
+}
+
 function getTreasuryAccountDelegate(db: Prisma.TransactionClient | typeof prisma) {
   const delegate = (db as any)?.treasuryAccount
   if (delegate) return delegate
@@ -84,7 +91,9 @@ export async function requireTreasuryAccount(
   })
 
   if (!account) {
-    throw new Error(input.message ?? "Cuenta de tesorería no encontrada")
+    // Comentario preventivo: una cuenta inactiva/cacheada del móvil es una validación del cliente,
+    // no un fallo interno. Las rutas deben devolver 400 para no disparar alertas 500.
+    throw new TreasuryAccountValidationError(input.message ?? "Cuenta de tesorería no encontrada")
   }
 
   return account

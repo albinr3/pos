@@ -5,7 +5,11 @@ import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
 import { parseDateParam } from "@/lib/dates"
-import { ensureDefaultTreasuryAccount, requireTreasuryAccount } from "@/lib/treasury"
+import {
+  ensureDefaultTreasuryAccount,
+  requireTreasuryAccount,
+  TreasuryAccountValidationError,
+} from "@/lib/treasury"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -193,6 +197,11 @@ export async function PUT(
       updatedAt: updated.updatedAt.toISOString(),
     })
   } catch (error: unknown) {
+    if (error instanceof TreasuryAccountValidationError) {
+      // Comentario preventivo: editar desde datos offline puede traer una cuenta de tesorería vieja.
+      // Responder 400 evita clasificar esa validación como error interno de producción.
+      return NextResponse.json({ error: getErrorMessage(error) }, { status: 400 })
+    }
     console.error("Error en PUT /api/operating-expenses/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al editar gasto operativo" },
