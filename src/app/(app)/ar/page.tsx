@@ -3,10 +3,12 @@ import { Receipt } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { requireModuleAccess } from "@/lib/module-access"
+import { listTreasuryAccounts } from "../treasury/actions"
 import { ARClient } from "./ar-client"
 
 export default async function AccountsReceivablePage() {
   await requireModuleAccess("canAccessAccountsReceivable")
+  const treasuryAccounts = await listTreasuryAccounts()
 
   return (
     <div className="grid gap-6">
@@ -23,7 +25,7 @@ export default async function AccountsReceivablePage() {
           </Button>
         </div>
       </div>
-      <ARClient />
+      <ARClient initialTreasuryAccounts={treasuryAccounts} />
     </div>
   )
 }

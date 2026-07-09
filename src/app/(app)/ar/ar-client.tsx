@@ -136,7 +136,11 @@ function sortARItems<T extends { customer?: { name?: string | null } | null; due
   return [...list].sort(compareByCustomerAndDate)
 }
 
-export function ARClient() {
+export function ARClient({
+  initialTreasuryAccounts = [],
+}: {
+  initialTreasuryAccounts?: TreasuryAccountOption[]
+}) {
   const router = useRouter()
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -158,8 +162,10 @@ export function ARClient() {
   const [selected, setSelected] = useState<AR | null>(null)
   const [amountCents, setAmountCents] = useState(0)
   const [method, setMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
-  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>([])
-  const [treasuryAccountId, setTreasuryAccountId] = useState("")
+  const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>(initialTreasuryAccounts)
+  const [treasuryAccountId, setTreasuryAccountId] = useState(() =>
+    pickTreasuryAccountIdForPaymentMethod(initialTreasuryAccounts, PaymentMethod.EFECTIVO)
+  )
   const [note, setNote] = useState("")
   const [isSaving, startSaving] = useTransition()
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
@@ -177,7 +183,9 @@ export function ARClient() {
   const [openBatch, setOpenBatch] = useState(false)
   const [batchAmountCents, setBatchAmountCents] = useState(0)
   const [batchMethod, setBatchMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
-  const [batchTreasuryAccountId, setBatchTreasuryAccountId] = useState("")
+  const [batchTreasuryAccountId, setBatchTreasuryAccountId] = useState(() =>
+    pickTreasuryAccountIdForPaymentMethod(initialTreasuryAccounts, PaymentMethod.EFECTIVO)
+  )
   const [batchNote, setBatchNote] = useState("")
   const [isBatchSaving, startBatchSaving] = useTransition()
   const paymentMethods = [
@@ -331,10 +339,11 @@ export function ARClient() {
           )
         }
       } catch {
-        setTreasuryAccounts([])
+        // Evita borrar las cuentas renderizadas por el servidor si falla la recarga client-side.
+        if (initialTreasuryAccounts.length === 0) setTreasuryAccounts([])
       }
     })
-  }, [])
+  }, [initialTreasuryAccounts])
 
   useEffect(() => {
     const nextTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
