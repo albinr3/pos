@@ -285,11 +285,13 @@ export async function listCustomers() {
 
   await ensureGenericCustomer(prisma, user.accountId)
 
+  // Esta lista alimenta selectores sin paginacion en ventas/listados.
+  // No volver a limitarla a 50: ocultaba clientes validos en cuentas con mas volumen.
   return prisma.customer.findMany({
     where: { accountId: user.accountId, isActive: true },
     orderBy: [{ isGeneric: "desc" }, { name: "asc" }],
     select: { id: true, visualId: true, name: true, isGeneric: true, saleDiscountPercentBp: true },
-    take: 50,
+    take: 1000,
   })
 }
 

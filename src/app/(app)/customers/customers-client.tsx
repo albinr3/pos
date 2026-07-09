@@ -17,7 +17,9 @@ import { deactivateCustomer, listCustomersPage, upsertCustomer } from "./actions
 
 type Customer = Awaited<ReturnType<typeof listCustomersPage>>["items"][number]
 
-const PAGE_SIZE = 50
+// Evita que usuarios con mas de 50 clientes crean que la lista esta recortada.
+// La accion del servidor pagina hasta 200 por llamada y mantiene "Cargar mas" si hace falta.
+const PAGE_SIZE = 200
 
 export function CustomersClient() {
   const [query, setQuery] = useState("")
