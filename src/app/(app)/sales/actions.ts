@@ -1309,6 +1309,10 @@ export async function createSale(input: {
         "decrement"
       )
 
+      const stockDecrements = aggregateConsumptions(
+        resolvedLines.flatMap((line) => line.consumptions)
+      )
+
       // If credit: create AR
       if (input.type === SaleType.CREDITO) {
         const customerIdForAR = finalCustomerId
@@ -1363,10 +1367,13 @@ export async function createSale(input: {
       }
 
       revalidatePath("/", "layout")
+      revalidatePath("/sales")
       revalidatePath("/dashboard")
       revalidatePath("/reports/profit")
 
-      return sale
+      // Devolver los consumos reales evita que el POS conserve existencias obsoletas
+      // hasta que el usuario recargue la pestaña (especialmente en productos tipo receta).
+      return { ...sale, stockDecrements }
     }, TRANSACTION_OPTIONS)
   } catch (error) {
     await logError(error as Error, {

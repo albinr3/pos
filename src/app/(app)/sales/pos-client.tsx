@@ -347,6 +347,31 @@ export function PosClient({
     localStorage.removeItem("posCartState")
   }, [legalTipEnabled, treasuryAccounts])
 
+  const applyStockDecrements = useCallback((decrements: Array<{ ingredientId: string; qty: number }>) => {
+    if (decrements.length === 0) return
+
+    const quantityByProductId = new Map<string, number>()
+    for (const decrement of decrements) {
+      quantityByProductId.set(
+        decrement.ingredientId,
+        (quantityByProductId.get(decrement.ingredientId) ?? 0) + decrement.qty
+      )
+    }
+
+    const updateStock = (products: ProductResult[]) =>
+      products.map((product) => {
+        const quantity = quantityByProductId.get(product.id)
+        return quantity === undefined
+          ? product
+          : { ...product, stock: decimalToNumber(product.stock) - quantity }
+      })
+
+    // Comentario preventivo: results y allProducts son copias en memoria; deben reflejar
+    // el descuento confirmado para no requerir recargar la pestaña después de una venta.
+    setResults(updateStock)
+    setAllProducts(updateStock)
+  }, [])
+
   useEffect(() => {
     setApplyLegalTip(legalTipEnabled)
   }, [legalTipEnabled])
@@ -1302,6 +1327,7 @@ export function PosClient({
             })
 
             toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
+            applyStockDecrements(sale.stockDecrements)
 
             if (onboardingSaleGuide) {
               router.push(`/onboarding/completado?saleId=${encodeURIComponent(sale.id)}`)
