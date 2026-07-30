@@ -167,6 +167,14 @@ export async function GET(request: NextRequest) {
       orderBy: { soldAt: "desc" },
       include: {
         customer: { select: { id: true, visualId: true, name: true } },
+        payments: {
+          select: {
+            method: true,
+            amountCents: true,
+            transferBankName: true,
+            treasuryAccountId: true,
+          },
+        },
         items: {
           select: {
             id: true,
@@ -196,6 +204,12 @@ export async function GET(request: NextRequest) {
         paymentMethod: sale.paymentMethod,
         treasuryAccountId: sale.treasuryAccountId ?? null,
         transferBankName: sale.transferBankName,
+        paymentSplits: sale.payments.map((payment) => ({
+          method: payment.method,
+          amountCents: payment.amountCents,
+          transferBankName: payment.transferBankName,
+          treasuryAccountId: payment.treasuryAccountId ?? null,
+        })),
         customerId: sale.customerId,
         customerVisualId: sale.customer?.visualId ?? null,
         customerName: sale.customer?.name || null,

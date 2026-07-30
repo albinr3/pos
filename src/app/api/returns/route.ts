@@ -43,6 +43,8 @@ export async function GET(request: NextRequest) {
         returnCode: r.returnCode,
         saleId: r.saleId,
         totalCents: r.totalCents,
+        refundMethod: r.refundMethod ?? null,
+        refundTreasuryAccountId: r.refundTreasuryAccountId ?? null,
         notes: r.notes || null,
         returnedAt: r.returnedAt?.toISOString?.() || null,
         cancelledAt: r.cancelledAt?.toISOString?.() || null,

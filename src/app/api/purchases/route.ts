@@ -168,6 +168,8 @@ export async function GET(request: NextRequest) {
         supplierName: purchase.supplierName,
         notes: purchase.notes,
         totalCents: purchase.totalCents,
+        paymentMethod: purchase.paymentMethod,
+        treasuryAccountId: purchase.treasuryAccountId ?? null,
         cancelledAt: purchase.cancelledAt ? purchase.cancelledAt.toISOString() : null,
         itemsCount: purchase.items.length,
         items: purchase.items.map((item: (typeof purchase.items)[number]) => ({
@@ -325,4 +327,3 @@ export async function POST(request: NextRequest) {
     )
   }
 }
-
