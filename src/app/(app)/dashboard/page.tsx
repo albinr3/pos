@@ -11,6 +11,7 @@ import { getDashboardStats, getSalesChartData } from "./actions"
 import { SalesChart } from "./sales-chart"
 import { getAccountOnboardingState } from "../onboarding/actions"
 import { OnboardingCard } from "./onboarding-card"
+import { OnboardingActivationModal } from "./onboarding-activation-modal"
 
 // Marcar como dinámica para evitar prerender (requiere autenticación)
 export const dynamic = "force-dynamic"
@@ -47,6 +48,12 @@ export default async function DashboardPage({
         state={onboardingState}
         showProductNavGuide={onboarding === "product" && onboardingState.phase === "PRODUCT"}
       />
+      {onboarding === "welcome" && onboardingState.phase === "DEMO_SALE" ? (
+        <OnboardingActivationModal stage="SALE" accountId={onboardingState.accountId} />
+      ) : null}
+      {onboarding === "product-ready" && onboardingState.phase === "PRODUCT" ? (
+        <OnboardingActivationModal stage="PRODUCT" accountId={onboardingState.accountId} />
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-l-4 border-l-purple-primary">

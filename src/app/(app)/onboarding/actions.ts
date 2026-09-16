@@ -219,7 +219,7 @@ export async function completeDemoCheckout() {
       where: { accountId: user.accountId },
       select: { demoProductsSeededAt: true, demoCheckoutCompletedAt: true },
     })
-    if (!onboarding?.demoProductsSeededAt) throw new Error("La práctica no está disponible para esta cuenta.")
+    if (!onboarding?.demoProductsSeededAt) throw new Error("La venta de práctica no está disponible para esta cuenta.")
     if (onboarding.demoCheckoutCompletedAt) return { next: "PRODUCT" as const }
 
     const demoCount = await tx.product.count({

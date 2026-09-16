@@ -72,7 +72,7 @@ export function OnboardingCard({
     if (state.phase === "DEMO_SALE") {
       return {
         href: "/sales?onboarding=demo",
-        label: "Continuar práctica de cobro",
+        label: "Continuar práctica de venta",
         Icon: ShoppingCart,
       }
     }
@@ -152,7 +152,7 @@ export function OnboardingCard({
 
               {state.usesDemoActivation ? (
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <StepItem done={Boolean(state.demoCheckoutCompletedAt)} label="Práctica de cobro completada" />
+                  <StepItem done={Boolean(state.demoCheckoutCompletedAt)} label="Práctica de venta completada" />
                   <StepItem done={Boolean(state.firstRealProductId)} label="Primer producto propio creado" />
                 </div>
               ) : (

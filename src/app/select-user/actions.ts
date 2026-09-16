@@ -274,7 +274,7 @@ export async function createInitialOwner(formData: FormData) {
     return { error: "No se pudo guardar la configuración. Intenta de nuevo." }
   }
 
-  redirect("/sales?onboarding=demo")
+  redirect("/dashboard?onboarding=welcome")
 }
 
 export async function loginSubUser(formData: FormData) {

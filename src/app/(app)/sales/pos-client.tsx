@@ -988,7 +988,9 @@ export function PosClient({
   const saleGuideState = useMemo(() => {
     if ((!onboardingSaleGuide && !onboardingDemoGuide) || isOnboardingGuideClosed || hasSkippedProgress) return null
 
-    const productTarget = cart.length > 0
+    const productTarget = onboardingDemoGuide && cart.length === 0
+      ? "sales-demo-coffee"
+      : cart.length > 0
       ? "sales-cart-section"
       : query.trim() && results.length > 0
         ? "sales-product-result"
@@ -1003,14 +1005,14 @@ export function PosClient({
           step: {
             target: productTarget,
             title: "Selecciona Café Americano",
-            description: "Estás en la caja real. Toca el producto para agregarlo al carrito de práctica.",
+            description: "Estás en la caja real. Toca el producto para agregarlo a la venta de práctica.",
           },
         },
         {
           complete: cart.length === 0 || hasReviewedOnboardingCart,
           step: {
             target: "sales-cart-section",
-            title: "Revisa tu carrito",
+            title: "Revisa tu venta de práctica",
             description: "Aquí verás los productos, cantidades y el total antes de cobrar.",
             actionLabel: "Ya revisé",
             onAction: () => setHasReviewedOnboardingCart(true),
@@ -1020,8 +1022,8 @@ export function PosClient({
           complete: false,
           step: {
             target: "sales-save-button",
-            title: "Cobra la práctica",
-            description: "El botón usa la caja real, pero esta práctica no creará una factura ni afectará tus reportes.",
+            title: "Completa la venta de práctica",
+            description: "El botón usa la caja real, pero esta venta de práctica no creará una factura ni afectará tus reportes.",
           },
         },
       ]
@@ -1247,8 +1249,7 @@ export function PosClient({
       startSave(async () => {
         try {
           await completeDemoCheckout()
-          toast({ title: "Práctica completada", description: "Ahora crea un producto propio para vender de verdad." })
-          router.push("/products?onboarding=product")
+          router.push("/dashboard?onboarding=product-ready")
         } catch (error) {
           const message = error instanceof Error ? error.message : "No se pudo completar la práctica."
           toast({ title: "Error", description: message, variant: "destructive" })
@@ -1456,6 +1457,12 @@ export function PosClient({
     return cart.reduce((sum, item) => (item.productId === productId ? sum + item.qty : sum), 0)
   }
 
+  function getProductOnboardingTarget(product: ProductResult, fallback: string) {
+    // Preventivo: el listado se ordena alfabéticamente; no usar un selector genérico
+    // porque podría resaltar otro producto distinto al indicado por la guía.
+    return onboardingDemoGuide && product.name === "Café Americano" ? "sales-demo-coffee" : fallback
+  }
+
   return (
     <div className={`grid gap-6 ${viewMode === "grid" ? "lg:grid-cols-[1fr_400px]" : "lg:grid-cols-[1fr_380px]"}`}>
       {saleGuideState?.step ? (
@@ -1492,7 +1499,7 @@ export function PosClient({
           <div className="flex items-start gap-3">
             <ShoppingCart className="mt-0.5 h-5 w-5 flex-none" />
             <div>
-              <div className="font-semibold">{onboardingDemoGuide ? "Práctica de cobro" : "Primera venta"}</div>
+              <div className="font-semibold">{onboardingDemoGuide ? "Práctica de venta" : "Primera venta"}</div>
               <p className="text-emerald-800 dark:text-emerald-200">
                 {onboardingDemoGuide
                   ? "Estás usando la caja real con productos de práctica. Esta vez no se creará factura ni se descontará inventario."
@@ -1851,7 +1858,7 @@ export function PosClient({
                           type="button"
                           key={p.id}
                           onClick={() => handleProductSelection(p)}
-                          data-onboarding-target="sales-product-result"
+                          data-onboarding-target={getProductOnboardingTarget(p, "sales-product-result")}
                           className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-muted"
                         >
                           <div className="min-w-0">
@@ -1889,7 +1896,7 @@ export function PosClient({
                           type="button"
                           key={p.id}
                           onClick={() => handleProductSelection(p)}
-                          data-onboarding-target="sales-product-result"
+                          data-onboarding-target={getProductOnboardingTarget(p, "sales-product-result")}
                           className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
                         >
                           <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
@@ -1956,7 +1963,7 @@ export function PosClient({
                             type="button"
                             key={p.id}
                             onClick={() => handleProductSelection(p)}
-                            data-onboarding-target="sales-product-card"
+                            data-onboarding-target={getProductOnboardingTarget(p, "sales-product-card")}
                             className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
                           >
                             <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
@@ -2483,7 +2490,7 @@ export function PosClient({
               onClick={onSave}
               data-onboarding-target="sales-save-button"
             >
-              {isSaving ? "Guardando…" : onboardingDemoGuide ? "Cobrar de práctica" : "Guardar e imprimir"}
+              {isSaving ? "Guardando…" : onboardingDemoGuide ? "Completar venta de práctica" : "Guardar e imprimir"}
             </Button>
             {!onboardingDemoGuide && <div className="text-xs text-muted-foreground">
               {salePricesIncludeItbis
