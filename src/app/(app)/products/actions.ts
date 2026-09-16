@@ -527,10 +527,46 @@ export async function upsertProduct(input: {
           },
           tx
         )
+
+        const onboarding = await tx.accountOnboarding.findUnique({
+          where: { accountId: user.accountId },
+          select: {
+            demoProductsSeededAt: true,
+            demoCheckoutCompletedAt: true,
+            firstRealProductId: true,
+          },
+        })
+        if (onboarding?.demoProductsSeededAt && onboarding.demoCheckoutCompletedAt && !onboarding.firstRealProductId) {
+          // Preventivo: los demos no generan ventas ni movimientos. Si una versión futura les
+          // añade historial, este filtro los conserva para no borrar evidencia operativa.
+          await tx.product.deleteMany({
+            where: {
+              accountId: user.accountId,
+              isOnboardingDemo: true,
+              saleItems: { none: {} },
+              inventoryAdjustments: { none: {} },
+            },
+          })
+          const remainingDemos = await tx.product.count({
+            where: { accountId: user.accountId, isOnboardingDemo: true },
+          })
+          const completedAt = new Date()
+          await tx.accountOnboarding.update({
+            where: { accountId: user.accountId },
+            data: {
+              firstRealProductId: created.id,
+              firstRealProductCreatedAt: completedAt,
+              completedAt,
+              ...(remainingDemos === 0 ? { demoProductsRemovedAt: completedAt } : {}),
+            },
+          })
+        }
       }
     })
 
     safeRevalidate("/products")
+    safeRevalidate("/dashboard")
+    safeRevalidate("/sales")
     return { ok: true, id: savedProductId ?? input.id ?? "" }
   } catch (error) {
     if (error instanceof UpsertProductUserError) {

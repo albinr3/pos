@@ -273,12 +273,19 @@ model AccountOnboarding {
   // Separado del tutorial: evita que una sesión válida salte la configuración inicial.
   initialSetupStartedAt   DateTime?
   initialSetupCompletedAt DateTime?
+  // Activación para cuentas nuevas: los demos nunca sustituyen un producto real.
+  demoProductsSeededAt    DateTime?
+  demoCheckoutCompletedAt DateTime?
+  firstRealProductId      String?
+  firstRealProductCreatedAt DateTime?
+  demoProductsRemovedAt   DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
   @@index([completedAt])
   @@index([firstProductId])
   @@index([firstSaleId])
+  @@index([firstRealProductId])
 }
 
 // ==========================================
@@ -747,6 +754,8 @@ model Product {
 
   isActive Boolean @default(true)
   isAvailableForSale Boolean @default(true)
+  // Los productos de práctica se eliminan al crear el primer producto propio.
+  isOnboardingDemo Boolean @default(false)
 
   imageUrls String[] @default([])
 
@@ -773,6 +782,7 @@ model Product {
   @@index([categoryId])
   @@index([accountId, stock])
   @@index([accountId, isAvailableForSale])
+  @@index([accountId, isOnboardingDemo])
 }
 
 model ProductRecipeItem {

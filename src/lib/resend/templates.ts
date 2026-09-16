@@ -1,6 +1,8 @@
 import { readFile } from "fs/promises"
 import path from "path"
 
+import { buildInventoryUploadWhatsAppUrl } from "@/lib/inventory-upload-offer"
+
 const templateCache = new Map<string, string>()
 const templatesDir = path.join(process.cwd(), "templates", "resend")
 
@@ -30,6 +32,18 @@ function extractEmailAddress(value: string) {
   // EMAIL_FROM puede venir como "Nombre <correo@dominio>"; mailto necesita solo la direccion.
   const match = value.match(/<([^<>@\s]+@[^<>@\s]+)>/)
   return (match?.[1] ?? value).trim()
+}
+
+function resolveSupportEmail() {
+  const configuredSupportEmail = process.env.SUPPORT_EMAIL?.trim()
+
+  // Evita enviar el nombre del placeholder cuando una variable de entorno se configura como "SUPPORT_EMAIL".
+  if (configuredSupportEmail && configuredSupportEmail.toUpperCase() !== "SUPPORT_EMAIL") {
+    return extractEmailAddress(configuredSupportEmail)
+  }
+
+  const senderEmail = process.env.EMAIL_FROM?.trim()
+  return senderEmail ? extractEmailAddress(senderEmail) : "hola@movopos.com"
 }
 
 async function renderTemplate(
@@ -65,8 +79,9 @@ export async function renderWelcomeNewUserEmail(
   const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
   const appUrl = rawAppUrl.replace(/\/+$/, "")
   const loginUrl = `${appUrl}/login`
+  const logoUrl = `${appUrl}/movoLogoDark.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportEmail = resolveSupportEmail()
 
   const html = await renderTemplate("welcome-new-user.html", {
     brandName,
@@ -75,6 +90,7 @@ export async function renderWelcomeNewUserEmail(
     temporaryPassword: data.temporaryPassword,
     loginUrl,
     appUrl,
+    logoUrl,
     supportEmail,
   })
 
@@ -119,15 +135,19 @@ export async function renderWelcomeOwnerEmail(data: WelcomeOwnerTemplateData) {
   const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
   const appUrl = rawAppUrl.replace(/\/+$/, "")
   const loginUrl = `${appUrl}/login`
+  const logoUrl = `${appUrl}/movoLogoDark.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportEmail = resolveSupportEmail()
 
   const html = await renderTemplate("welcome-owner.html", {
     brandName,
     userName: data.name,
     loginUrl,
     appUrl,
+    logoUrl,
     supportEmail,
+    // El template de dueño usa esta URL para que el CTA siempre conserve el número oficial y el copy de la oferta.
+    inventoryUploadWhatsappUrl: buildInventoryUploadWhatsAppUrl(),
   })
 
   const subject = `¡Bienvenido a ${brandName}!`

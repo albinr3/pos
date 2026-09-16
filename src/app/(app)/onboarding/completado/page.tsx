@@ -3,6 +3,7 @@ import { CheckCircle2, PlayCircle, Clock3 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { InventoryUploadOffer } from "@/components/inventory-upload-offer"
 
 export const dynamic = "force-dynamic"
 
@@ -16,11 +17,13 @@ export default async function OnboardingCompletadoPage() {
           </div>
 
           <div className="space-y-2">
-            <h1 className="text-3xl font-semibold tracking-tight">Acabas de dar el primer gran paso de tu negocio.</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">Tu primer producto ya está listo para vender.</h1>
             <p className="mx-auto max-w-md text-sm text-muted-foreground">
-              Si quieres seguir aprendiendo más sobre cómo usar la plataforma, en tan solo 30 minutos de video podrás aprender todo lo básico, haz click en el botón de videotutoriales.
+              Ya practicaste un cobro y preparaste un producto propio. Cuando estés listo, entra a Vender para registrar tu primera venta real.
             </p>
           </div>
+
+          <InventoryUploadOffer className="text-left" />
 
           <div className="grid gap-2 sm:grid-cols-2">
             <Button asChild size="lg" className="h-12">
@@ -32,7 +35,7 @@ export default async function OnboardingCompletadoPage() {
             <Button asChild variant="outline" size="lg" className="h-12">
               <Link href="/dashboard">
                 <Clock3 className="mr-2 h-5 w-5" />
-                Ver después
+                Ir al dashboard
               </Link>
             </Button>
           </div>

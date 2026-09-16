@@ -857,7 +857,7 @@ export function ProductsClient({
         if (shouldContinueOnboarding) {
           refresh(query)
           listRecipeIngredientOptions().then(setIngredientOptions).catch(() => setIngredientOptions([]))
-          router.push("/products?onboarding=sale-nav")
+          router.push("/onboarding/completado")
           return
         }
         refresh(query)
@@ -1588,7 +1588,7 @@ export function ProductsClient({
         step: {
           target: "products-save-button",
           title: "Guarda el producto",
-          description: "Al guardar, el producto quedará disponible en inventario y pasaremos a hacer una venta real.",
+          description: "Al guardar, este producto quedará listo para vender y terminarás la activación.",
         },
       },
     ]

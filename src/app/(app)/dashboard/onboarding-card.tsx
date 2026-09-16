@@ -69,10 +69,17 @@ export function OnboardingCard({
   }, [progressKey])
 
   const primaryAction = useMemo(() => {
+    if (state.phase === "DEMO_SALE") {
+      return {
+        href: "/sales?onboarding=demo",
+        label: "Continuar práctica de cobro",
+        Icon: ShoppingCart,
+      }
+    }
     if (state.phase === "PRODUCT") {
       return {
         href: resumePath || "/dashboard?onboarding=product",
-        label: "Iniciar guía",
+        label: state.usesDemoActivation ? "Crear mi producto propio" : "Iniciar guía",
         Icon: PackagePlus,
       }
     }
@@ -90,7 +97,7 @@ export function OnboardingCard({
       label: "Preparar producto para vender",
       Icon: PackagePlus,
     }
-  }, [resumePath, state.phase, state.saleProductId])
+  }, [resumePath, state.phase, state.saleProductId, state.usesDemoActivation])
 
   if (isHidden) return null
   if (hasSkippedProgress && state.activeProductCount > 0) return null
@@ -143,11 +150,18 @@ export function OnboardingCard({
                 </div>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-3">
-                <StepItem done label="Datos del negocio listos" />
-                <StepItem done={state.activeProductCount > 0} label="Primer producto creado" />
-                <StepItem done={state.saleCount > 0} label="Primera venta registrada" />
-              </div>
+              {state.usesDemoActivation ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <StepItem done={Boolean(state.demoCheckoutCompletedAt)} label="Práctica de cobro completada" />
+                  <StepItem done={Boolean(state.firstRealProductId)} label="Primer producto propio creado" />
+                </div>
+              ) : (
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <StepItem done label="Datos del negocio listos" />
+                  <StepItem done={state.activeProductCount > 0} label="Primer producto creado" />
+                  <StepItem done={state.saleCount > 0} label="Primera venta registrada" />
+                </div>
+              )}
 
               {state.phase === "SALE" && state.saleProductName ? (
                 <p className="text-sm text-emerald-800 dark:text-emerald-200">

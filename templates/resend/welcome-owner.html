@@ -33,6 +33,16 @@
       background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
       color: white;
     }
+    .hero-logo {
+      display: block;
+      width: 160px;
+      max-width: 100%;
+      height: auto;
+      margin: 0 0 24px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: white;
+    }
     .hero .pill {
       display: inline-flex;
       align-items: center;
@@ -86,7 +96,8 @@
       font-size: 20px;
     }
     .features .title {
-      font-weight: 600;
+      font-size: 18px;
+      font-weight: 700;
       color: #111827;
     }
     .features .desc {
@@ -119,6 +130,28 @@
       text-decoration: none;
       font-weight: 600;
     }
+    .inventory-offer {
+      margin: 24px 0 8px;
+      padding: 20px;
+      border: 1px solid #ddd6fe;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #f5f3ff, #fdf4ff);
+    }
+    .inventory-offer h3 {
+      margin: 6px 0 8px;
+      font-size: 19px;
+      line-height: 1.35;
+      color: #4c1d95;
+    }
+    .inventory-offer p {
+      margin: 0;
+      font-size: 14px;
+      color: #475569;
+    }
+    .inventory-offer .button {
+      margin-top: 14px;
+      font-size: 14px;
+    }
     .footer {
       padding: 20px 32px 28px;
       background: #0f172a;
@@ -136,6 +169,7 @@
 <body>
   <div class="page">
     <div class="hero">
+      <img class="hero-logo" src="{{logoUrl}}" alt="{{brandName}}" />
       <span class="pill">{{brandName}}</span>
       <h1>¡Bienvenido a {{brandName}}!</h1>
       <p>Tu cuenta ha sido creada exitosamente. Estás listo para empezar.</p>
@@ -150,28 +184,28 @@
         <div>
           <div class="header">
             <span class="icon">📦</span>
-            <span class="title">Productos</span>
+            <span class="title" style="font-size: 18px; font-weight: 700;">Productos</span>
           </div>
           <div class="desc">Gestiona tu inventario fácilmente</div>
         </div>
         <div>
           <div class="header">
             <span class="icon">💰</span>
-            <span class="title">Ventas</span>
+            <span class="title" style="font-size: 18px; font-weight: 700;">Ventas</span>
           </div>
           <div class="desc">Punto de venta rápido e intuitivo</div>
         </div>
         <div>
           <div class="header">
             <span class="icon">📊</span>
-            <span class="title">Reportes</span>
+            <span class="title" style="font-size: 18px; font-weight: 700;">Reportes</span>
           </div>
           <div class="desc">Analiza el rendimiento de tu negocio</div>
         </div>
         <div>
           <div class="header">
             <span class="icon">👥</span>
-            <span class="title">Usuarios</span>
+            <span class="title" style="font-size: 18px; font-weight: 700;">Usuarios</span>
           </div>
           <div class="desc">Agrega empleados con permisos</div>
         </div>
@@ -180,6 +214,12 @@
         Haz clic en el botón de abajo para acceder a tu cuenta y comenzar a configurar tu negocio.
       </p>
       <a class="button" href="{{loginUrl}}">Ir a {{brandName}}</a>
+      <div class="inventory-offer">
+        <strong style="font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #6d28d9;">Carga de inventario sin costo</strong>
+        <h3>Te subimos el inventario gratis para que empieces a vender hoy.</h3>
+        <p>¿Tienes tu inventario en Excel, en fotos o en un cuaderno? Envíanoslo y nuestro equipo lo carga gratis en {{brandName}}.</p>
+        <a class="button" href="{{inventoryUploadWhatsappUrl}}">Enviar mi inventario por WhatsApp</a>
+      </div>
       <p class="note">
         ¿Tienes preguntas? Escríbenos a <a href="mailto:{{supportEmail}}">{{supportEmail}}</a> 
         y te ayudaremos con gusto.

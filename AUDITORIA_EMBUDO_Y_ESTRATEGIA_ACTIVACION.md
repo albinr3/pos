@@ -132,7 +132,7 @@ $$\text{Valor Percibido} = \frac{\text{Resultado Soñado (Tener mi negocio organ
 El mayor freno para comprar un POS no es el precio del software ($15–$25 USD/mes); es **el dolor de subir 300 productos a mano**.
 * **Oferta "Done For You" (Cero Sacrificio):**  
   Dentro del dashboard y en el correo de bienvenida:  
-  > **"¿Tienes tu inventario en Excel, en fotos o en un cuaderno? Envíanoslo por WhatsApp al [Número] y nuestro equipo te lo sube GRATIS hoy mismo para que empieces a vender."**
+  > **"¿Tienes tu inventario en Excel, en fotos o en un cuaderno? Envíanoslo por WhatsApp al 849-925-4434 y nuestro equipo te lo sube GRATIS hoy mismo para que empieces a vender."**
 * Esto convierte a un prospecto frío en un cliente comprometido que no puede irse a la competencia porque su catálogo ya está cargado en MOVOPos.
 
 ### Fase 4: Campaña de Reactivación de las 26 Cuentas Perdidas (Lead Recovery)

@@ -33,6 +33,16 @@
       background: linear-gradient(135deg, #6366f1, #a855f7, #ec4899);
       color: white;
     }
+    .hero-logo {
+      display: block;
+      width: 160px;
+      max-width: 100%;
+      height: auto;
+      margin: 0 0 24px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      background: white;
+    }
     .hero .pill {
       display: inline-flex;
       align-items: center;
@@ -132,6 +142,7 @@
 <body>
   <div class="page">
     <div class="hero">
+      <img class="hero-logo" src="{{logoUrl}}" alt="{{brandName}}" />
       <span class="pill">{{brandName}}</span>
       <h1>Tu espacio de ventas está listo</h1>
       <p>Ya puedes gestionar productos, ventas y reportes desde cualquier dispositivo.</p>

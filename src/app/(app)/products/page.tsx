@@ -1,5 +1,6 @@
 import { ProductsClient } from "./products-client"
 import { getAccountOnboardingState } from "../onboarding/actions"
+import { InventoryUploadOffer } from "@/components/inventory-upload-offer"
 import { requireModuleAccess } from "@/lib/module-access"
 
 export default async function ProductsPage({
@@ -22,6 +23,7 @@ export default async function ProductsPage({
         <h1 className="text-2xl font-semibold tracking-tight">Productos</h1>
         <p className="text-sm text-muted-foreground">Crea y administra tus productos e inventario.</p>
       </div>
+      <InventoryUploadOffer />
       <ProductsClient
         onboardingProductGuide={isOnboardingProduct && onboardingState?.phase === "PRODUCT"}
         onboardingSaleNavGuide={isOnboardingSaleNav && onboardingState?.phase === "SALE"}

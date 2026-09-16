@@ -168,6 +168,20 @@ export function OnboardingGuide({
     })
   }
 
+  const handleContinue = () => {
+    if (step.onAction) {
+      step.onAction()
+      return
+    }
+
+    // Los pasos de formulario validan al perder foco. Al pulsar Siguiente
+    // forzamos ese blur para que la guía no se quede detenida mientras el usuario escribe.
+    const activeElement = document.activeElement
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur()
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-[80] pointer-events-none" aria-live="polite">
       {rect ? (
@@ -207,12 +221,10 @@ export function OnboardingGuide({
             {isSkipping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />}
             Saltar por ahora
           </Button>
-          {step.onAction ? (
-            <Button type="button" onClick={step.onAction}>
+          <Button type="button" onClick={handleContinue}>
               <Check className="mr-2 h-4 w-4" />
               {step.actionLabel ?? "Siguiente"}
-            </Button>
-          ) : null}
+          </Button>
         </div>
       </div>
     </div>

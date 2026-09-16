@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 import {
   ArrowRight,
   Clock3,
@@ -32,6 +32,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { InventoryUploadOffer } from "@/components/inventory-upload-offer"
 import type { PublicTutorialCategory, PublicTutorialVideo } from "@/lib/tutorial-types"
 
 type TabValue = "todos" | string
@@ -247,7 +248,7 @@ export function TutorialVideoHub({ categories, videos }: TutorialVideoHubProps) 
     () => videos.find((video) => video.featured) ?? videos[0] ?? null,
     [videos]
   )
-  const defaultTab = categories[0]?.value ?? "todos"
+  const defaultTab = "todos"
 
   const [selectedTab, setSelectedTab] = useState<TabValue>(defaultTab)
   const [selectedSlug, setSelectedSlug] = useState(defaultVideo?.slug ?? "")
@@ -383,27 +384,28 @@ export function TutorialVideoHub({ categories, videos }: TutorialVideoHubProps) 
                   ? videos
                   : videos.filter((video) => video.category === category.value)
 
-              const primerosPasosVideos = tabVideos.filter(
-                (video) => video.category === "primeros-pasos"
-              )
-              const avanzadosVideos = tabVideos.filter(
-                (video) => video.category === "avanzados"
-              )
-
-              const renderVideoGrid = (items: PublicTutorialVideo[]) => (
+              const renderVideoGrid = (
+                items: PublicTutorialVideo[],
+                insertOfferAfterSecondTutorial = false
+              ) => (
                 <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-                  {items.map((video) => (
-                    <div key={video.slug} id={video.slug}>
-                      <VideoCard
-                        video={video}
-                        isActive={video.slug === selectedSlug}
-                        onOpenModal={() => {
-                          setSelectedSlug(video.slug)
-                          setModalVideo(video)
-                          setModalOpen(true)
-                        }}
-                      />
-                    </div>
+                  {items.map((video, index) => (
+                    <Fragment key={video.slug}>
+                      <div id={video.slug}>
+                        <VideoCard
+                          video={video}
+                          isActive={video.slug === selectedSlug}
+                          onOpenModal={() => {
+                            setSelectedSlug(video.slug)
+                            setModalVideo(video)
+                            setModalOpen(true)
+                          }}
+                        />
+                      </div>
+                      {insertOfferAfterSecondTutorial && index === 1 ? (
+                        <InventoryUploadOffer className="md:col-span-2 xl:col-span-3" />
+                      ) : null}
+                    </Fragment>
                   ))}
                 </div>
               )
@@ -424,23 +426,7 @@ export function TutorialVideoHub({ categories, videos }: TutorialVideoHubProps) 
                       </CardContent>
                     </Card>
                   ) : category.value === "todos" ? (
-                    <div className="space-y-8">
-                      {primerosPasosVideos.length > 0 ? renderVideoGrid(primerosPasosVideos) : null}
-
-                      {avanzadosVideos.length > 0 ? (
-                        <>
-                          <div className="rounded-2xl border bg-white p-5 shadow-sm">
-                            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-purple-700">
-                              Pasos avanzados
-                            </p>
-                            <p className="mt-2 text-base text-muted-foreground">
-                              Profundiza en ventas, inventario, compras y configuracion.
-                            </p>
-                          </div>
-                          {renderVideoGrid(avanzadosVideos)}
-                        </>
-                      ) : null}
-                    </div>
+                    renderVideoGrid(tabVideos, true)
                   ) : (
                     renderVideoGrid(tabVideos)
                   )}
