@@ -9,6 +9,7 @@ import {
   notifyCardPaymentEventEmail,
   notifyCustomerCardChargeEmail,
 } from "@/lib/billing-card-payment-alert"
+import { getAccountOwnerEmail } from "@/lib/account-owner-email"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -307,10 +308,7 @@ async function handlePaymentSuccess(
     eventType: "success",
   })
 
-  const customerEmail =
-    subscription.account.billingProfile?.email?.trim() ||
-    subscription.account.users[0]?.email?.trim() ||
-    ""
+  const customerEmail = getAccountOwnerEmail(subscription.account) || ""
 
   if (customerEmail) {
     await notifyCustomerCardChargeEmail({

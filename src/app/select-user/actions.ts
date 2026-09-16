@@ -21,6 +21,7 @@ import { renderSubUserTemporaryCodeEmail } from "@/lib/resend/templates"
 import { randomInt } from "crypto"
 import { ALL_PERMISSION_KEYS } from "@/lib/permissions"
 import { ProductKind, UnitType } from "@prisma/client"
+import { getClerkPrimaryEmail } from "@/lib/clerk-email"
 
 function isMetaDebugEnabled() {
   const value = process.env.META_DEBUG?.trim().toLowerCase()
@@ -131,7 +132,7 @@ export async function createInitialOwner(formData: FormData) {
   const bcrypt = await import("bcryptjs")
   const passwordHash = await bcrypt.hash("1234", 10)
   const ownerPermissions = Object.fromEntries(ALL_PERMISSION_KEYS.map((key) => [key, true]))
-  const email = clerkUser.emailAddresses?.[0]?.emailAddress || null
+  const email = getClerkPrimaryEmail(clerkUser)
 
   try {
     const result = await prisma.$transaction(async (tx) => {
@@ -142,7 +143,10 @@ export async function createInitialOwner(formData: FormData) {
 
       if (existingOwner) return { owner: existingOwner, subscription: null, created: false }
 
-      await tx.account.update({ where: { id: account.id }, data: { name: businessName } })
+      await tx.account.update({
+        where: { id: account.id },
+        data: { name: businessName, ownerEmail: email },
+      })
       await tx.companySettings.upsert({
         where: { accountId: account.id },
         update: { name: businessName, phone: whatsappPhone },
@@ -369,7 +373,7 @@ export async function createFirstUser(formData: FormData) {
   }
 
   const displayName = username.trim() || "Administrador"
-  const email = clerkUser.emailAddresses?.[0]?.emailAddress || null
+  const email = getClerkPrimaryEmail(clerkUser)
 
   // Crear el primer usuario directamente como owner
   const passwordHash = await bcrypt.hash(password, 10)
@@ -390,7 +394,7 @@ export async function createFirstUser(formData: FormData) {
 
   await prisma.account.update({
     where: { id: accountId },
-    data: { name: trimmedBusinessName },
+    data: { name: trimmedBusinessName, ownerEmail: email },
   })
 
   await prisma.companySettings.upsert({

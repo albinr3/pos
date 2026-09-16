@@ -11,6 +11,7 @@ import { differenceInDays } from "date-fns"
 import { prisma } from "@/lib/db"
 import { NOTIFICATION_DAYS } from "@/lib/billing"
 import { sendResendEmail } from "@/lib/resend"
+import { getAccountOwnerEmail } from "@/lib/account-owner-email"
 import {
   renderTrialExpiringEmail,
   renderSubscriptionDueEmail,
@@ -124,8 +125,7 @@ export async function sendBillingNotifications(): Promise<{
 
   for (const subscription of subscriptions) {
     const { account } = subscription
-    const ownerEmail = account.users[0]?.email || ""
-    const email = account.billingProfile?.email || ownerEmail
+    const email = getAccountOwnerEmail(account)
     const accountName = account.companySettings?.name || account.name
 
     if (!email) continue

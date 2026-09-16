@@ -12,15 +12,14 @@ import type {
   BillingStatus,
   BillingCurrency,
   BillingProvider,
-  BillingPaymentStatus,
-  ManualVerificationStatus,
   BillingSubscription,
   BillingPayment,
   BillingProfile,
 } from "@prisma/client"
 import type { Prisma, PrismaClient } from "@prisma/client"
-import { addDays, isBefore, isAfter, differenceInDays } from "date-fns"
+import { addDays, isBefore, differenceInDays } from "date-fns"
 import { sendMetaEvent, splitFullName, type MetaUserDataInput } from "@/lib/meta/server"
+import { getAccountOwnerEmail } from "@/lib/account-owner-email"
 
 // ==========================================
 // CONSTANTS
@@ -549,7 +548,7 @@ export async function processLemonPayment(
     const billingProfile = subscription.account.billingProfile
     const ownerNameParts = splitFullName(ownerUser?.name || billingProfile?.legalName || subscription.account.name)
     const subscribeUserData: MetaUserDataInput = {
-      email: billingProfile?.email || ownerUser?.email || null,
+      email: getAccountOwnerEmail(subscription.account),
       firstName: ownerNameParts.firstName,
       lastName: ownerNameParts.lastName,
       phone: billingProfile?.phone || null,

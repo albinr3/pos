@@ -17,6 +17,7 @@ import { logAuditEvent } from "@/lib/audit-log"
 import { createBillingSubscription, getBillingState, type BillingState } from "@/lib/billing"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { ensureGenericCustomer } from "@/lib/customer-helpers"
+import { getClerkPrimaryEmail } from "@/lib/clerk-email"
 
 // Función helper para obtener prisma de forma segura
 async function getPrisma() {
@@ -39,22 +40,39 @@ function normalizeRegistrationDevice(value: unknown): "DESKTOP" | "MOBILE" | "UN
   return "UNKNOWN"
 }
 
-function inferRegistrationMethodFromClerkUser(clerkUser: any): "EMAIL" | "GOOGLE" | "UNKNOWN" {
-  const unsafeMethod = clerkUser?.unsafeMetadata?.registration_method
+function isUniqueConstraintError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  )
+}
+
+function inferRegistrationMethodFromClerkUser(clerkUser: unknown): "EMAIL" | "GOOGLE" | "UNKNOWN" {
+  const user = clerkUser as {
+    unsafeMetadata?: { registration_method?: unknown }
+    externalAccounts?: unknown[]
+    emailAddresses?: unknown[]
+  } | null
+  const unsafeMethod = user?.unsafeMetadata?.registration_method
   if (typeof unsafeMethod === "string") {
     const normalized = unsafeMethod.trim().toLowerCase()
     if (normalized === "google") return "GOOGLE"
     if (normalized === "email" || normalized === "correo") return "EMAIL"
   }
 
-  const externalAccounts = Array.isArray(clerkUser?.externalAccounts) ? clerkUser.externalAccounts : []
-  const hasGoogle = externalAccounts.some((account: any) => {
-    const provider = `${account?.provider || account?.providerType || ""}`.toLowerCase()
+  const externalAccounts = Array.isArray(user?.externalAccounts) ? user.externalAccounts : []
+  const hasGoogle = externalAccounts.some((account) => {
+    const value = account && typeof account === "object"
+      ? (account as { provider?: unknown; providerType?: unknown })
+      : null
+    const provider = `${value?.provider || value?.providerType || ""}`.toLowerCase()
     return provider.includes("google")
   })
   if (hasGoogle) return "GOOGLE"
 
-  const hasEmail = Array.isArray(clerkUser?.emailAddresses) && clerkUser.emailAddresses.length > 0
+  const hasEmail = Array.isArray(user?.emailAddresses) && user.emailAddresses.length > 0
   if (hasEmail) return "EMAIL"
 
   return "UNKNOWN"
@@ -315,7 +333,7 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
     let accountWasJustCreated = false
     if (!account) {
       // Si no tenemos información del usuario de Clerk, usar valores por defecto
-      const email = clerkUser?.emailAddresses?.[0]?.emailAddress || null
+      const email = getClerkPrimaryEmail(clerkUser)
       const name = clerkUser 
         ? `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || "Mi Negocio"
         : "Mi Negocio"
@@ -335,16 +353,17 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
           data: {
             name: name,
             clerkUserId: userId,
+            ownerEmail: email,
             registeredFromDevice: registrationDevice,
             registeredWithMethod: registrationMethod,
             registeredUserAgent: registrationUserAgent,
           },
         })
         accountWasJustCreated = true
-      } catch (createError: any) {
+      } catch (createError: unknown) {
         // Si hay una violación de restricción única (otra solicitud ya creó el Account),
         // buscar nuevamente el Account existente
-        if (createError?.code === "P2002") {
+        if (isUniqueConstraintError(createError)) {
           account = await prisma.account.findUnique({
             where: { clerkUserId: userId },
           })
@@ -398,6 +417,16 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
 
         await ensureGenericCustomer(prisma, account.id)
       }
+    }
+
+    // Cuando Clerk está disponible en la sesión, refrescamos su contacto aunque
+    // el webhook haya llegado tarde o no se haya podido entregar.
+    if (account && clerkUser) {
+      const ownerEmail = getClerkPrimaryEmail(clerkUser)
+      await prisma.account.update({
+        where: { id: account.id },
+        data: { ownerEmail },
+      })
     }
 
     // Verificación final idempotente para asegurar invariantes del cliente genérico.

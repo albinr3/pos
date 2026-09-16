@@ -5,6 +5,7 @@ import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-aut
 import { normalizeInternationalPhone, sendKapsoTemplateMessage } from "@/lib/kapso-whatsapp"
 import { revalidatePath } from "next/cache"
 import type { BillingStatus, BillingCurrency, BillingProvider } from "@prisma/client"
+import { getAccountOwnerEmail } from "@/lib/account-owner-email"
 
 // ==========================================
 // TYPES
@@ -232,7 +233,7 @@ export async function getDashboardData(): Promise<DashboardData> {
       status: sub.status,
       currency: sub.currency,
       provider: sub.provider,
-      ownerEmail: sub.account.billingProfile?.email || sub.account.users[0]?.email || null,
+      ownerEmail: getAccountOwnerEmail(sub.account),
     }))
 
   // Pagos pendientes formateados

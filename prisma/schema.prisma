@@ -216,6 +216,7 @@ model Account {
 
   name        String // Nombre del negocio
   clerkUserId String @unique // ID del usuario Clerk que es dueño
+  ownerEmail  String? // Correo principal de Clerk, disponible antes del onboarding local
   registeredFromDevice RegistrationDeviceType @default(UNKNOWN)
   registeredWithMethod RegistrationMethod     @default(UNKNOWN)
   registeredUserAgent  String?
@@ -257,6 +258,7 @@ model Account {
   pushNotificationLogs PushNotificationLog[]
 
   @@index([clerkUserId])
+  @@index([ownerEmail])
 }
 
 model AccountOnboarding {

@@ -2,6 +2,7 @@ import { subDays } from "date-fns"
 import { prisma } from "@/lib/db"
 import { sendResendEmail } from "@/lib/resend"
 import { renderCustomerInactivityEmail } from "@/lib/resend/templates"
+import { getAccountOwnerEmail } from "@/lib/account-owner-email"
 
 const INACTIVITY_DAYS = 5
 const INACTIVITY_NOTIFICATION_TYPE = "inactive_5_days"
@@ -82,7 +83,7 @@ export async function sendCustomerInactivityNotifications(): Promise<{
       }
 
       const ownerUser = account.users[0]
-      const email = account.billingProfile?.email || ownerUser?.email
+      const email = getAccountOwnerEmail(account)
       if (!email) {
         continue
       }

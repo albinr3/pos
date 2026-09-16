@@ -7,6 +7,7 @@ import { processBillingEngine } from "@/lib/billing"
 import { revalidatePath } from "next/cache"
 import { hash } from "bcryptjs"
 import { clerkClient } from "@clerk/nextjs/server"
+import { getAccountOwnerEmail } from "@/lib/account-owner-email"
 import type {
   BillingStatus,
   BillingCurrency,
@@ -270,7 +271,7 @@ export async function getAccounts(): Promise<AccountListItem[]> {
       priceDopCents: sub?.priceDopCents || 130000,
       priceUsdCents: sub?.priceUsdCents || 2000,
 
-      ownerEmail: account.billingProfile?.email || owner?.email || null,
+      ownerEmail: getAccountOwnerEmail(account),
       ownerName: owner?.name || null,
 
       usersCount: account._count.users,
@@ -364,7 +365,7 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
     lemonSubscriptionId: sub?.lemonSubscriptionId || null,
 
     // Owner
-    ownerEmail: account.billingProfile?.email || owner?.email || null,
+    ownerEmail: getAccountOwnerEmail(account),
     ownerName: owner?.name || null,
 
     // Stats

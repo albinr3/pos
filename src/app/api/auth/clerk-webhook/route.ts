@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
 import { Webhook } from "svix"
 import { headers } from "next/headers"
+import { getClerkPrimaryEmail } from "@/lib/clerk-email"
 
 // Marcar como dinámica para evitar ejecución durante el build
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+
+type ClerkWebhookUser = {
+  id: string
+  first_name?: string | null
+  last_name?: string | null
+  email_addresses?: unknown[]
+  unsafe_metadata?: Record<string, unknown>
+  external_accounts?: unknown[]
+}
+
+type ClerkWebhookEvent = { type: string; data: ClerkWebhookUser }
 
 function normalizeRegistrationDevice(value: unknown): "DESKTOP" | "MOBILE" | "UNKNOWN" {
   if (!value || typeof value !== "string") return "UNKNOWN"
@@ -18,7 +30,7 @@ function normalizeRegistrationDevice(value: unknown): "DESKTOP" | "MOBILE" | "UN
   return "UNKNOWN"
 }
 
-function inferRegistrationMethod(userData: any): "EMAIL" | "GOOGLE" | "UNKNOWN" {
+function inferRegistrationMethod(userData: ClerkWebhookUser): "EMAIL" | "GOOGLE" | "UNKNOWN" {
   const unsafeMethod = userData?.unsafe_metadata?.registration_method
   if (typeof unsafeMethod === "string") {
     const normalized = unsafeMethod.trim().toLowerCase()
@@ -27,8 +39,11 @@ function inferRegistrationMethod(userData: any): "EMAIL" | "GOOGLE" | "UNKNOWN" 
   }
 
   const externalAccounts = Array.isArray(userData?.external_accounts) ? userData.external_accounts : []
-  const hasGoogle = externalAccounts.some((account: any) => {
-    const provider = `${account?.provider || account?.provider_type || ""}`.toLowerCase()
+  const hasGoogle = externalAccounts.some((account) => {
+    const value = account && typeof account === "object"
+      ? (account as { provider?: unknown; provider_type?: unknown })
+      : null
+    const provider = `${value?.provider || value?.provider_type || ""}`.toLowerCase()
     return provider.includes("google")
   })
   if (hasGoogle) return "GOOGLE"
@@ -37,6 +52,15 @@ function inferRegistrationMethod(userData: any): "EMAIL" | "GOOGLE" | "UNKNOWN" 
   if (hasEmail) return "EMAIL"
 
   return "UNKNOWN"
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  )
 }
 
 export async function POST(request: NextRequest) {
@@ -72,14 +96,15 @@ export async function POST(request: NextRequest) {
 
   const wh = new Webhook(WEBHOOK_SECRET)
 
-  let evt: any
+  let evt: ClerkWebhookEvent
 
   try {
+    // Svix verifica la firma; tipamos el payload validado para no perder el contrato de Clerk.
     evt = wh.verify(body, {
       "svix-id": svix_id,
       "svix-timestamp": svix_timestamp,
       "svix-signature": svix_signature,
-    })
+    }) as ClerkWebhookEvent
   } catch (err) {
     console.error("Error verificando webhook:", err)
     return NextResponse.json(
@@ -95,14 +120,11 @@ export async function POST(request: NextRequest) {
   console.log("[Clerk Webhook] User ID:", id)
   console.log("[Clerk Webhook] Email addresses:", JSON.stringify(email_addresses))
 
-  if (eventType === "user.created") {
+  if (eventType === "user.created" || eventType === "user.updated") {
     try {
       const name = `${first_name || ""} ${last_name || ""}`.trim() || "Mi Negocio"
 
-      // Extraer el email primario del usuario
-      const primaryEmail = email_addresses?.find(
-        (e: { id: string; email_address: string }) => e.email_address
-      )?.email_address as string | undefined
+      const primaryEmail = getClerkPrimaryEmail(evt.data)
 
       console.log("[Clerk Webhook] Extracted primary email:", primaryEmail)
       console.log("[Clerk Webhook] User name:", name)
@@ -121,22 +143,43 @@ export async function POST(request: NextRequest) {
       let account = await prisma.account.findUnique({
         where: { clerkUserId: id },
       })
+      let accountWasCreated = false
 
       console.log("[Clerk Webhook] Existing account:", account ? account.id : "none")
 
       if (!account) {
-        account = await prisma.account.create({
-          data: {
-            name,
-            clerkUserId: id,
-            registeredFromDevice: registrationDevice,
-            registeredWithMethod: registrationMethod,
-            registeredUserAgent: registrationUserAgent,
-          },
-        })
-        console.log("[Clerk Webhook] Created new account:", account.id)
+        try {
+          account = await prisma.account.create({
+            data: {
+              name,
+              clerkUserId: id,
+              ownerEmail: primaryEmail,
+              registeredFromDevice: registrationDevice,
+              registeredWithMethod: registrationMethod,
+              registeredUserAgent: registrationUserAgent,
+            },
+          })
+          accountWasCreated = true
+          console.log("[Clerk Webhook] Created new account:", account.id)
+        } catch (createError: unknown) {
+          if (!isUniqueConstraintError(createError)) throw createError
 
-        // Enviar correo de bienvenida al nuevo owner
+          // Un reintento o dos webhooks simultáneos no deben crear ni notificar dos veces.
+          account = await prisma.account.update({
+            where: { clerkUserId: id },
+            data: { ownerEmail: primaryEmail },
+          })
+        }
+      } else {
+        // user.updated también puede eliminar el email; persistimos null para reflejar Clerk.
+        account = await prisma.account.update({
+          where: { id: account.id },
+          data: { ownerEmail: primaryEmail },
+        })
+      }
+
+      // Solo una creación real puede enviar la bienvenida; user.updated nunca la reenvía.
+      if (eventType === "user.created" && accountWasCreated) {
         if (primaryEmail) {
           console.log("[Clerk Webhook] Attempting to send welcome email to:", primaryEmail)
           try {
@@ -234,7 +277,7 @@ export async function POST(request: NextRequest) {
             },
           })
         }
-      } else {
+      } else if (eventType === "user.created") {
         console.log("[Clerk Webhook] Account already exists, skipping welcome email")
       }
     } catch (error) {

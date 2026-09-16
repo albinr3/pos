@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db"
 import { sendResendEmail } from "@/lib/resend"
 import { sanitizeEmail } from "@/lib/sanitize"
 import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-auth"
+import { getAccountOwnerEmail } from "@/lib/account-owner-email"
 
 type BillingStatus = "TRIALING" | "ACTIVE" | "GRACE" | "BLOCKED" | "CANCELED"
 
@@ -122,7 +123,7 @@ export async function getEmailMarketingAccounts(): Promise<MarketingAccountItem[
 
   return accounts.map((account) => {
     const owner = account.users[0]
-    const ownerEmail = sanitizeEmail(account.billingProfile?.email || owner?.email || "") || null
+    const ownerEmail = sanitizeEmail(getAccountOwnerEmail(account) || "") || null
     return {
       id: account.id,
       name: account.name,
@@ -200,8 +201,7 @@ export async function sendMassMarketingEmail(
   >()
 
   for (const account of accounts) {
-    const owner = account.users[0]
-    const normalizedEmail = sanitizeEmail(account.billingProfile?.email || owner?.email || "")
+    const normalizedEmail = sanitizeEmail(getAccountOwnerEmail(account) || "")
     if (!normalizedEmail) continue
     if (!recipientsByEmail.has(normalizedEmail)) {
       recipientsByEmail.set(normalizedEmail, {

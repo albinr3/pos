@@ -3,6 +3,7 @@ import { clerkClient } from "@clerk/nextjs/server"
 import { prisma } from "@/lib/db"
 import { sendResendEmail } from "@/lib/resend"
 import { renderInitialSetupReminderEmail } from "@/lib/resend/templates"
+import { getClerkPrimaryEmail } from "@/lib/clerk-email"
 
 const EMAIL_CHANNEL = "email"
 
@@ -28,11 +29,7 @@ async function getAccountOwnerEmail(clerkUserId: string) {
   const client = await clerkClient()
   const user = await client.users.getUser(clerkUserId)
 
-  return (
-    user.primaryEmailAddress?.emailAddress ??
-    user.emailAddresses.find((email) => email.emailAddress)?.emailAddress ??
-    null
-  )
+  return getClerkPrimaryEmail(user)
 }
 
 /**

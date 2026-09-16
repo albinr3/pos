@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db"
 import { getCurrentSuperAdmin } from "@/lib/super-admin-auth"
 import { sanitizeEmail } from "@/lib/sanitize"
+import { getAccountOwnerEmail } from "@/lib/account-owner-email"
 
 export type SuperAdminAccountsReportRow = {
   accountNumber: number
@@ -67,7 +68,7 @@ export async function getSuperAdminAccountsReport(): Promise<SuperAdminAccountsR
       accountId: account.id,
       accountName: account.name,
       ownerName: owner?.name || null,
-      ownerEmail: sanitizeEmail(owner?.email || "") || null,
+      ownerEmail: sanitizeEmail(getAccountOwnerEmail(account) || "") || null,
       billingEmail: sanitizeEmail(account.billingProfile?.email || "") || null,
       ownerWhatsapp: account.companySettings?.phone || owner?.whatsappNumber || null,
       createdAt: account.createdAt,
