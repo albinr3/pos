@@ -47,6 +47,7 @@ export default async function DashboardPage({
       <OnboardingCard
         state={onboardingState}
         showProductNavGuide={onboarding === "product" && onboardingState.phase === "PRODUCT"}
+        showSaleNavGuide={onboarding === "sale" && onboardingState.phase === "DEMO_SALE"}
       />
       {onboarding === "welcome" && onboardingState.phase === "DEMO_SALE" ? (
         <OnboardingActivationModal stage="SALE" accountId={onboardingState.accountId} />

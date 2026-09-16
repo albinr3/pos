@@ -1006,6 +1006,7 @@ export function PosClient({
             target: productTarget,
             title: "Selecciona Café Americano",
             description: "Estás en la caja real. Toca el producto para agregarlo a la venta de práctica.",
+            requiresTargetInteraction: true,
           },
         },
         {
@@ -1024,6 +1025,7 @@ export function PosClient({
             target: "sales-save-button",
             title: "Completa la venta de práctica",
             description: "El botón usa la caja real, pero esta venta de práctica no creará una factura ni afectará tus reportes.",
+            requiresTargetInteraction: true,
           },
         },
       ]
@@ -1053,6 +1055,7 @@ export function PosClient({
           target: productTarget,
           title: "Agrega un producto",
           description: "Busca por descripción, código o referencia. También puedes hacer clic en una tarjeta si estás en vista de imágenes.",
+          requiresTargetInteraction: true,
         },
       },
       {
@@ -1071,6 +1074,7 @@ export function PosClient({
           target: "sales-save-button",
           title: "Guarda la factura",
           description: "Este es el mismo botón de una venta normal. Al guardar, la primera venta queda registrada.",
+          requiresTargetInteraction: true,
         },
       },
       {
@@ -1087,6 +1091,7 @@ export function PosClient({
           target: "sales-change-confirm",
           title: "Confirma la venta",
           description: "Al confirmar, la factura se guardará y el tutorial quedará completado.",
+          requiresTargetInteraction: true,
         },
       },
     ]
@@ -1469,8 +1474,8 @@ export function PosClient({
         <OnboardingGuide
           accountId={onboardingAccountId}
           step={saleGuideState.step}
-          stepIndex={saleGuideState.stepIndex}
-          totalSteps={saleGuideState.totalSteps}
+          stepIndex={saleGuideState.stepIndex + (onboardingDemoGuide ? 1 : 0)}
+          totalSteps={saleGuideState.totalSteps + (onboardingDemoGuide ? 1 : 0)}
           onClose={() => setIsOnboardingGuideClosed(true)}
           onSkip={() => setHasSkippedProgress(true)}
           progressKey={progressKey ?? undefined}

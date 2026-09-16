@@ -365,9 +365,11 @@ export function AppShell({ children, billingState }: AppShellProps) {
   const salesNavItem = filteredNav.find((item) => item.href === "/sales")
   const regularNavItems = filteredNav.filter((item) => item.href !== "/sales")
   const isProductOnboardingNavStep = pathname === "/dashboard" && searchParams.get("onboarding") === "product"
+  const isDemoSaleOnboardingNavStep = pathname === "/dashboard" && searchParams.get("onboarding") === "sale"
   const isSaleOnboardingNavStep = pathname === "/products" && searchParams.get("onboarding") === "sale-nav"
   const getNavHref = (href: string) => {
     if (href === "/products" && isProductOnboardingNavStep) return "/products?onboarding=product"
+    if (href === "/sales" && isDemoSaleOnboardingNavStep) return "/sales?onboarding=demo"
     if (href === "/sales" && isSaleOnboardingNavStep) return "/sales?onboarding=sale"
     return href
   }
@@ -647,7 +649,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
               )}
             </div>
           </header>
-          {user?.hasTemporaryPin ? (
+          {user?.hasTemporaryPin && pathname === "/dashboard" ? (
             <div className="mx-4 mt-4 flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:mx-6 sm:flex-row sm:items-center sm:justify-between dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
               <span>Tu PIN temporal es 1234. Cámbialo aquí cuando quieras.</span>
               <Link href="/settings" className="font-medium underline underline-offset-4">Cambiar PIN</Link>

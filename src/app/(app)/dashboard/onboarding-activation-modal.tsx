@@ -59,7 +59,7 @@ export function OnboardingActivationModal({ stage, accountId }: { stage: Activat
         <div className="mt-6 grid gap-2 sm:grid-cols-2">
           <Button
             size="lg"
-            onClick={() => router.push(isSale ? "/sales?onboarding=demo" : "/products?onboarding=product")}
+            onClick={() => router.push(isSale ? "/dashboard?onboarding=sale" : "/dashboard?onboarding=product")}
           >
             <PlayCircle className="mr-2 h-5 w-5" />
             {isSale ? "Empezar tutorial" : "Empezar"}

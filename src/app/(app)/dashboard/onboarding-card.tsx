@@ -26,9 +26,11 @@ function StepItem({ done, label }: { done: boolean; label: string }) {
 export function OnboardingCard({
   state,
   showProductNavGuide = false,
+  showSaleNavGuide = false,
 }: {
   state: AccountOnboardingState
   showProductNavGuide?: boolean
+  showSaleNavGuide?: boolean
 }) {
   const skipKey = `${SKIP_KEY_PREFIX}:${state.accountId}`
   const progressKey = `${ONBOARDING_PROGRESS_KEY_PREFIX}:${state.accountId}`
@@ -125,12 +127,29 @@ export function OnboardingCard({
             target: "app-nav-products",
             title: "Entra a Productos",
             description: "Haz clic en la pestaña Productos del menú. Ahí crearás el producto usando el formulario de productos.",
+            requiresTargetInteraction: true,
           }}
           stepIndex={0}
           totalSteps={9}
           progressKey={progressKey}
           stepKey="dashboard-products-nav"
           resumePath="/dashboard?onboarding=product"
+        />
+      ) : null}
+      {showSaleNavGuide ? (
+        <OnboardingGuide
+          accountId={state.accountId}
+          step={{
+            target: "app-nav-sales",
+            title: "Entra a Vender",
+            description: "Haz clic en el botón Vender del menú. Ahí haremos tu primera venta de prueba.",
+            requiresTargetInteraction: true,
+          }}
+          stepIndex={0}
+          totalSteps={4}
+          progressKey={progressKey}
+          stepKey="dashboard-sales-nav"
+          resumePath="/dashboard?onboarding=sale"
         />
       ) : null}
 

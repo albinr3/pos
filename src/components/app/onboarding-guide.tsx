@@ -12,6 +12,8 @@ export type OnboardingGuideStep = {
   description: string
   actionLabel?: string
   onAction?: () => void
+  // Cuando el avance depende del elemento resaltado, no mostrar un botón redundante.
+  requiresTargetInteraction?: boolean
 }
 
 type TargetRect = {
@@ -221,10 +223,12 @@ export function OnboardingGuide({
             {isSkipping ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <X className="mr-2 h-4 w-4" />}
             Saltar por ahora
           </Button>
-          <Button type="button" onClick={handleContinue}>
-              <Check className="mr-2 h-4 w-4" />
-              {step.actionLabel ?? "Siguiente"}
-          </Button>
+          {!step.requiresTargetInteraction ? (
+            <Button type="button" onClick={handleContinue}>
+                <Check className="mr-2 h-4 w-4" />
+                {step.actionLabel ?? "Siguiente"}
+            </Button>
+          ) : null}
         </div>
       </div>
     </div>

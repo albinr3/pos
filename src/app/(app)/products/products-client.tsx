@@ -1531,6 +1531,7 @@ export function ProductsClient({
           target: "products-new-button",
           title: "Crea el producto desde aquí",
           description: "Haz clic en Nuevo. Este es el mismo formulario que usarás todos los días para registrar productos.",
+          requiresTargetInteraction: true,
         },
       },
       {
@@ -1589,6 +1590,7 @@ export function ProductsClient({
           target: "products-save-button",
           title: "Guarda el producto",
           description: "Al guardar, este producto quedará listo para vender y terminarás la activación.",
+          requiresTargetInteraction: true,
         },
       },
     ]
@@ -1649,6 +1651,7 @@ export function ProductsClient({
             target: "app-nav-sales",
             title: "Ahora entra a Vender",
             description: "Haz clic en el botón Vender del menú. Ahí harás la primera venta usando el flujo normal.",
+            requiresTargetInteraction: true,
           }}
           stepIndex={9}
           totalSteps={10}
@@ -2143,7 +2146,14 @@ export function ProductsClient({
                     <p>Crear un nuevo producto</p>
                   </TooltipContent>
                 </Tooltip>
-                <DialogContent className="sm:max-w-[620px] max-h-[90vh] flex flex-col">
+                <DialogContent
+                  className="sm:max-w-[620px] max-h-[90vh] flex flex-col"
+                  onPointerDownOutside={(event) => {
+                    // Preventivo: la tarjeta de la guía vive fuera del Dialog. Sin bloquear
+                    // este evento, "Siguiente" se interpreta como clic exterior y cierra el formulario.
+                    if (onboardingProductGuide) event.preventDefault()
+                  }}
+                >
                   <DialogHeader>
                     <DialogTitle>{title}</DialogTitle>
                   </DialogHeader>
