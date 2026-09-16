@@ -19,6 +19,7 @@ import {
   sendSubUserTemporaryCode,
   loginSubUserWithCode,
   clearInvalidSubUserSession,
+  createInitialOwner,
 } from "./actions"
 
 type SubUser = {
@@ -37,6 +38,7 @@ type Props = {
   }
   users: SubUser[]
   shouldClearSession?: boolean
+  needsInitialSetup: boolean
 }
 
 function maskEmail(email: string) {
@@ -67,7 +69,7 @@ function clearOnboardingSessionState() {
   }
 }
 
-export function SelectUserClient({ account, users, shouldClearSession }: Props) {
+export function SelectUserClient({ account, users, shouldClearSession, needsInitialSetup }: Props) {
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
   const [selectedUser, setSelectedUser] = useState<SubUser | null>(
@@ -101,7 +103,7 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
   }
 
   // Estado para onboarding (primer usuario)
-  const isOnboarding = users.length === 0
+  const isOnboarding = needsInitialSetup
   const [onboardingStep, setOnboardingStep] = useState(isOnboarding ? 1 : 0)
   const [businessName, setBusinessName] = useState(account.name || "")
   const [whatsappPhone, setWhatsappPhone] = useState("")
@@ -273,6 +275,22 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
     })
   }
 
+  const handleInitialSetup = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!businessName.trim()) {
+      setError("El nombre del negocio es requerido")
+      return
+    }
+    setError("")
+    const formData = new FormData()
+    formData.set("businessName", businessName.trim())
+    formData.set("whatsappPhone", whatsappPhone.trim())
+    startTransition(async () => {
+      const result = await createInitialOwner(formData)
+      if (result?.error) setError(result.error)
+    })
+  }
+
   const getRoleBadge = (role: string, isOwner: boolean) => {
     if (isOwner) {
       return <Badge className="bg-purple-100 text-purple-800 border-purple-300">Dueño</Badge>
@@ -287,6 +305,38 @@ export function SelectUserClient({ account, users, shouldClearSession }: Props) 
       default:
         return <Badge variant="outline">{role}</Badge>
     }
+  }
+
+  if (isOnboarding) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-purple-50 to-blue-50 p-4 dark:from-gray-900 dark:to-gray-800">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <div className="mb-2 flex items-center justify-center gap-2">
+              <Building2 className="h-6 w-6 text-purple-600" />
+              <span className="text-lg font-semibold text-purple-600">Configuración inicial</span>
+            </div>
+            <CardTitle className="text-2xl">Cuéntanos sobre tu negocio</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleInitialSetup} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="business-name">Nombre del negocio</Label>
+                <Input id="business-name" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="Ej: La Esquina Market" disabled={isPending} autoFocus />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="whatsapp-phone">WhatsApp (opcional)</Label>
+                <Input id="whatsapp-phone" value={whatsappPhone} onChange={(e) => setWhatsappPhone(e.target.value)} placeholder="Ej: +1 809 000 0000" disabled={isPending} />
+              </div>
+              {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+              <Button type="submit" className="w-full" disabled={isPending}>
+                {isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Preparando tu cuenta...</> : "Entrar a mi Punto de Venta"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (

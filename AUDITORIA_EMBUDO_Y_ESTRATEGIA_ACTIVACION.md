@@ -53,7 +53,7 @@ El tutorial de onboarding demostró ser el **único canal generador de clientes 
 
 ---
 
-## 3. Diagnóstico Hormozi: Los 3 Cuellos de Botella (The Constraints)
+## 3. Diagnóstico Hormozi: Los 4 Cuellos de Botella (The Constraints)
 
 ### Cuello de Botella #1: La Fuga del 38% en `/select-user`
 * **Dato:** 26 de las 69 cuentas abandonaron inmediatamente después de registrarse con Google.
@@ -76,6 +76,14 @@ El tutorial de onboarding demostró ser el **único canal generador de clientes 
 * **Causa Raíz:**  
   El software POS sin productos cargados no se puede usar. Si el usuario salta el tutorial y cae en una pantalla vacía, no sabe por dónde empezar y se va.
 
+### Cuello de Botella #4: Primer inicio con Google redirige al Home y salta la configuración inicial
+* **Hallazgo:** Al iniciar sesión por primera vez con Google, el usuario es enviado al **Home** en vez de a la configuración inicial.
+* **Causa Raíz:**  
+  La lógica de redirección no distingue de forma fiable entre una cuenta nueva, sin negocio o configuración terminada, y una cuenta ya activada. Como resultado, el flujo de autenticación puede saltarse el paso que recoge la información mínima para preparar el punto de venta.
+* **Impacto:**  
+  El Home muestra un sistema todavía vacío y sin contexto. El usuario no sabe cuál es el primer paso, no completa la configuración de su negocio y llega al POS sin estar preparado para percibir valor. Esta confusión agrava tanto el abandono temprano como las cuentas que ignoran o saltan el onboarding.
+* **Diagnóstico:** La redirección inicial debe ser parte del onboarding, no una decisión genérica de autenticación. Una cuenta nueva debe completar la configuración inicial antes de poder llegar al Home o a la caja.
+
 ---
 
 ## 4. La Ecuación de Valor aplicada a MOVOPos
@@ -91,19 +99,29 @@ $$\text{Valor Percibido} = \frac{\text{Resultado Soñado (Tener mi negocio organ
 ## 5. Estrategia de Mejora: El Plan de Ataque
 
 ### Fase 1: Eliminar la Barrera de Entrada en `/select-user` (Ganancia rápida: +38% cuentas activas)
+**Estado de implementación (16 de septiembre de 2026):**
+* Se redujo la configuración inicial a un solo paso: nombre del negocio obligatorio y WhatsApp opcional.
+* Para el primer acceso con Google o email y contraseña, se crea automáticamente el propietario `ADMIN` con PIN temporal `1234` y se inicia la guía actual.
+* La redirección de Clerk, la home y las rutas privadas verifican la configuración inicial para impedir que una cuenta nueva llegue al Home, dashboard o ventas antes de completarla.
+* El PIN temporal se muestra como recordatorio dentro de la app y el aviso desaparece al cambiarlo desde Ajustes.
+
 1. **WhatsApp Opcional:**  
    Cambiar el texto a: *"WhatsApp (Opcional - para enviarte reportes de ventas y soporte técnico)"*. No bloquear si está vacío.
-2. **Auto-creación de Usuario para Google Sign-in:**  
-   Si el usuario viene de Google:
+2. **Auto-creación de Usuario para el primer inicio de sesión:**  
+   Si es el primer acceso de una cuenta creada con Google o con email y contraseña:
    * Crear automáticamente el usuario `ADMIN` con PIN por defecto `1234`.
    * Sustituir el formulario de 2 pasos por un único botón destacado: **"Entrar a mi Punto de Venta"**.
    * Una vez dentro del sistema, mostrar un banner sutil: *"Tu PIN temporal es 1234. Cámbialo aquí cuando quieras."*
+3. **Redirección obligatoria a configuración inicial para cuentas nuevas:**  
+   * Tras el primer inicio de sesión, ya sea con Google o con email y contraseña, detectar si la cuenta aún no tiene negocio/configuración inicial completada.
+   * Si no está completada, redirigir siempre a la configuración inicial; nunca al Home.
+   * Solo después de guardar esa configuración, continuar al flujo guiado de activación y luego a `/sales`.
 
 ### Fase 2: Rediseño del Onboarding: "Time to Value en 10 Segundos"
 1. **Pre-cargar 3 Productos de Demostración:**  
    Al crear la cuenta, insertar automáticamente 3 productos de prueba (ej: *"Café Americano"*, *"Botella de Agua"*, *"Snack"*).
 2. **Llevar al usuario directo a `/sales` (La Caja Registradora):**  
-   En vez de enviarlo a un dashboard con estadísticas en cero, llevarlo a la pantalla de ventas con un puntero interactivo:
+   Una vez terminada la configuración inicial, en vez de enviarlo a un dashboard con estadísticas en cero, llevarlo a la pantalla de ventas con un puntero interactivo:
    * *Paso 1:* "Toca el producto Café".
    * *Paso 2:* "Presiona Cobrar".
    * *Paso 3:* "¡Felicidades! Acabas de hacer tu primera venta simulada. Imprime o descarga el ticket."
@@ -139,6 +157,7 @@ Guarda esta tabla para comparar cuando vuelvas a evaluar los datos tras implemen
 | Métrica Clave | Línea Base Actual (Pre-Mejora) | Meta Post-Mejora (Target) |
 | :--- | :---: | :---: |
 | **Abandono en `/select-user`** | **37.7%** (26 de 69) | **< 10%** |
+| **Cuentas nuevas que completan configuración inicial antes de ver el Home** | Sin medición | **> 90%** |
 | **Tasa de Cuentas que Entran al POS** | **62.3%** (43 de 69) | **> 90%** |
 | **Tasa de Cuentas con 2+ Ventas Reales** | **5.8%** (4 de 69) | **> 25%** |
 | **Tasa de Cuentas con 5+ Ventas (Uso Diario)** | **4.3%** (3 de 69) | **> 15%** |
@@ -150,6 +169,10 @@ Guarda esta tabla para comparar cuando vuelvas a evaluar los datos tras implemen
 
 1. **Modificar [`src/app/select-user/select-user-client.tsx`](file:///c:/Users/Albin%20Rodr%C3%ADguez/Videos/Nueva%20carpeta/tejada-pos/src/app/select-user/select-user-client.tsx):**
    * Quitar la validación obligatoria del campo WhatsApp.
-   * Auto-completar usuario `ADMIN` y PIN `1234` por defecto para registros de Google.
+   * Auto-completar usuario `ADMIN` y PIN `1234` por defecto para registros con Google o email y contraseña.
    * Permitir avanzar con 1 solo clic.
-2. **Enviar el correo de reactivación** a los 26 usuarios de Google que se quedaron fuera.
+2. **Corregir la redirección del primer inicio con Google o email y contraseña:**  
+   * Si la cuenta no tiene configuración inicial terminada, enviarla obligatoriamente a ese flujo.
+   * Impedir que una cuenta nueva llegue al Home o a `/sales` hasta completar la configuración.
+   * Registrar el evento de entrada y finalización para medir el nuevo cuello de botella.
+3. **Enviar el correo de reactivación** a los 26 usuarios de Google que se quedaron fuera.

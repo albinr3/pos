@@ -310,6 +310,7 @@ function LoginContent() {
                 routing="hash"
                 signInUrl="/login"
                 forceRedirectUrl="/select-user"
+                signInForceRedirectUrl="/select-user"
                 unsafeMetadata={signupUnsafeMetadata}
                 appearance={{
                   elements: {
@@ -323,6 +324,7 @@ function LoginContent() {
                 routing="hash"
                 signUpUrl="/login?signup=true"
                 forceRedirectUrl="/select-user"
+                signUpForceRedirectUrl="/select-user"
                 appearance={{
                   elements: {
                     rootBox: "mx-auto",

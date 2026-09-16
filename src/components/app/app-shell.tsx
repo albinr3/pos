@@ -647,6 +647,12 @@ export function AppShell({ children, billingState }: AppShellProps) {
               )}
             </div>
           </header>
+          {user?.hasTemporaryPin ? (
+            <div className="mx-4 mt-4 flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:mx-6 sm:flex-row sm:items-center sm:justify-between dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+              <span>Tu PIN temporal es 1234. Cámbialo aquí cuando quieras.</span>
+              <Link href="/settings" className="font-medium underline underline-offset-4">Cambiar PIN</Link>
+            </div>
+          ) : null}
           </div>
           <main className="flex-1 p-4 md:p-6">{children}</main>
         </div>

@@ -307,6 +307,8 @@ export async function updateUser(
       throw new Error("La contraseña debe tener al menos 4 caracteres")
     }
     updateData.passwordHash = await bcrypt.hash(data.password, 10)
+    // El banner no debe sobrevivir a un PIN elegido por el usuario.
+    updateData.hasTemporaryPin = false
     changes.passwordChanged = true
   }
 

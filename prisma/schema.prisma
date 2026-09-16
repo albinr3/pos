@@ -270,6 +270,9 @@ model AccountOnboarding {
   firstSaleId             String?
   productExpressCreatedAt DateTime?
   firstSaleCreatedAt      DateTime?
+  // Separado del tutorial: evita que una sesión válida salte la configuración inicial.
+  initialSetupStartedAt   DateTime?
+  initialSetupCompletedAt DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
@@ -294,6 +297,8 @@ model User {
   name         String
   username     String // Único dentro del account
   passwordHash String // Requerido para autenticación de subcuenta
+  // Solo el owner creado por el onboarding recibe el PIN temporal 1234.
+  hasTemporaryPin Boolean @default(false)
   email        String? // Email opcional
   role         UserRole @default(CAJERO)
 

@@ -19,6 +19,7 @@ import { getClientIpFromHeaders, sendMetaEvent } from "@/lib/meta/server"
 import { sendResendEmail } from "@/lib/resend"
 import { renderSubUserTemporaryCodeEmail } from "@/lib/resend/templates"
 import { randomInt } from "crypto"
+import { ALL_PERMISSION_KEYS } from "@/lib/permissions"
 
 function isMetaDebugEnabled() {
   const value = process.env.META_DEBUG?.trim().toLowerCase()
@@ -74,8 +75,25 @@ export async function getAccountAndUsers() {
     return { error: "account_error" as const }
   }
 
-  // Listar usuarios del account
-  const users = await listSubUsers(account.id)
+  const { prisma } = await import("@/lib/db")
+  // Contamos todos los usuarios: uno inactivo sigue significando que la cuenta ya fue configurada.
+  const [users, userCount, onboarding] = await Promise.all([
+    listSubUsers(account.id),
+    prisma.user.count({ where: { accountId: account.id } }),
+    prisma.accountOnboarding.findUnique({
+      where: { accountId: account.id },
+      select: { initialSetupStartedAt: true, initialSetupCompletedAt: true },
+    }),
+  ])
+
+  if (!onboarding?.initialSetupCompletedAt && userCount === 0) {
+    // Idempotente: registra la visita sin retrasar ni reiniciar el flujo en recargas.
+    await prisma.accountOnboarding.upsert({
+      where: { accountId: account.id },
+      create: { accountId: account.id, initialSetupStartedAt: new Date() },
+      update: { initialSetupStartedAt: onboarding?.initialSetupStartedAt ?? new Date() },
+    })
+  }
 
   return {
     account: {
@@ -83,6 +101,7 @@ export async function getAccountAndUsers() {
       name: account.name,
     },
     users,
+    needsInitialSetup: !onboarding?.initialSetupCompletedAt && userCount === 0,
   }
 }
 
@@ -92,6 +111,139 @@ export async function getAccountAndUsers() {
  */
 export async function clearInvalidSubUserSession() {
   await clearSubUserSession()
+}
+
+export async function createInitialOwner(formData: FormData) {
+  const businessName = String(formData.get("businessName") || "").trim()
+  const whatsappPhone = String(formData.get("whatsappPhone") || "").trim()
+  if (!businessName) return { error: "El nombre del negocio es requerido" }
+
+  if (!(await isClerkAuthenticated())) {
+    return { error: "Sesión de cuenta principal expirada. Por favor, inicia sesión de nuevo." }
+  }
+
+  const clerkUser = await currentUser()
+  const account = await getOrCreateAccount()
+  if (!clerkUser || !account) return { error: "No se pudo preparar tu cuenta. Intenta de nuevo." }
+
+  const { prisma } = await import("@/lib/db")
+  const bcrypt = await import("bcryptjs")
+  const passwordHash = await bcrypt.hash("1234", 10)
+  const ownerPermissions = Object.fromEntries(ALL_PERMISSION_KEYS.map((key) => [key, true]))
+  const email = clerkUser.emailAddresses?.[0]?.emailAddress || null
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const existingOwner = await tx.user.findFirst({
+        where: { accountId: account.id, isOwner: true },
+        select: { id: true, username: true, email: true, hasTemporaryPin: true },
+      })
+
+      if (existingOwner) return { owner: existingOwner, subscription: null, created: false }
+
+      await tx.account.update({ where: { id: account.id }, data: { name: businessName } })
+      await tx.companySettings.upsert({
+        where: { accountId: account.id },
+        update: { name: businessName, phone: whatsappPhone },
+        create: {
+          accountId: account.id,
+          name: businessName,
+          phone: whatsappPhone,
+          address: "",
+          allowNegativeStock: false,
+          itbisRateBp: 1800,
+          salePricesIncludeItbis: true,
+          legalTipEnabled: false,
+        },
+      })
+      await tx.invoiceSequence.upsert({
+        where: { accountId_series: { accountId: account.id, series: "A" } },
+        update: {},
+        create: { accountId: account.id, series: "A", lastNumber: 0 },
+      })
+      await tx.returnSequence.upsert({
+        where: { accountId: account.id }, update: {}, create: { accountId: account.id, lastNumber: 0 },
+      })
+      await tx.quoteSequence.upsert({
+        where: { accountId: account.id }, update: {}, create: { accountId: account.id, lastNumber: 0 },
+      })
+
+      const owner = await tx.user.create({
+        data: {
+          accountId: account.id,
+          name: "Administrador",
+          username: "admin",
+          passwordHash,
+          email,
+          role: "ADMIN",
+          isOwner: true,
+          hasTemporaryPin: true,
+          ...ownerPermissions,
+        },
+      })
+      const existingSubscription = await tx.billingSubscription.findUnique({ where: { accountId: account.id } })
+      const subscription = existingSubscription ?? await createBillingSubscription({ accountId: account.id, client: tx })
+      await tx.accountOnboarding.upsert({
+        where: { accountId: account.id },
+        create: { accountId: account.id, initialSetupStartedAt: new Date(), initialSetupCompletedAt: new Date() },
+        update: { initialSetupCompletedAt: new Date() },
+      })
+      return { owner, subscription, created: true }
+    }, { isolationLevel: "Serializable" })
+
+    await clearSubUserSession()
+    const token = await createSubUserSession(account.id, result.owner.id)
+    await setSubUserSessionCookie(token)
+
+    if (result.created && result.subscription) {
+      await logAuditEvent({
+        accountId: account.id,
+        userId: result.owner.id,
+        userEmail: result.owner.email,
+        userUsername: result.owner.username,
+        action: "USER_CREATED",
+        resourceType: "User",
+        resourceId: result.owner.id,
+        details: { username: "admin", isOwner: true, source: "initial_activation" },
+      })
+      // El evento externo nunca bloquea la cuenta: el commit ya terminó antes de enviarlo.
+      try {
+        const headersList = await headers()
+        const cookieStore = await cookies()
+        const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com").replace(/\/$/, "")
+        await sendMetaEvent({
+          eventName: "StartTrial",
+          eventId: `trial-${result.subscription.id}`,
+          eventSourceUrl: `${appUrl}/select-user`,
+          userData: {
+            email,
+            firstName: clerkUser.firstName ?? null,
+            lastName: clerkUser.lastName ?? null,
+            phone: whatsappPhone || null,
+            country: "DO",
+            externalId: account.id,
+            clientIpAddress: getClientIpFromHeaders(headersList),
+            clientUserAgent: headersList.get("user-agent"),
+            fbc: cookieStore.get("_fbc")?.value ?? null,
+            fbp: cookieStore.get("_fbp")?.value ?? null,
+          },
+          customData: {
+            currency: "DOP",
+            value: Number((result.subscription.priceDopCents / 100).toFixed(2)),
+            predicted_ltv: Number((result.subscription.priceDopCents / 100).toFixed(2)),
+          },
+          testEventCode: process.env.META_TEST_EVENT_CODE?.trim() || undefined,
+        })
+      } catch (metaError) {
+        console.error("[Initial activation] StartTrial no enviado", metaError)
+      }
+    }
+  } catch (error) {
+    console.error("[Initial activation] Error creando owner", error)
+    return { error: "No se pudo guardar la configuración. Intenta de nuevo." }
+  }
+
+  redirect("/dashboard?onboarding=product")
 }
 
 export async function loginSubUser(formData: FormData) {

@@ -3,7 +3,7 @@ import { BillingBanner } from "@/components/app/billing-banner"
 import { BillingRedirect } from "@/components/app/billing-redirect"
 import { ThemeProvider } from "@/components/app/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
-import { getCurrentUser, getCurrentUserBillingState, hasClerkSession, hasSubUserSession } from "@/lib/auth"
+import { getCurrentUser, getCurrentUserBillingState, hasClerkSession, hasSubUserSession, isInitialSetupComplete } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 
@@ -30,6 +30,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await getCurrentUser()
   if (!user) {
     // Si getCurrentUser falla, las sesiones no coinciden
+    redirect("/select-user")
+  }
+
+  if (!(await isInitialSetupComplete(user.accountId))) {
     redirect("/select-user")
   }
 

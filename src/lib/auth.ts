@@ -72,6 +72,7 @@ export type CurrentUser = {
   email?: string | null
   role: UserRole
   isOwner: boolean
+  hasTemporaryPin?: boolean
   canAccessSales: boolean
   canAccessDashboard: boolean
   canAccessReturns: boolean
@@ -886,6 +887,7 @@ export async function getCurrentUser(
     email: user.email,
     role: user.role,
     isOwner: user.isOwner,
+    hasTemporaryPin: user.hasTemporaryPin,
     canAccessSales: user.canAccessSales,
     canAccessDashboard: user.canAccessDashboard,
     canAccessReturns: user.canAccessReturns,
@@ -929,6 +931,19 @@ export async function getCurrentUser(
   }
   
   return currentUser
+}
+
+/**
+ * El guard de la app consulta este estado en el servidor para que una cookie
+ * válida nunca permita saltar la configuración inicial desde una URL directa.
+ */
+export async function isInitialSetupComplete(accountId: string): Promise<boolean> {
+  const prisma = await getPrisma()
+  const onboarding = await prisma.accountOnboarding.findUnique({
+    where: { accountId },
+    select: { initialSetupCompletedAt: true },
+  })
+  return Boolean(onboarding?.initialSetupCompletedAt)
 }
 
 /**

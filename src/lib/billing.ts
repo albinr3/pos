@@ -18,6 +18,7 @@ import type {
   BillingPayment,
   BillingProfile,
 } from "@prisma/client"
+import type { Prisma, PrismaClient } from "@prisma/client"
 import { addDays, isBefore, isAfter, differenceInDays } from "date-fns"
 import { sendMetaEvent, splitFullName, type MetaUserDataInput } from "@/lib/meta/server"
 
@@ -63,6 +64,8 @@ export type BillingState = {
 
 export type CreateSubscriptionInput = {
   accountId: string
+  // Permite que el onboarding cree el trial junto con el owner, sin ventanas de duplicación.
+  client?: PrismaClient | Prisma.TransactionClient
 }
 
 export type LemonCheckoutTrackingInput = {
@@ -203,7 +206,7 @@ export function calculateBillingState(
 export async function createBillingSubscription(
   input: CreateSubscriptionInput
 ): Promise<BillingSubscription> {
-  const prisma = await getPrisma()
+  const prisma = input.client ?? await getPrisma()
   const now = new Date()
   const trialEndsAt = addDays(now, TRIAL_DAYS)
 

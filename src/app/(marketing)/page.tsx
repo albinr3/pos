@@ -11,6 +11,8 @@ import { FAQSection } from "@/components/marketing/faq-section"
 import { faqItems } from "@/components/marketing/faq-data"
 import { PricingCard } from "@/components/marketing/pricing-card"
 import { Button } from "@/components/ui/button"
+import { getOrCreateAccount, hasClerkSession, isInitialSetupComplete } from "@/lib/auth"
+import { redirect } from "next/navigation"
 
 const homeSeoDescription =
   "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Maneja caja, clientes, cuentas por cobrar y reportes. Prueba gratis 15 días."
@@ -241,7 +243,13 @@ function MobileAppTeaserSection() {
   )
 }
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  // Un Clerk autenticado no debe volver a una home vacía si aún falta configurar su POS.
+  if (await hasClerkSession()) {
+    const account = await getOrCreateAccount()
+    if (!account || !(await isInitialSetupComplete(account.id))) redirect("/select-user")
+  }
+
   return (
     <>
       <script

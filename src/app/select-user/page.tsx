@@ -30,6 +30,7 @@ export default async function SelectUserPage() {
       account={result.account}
       users={result.users}
       shouldClearSession={shouldClearSession}
+      needsInitialSetup={result.needsInitialSetup}
     />
   )
 }
