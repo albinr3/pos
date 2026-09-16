@@ -210,28 +210,6 @@ export async function skipAccountOnboarding() {
   return { ok: true }
 }
 
-export async function getOnboardingDemoProducts() {
-  const user = await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
-
-  const onboarding = await prisma.accountOnboarding.findUnique({
-    where: { accountId: user.accountId },
-    select: { demoProductsSeededAt: true, demoCheckoutCompletedAt: true },
-  })
-  if (!onboarding?.demoProductsSeededAt || onboarding.demoCheckoutCompletedAt) return []
-
-  return prisma.product.findMany({
-    where: {
-      accountId: user.accountId,
-      isActive: true,
-      isAvailableForSale: true,
-      isOnboardingDemo: true,
-    },
-    orderBy: { productId: "asc" },
-    select: { id: true, name: true, priceCents: true },
-  })
-}
-
 export async function completeDemoCheckout() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")

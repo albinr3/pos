@@ -50,6 +50,7 @@ import type { CurrentUser } from "@/lib/auth"
 
 import { createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode } from "./actions"
 import { listTreasuryAccounts } from "../treasury/actions"
+import { completeDemoCheckout } from "../onboarding/actions"
 
 type ProductResult = Awaited<ReturnType<typeof searchProducts>>[number]
 
@@ -177,6 +178,7 @@ export function PosClient({
   showItbisOnReceipts = true,
   salePricesIncludeItbis = true,
   legalTipEnabled = false,
+  onboardingDemoGuide = false,
   onboardingSaleGuide = false,
   onboardingAccountId = null,
 }: {
@@ -184,6 +186,7 @@ export function PosClient({
   showItbisOnReceipts?: boolean
   salePricesIncludeItbis?: boolean
   legalTipEnabled?: boolean
+  onboardingDemoGuide?: boolean
   onboardingSaleGuide?: boolean
   onboardingAccountId?: string | null
 }) {
@@ -431,6 +434,17 @@ export function PosClient({
 
   useEffect(() => {
     const loadInitialData = async () => {
+      if (onboardingDemoGuide) {
+        // La práctica usa la caja real, pero nunca restaura ni mezcla un carrito persistido.
+        try {
+          const products = await listAllProductsForSale({ onboardingDemoOnly: true })
+          setAllProducts(products)
+          setViewMode("grid")
+        } catch {
+          setAllProducts([])
+        }
+        return
+      }
       // Pre-cargar datos a IndexedDB si hay conexión
       if (isOnline) {
         try {
@@ -666,7 +680,7 @@ export function PosClient({
     const interval = setInterval(updatePendingCounts, 5000) // Actualizar cada 5 segundos
 
     return () => clearInterval(interval)
-  }, [isOnline, legalTipEnabled])
+  }, [isOnline, legalTipEnabled, onboardingDemoGuide])
 
   useEffect(() => {
     if (saleType !== SaleType.CONTADO) return
@@ -689,10 +703,14 @@ export function PosClient({
         try {
           if (isOnline) {
             try {
-              const products = await listAllProductsForSale()
+              const products = await listAllProductsForSale({ onboardingDemoOnly: onboardingDemoGuide })
               setAllProducts(products)
               return
             } catch {
+              if (onboardingDemoGuide) {
+                setAllProducts([])
+                return
+              }
               // Fallback a cache local
             }
           }
@@ -720,11 +738,12 @@ export function PosClient({
     }
     // Guardar preferencia
     localStorage.setItem("posViewMode", viewMode)
-  }, [viewMode, isOnline])
+  }, [viewMode, isOnline, onboardingDemoGuide])
 
   // Guardar el estado del carrito cada vez que cambia
   useEffect(() => {
     if (!isInitialized) return
+    if (onboardingDemoGuide) return
 
     if (cart.length > 0) {
       try {
@@ -768,10 +787,12 @@ export function PosClient({
     discountMode,
     manualDiscountInput,
     isInitialized,
+    onboardingDemoGuide,
   ])
 
   // Interceptar navegación cuando hay productos en el carrito
   useEffect(() => {
+    if (onboardingDemoGuide) return
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       const link = target.closest("a")
@@ -842,6 +863,7 @@ export function PosClient({
     applyLegalTip,
     discountMode,
     manualDiscountInput,
+    onboardingDemoGuide,
     pathname,
   ])
 
@@ -854,10 +876,14 @@ export function PosClient({
           try {
             if (isOnline) {
               try {
-                const r = await searchProducts(q)
+                const r = await searchProducts(q, { onboardingDemoOnly: onboardingDemoGuide })
                 setResults(r)
                 return
               } catch {
+                if (onboardingDemoGuide) {
+                  setResults([])
+                  return
+                }
                 // Fallback a cache local
               }
             }
@@ -889,10 +915,14 @@ export function PosClient({
             try {
               if (isOnline) {
                 try {
-                  const products = await listAllProductsForSale()
+                  const products = await listAllProductsForSale({ onboardingDemoOnly: onboardingDemoGuide })
                   setAllProducts(products)
                   return
                 } catch {
+                  if (onboardingDemoGuide) {
+                    setAllProducts([])
+                    return
+                  }
                   // Fallback a cache local
                 }
               }
@@ -924,7 +954,7 @@ export function PosClient({
     }, 200)
 
     return () => clearTimeout(handle)
-  }, [query, viewMode, isOnline])
+  }, [query, viewMode, isOnline, onboardingDemoGuide])
 
   const {
     subtotalCents,
@@ -956,7 +986,7 @@ export function PosClient({
   const changeCents = useMemo(() => amountPaidCents - totalCents, [amountPaidCents, totalCents])
   const exactAmountInput = useMemo(() => (totalCents / 100).toFixed(2), [totalCents])
   const saleGuideState = useMemo(() => {
-    if (!onboardingSaleGuide || isOnboardingGuideClosed || hasSkippedProgress) return null
+    if ((!onboardingSaleGuide && !onboardingDemoGuide) || isOnboardingGuideClosed || hasSkippedProgress) return null
 
     const productTarget = cart.length > 0
       ? "sales-cart-section"
@@ -965,6 +995,44 @@ export function PosClient({
         : viewMode === "grid" && allProducts.length > 0
           ? "sales-product-card"
           : "sales-product-search"
+
+    if (onboardingDemoGuide) {
+      const demoSteps: Array<{ complete: boolean; step: OnboardingGuideStep }> = [
+        {
+          complete: cart.length > 0,
+          step: {
+            target: productTarget,
+            title: "Selecciona Café Americano",
+            description: "Estás en la caja real. Toca el producto para agregarlo al carrito de práctica.",
+          },
+        },
+        {
+          complete: cart.length === 0 || hasReviewedOnboardingCart,
+          step: {
+            target: "sales-cart-section",
+            title: "Revisa tu carrito",
+            description: "Aquí verás los productos, cantidades y el total antes de cobrar.",
+            actionLabel: "Ya revisé",
+            onAction: () => setHasReviewedOnboardingCart(true),
+          },
+        },
+        {
+          complete: false,
+          step: {
+            target: "sales-save-button",
+            title: "Cobra la práctica",
+            description: "El botón usa la caja real, pero esta práctica no creará una factura ni afectará tus reportes.",
+          },
+        },
+      ]
+      const activeIndex = demoSteps.findIndex((item) => !item.complete)
+      return {
+        step: demoSteps[activeIndex]?.step ?? null,
+        stepIndex: activeIndex >= 0 ? activeIndex : demoSteps.length - 1,
+        totalSteps: demoSteps.length,
+        stepKey: `demo-sales-step-${activeIndex + 1}`,
+      }
+    }
 
     const steps: Array<{ complete: boolean; step: OnboardingGuideStep }> = [
       {
@@ -1038,6 +1106,7 @@ export function PosClient({
     hasReviewedOnboardingCart,
     isOnboardingGuideClosed,
     isSaleConfigCollapsed,
+    onboardingDemoGuide,
     onboardingSaleGuide,
     query,
     results.length,
@@ -1170,6 +1239,24 @@ export function PosClient({
   }
 
   async function onSave() {
+    if (onboardingDemoGuide) {
+      if (cart.length === 0) {
+        toast({ title: "Selecciona un producto", description: "Agrega Café Americano al carrito para continuar." })
+        return
+      }
+      startSave(async () => {
+        try {
+          await completeDemoCheckout()
+          toast({ title: "Práctica completada", description: "Ahora crea un producto propio para vender de verdad." })
+          router.push("/products?onboarding=product")
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "No se pudo completar la práctica."
+          toast({ title: "Error", description: message, variant: "destructive" })
+        }
+      })
+      return
+    }
+
     // Validaciones iniciales
     if (saleType === SaleType.CREDITO && (!effectiveCustomerId || !selectedCustomer || selectedCustomer.isGeneric)) {
       toast({ title: "Crédito", description: "Para crédito debes seleccionar un cliente." })
@@ -1381,7 +1468,7 @@ export function PosClient({
           onSkip={() => setHasSkippedProgress(true)}
           progressKey={progressKey ?? undefined}
           stepKey={saleGuideState.stepKey}
-          resumePath="/sales?onboarding=sale"
+          resumePath={onboardingDemoGuide ? "/sales?onboarding=demo" : "/sales?onboarding=sale"}
         />
       ) : null}
 
@@ -1400,14 +1487,16 @@ export function PosClient({
         </div>
       )}
 
-      {onboardingSaleGuide && (
+      {(onboardingSaleGuide || onboardingDemoGuide) && (
         <div className="col-span-full rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
           <div className="flex items-start gap-3">
             <ShoppingCart className="mt-0.5 h-5 w-5 flex-none" />
             <div>
-              <div className="font-semibold">Primera venta</div>
+              <div className="font-semibold">{onboardingDemoGuide ? "Práctica de cobro" : "Primera venta"}</div>
               <p className="text-emerald-800 dark:text-emerald-200">
-                Hazla como una venta normal: busca un producto, agrégalo al carrito y guarda la factura.
+                {onboardingDemoGuide
+                  ? "Estás usando la caja real con productos de práctica. Esta vez no se creará factura ni se descontará inventario."
+                  : "Hazla como una venta normal: busca un producto, agrégalo al carrito y guarda la factura."}
               </p>
             </div>
           </div>
@@ -2394,13 +2483,13 @@ export function PosClient({
               onClick={onSave}
               data-onboarding-target="sales-save-button"
             >
-              {isSaving ? "Guardando…" : "Guardar e imprimir"}
+              {isSaving ? "Guardando…" : onboardingDemoGuide ? "Cobrar de práctica" : "Guardar e imprimir"}
             </Button>
-            <div className="text-xs text-muted-foreground">
+            {!onboardingDemoGuide && <div className="text-xs text-muted-foreground">
               {salePricesIncludeItbis
                 ? "Precios incluyen ITBIS. Factura tamaño carta con serie A."
                 : "Precios no incluyen ITBIS. Factura tamaño carta con serie A."}
-            </div>
+            </div>}
           </CardContent>
         </Card>
 

@@ -46,7 +46,7 @@ function normalizeRequestedCustomerId(customerId: string | null | undefined): st
   return normalized.toLowerCase() === "generic" ? null : normalized
 }
 
-export async function searchProducts(query: string) {
+export async function searchProducts(query: string, options?: { onboardingDemoOnly?: boolean }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
@@ -58,6 +58,7 @@ export async function searchProducts(query: string) {
       accountId: user.accountId,
       isActive: true,
       isAvailableForSale: true,
+      ...(options?.onboardingDemoOnly ? { isOnboardingDemo: true } : {}),
       OR: [
         { name: { contains: q, mode: "insensitive" } },
         { sku: { contains: q, mode: "insensitive" } },
@@ -105,7 +106,7 @@ export async function searchProducts(query: string) {
   }))
 }
 
-export async function listAllProductsForSale() {
+export async function listAllProductsForSale(options?: { onboardingDemoOnly?: boolean }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
@@ -114,6 +115,7 @@ export async function listAllProductsForSale() {
       accountId: user.accountId,
       isActive: true,
       isAvailableForSale: true,
+      ...(options?.onboardingDemoOnly ? { isOnboardingDemo: true } : {}),
     },
     orderBy: { name: "asc" },
     select: {

@@ -3,9 +3,7 @@ import { Button } from "@/components/ui/button"
 import { PosClient } from "./pos-client"
 import { getSettings } from "../settings/actions"
 import { getAccountOnboardingState } from "../onboarding/actions"
-import { getOnboardingDemoProducts } from "../onboarding/actions"
 import { requireModuleAccess } from "@/lib/module-access"
-import { OnboardingDemoPos } from "./onboarding-demo-pos"
 
 export default async function SalesPage({
   searchParams,
@@ -24,9 +22,6 @@ export default async function SalesPage({
   const isOnboardingSale = onboarding === "sale" || Boolean(onboardingProductId)
   const isDemoOnboarding = onboarding === "demo"
   const onboardingState = isOnboardingSale || isDemoOnboarding ? await getAccountOnboardingState() : null
-  const demoProducts = isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"
-    ? await getOnboardingDemoProducts()
-    : []
 
   return (
     <div className="grid gap-6">
@@ -43,18 +38,15 @@ export default async function SalesPage({
           </Button>
         </div>
       </div>
-      {isDemoOnboarding && onboardingState?.phase === "DEMO_SALE" ? (
-        <OnboardingDemoPos products={demoProducts} />
-      ) : (
-        <PosClient
-          defaultViewMode={settings.defaultViewMode}
-          showItbisOnReceipts={settings.showItbisOnReceipts}
-          salePricesIncludeItbis={settings.salePricesIncludeItbis}
-          legalTipEnabled={settings.legalTipEnabled}
-          onboardingSaleGuide={isOnboardingSale && onboardingState?.phase === "SALE"}
-          onboardingAccountId={onboardingState?.accountId ?? null}
-        />
-      )}
+      <PosClient
+        defaultViewMode={settings.defaultViewMode}
+        showItbisOnReceipts={settings.showItbisOnReceipts}
+        salePricesIncludeItbis={settings.salePricesIncludeItbis}
+        legalTipEnabled={settings.legalTipEnabled}
+        onboardingDemoGuide={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}
+        onboardingSaleGuide={isOnboardingSale && onboardingState?.phase === "SALE"}
+        onboardingAccountId={onboardingState?.accountId ?? null}
+      />
     </div>
   )
 }
