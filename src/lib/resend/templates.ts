@@ -2,6 +2,7 @@ import { readFile } from "fs/promises"
 import path from "path"
 
 import { buildInventoryUploadWhatsAppUrl } from "@/lib/inventory-upload-offer"
+import { buildSupportWhatsAppUrl } from "@/lib/contact-info"
 
 const templateCache = new Map<string, string>()
 const templatesDir = path.join(process.cwd(), "templates", "resend")
@@ -184,6 +185,67 @@ export async function renderCustomerInactivityEmail(
 
   const subject = `¿Necesitas ayuda para seguir usando ${brandName}?`
   return { subject, html }
+}
+
+type InitialSetupReminderTemplateData = {
+  step: 1 | 2 | 3 | 4
+}
+
+export async function renderInitialSetupReminderEmail(
+  data: InitialSetupReminderTemplateData
+) {
+  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
+  const appUrl = rawAppUrl.replace(/\/+$/, "")
+  const setupUrl = `${appUrl}/select-user`
+  const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+
+  const copy = {
+    1: {
+      subject: `¿Pudiste ponerle nombre a tu negocio?`,
+      headline: "Solo te falta nombrar tu negocio para empezar.",
+      message: "Tu registro ya está guardado. Completa este paso rápido para entrar a tu espacio de trabajo.",
+      ctaLabel: "Configurar mi negocio",
+      supportMessage: "Si algo no te quedó claro, te ayudamos a terminarlo.",
+    },
+    2: {
+      subject: `Te falta un paso para empezar con ${brandName}`,
+      headline: "Tu cuenta está lista. Solo falta el nombre de tu negocio.",
+      message: "En menos de un minuto puedes completar la configuración inicial y entrar a tu espacio de trabajo.",
+      ctaLabel: "Configurar mi negocio",
+      supportMessage: "Si algo te detuvo, estamos aquí para ayudarte a dejarlo listo.",
+    },
+    3: {
+      subject: `Tu negocio aún no está configurado en ${brandName}`,
+      headline: "Dale identidad a tu negocio y empieza a usar MOVOPos.",
+      message: "Todavía no hemos recibido el nombre de tu negocio. Completarlo desbloquea tu configuración inicial.",
+      ctaLabel: "Completar configuración",
+      supportMessage: "Podemos acompañarte paso a paso si tienes alguna duda.",
+    },
+    4: {
+      subject: "¿Te ayudamos a activar tu negocio?",
+      headline: "Estamos a un paso de dejar tu negocio listo.",
+      message: "Tu registro sigue guardado. Agrega el nombre de tu negocio y podrás comenzar a configurar ventas e inventario.",
+      ctaLabel: "Activar mi negocio",
+      supportMessage: "Escríbenos y te ayudamos personalmente a completar este primer paso.",
+    },
+  }[data.step]
+
+  const html = await renderTemplate("initial-setup-reminder.html", {
+    brandName,
+    subjectPreview: copy.subject,
+    headline: copy.headline,
+    message: copy.message,
+    ctaLabel: copy.ctaLabel,
+    supportMessage: copy.supportMessage,
+    setupUrl,
+    supportWhatsappUrl: buildSupportWhatsAppUrl(
+      "Hola, necesito ayuda para completar la configuración inicial de mi negocio en MOVOPos."
+    ),
+    appUrl,
+    year: new Date().getFullYear().toString(),
+  })
+
+  return { subject: copy.subject, html }
 }
 
 // ==========================================

@@ -9,8 +9,11 @@ export const dynamic = "force-dynamic"
 
 export default async function OnboardingCompletadoPage() {
   return (
-    <div className="mx-auto flex min-h-[70dvh] w-full max-w-4xl items-center py-6 sm:py-10">
+    <div className="mx-auto flex min-h-[70dvh] w-full max-w-4xl items-start py-2 sm:py-4">
       <div className="w-full space-y-6">
+        {/* En onboarding se usa una variante breve para que funcione como aviso superior, no como una tarjeta de contenido. */}
+        <InventoryUploadOffer variant="compact" dismissible />
+
         <Card className="mx-auto w-full max-w-2xl border-emerald-200 bg-emerald-50/70 dark:border-emerald-900 dark:bg-emerald-950/30">
           <CardContent className="space-y-5 p-6 text-center sm:p-8">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-600 text-white">
@@ -25,9 +28,6 @@ export default async function OnboardingCompletadoPage() {
             </div>
           </CardContent>
         </Card>
-
-        {/* Este aviso necesita todo el ancho: dentro de la tarjeta estrecha comprimía el texto y el botón. */}
-        <InventoryUploadOffer />
 
         <Card className="mx-auto w-full max-w-2xl">
           <CardContent className="space-y-5 p-6 text-center sm:p-8">
