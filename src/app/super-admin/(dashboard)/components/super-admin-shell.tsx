@@ -206,7 +206,7 @@ export function SuperAdminShell({
 
               <div className="ml-auto flex items-center gap-3">
                 <ThemeToggle />
-                {admin.role === "OWNER" && <WebPushControl />}
+                {(admin.role === "OWNER" || admin.role === "ADMIN") && <WebPushControl />}
                 <SuperAdminNotificationsDropdown />
 
                 {/* Admin dropdown */}

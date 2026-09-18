@@ -10,15 +10,15 @@ type BrowserPushSubscription = {
   keys?: { p256dh?: unknown; auth?: unknown }
 }
 
-async function getOwner() {
+async function getPushAdmin() {
   const admin = await getCurrentSuperAdmin()
-  return admin?.role === "OWNER" ? admin : null
+  return admin && (admin.role === "OWNER" || admin.role === "ADMIN") ? admin : null
 }
 
 export async function GET() {
   try {
-    const admin = await getOwner()
-    if (!admin) return NextResponse.json({ success: false, error: "Solo el propietario puede administrar alertas push." }, { status: 403 })
+    const admin = await getPushAdmin()
+    if (!admin) return NextResponse.json({ success: false, error: "Solo OWNER o ADMIN pueden administrar alertas push." }, { status: 403 })
 
     const subscription = await prisma.superAdminWebPushSubscription.findFirst({
       where: { superAdminId: admin.id, enabled: true },
@@ -33,8 +33,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const admin = await getOwner()
-    if (!admin) return NextResponse.json({ success: false, error: "Solo el propietario puede activar alertas push." }, { status: 403 })
+    const admin = await getPushAdmin()
+    if (!admin) return NextResponse.json({ success: false, error: "Solo OWNER o ADMIN pueden activar alertas push." }, { status: 403 })
 
     const body = await request.json() as BrowserPushSubscription
     const endpoint = typeof body.endpoint === "string" ? body.endpoint.trim() : ""
@@ -90,8 +90,8 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE() {
   try {
-    const admin = await getOwner()
-    if (!admin) return NextResponse.json({ success: false, error: "Solo el propietario puede desactivar alertas push." }, { status: 403 })
+    const admin = await getPushAdmin()
+    if (!admin) return NextResponse.json({ success: false, error: "Solo OWNER o ADMIN pueden desactivar alertas push." }, { status: 403 })
 
     await prisma.superAdminWebPushSubscription.updateMany({
       where: { superAdminId: admin.id, enabled: true },

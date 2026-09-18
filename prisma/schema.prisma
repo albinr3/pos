@@ -1689,7 +1689,7 @@ model SuperAdmin {
 }
 
 // Suscripciones Web Push del panel interno. Solo una se mantiene activa para
-// que las alertas operativas lleguen al celular elegido por el OWNER.
+// que las alertas operativas lleguen al celular elegido por OWNER o ADMIN.
 model SuperAdminWebPushSubscription {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())

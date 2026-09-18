@@ -36,7 +36,7 @@ export async function sendNewAccountWebPush(input: NewAccountPushInput) {
   const subscriptions = await prisma.superAdminWebPushSubscription.findMany({
     where: {
       enabled: true,
-      superAdmin: { isActive: true, role: "OWNER" },
+      superAdmin: { isActive: true, role: { in: ["OWNER", "ADMIN"] } },
     },
     select: { endpoint: true, p256dh: true, auth: true },
   })
