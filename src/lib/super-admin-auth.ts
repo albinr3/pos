@@ -35,7 +35,9 @@ if (!JWT_SECRET) {
 }
 
 const SUPER_ADMIN_COOKIE_NAME = "superadmin-session"
-const SESSION_DURATION = 60 * 60 * 4 // 4 horas (más corto por seguridad)
+// El panel se usa de forma operativa todos los días. Mantener la misma vigencia
+// en el JWT y en la cookie evita redirecciones a login por una cookie expirada.
+const SESSION_DURATION = 60 * 60 * 24 * 30 // 30 días
 
 interface SuperAdminSessionPayload {
   superAdminId: string
@@ -135,7 +137,10 @@ export async function setSuperAdminSessionCookie(token: string) {
   cookieStore.set(SUPER_ADMIN_COOKIE_NAME, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "strict", // Más restrictivo por seguridad
+    // "strict" puede omitir la cookie después de accesos/redirecciones desde
+    // otro contexto. "lax" la conserva en navegación normal sin enviarla en
+    // solicitudes cross-site no seguras.
+    sameSite: "lax",
     maxAge: SESSION_DURATION,
     path: "/",
   })
