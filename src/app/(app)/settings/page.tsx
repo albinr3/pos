@@ -22,6 +22,7 @@ export default async function SettingsPage() {
         <p className="text-sm text-muted-foreground">Configuraciones del sistema.</p>
       </div>
       <SettingsClient
+        currentUserId={user.id}
         isOwner={user.isOwner}
         role={user.role}
         canManageUsers={user.canManageUsers}

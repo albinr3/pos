@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { Users, Plus, Pencil, Trash2, Check, X, Shield, Eye, EyeOff } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -95,7 +95,14 @@ function getPermissionValue(user: UserWithPermissions, permission: PermissionKey
   return Boolean(user[permission as keyof UserWithPermissions])
 }
 
-export function UsersTab({ isOwner, canManageUsers }: { isOwner: boolean; canManageUsers: boolean }) {
+type UsersTabProps = {
+  currentUserId: string
+  isOwner: boolean
+  canManageUsers: boolean
+  openCurrentUserEditor?: boolean
+}
+
+export function UsersTab({ currentUserId, isOwner, canManageUsers, openCurrentUserEditor = false }: UsersTabProps) {
   const [users, setUsers] = useState<UserWithPermissions[]>([])
   const [isLoading, startLoading] = useTransition()
   const [isSaving, startSaving] = useTransition()
@@ -108,6 +115,8 @@ export function UsersTab({ isOwner, canManageUsers }: { isOwner: boolean; canMan
   const [newUser, setNewUser] = useState<NewUserForm>(DEFAULT_NEW_USER)
   const [editPassword, setEditPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
+  const usersSectionRef = useRef<HTMLDivElement>(null)
+  const hasOpenedCurrentUserEditor = useRef(false)
 
   function loadUsers() {
     startLoading(async () => {
@@ -123,6 +132,24 @@ export function UsersTab({ isOwner, canManageUsers }: { isOwner: boolean; canMan
   useEffect(() => {
     loadUsers()
   }, [])
+
+  useEffect(() => {
+    if (!openCurrentUserEditor || hasOpenedCurrentUserEditor.current || users.length === 0) return
+
+    const currentUser = users.find((user) => user.id === currentUserId)
+    if (!currentUser || !canManageUsers || (currentUser.isOwner && !isOwner)) return
+
+    usersSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+
+    // Esperar el desplazamiento para que el formulario se abra sobre la sección de Usuarios.
+    const timeoutId = window.setTimeout(() => {
+      hasOpenedCurrentUserEditor.current = true
+      setSelectedUser(currentUser)
+      setShowEditDialog(true)
+    }, 350)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [canManageUsers, currentUserId, isOwner, openCurrentUserEditor, users])
 
   function canEditTargetUser(targetUser: UserWithPermissions): boolean {
     if (!canManageUsers) return false
@@ -288,7 +315,8 @@ export function UsersTab({ isOwner, canManageUsers }: { isOwner: boolean; canMan
 
   return (
     <>
-      <Card>
+      <div ref={usersSectionRef} className="scroll-mt-6">
+        <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2">
@@ -461,7 +489,8 @@ export function UsersTab({ isOwner, canManageUsers }: { isOwner: boolean; canMan
             })}
           </div>
         </CardContent>
-      </Card>
+        </Card>
+      </div>
 
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent className="max-w-lg">

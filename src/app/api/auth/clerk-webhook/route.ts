@@ -281,16 +281,8 @@ export async function POST(request: NextRequest) {
         console.log("[Clerk Webhook] Account already exists, skipping welcome email")
       }
 
-      if (eventType === "user.created" && accountWasCreated) {
-        // Este aviso queda fuera de la creación de Account: la falta de VAPID
-        // nunca puede impedir que un cliente complete su registro.
-        const { notifyNewAccountRegistered } = await import("@/lib/super-admin-notifications")
-        await notifyNewAccountRegistered({
-          accountId: account.id,
-          accountName: name,
-          ownerEmail: primaryEmail,
-        })
-      }
+      // La alerta push de nuevo cliente se envía al completar la configuración
+      // inicial, no aquí: Account se crea antes de que el negocio esté listo.
     } catch (error) {
       console.error("[Clerk Webhook] Error procesando webhook de Clerk:", error)
       return NextResponse.json(

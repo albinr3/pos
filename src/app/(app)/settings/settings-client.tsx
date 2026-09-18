@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
+import { useSearchParams } from "next/navigation"
 import { X, Image as ImageIcon, RefreshCw, WifiOff, Database, Upload } from "lucide-react"
 import Image from "next/image"
 import { UploadButton } from "@uploadthing/react"
@@ -56,6 +57,7 @@ function parseLastSyncDay(raw: string | null) {
 }
 
 type Props = {
+  currentUserId: string
   isOwner: boolean
   role: UserRole
   canManageUsers: boolean
@@ -63,7 +65,8 @@ type Props = {
   canManageSettings: boolean
 }
 
-export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs, canManageSettings }: Props) {
+export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, canViewAuditLogs, canManageSettings }: Props) {
+  const searchParams = useSearchParams()
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
@@ -93,6 +96,7 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
   const canSeeUsers = isOwner || canManageUsers
   const canSeeAudit = isOwner || canViewAuditLogs
   const canManageBulkRecovery = isOwner || role === "ADMIN"
+  const shouldEditTemporaryPin = searchParams.get("editar-pin") === "1"
 
   useEffect(() => {
     getSettings().then((s) => {
@@ -726,7 +730,14 @@ export function SettingsClient({ isOwner, role, canManageUsers, canViewAuditLogs
 
       <InventoryRecoveryCard canManage={canManageBulkRecovery} />
 
-      {canSeeUsers && <UsersTab isOwner={isOwner} canManageUsers={canSeeUsers} />}
+      {canSeeUsers && (
+        <UsersTab
+          currentUserId={currentUserId}
+          isOwner={isOwner}
+          canManageUsers={canSeeUsers}
+          openCurrentUserEditor={shouldEditTemporaryPin}
+        />
+      )}
       {canSeeAudit && (
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="audit-log">

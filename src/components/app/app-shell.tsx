@@ -618,9 +618,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
                       <div className="hidden md:flex flex-col items-start">
                         <span className="text-sm font-medium">{user.name}</span>
                         <span className="text-xs text-muted-foreground">@{user.username}</span>
-                        {user.email ? (
-                          <span className="max-w-[220px] truncate text-[11px] text-muted-foreground">{user.email}</span>
-                        ) : null}
+                        {/* El header mide 56 px: el correo se muestra dentro del menú para evitar que una tercera línea se desborde. */}
                       </div>
                     </Button>
                   </DropdownMenuTrigger>
@@ -652,7 +650,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
           {user?.hasTemporaryPin && pathname === "/dashboard" ? (
             <div className="mx-4 mt-4 flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:mx-6 sm:flex-row sm:items-center sm:justify-between dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
               <span>Tu PIN temporal es 1234. Cámbialo aquí cuando quieras.</span>
-              <Link href="/settings" className="font-medium underline underline-offset-4">Cambiar PIN</Link>
+              <Link href="/settings?editar-pin=1" className="font-medium underline underline-offset-4">Cambiar PIN</Link>
             </div>
           ) : null}
           </div>

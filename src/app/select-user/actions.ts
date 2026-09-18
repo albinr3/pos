@@ -230,6 +230,21 @@ export async function createInitialOwner(formData: FormData) {
     const token = await createSubUserSession(account.id, result.owner.id)
     await setSubUserSessionCookie(token)
 
+    if (result.created) {
+      // Se ejecuta después del commit: así nunca se anuncia una cuenta que aún
+      // no ha terminado la configuración inicial ni se bloquea su acceso si falla el push.
+      try {
+        const { notifyNewAccountRegistered } = await import("@/lib/super-admin-notifications")
+        await notifyNewAccountRegistered({
+          accountId: account.id,
+          accountName: businessName,
+          ownerEmail: email,
+        })
+      } catch (notificationError) {
+        console.error("[Initial activation] No se pudo enviar el aviso de nuevo cliente", notificationError)
+      }
+    }
+
     if (result.created && result.subscription) {
       await logAuditEvent({
         accountId: account.id,

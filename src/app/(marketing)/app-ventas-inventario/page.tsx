@@ -18,26 +18,26 @@ import {
 
 const appDownloadUrl = "https://pub-db000bf677ef4b89aebfffa3aea14be3.r2.dev/apk_movo/movo-release.apk"
 
+// SEO: Título y metadatos alineados con las consultas reales de mayor volumen e impresiones en Google Search Console
+// (app punto de venta, punto de venta para celular, control de ventas para celular, registrar ventas).
 export const metadata: Metadata = {
-  title: "App para Ventas, Facturación e Inventario",
+  title: "App Punto de Venta para Celular: Control de Ventas e Inventario | MOVOPos",
   description:
-    "Usa MOVOPos como app para ventas, facturación e inventario desde Android. Registra ventas, controla productos, factura en RD$ y administra tu negocio desde el celular.",
+    "App punto de venta para celular y tablet Android. Registra ventas diarias, controla inventario y administra tu negocio sin complicaciones. Descarga gratis el APK.",
   keywords: [
+    "app punto de venta",
+    "punto de venta para celular",
+    "control de ventas para celular",
+    "registrar ventas para celular",
+    "app para registrar ventas",
+    "punto de venta android",
+    "punto de venta apk",
+    "punto de venta gratis para celular",
+    "app ventas e inventario gratis",
     "app para ventas e inventario",
-    "app para ventas",
     "app de inventario",
     "app para inventario y ventas",
-    "app para facturacion e inventario",
-    "app control de inventario",
-    "app para registrar ventas",
-    "app para administrar negocio",
-    "app para tiendas",
-    "app para negocios",
-    "punto de venta para celular",
-    "punto de venta para tablet",
-    "sistema pos tablet",
     "sistema movil pos",
-    "aplicacion de facturacion",
     "aplicacion para punto de venta",
     "control de stock app",
     "inventario app",
@@ -46,21 +46,21 @@ export const metadata: Metadata = {
     canonical: "/app-ventas-inventario",
   },
   openGraph: {
-    title: "App para Ventas, Facturación e Inventario | MOVOPos",
+    title: "App Punto de Venta para Celular: Control de Ventas e Inventario | MOVOPos",
     description:
-      "Registra ventas, controla inventario, factura en RD$ y administra tu negocio desde una app Android para celulares y tablets.",
+      "Registra ventas diarias, controla inventario y administra tu negocio desde una app Android para celulares y tablets. Funciona con y sin internet.",
     url: "/app-ventas-inventario",
     images: [
       {
         url: "/pos-mobile-app-mockup.png",
         width: 1200,
         height: 630,
-        alt: "App MOVOPos para ventas, facturación e inventario",
+        alt: "App Punto de Venta para Celular MOVOPos en Android",
       },
     ],
   },
   twitter: {
-    title: "App para Ventas, Facturación e Inventario | MOVOPos",
+    title: "App Punto de Venta para Celular: Control de Ventas e Inventario | MOVOPos",
     description:
       "Controla ventas, productos, inventario, facturas y reportes desde una app Android hecha para negocios en República Dominicana.",
     images: ["/pos-mobile-app-mockup.png"],
@@ -70,11 +70,11 @@ export const metadata: Metadata = {
 const softwareJsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  name: "MOVOPos App para Ventas, Facturación e Inventario",
+  name: "MOVOPos - App Punto de Venta para Celular (Android APK)",
   operatingSystem: "ANDROID",
   applicationCategory: "BusinessApplication",
   keywords:
-    "app para ventas e inventario, app para ventas, app de inventario, app para facturacion e inventario, punto de venta para celular, punto de venta para tablet, sistema movil pos, aplicacion de facturacion, control de stock app",
+    "app punto de venta, punto de venta para celular, control de ventas para celular, registrar ventas para celular, punto de venta android, app ventas e inventario",
   downloadUrl: appDownloadUrl,
   offers: {
     "@type": "Offer",
@@ -82,44 +82,39 @@ const softwareJsonLd = {
     priceCurrency: "DOP",
   },
   description:
-    "Aplicación Android para ventas, facturación e inventario en República Dominicana. Permite registrar ventas, controlar stock, facturar en RD$ y trabajar desde celular o tablet.",
+    "Aplicación Android punto de venta para celular y tablet en República Dominicana. Registra ventas diarias, controla inventario, factura en RD$ y funciona offline.",
 }
 
 const faqItems = [
   {
-    question: "¿MOVOPos es una app para ventas e inventario?",
+    question: "¿MOVOPos es una app punto de venta para celular?",
     answer:
-      "Sí. MOVOPos funciona como app para ventas e inventario porque permite registrar ventas, controlar productos, revisar stock y consultar reportes desde Android.",
+      "Sí. MOVOPos funciona como app punto de venta para celular y tablet Android: permite registrar ventas diarias, cobrar con distintos métodos de pago, controlar inventario y consultar reportes de caja en tiempo real.",
   },
   {
-    question: "¿Puedo usar la app para facturar desde el celular?",
+    question: "¿Cómo registrar ventas para celular sin internet?",
     answer:
-      "Sí. Puedes usar MOVOPos como aplicación de facturación desde el celular para emitir ventas y facturas en RD$.",
+      "La app cuenta con modo offline: te permite seguir cobrando y registrando ventas aunque no tengas conexión o se vaya la luz. Al recuperar internet, toda la información se sincroniza automáticamente con la nube.",
+  },
+  {
+    question: "¿Puedo controlar inventario y stock desde el celular?",
+    answer:
+      "Sí. La app de inventario descuenta existencias con cada venta, te muestra el stock disponible y te ayuda a saber qué productos necesitan reposición inmediata.",
+  },
+  {
+    question: "¿Cómo descargo e instalo el punto de venta APK en Android?",
+    answer:
+      "Descarga el archivo APK directamente desde esta página, activa el permiso para instalar aplicaciones desde el navegador en tu celular Android y entra con tu cuenta para comenzar a vender.",
+  },
+  {
+    question: "¿Sirve para colmados, minimarkets y tiendas en República Dominicana?",
+    answer:
+      "Sí. MOVOPos está pensada especialmente para colmados, minimarkets, tiendas de ropa, ferreterías y pequeños negocios que quieren facturar en RD$ y dejar atrás las libretas y hojas sueltas.",
   },
   {
     question: "¿La app funciona en tablet Android?",
     answer:
-      "Sí. MOVOPos puede usarse como punto de venta para celular y como sistema POS tablet en dispositivos Android.",
-  },
-  {
-    question: "¿Puedo controlar inventario desde la app?",
-    answer:
-      "Sí. La app de inventario permite controlar productos, existencias, movimientos de stock y ventas relacionadas con cada producto.",
-  },
-  {
-    question: "¿Sirve para tiendas y pequeños negocios?",
-    answer:
-      "Sí. MOVOPos es una app para tiendas, negocios y emprendedores que necesitan administrar ventas, facturación, inventario y reportes.",
-  },
-  {
-    question: "¿Funciona sin internet?",
-    answer:
-      "Sí. La app permite vender y facturar cuando la conexión falle, y luego sincroniza la información al recuperar internet.",
-  },
-  {
-    question: "¿Cómo instalo la app en Android?",
-    answer:
-      "Descarga el APK desde esta página, permite la instalación desde el navegador o gestor de archivos y abre MOVOPos con tu cuenta.",
+      "Sí. MOVOPos puede usarse tanto como punto de venta para celular como sistema POS tablet en cualquier dispositivo Android.",
   },
 ]
 
@@ -138,27 +133,27 @@ const faqJsonLd = {
 
 const appUses = [
   {
-    title: "Registrar ventas desde el celular",
+    title: "Registrar ventas para celular",
     description:
-      "Vende rápido, cobra con distintos métodos de pago y registra cada operación desde una app para registrar ventas en tu negocio.",
+      "Vende rápido, cobra con distintos métodos de pago y lleva el registro de ventas diarias desde una app fácil de usar en tu celular o tablet.",
     icon: ShoppingCart,
   },
   {
-    title: "Controlar inventario en tiempo real",
+    title: "Control de ventas e inventario",
     description:
-      "Consulta productos, existencias, entradas, salidas y movimientos para mantener tu inventario app actualizado.",
+      "Consulta productos, existencias en tiempo real, entradas, salidas y movimientos para mantener tu inventario y stock siempre al día.",
     icon: PackageCheck,
   },
   {
-    title: "Facturar en RD$",
+    title: "Punto de venta móvil y facturación",
     description:
-      "Usa una aplicación de facturación para emitir ventas y facturas en pesos dominicanos desde Android.",
+      "Usa tu celular o tablet como punto de venta móvil para emitir tickets y facturas en RD$ en el mostrador o en la calle.",
     icon: ReceiptText,
   },
   {
-    title: "Revisar reportes del negocio",
+    title: "Control de caja y reportes diarios",
     description:
-      "Analiza ventas, caja, productos y resultados para administrar mejor tu negocio desde el celular o tablet.",
+      "Cierra caja, revisa ganancias y analiza ventas de productos para administrar mejor tu negocio sin depender de libretas.",
     icon: BarChart3,
   },
 ]
@@ -220,15 +215,15 @@ export default function AppMovilPage() {
               <div className="space-y-4">
                 <div className="inline-flex items-center rounded-lg bg-violet-100 px-3 py-1 text-sm font-medium text-violet-800">
                   <Smartphone className="mr-2 h-4 w-4" />
-                  App para Android
+                  App Punto de Venta Android
                 </div>
                 <h1 className="text-4xl font-extrabold tracking-tight text-slate-950 sm:text-5xl xl:text-6xl/none">
-                  App para ventas, facturación e inventario desde tu celular
+                  App Punto de Venta para Celular: Control de Ventas e Inventario Android
                 </h1>
                 <p className="max-w-[650px] text-lg leading-8 text-slate-600 sm:text-xl">
-                  Controla ventas, productos, inventario, facturas y reportes desde una app
-                  Android hecha para negocios en República Dominicana. Vende desde tu celular o
-                  tablet, incluso cuando la conexión falle.
+                  Controla ventas, existencias de inventario, productos y cobros desde una app punto
+                  de venta para celular hecha para negocios en República Dominicana. Registra ventas
+                  diarias y administra tu caja desde Android, con o sin internet.
                 </p>
               </div>
 
@@ -344,11 +339,11 @@ export default function AppMovilPage() {
         <div className="container px-4 md:px-6">
           <div className="mx-auto mb-12 max-w-3xl text-center">
             <h2 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
-              Una app para administrar ventas, inventario y facturación
+              Control de ventas para celular y gestión de inventario
             </h2>
             <p className="mt-4 text-lg leading-8 text-slate-600">
-              MOVOPos centraliza las tareas diarias de una app para administrar negocio: vender,
-              facturar, controlar productos y revisar resultados desde Android.
+              MOVOPos centraliza las tareas diarias de una app para registrar ventas y administrar tu
+              negocio: vender rápido, controlar existencias de stock y revisar resultados desde Android.
             </p>
           </div>
 
@@ -461,7 +456,7 @@ export default function AppMovilPage() {
         <div className="container px-4 md:px-6">
           <div className="mx-auto max-w-5xl">
             <h2 className="mb-12 text-center text-3xl font-bold text-slate-950">
-              Preguntas frecuentes sobre la app para ventas e inventario
+              Preguntas frecuentes sobre el punto de venta para celular e inventario
             </h2>
             <div className="grid gap-6 md:grid-cols-2">
               {faqItems.map((item) => (
