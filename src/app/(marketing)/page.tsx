@@ -13,6 +13,7 @@ import { PricingCard } from "@/components/marketing/pricing-card"
 import { Button } from "@/components/ui/button"
 import { getOrCreateAccount, hasClerkSession, isInitialSetupComplete } from "@/lib/auth"
 import { redirect } from "next/navigation"
+import { siteUrl } from "@/lib/site-url"
 
 const homeSeoDescription =
   "Sistema POS en República Dominicana para facturar, vender y controlar inventario. Maneja caja, clientes, cuentas por cobrar y reportes. Prueba gratis 15 días."
@@ -51,15 +52,15 @@ const jsonLd = [
     "@context": "https://schema.org",
     "@type": "Organization",
     name: "MOVOPos",
-    url: "https://movopos.com/",
-    logo: "https://movopos.com/movoLogo.png",
-    sameAs: ["https://movopos.com"],
+    url: `${siteUrl}/`,
+    logo: `${siteUrl}/movoLogo.png`,
+    sameAs: [siteUrl],
   },
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
     name: "Sistema POS en República Dominicana | Facturación e Inventario | MOVOPos",
-    url: "https://movopos.com/",
+    url: `${siteUrl}/`,
     description:
       "Sistema POS en República Dominicana para facturar, vender y controlar inventario con caja, clientes, cuentas por cobrar y reportes.",
   },

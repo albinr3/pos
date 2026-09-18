@@ -6,6 +6,7 @@ import Script from "next/script";
 import { Suspense } from "react";
 import { MetaPixelProvider } from "@/components/analytics/meta-pixel-provider";
 import { ServiceWorkerRegistrar } from "@/components/app/service-worker-registrar";
+import { siteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 const geistSans = localFont({
@@ -26,7 +27,6 @@ const geistMono = localFont({
   variable: "--font-geist-mono",
 });
 
-const siteUrl = "https://movopos.com";
 const GA_MEASUREMENT_ID = process.env.NEXT_PUBLIC_GA_ID;
 const GOOGLE_ADS_ID = "AW-740730125";
 const GTAG_LOADER_ID = GA_MEASUREMENT_ID ?? GOOGLE_ADS_ID;

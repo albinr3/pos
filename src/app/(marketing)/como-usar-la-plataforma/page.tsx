@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 
 import { TutorialVideoHub } from "@/components/marketing/tutorial-video-hub"
 import { getPublishedTutorialLibrary } from "@/lib/tutorial-library"
+import { siteUrl } from "@/lib/site-url"
 
 export const dynamic = "force-dynamic"
 
@@ -32,7 +33,7 @@ export default async function HowToUsePlatformPage() {
       "@context": "https://schema.org",
       "@type": "WebPage",
       name: "Como usar la plataforma | Tutoriales MOVOPos",
-      url: "https://movopos.com/como-usar-la-plataforma",
+      url: `${siteUrl}/como-usar-la-plataforma`,
       description:
         "Centro de tutoriales y soporte visual para aprender a usar MOVOPos paso a paso.",
     },
@@ -44,7 +45,7 @@ export default async function HowToUsePlatformPage() {
         position: index + 1,
         name: video.title,
         description: video.description,
-        url: `https://movopos.com/como-usar-la-plataforma#${video.slug}`,
+        url: `${siteUrl}/como-usar-la-plataforma#${video.slug}`,
       })),
     },
   ]

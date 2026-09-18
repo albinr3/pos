@@ -3,6 +3,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeft, CalendarDays, Clock, ExternalLink, UserRound } from "lucide-react"
+import { siteUrl } from "@/lib/site-url"
 
 import {
   blogPosts,
@@ -12,8 +13,6 @@ import {
   type BlogImage,
   type BlogInlineContent,
 } from "@/lib/blog"
-
-const siteUrl = "https://movopos.com"
 
 export const dynamicParams = false
 

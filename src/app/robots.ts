@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next"
-
-const siteUrl = "https://movopos.com"
+import { siteUrl } from "@/lib/site-url"
 
 export default function robots(): MetadataRoute.Robots {
   return {

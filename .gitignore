@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# Cache local de auditorías SEO; contiene hallazgos efímeros y no debe versionarse.
+.seo-cache/
+
 # production
 /build
 

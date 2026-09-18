@@ -34,7 +34,10 @@ export const billingAllowedRoutes = [
 export default clerkMiddleware(async (auth, req) => {
   if (req.nextUrl.pathname === "/pricing" || req.nextUrl.pathname === "/pricing/") {
     // Mantener 301 explícito para preservar posicionamiento histórico hacia la URL canónica.
-    return NextResponse.redirect(new URL("/precios", req.url), 301)
+    // Clonar la URL conserva UTM y otros parámetros: construir solo /precios los descartaba.
+    const destination = req.nextUrl.clone()
+    destination.pathname = "/precios"
+    return NextResponse.redirect(destination, 301)
   }
 
   if (process.env.NODE_ENV === "development" && req.nextUrl.pathname.startsWith("/billing")) {

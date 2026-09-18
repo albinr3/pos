@@ -9,7 +9,8 @@ Este archivo adapta el flujo copiado a MOVOPos. No usar rutas, nombres ni compon
 - Blog post route: `src/app/(marketing)/blog/[slug]/page.tsx`.
 - Datos de posts: `src/content/blog`.
 - Tipos y categorías: `src/lib/blog.ts`.
-- Sitio público: `https://movopos.com`.
+- Sitio público: `https://www.movopos.com`.
+- Origen compartido: importar `siteUrl` desde `@/lib/site-url` para URLs públicas absolutas. Mantener los canonical relativos y no volver a declarar otro dominio en las plantillas: deben coincidir con el destino configurado en Vercel.
 - Idioma: español dominicano claro.
 
 ## No copiar del proyecto original

@@ -8,8 +8,8 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { blogCategories, blogPosts } from "@/lib/blog"
+import { siteUrl } from "@/lib/site-url"
 
-const siteUrl = "https://movopos.com"
 const blogPath = "/blog"
 const blogUrl = `${siteUrl}${blogPath}`
 const blogSeoTitle = "Blog sobre POS, Facturación e Inventario en RD"
