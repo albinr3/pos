@@ -21,6 +21,7 @@ import {
   Package,
   ShoppingCart,
   Send,
+  Smartphone,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -93,7 +94,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
   const [kapsoTemplateName, setKapsoTemplateName] = useState("hello_world")
   const [kapsoLanguageCode, setKapsoLanguageCode] = useState("en_US")
   const [sendingKapso, setSendingKapso] = useState(false)
-  const { kpis, activation, recentAccounts, pendingPayments } = data
+  const { kpis, mobileInstallations, activation, recentAccounts, pendingPayments } = data
 
   const handleApprove = async (paymentId: string) => {
     setLoadingPayment(paymentId)
@@ -238,6 +239,46 @@ export function DashboardClient({ data }: { data: DashboardData }) {
             <p className="text-xs text-muted-foreground">
               {formatMoney(kpis.pendingPaymentsAmount, "DOP")} por verificar
             </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold">Instalaciones móviles</h2>
+        <p className="text-sm text-muted-foreground">Actividad medida desde el despliegue de esta funcionalidad.</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Históricas</CardTitle>
+            <Smartphone className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{mobileInstallations.historicalTotal}</div>
+            <p className="text-xs text-muted-foreground">Instalaciones únicas registradas</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Activas</CardTitle>
+            <CheckCircle className="h-4 w-4 text-green-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">{mobileInstallations.activeLast30Days}</div>
+            <p className="text-xs text-muted-foreground">Vistas en los últimos 30 días</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Nuevas este mes</CardTitle>
+            <TrendingUp className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-600">{mobileInstallations.newThisMonth}</div>
+            <p className="text-xs text-muted-foreground">Primer reporte de instalación</p>
           </CardContent>
         </Card>
       </div>

@@ -57,6 +57,11 @@ export type PendingPayment = {
 
 export type DashboardData = {
   kpis: DashboardKPIs
+  mobileInstallations: {
+    historicalTotal: number
+    activeLast30Days: number
+    newThisMonth: number
+  }
   activation: {
     accountsWithoutProducts: number
     accountsWithProductsNoSales: number
@@ -79,6 +84,14 @@ export async function getDashboardData(): Promise<DashboardData> {
   const startOfWeek = new Date(startOfToday)
   startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay())
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+  const activeInstallationSince = new Date(now)
+  activeInstallationSince.setDate(activeInstallationSince.getDate() - 30)
+
+  const [historicalTotal, activeLast30Days, newInstallationsThisMonth] = await Promise.all([
+    prisma.mobileInstallation.count(),
+    prisma.mobileInstallation.count({ where: { lastSeenAt: { gte: activeInstallationSince } } }),
+    prisma.mobileInstallation.count({ where: { firstSeenAt: { gte: startOfMonth } } }),
+  ])
 
   // Obtener todas las suscripciones con cuenta
   const subscriptions = await prisma.billingSubscription.findMany({
@@ -269,6 +282,11 @@ export async function getDashboardData(): Promise<DashboardData> {
       newAccountsToday,
       newAccountsThisWeek,
       newAccountsThisMonth,
+    },
+    mobileInstallations: {
+      historicalTotal,
+      activeLast30Days,
+      newThisMonth: newInstallationsThisMonth,
     },
     activation: {
       accountsWithoutProducts,

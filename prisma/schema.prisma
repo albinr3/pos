@@ -1126,6 +1126,23 @@ model PushNotificationLog {
   @@index([type, sentForDate])
 }
 
+// Registro anónimo por instalación de la aplicación móvil. No se vincula a cuentas,
+// usuarios ni tokens push porque también debe medir aperturas antes del registro.
+model MobileInstallation {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  installationId String   @unique
+  platform       String
+  appVersion     String
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+
+  @@index([firstSeenAt])
+  @@index([lastSeenAt])
+  @@index([platform])
+}
+
 // ==========================================
 // AUDIT LOG
 // ==========================================
