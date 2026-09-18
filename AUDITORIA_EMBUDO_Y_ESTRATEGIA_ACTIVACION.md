@@ -1,6 +1,7 @@
 # Auditoría del Embudo de Conversión y Estrategia de Activación — MOVOPos
 
-**Fecha de la Línea Base:** 04 de septiembre de 2026  
+**Fecha de aplicación de la estrategia:** 16 de julio de 2026  
+**Criterio de medición:** A partir del 16 de julio de 2026 se medirán los cambios, resultados y métricas de activación generados por esta estrategia.  
 **Periodo Evaluado:** 12 de mayo de 2026 – 04 de septiembre de 2026 (~3.8 meses)  
 **Metodología:** Diagnóstico y Money Models inspirados en Alex Hormozi (*$100M Offers*, *$100M Leads*, *$100M Money Models*).
 

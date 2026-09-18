@@ -36,6 +36,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SuperAdminNotificationsDropdown } from "./super-admin-notifications-dropdown"
+import { WebPushControl } from "./web-push-control"
 
 type NavItem = {
   href: string
@@ -205,6 +206,7 @@ export function SuperAdminShell({
 
               <div className="ml-auto flex items-center gap-3">
                 <ThemeToggle />
+                {admin.role === "OWNER" && <WebPushControl />}
                 <SuperAdminNotificationsDropdown />
 
                 {/* Admin dropdown */}

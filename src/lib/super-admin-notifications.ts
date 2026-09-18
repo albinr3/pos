@@ -48,6 +48,7 @@ function filterVisibleTypes(admin: SuperAdminUser): NotificationType[] {
     "CARD_PAYMENT_FAILED",
     "ERROR_HIGH",
     "ERROR_CRITICAL",
+    "NEW_ACCOUNT_REGISTERED",
   ]
   return allTypes.filter((type) => canSeeNotificationType(admin, type))
 }
@@ -218,4 +219,53 @@ export async function notifyHighOrCriticalError(input: {
       code: input.code ?? null,
     },
   })
+}
+
+/**
+ * Registra una sola alerta por cuenta. El resultado `created` impide que los
+ * reintentos firmados de Clerk produzcan una segunda notificación Web Push.
+ */
+export async function notifyNewAccountRegistered(input: {
+  accountId: string
+  accountName: string
+  ownerEmail: string | null
+}) {
+  try {
+    await prisma.superAdminNotification.create({
+      data: {
+        type: "NEW_ACCOUNT_REGISTERED",
+        sourceId: input.accountId,
+        href: `/super-admin/accounts/${input.accountId}`,
+        title: "Nuevo cliente registrado",
+        message: `${input.accountName} · ${input.ownerEmail || "Sin email registrado"}`,
+        metadata: {
+          accountId: input.accountId,
+          accountName: input.accountName,
+          ownerEmail: input.ownerEmail,
+        },
+      },
+    })
+
+    try {
+      const { sendNewAccountWebPush } = await import("@/lib/super-admin-web-push")
+      await sendNewAccountWebPush(input)
+    } catch (pushError) {
+      // El registro del cliente ya se confirmó; un proveedor push no puede revertirlo.
+      console.error("[SuperAdminNotifications] new-account push error:", pushError)
+    }
+
+    return { created: true }
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "P2002"
+    ) {
+      return { created: false }
+    }
+
+    console.error("[SuperAdminNotifications] new-account create error:", error)
+    return { created: false }
+  }
 }

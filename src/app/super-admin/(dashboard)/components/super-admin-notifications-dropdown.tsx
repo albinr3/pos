@@ -7,6 +7,7 @@ import { es } from "date-fns/locale"
 import {
   AlertTriangle,
   Bell,
+  Building2,
   CheckCircle2,
   CreditCard,
   Landmark,
@@ -48,6 +49,8 @@ function getTypeIcon(type: NotificationType) {
       return <AlertTriangle className="h-4 w-4 text-orange-600" />
     case "ERROR_CRITICAL":
       return <AlertTriangle className="h-4 w-4 text-red-600" />
+    case "NEW_ACCOUNT_REGISTERED":
+      return <Building2 className="h-4 w-4 text-blue-600" />
     default:
       return <Bell className="h-4 w-4 text-muted-foreground" />
   }

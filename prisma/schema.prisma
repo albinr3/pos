@@ -1656,6 +1656,7 @@ enum SuperAdminNotificationType {
   CARD_PAYMENT_FAILED
   ERROR_HIGH
   ERROR_CRITICAL
+  NEW_ACCOUNT_REGISTERED
 }
 
 model SuperAdmin {
@@ -1681,9 +1682,31 @@ model SuperAdmin {
 
   auditLogs SuperAdminAuditLog[]
   notificationsRead SuperAdminNotification[] @relation("NotificationReadBy")
+  webPushSubscriptions SuperAdminWebPushSubscription[]
 
   @@index([email])
   @@index([isActive])
+}
+
+// Suscripciones Web Push del panel interno. Solo una se mantiene activa para
+// que las alertas operativas lleguen al celular elegido por el OWNER.
+model SuperAdminWebPushSubscription {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  superAdminId String
+  superAdmin   SuperAdmin @relation(fields: [superAdminId], references: [id], onDelete: Cascade)
+
+  endpoint String @unique
+  p256dh   String
+  auth     String
+  userAgent String?
+  enabled  Boolean @default(true)
+  lastSeenAt DateTime @default(now())
+
+  @@index([superAdminId])
+  @@index([enabled])
 }
 
 // ==========================================

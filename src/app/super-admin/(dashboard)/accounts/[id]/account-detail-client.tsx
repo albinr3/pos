@@ -30,6 +30,7 @@ import {
   Trash2,
   Key,
   Search,
+  MessageCircle,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -257,6 +258,8 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
   const router = useRouter()
   const { toast } = useToast()
   const accountPhone = account.companyPhone || account.billingPhone || null
+  const whatsappDigits = accountPhone?.replace(/\D/g, "") || ""
+  const whatsappUrl = whatsappDigits ? `https://wa.me/${whatsappDigits}` : null
   const [isLoading, setIsLoading] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [showStatusDialog, setShowStatusDialog] = useState(false)
@@ -695,8 +698,27 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                   <p className="text-sm text-muted-foreground">Teléfono</p>
                   <div className="flex items-center gap-2">
                     <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{accountPhone || "No registrado"}</span>
+                    <span>{accountPhone || "WhatsApp pendiente"}</span>
                   </div>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Email</p>
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span>{account.ownerEmail || "No registrado"}</span>
+                  </div>
+                </div>
+                <div className="md:col-span-2">
+                  {whatsappUrl ? (
+                    <Button asChild variant="outline" size="sm">
+                      <a href={whatsappUrl} target="_blank" rel="noreferrer">
+                        <MessageCircle className="mr-2 h-4 w-4 text-green-600" />
+                        Contactar por WhatsApp
+                      </a>
+                    </Button>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">El cliente todavía no ha registrado un número con WhatsApp.</p>
+                  )}
                 </div>
                 {account.companyAddress && (
                   <div className="flex items-center gap-2 md:col-span-2">
