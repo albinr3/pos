@@ -1,7 +1,8 @@
 "use client"
 
-const DB_NAME = "tejada-pos-offline"
-const DB_VERSION = 3
+const DB_NAME = "movopos-offline"
+const LEGACY_DB_NAME = "tejada-pos-offline"
+const DB_VERSION = 4
 
 // Store names
 const STORES = {
@@ -11,7 +12,19 @@ const STORES = {
   PRODUCTS_CACHE: "productsCache",
   CUSTOMERS_CACHE: "customersCache",
   AR_CACHE: "arCache",
+  MIGRATION_META: "migrationMeta",
 } as const
+
+const DATA_STORES = [
+  STORES.PENDING_SALES,
+  STORES.PENDING_PAYMENTS,
+  STORES.PENDING_BATCH_PAYMENTS,
+  STORES.PRODUCTS_CACHE,
+  STORES.CUSTOMERS_CACHE,
+  STORES.AR_CACHE,
+] as const
+
+const LEGACY_MIGRATION_KEY = "legacy-brand-storage-v1"
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -23,15 +36,15 @@ function waitForTransaction(tx: IDBTransaction): Promise<void> {
   })
 }
 
-function openDB(): Promise<IDBDatabase> {
-  if (dbPromise) return dbPromise
+function requestResult<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error("Error en IndexedDB"))
+  })
+}
 
-  dbPromise = new Promise((resolve, reject) => {
-    if (typeof window === "undefined" || !window.indexedDB) {
-      reject(new Error("IndexedDB no está disponible"))
-      return
-    }
-
+function openCurrentDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
 
     request.onerror = () => reject(request.error)
@@ -87,6 +100,10 @@ function openDB(): Promise<IDBDatabase> {
         arStore.createIndex("saleId", "saleId", { unique: true })
       }
 
+      if (!db.objectStoreNames.contains(STORES.MIGRATION_META)) {
+        db.createObjectStore(STORES.MIGRATION_META, { keyPath: "key" })
+      }
+
       if (oldVersion < 2) {
         // Limpiar estructuras legacy para forzar cache y pendientes con el nuevo shape.
         if (db.objectStoreNames.contains(STORES.PENDING_SALES)) {
@@ -98,6 +115,71 @@ function openDB(): Promise<IDBDatabase> {
       }
     }
   })
+}
+
+async function legacyDatabaseExists() {
+  // No abrir la base anterior si no existe: hacerlo la crearía vacía en instalaciones nuevas.
+  if (typeof indexedDB.databases !== "function") return false
+  const databases = await indexedDB.databases()
+  return databases.some((database) => database.name === LEGACY_DB_NAME)
+}
+
+async function readLegacyRecords() {
+  const legacyDb = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(LEGACY_DB_NAME)
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error("No se pudo abrir la base anterior"))
+  })
+
+  try {
+    const availableStores = DATA_STORES.filter((store) => legacyDb.objectStoreNames.contains(store))
+    if (availableStores.length === 0) return new Map<string, unknown[]>()
+
+    const transaction = legacyDb.transaction(availableStores, "readonly")
+    const records = await Promise.all(
+      availableStores.map(async (store) => [store, await requestResult(transaction.objectStore(store).getAll())] as const),
+    )
+    await waitForTransaction(transaction)
+    return new Map(records)
+  } finally {
+    legacyDb.close()
+  }
+}
+
+async function migrateLegacyDatabase(db: IDBDatabase) {
+  const checkTransaction = db.transaction(STORES.MIGRATION_META, "readonly")
+  const previousMigration = await requestResult(
+    checkTransaction.objectStore(STORES.MIGRATION_META).get(LEGACY_MIGRATION_KEY),
+  )
+  await waitForTransaction(checkTransaction)
+  if (previousMigration) return
+
+  const records = (await legacyDatabaseExists()) ? await readLegacyRecords() : new Map<string, unknown[]>()
+  const transaction = db.transaction([...DATA_STORES, STORES.MIGRATION_META], "readwrite")
+
+  for (const [store, items] of records) {
+    const targetStore = transaction.objectStore(store)
+    for (const item of items) targetStore.put(item)
+  }
+
+  // Comentario preventivo: marcamos la migración solo tras copiar los pendientes. Así una venta
+  // sin conexión no se pierde ni se vuelve a restaurar después de que el usuario la haya enviado.
+  transaction.objectStore(STORES.MIGRATION_META).put({ key: LEGACY_MIGRATION_KEY, completedAt: Date.now() })
+  await waitForTransaction(transaction)
+}
+
+function openDB(): Promise<IDBDatabase> {
+  if (dbPromise) return dbPromise
+
+  dbPromise = (async () => {
+    if (typeof window === "undefined" || !window.indexedDB) {
+      throw new Error("IndexedDB no está disponible")
+    }
+
+    const db = await openCurrentDatabase()
+    await migrateLegacyDatabase(db)
+    return db
+  })()
 
   return dbPromise
 }
@@ -457,7 +539,7 @@ export async function clearAllCache() {
   
   // También limpiar el timestamp de última sincronización
   if (typeof window !== "undefined") {
-    localStorage.removeItem("tejada-pos-cache-sync")
+    localStorage.removeItem("movopos-cache-sync")
   }
 }
 

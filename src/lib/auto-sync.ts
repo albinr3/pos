@@ -9,8 +9,9 @@ import {
   saveCustomersCache,
   saveARCache,
 } from "./indexed-db"
+import { clientStorageKeys, getMigratedLocalStorageItem, legacyStorageKey } from "./client-storage"
 
-const CACHE_SYNC_KEY = "tejada-pos-cache-sync"
+const CACHE_SYNC_KEY = clientStorageKeys.cacheSync
 
 function formatDateKey(date: Date) {
   const year = date.getFullYear()
@@ -33,7 +34,7 @@ function parseLastSyncDay(raw: string | null) {
 async function shouldSyncCache(): Promise<boolean> {
   if (typeof window === "undefined") return false
   
-  const lastSyncRaw = localStorage.getItem(CACHE_SYNC_KEY)
+  const lastSyncRaw = getMigratedLocalStorageItem(CACHE_SYNC_KEY, legacyStorageKey("cacheSync"))
   const today = formatDateKey(new Date())
   const lastSyncDay = parseLastSyncDay(lastSyncRaw)
   if (!lastSyncDay || lastSyncDay !== today) return true

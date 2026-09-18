@@ -52,6 +52,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useOnlineStatus } from "@/hooks/use-online-status"
+import { clientStorageKeys, getMigratedLocalStorageItem, legacyStorageKey } from "@/lib/client-storage"
 
 const nav = [
   { href: "/sales", label: "Vender", icon: ShoppingCart },
@@ -78,7 +79,7 @@ const nav = [
 // Solo permitir ventas y cobros cuando la app detecta modo offline.
 const OFFLINE_ALLOWED_ROUTES = new Set(["/sales", "/ar"])
 
-const USER_CACHE_KEY = "tejada-pos-user"
+const USER_CACHE_KEY = clientStorageKeys.user
 const DISABLE_BACKUPS_NAV = true
 
 function canAccessNavItem(user: CurrentUser, href: string) {
@@ -124,7 +125,7 @@ function cacheUser(user: CurrentUser) {
 function getCachedUser(): CurrentUser | null {
   if (typeof window === "undefined") return null
   try {
-    const raw = localStorage.getItem(USER_CACHE_KEY)
+    const raw = getMigratedLocalStorageItem(USER_CACHE_KEY, legacyStorageKey("user"))
     if (!raw) return null
     return JSON.parse(raw) as CurrentUser
   } catch {

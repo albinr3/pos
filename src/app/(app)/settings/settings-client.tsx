@@ -36,8 +36,9 @@ import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { InventoryRecoveryCard } from "./inventory-recovery-card"
+import { clientStorageKeys, getMigratedLocalStorageItem, legacyStorageKey } from "@/lib/client-storage"
 
-const CACHE_SYNC_KEY = "tejada-pos-cache-sync"
+const CACHE_SYNC_KEY = clientStorageKeys.cacheSync
 
 function formatDateKey(date: Date) {
   const year = date.getFullYear()
@@ -126,7 +127,9 @@ export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, c
     const interval = setInterval(updatePendingCounts, 5000)
 
     if (typeof window !== "undefined") {
-      setLastPreloadDay(parseLastSyncDay(localStorage.getItem(CACHE_SYNC_KEY)))
+      setLastPreloadDay(
+        parseLastSyncDay(getMigratedLocalStorageItem(CACHE_SYNC_KEY, legacyStorageKey("cacheSync"))),
+      )
     }
 
     return () => clearInterval(interval)

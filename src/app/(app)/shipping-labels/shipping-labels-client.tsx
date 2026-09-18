@@ -230,7 +230,7 @@ export function ShippingLabelsClient() {
             <div className="grid gap-4">
               <div className="grid gap-2">
                 <Label>Remitente (quién envía) *</Label>
-                <Input value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Ej: Tejada Auto Adornos" />
+                <Input value={senderName} onChange={(e) => setSenderName(e.target.value)} placeholder="Ej: MovoPos" />
               </div>
               <div className="grid gap-2">
                 <Label>Teléfono del remitente</Label>

@@ -27,6 +27,7 @@ import { BarcodeLabel } from "@/components/app/barcode-label"
 import { ProductImageUpload } from "@/components/app/product-image-upload"
 import { OnboardingGuide, type OnboardingGuideStep } from "@/components/app/onboarding-guide"
 import type { CurrentUser } from "@/lib/auth"
+import { clientStorageKeys, getMigratedLocalStorageItem, legacyStorageKey } from "@/lib/client-storage"
 
 import {
   adjustManyStock,
@@ -77,7 +78,7 @@ const NONE_SUPPLIER_OPTION = "__none_supplier__"
 const NONE_CATEGORY_OPTION = "__none_category__"
 const CREATE_SUPPLIER_OPTION = "__create_supplier__"
 const CREATE_CATEGORY_OPTION = "__create_category__"
-const ONBOARDING_PROGRESS_KEY_PREFIX = "tejada-pos-onboarding-progress"
+const ONBOARDING_PROGRESS_KEY_PREFIX = clientStorageKeys.onboardingProgressPrefix
 
 const INVENTORY_TEMPLATE_HEADERS = [
   "nombre",
@@ -625,7 +626,10 @@ export function ProductsClient({
       return
     }
     try {
-      const raw = localStorage.getItem(progressKey)
+      const raw = getMigratedLocalStorageItem(
+        progressKey,
+        `${legacyStorageKey("onboardingProgressPrefix")}:${onboardingAccountId}`,
+      )
       if (!raw) {
         setResumeProductStepIndex(0)
         setHasSkippedProgress(false)

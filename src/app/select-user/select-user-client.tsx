@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { useToast } from "@/hooks/use-toast"
+import { clientStorageKeys, legacyStorageKey } from "@/lib/client-storage"
 
 import {
   loginSubUser,
@@ -56,8 +57,10 @@ function maskEmail(email: string) {
 function clearOnboardingSessionState() {
   try {
     const prefixes = [
-      "tejada-pos-onboarding-skip:",
-      "tejada-pos-onboarding-product-added:",
+      `${clientStorageKeys.onboardingSkipPrefix}:`,
+      `${clientStorageKeys.onboardingProductAddedPrefix}:`,
+      `${legacyStorageKey("onboardingSkipPrefix")}:`,
+      `${legacyStorageKey("onboardingProductAddedPrefix")}:`,
     ]
     for (const key of Object.keys(sessionStorage)) {
       if (prefixes.some((prefix) => key.startsWith(prefix))) {

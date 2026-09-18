@@ -54,7 +54,7 @@ export const metadata: Metadata = {
     "república dominicana",
     "control de ventas",
   ],
-  authors: [{ name: "Tejada Auto Adornos" }],
+  authors: [{ name: "MovoPos" }],
   icons: {
     icon: [
       { url: "/favicon.ico" },

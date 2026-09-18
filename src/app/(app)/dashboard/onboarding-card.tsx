@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { OnboardingGuide } from "@/components/app/onboarding-guide"
 import { cn } from "@/lib/utils"
+import { clientStorageKeys, getMigratedLocalStorageItem, getMigratedSessionStorageItem, legacyStorageKey } from "@/lib/client-storage"
 import { skipAccountOnboarding, type AccountOnboardingState } from "../onboarding/actions"
 
-const SKIP_KEY_PREFIX = "tejada-pos-onboarding-skip"
-const ONBOARDING_PROGRESS_KEY_PREFIX = "tejada-pos-onboarding-progress"
+const SKIP_KEY_PREFIX = clientStorageKeys.onboardingSkipPrefix
+const ONBOARDING_PROGRESS_KEY_PREFIX = clientStorageKeys.onboardingProgressPrefix
 
 function StepItem({ done, label }: { done: boolean; label: string }) {
   const Icon = done ? CheckCircle2 : Circle
@@ -44,7 +45,12 @@ export function OnboardingCard({
 
     const timer = window.setTimeout(() => {
       try {
-        setIsHidden(sessionStorage.getItem(skipKey) === "1")
+        setIsHidden(
+          getMigratedSessionStorageItem(
+            skipKey,
+            `${legacyStorageKey("onboardingSkipPrefix")}:${state.accountId}`,
+          ) === "1",
+        )
       } catch {
         setIsHidden(false)
       }
@@ -55,7 +61,10 @@ export function OnboardingCard({
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(progressKey)
+      const raw = getMigratedLocalStorageItem(
+        progressKey,
+        `${legacyStorageKey("onboardingProgressPrefix")}:${state.accountId}`,
+      )
       if (!raw) {
         setResumePath(null)
         setHasSkippedProgress(false)

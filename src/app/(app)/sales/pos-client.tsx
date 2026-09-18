@@ -47,6 +47,7 @@ import {
 } from "@/lib/indexed-db"
 
 import type { CurrentUser } from "@/lib/auth"
+import { clientStorageKeys, getMigratedLocalStorageItem, getMigratedSessionStorageItem, legacyStorageKey } from "@/lib/client-storage"
 
 import { createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode } from "./actions"
 import { listTreasuryAccounts } from "../treasury/actions"
@@ -91,10 +92,10 @@ type PaymentSplit = {
 
 type DiscountMode = "AUTO" | "MANUAL"
 
-const USER_CACHE_KEY = "tejada-pos-user"
-const POS_FORCE_RESET_KEY = "tejada-pos-force-reset-after-print"
+const USER_CACHE_KEY = clientStorageKeys.user
+const POS_FORCE_RESET_KEY = clientStorageKeys.posForceReset
 const CREATE_CUSTOMER_OPTION = "__create_customer__"
-const ONBOARDING_PROGRESS_KEY_PREFIX = "tejada-pos-onboarding-progress"
+const ONBOARDING_PROGRESS_KEY_PREFIX = clientStorageKeys.onboardingProgressPrefix
 
 function clampPercentInput(value: string) {
   const normalized = value.replace(",", ".").replace(/[^\d.]/g, "")
@@ -165,7 +166,7 @@ function cacheUser(user: CurrentUser) {
 function getCachedUser(): CurrentUser | null {
   if (typeof window === "undefined") return null
   try {
-    const raw = localStorage.getItem(USER_CACHE_KEY)
+    const raw = getMigratedLocalStorageItem(USER_CACHE_KEY, legacyStorageKey("user"))
     if (!raw) return null
     return JSON.parse(raw) as CurrentUser
   } catch {
@@ -269,7 +270,10 @@ export function PosClient({
       return
     }
     try {
-      const raw = localStorage.getItem(progressKey)
+      const raw = getMigratedLocalStorageItem(
+        progressKey,
+        `${legacyStorageKey("onboardingProgressPrefix")}:${onboardingAccountId}`,
+      )
       if (!raw) {
         setHasSkippedProgress(false)
         return
@@ -393,7 +397,7 @@ export function PosClient({
     if (typeof window === "undefined") return
 
     const resetIfNeeded = () => {
-      const shouldReset = sessionStorage.getItem(POS_FORCE_RESET_KEY) === "1"
+      const shouldReset = getMigratedSessionStorageItem(POS_FORCE_RESET_KEY, legacyStorageKey("posForceReset")) === "1"
       if (!shouldReset) return
       sessionStorage.removeItem(POS_FORCE_RESET_KEY)
       resetSaleFormState()

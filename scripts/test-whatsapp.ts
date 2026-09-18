@@ -23,7 +23,7 @@ type WhatsAppError = {
 };
 
 const DEFAULT_GRAPH_API_VERSION = "v25.0";
-const DEFAULT_TEST_MESSAGE = "Prueba de WhatsApp desde Tejada POS.";
+const DEFAULT_TEST_MESSAGE = "Prueba de WhatsApp desde MovoPos.";
 const DEFAULT_TEMPLATE_NAME = "hello_world";
 const DEFAULT_TEMPLATE_LANGUAGE = "en_US";
 
@@ -88,7 +88,7 @@ Prueba de WhatsApp Cloud API
 
 Uso:
   npm run whatsapp:test -- --to 584121234567
-  npm run whatsapp:test -- --to 584121234567 --mode text --message "Hola desde Tejada POS"
+  npm run whatsapp:test -- --to 584121234567 --mode text --message "Hola desde MovoPos"
 
 Variables requeridas:
   WHATSAPP_ACCESS_TOKEN

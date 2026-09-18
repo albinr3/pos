@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client"
 
 const prisma = new PrismaClient()
 
-// Productos de ejemplo para Tejada Auto Adornos
+// Productos de ejemplo para MovoPos
 const products = [
   {
     name: "Alfombra de goma para auto",

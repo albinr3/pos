@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import { skipAccountOnboarding } from "../onboarding/actions"
+import { clientStorageKeys } from "@/lib/client-storage"
 
 type ActivationStage = "SALE" | "PRODUCT"
 
@@ -20,7 +21,7 @@ export function OnboardingActivationModal({ stage, accountId }: { stage: Activat
     startTransition(async () => {
       await skipAccountOnboarding()
       try {
-        sessionStorage.setItem(`tejada-pos-onboarding-skip:${accountId}`, "1")
+        sessionStorage.setItem(`${clientStorageKeys.onboardingSkipPrefix}:${accountId}`, "1")
       } catch {
         // La navegación sigue funcionando aunque el navegador bloquee sessionStorage.
       }

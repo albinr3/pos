@@ -168,7 +168,7 @@ Guarda esta tabla para comparar cuando vuelvas a evaluar los datos tras implemen
 
 ## 7. Próximas 48 Horas: La Primera Jugada
 
-1. **Modificar [`src/app/select-user/select-user-client.tsx`](file:///c:/Users/Albin%20Rodr%C3%ADguez/Videos/Nueva%20carpeta/tejada-pos/src/app/select-user/select-user-client.tsx):**
+1. **Modificar `src/app/select-user/select-user-client.tsx`:**
    * Quitar la validación obligatoria del campo WhatsApp.
    * Auto-completar usuario `ADMIN` y PIN `1234` por defecto para registros con Google o email y contraseña.
    * Permitir avanzar con 1 solo clic.

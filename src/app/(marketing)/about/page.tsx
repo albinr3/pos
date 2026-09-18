@@ -40,7 +40,7 @@ export default function AboutPage() {
             <p className="text-muted-foreground mb-4">
               MOVOPos nació de la necesidad de crear una solución de punto de venta e inventario
               diseñada específicamente para el mercado dominicano. Comenzamos como un proyecto interno
-              para Tejada Auto Adornos, y rápidamente nos dimos cuenta de que otras empresas podrían
+              para un negocio local, y rápidamente nos dimos cuenta de que otras empresas podrían
               beneficiarse de esta herramienta.
             </p>
             <p className="text-muted-foreground">

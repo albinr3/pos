@@ -51,8 +51,8 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-semibold mt-8 mb-4">5. Propiedad Intelectual</h2>
             <p className="text-muted-foreground">
-              Todo el contenido, características y funcionalidades del servicio son propiedad de Tejada Auto
-              Adornos y están protegidos por leyes de propiedad intelectual.
+              Todo el contenido, características y funcionalidades del servicio son propiedad de MovoPos y
+              están protegidos por leyes de propiedad intelectual.
             </p>
           </section>
 

@@ -5,6 +5,7 @@ import { Check, Loader2, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { skipAccountOnboarding } from "@/app/(app)/onboarding/actions"
+import { clientStorageKeys } from "@/lib/client-storage"
 
 export type OnboardingGuideStep = {
   target: string
@@ -35,7 +36,7 @@ type OnboardingGuideProps = {
   resumePath?: string
 }
 
-const SKIP_KEY_PREFIX = "tejada-pos-onboarding-skip"
+const SKIP_KEY_PREFIX = clientStorageKeys.onboardingSkipPrefix
 const HIGHLIGHT_PADDING = 8
 const CARD_WIDTH = 320
 const CARD_GAP = 14
