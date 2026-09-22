@@ -3,141 +3,28 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Seguimos aqui para ayudarte con {{brandName}}</title>
-  <style>
-    :root {
-      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
-      background-color: #0f172a;
-      color: #0f172a;
-    }
-    body {
-      margin: 0;
-      background: #0f172a;
-      color: #0f172a;
-      display: flex;
-      justify-content: center;
-      padding: 36px 16px 40px;
-    }
-    .page {
-      max-width: 600px;
-      width: 100%;
-      background: #0f172a;
-      border-radius: 24px;
-      box-shadow: 0 20px 45px rgba(15, 23, 42, 0.55);
-      overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    .hero {
-      padding: 34px 32px 28px;
-      /* Mantener el CTA en morado para evitar volver al degradado azul anterior. */
-      background: linear-gradient(135deg, #7c3aed, #a855f7);
-      color: white;
-    }
-    .hero .pill {
-      display: inline-flex;
-      align-items: center;
-      padding: 6px 16px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.15);
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-    .hero h1 {
-      margin: 16px 0 10px;
-      font-size: 30px;
-      line-height: 1.2;
-    }
-    .hero p {
-      margin: 0;
-      font-size: 16px;
-      opacity: 0.92;
-    }
-    .card {
-      background: #f8fafc;
-      padding: 32px;
-      color: #0f172a;
-      line-height: 1.65;
-    }
-    h2 {
-      margin: 0 0 18px;
-      font-size: 23px;
-      line-height: 1.25;
-    }
-    p {
-      margin: 0 0 18px;
-    }
-    .button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 14px 22px;
-      /* Debe coincidir con el hero para que el email mantenga la paleta morada. */
-      background: linear-gradient(135deg, #7c3aed, #a855f7);
-      border-radius: 10px;
-      text-decoration: none;
-      color: white;
-      font-weight: 700;
-      font-size: 16px;
-      margin-top: 8px;
-    }
-    .support {
-      margin-top: 24px;
-      padding: 18px;
-      background: white;
-      border: 1px solid rgba(15, 23, 42, 0.08);
-      border-radius: 14px;
-      color: #334155;
-    }
-    .support a {
-      color: #7c3aed;
-      text-decoration: none;
-      font-weight: 700;
-    }
-    .footer {
-      padding: 20px 32px 28px;
-      background: #0f172a;
-      color: rgba(255, 255, 255, 0.8);
-      font-size: 13px;
-      text-align: center;
-    }
-    .footer a {
-      color: rgba(255, 255, 255, 0.9);
-      text-decoration: none;
-      font-weight: 600;
-    }
-  </style>
+  <title>Estamos aquí para ayudarte con {{brandName}}</title>
 </head>
-<body>
-  <div class="page">
-    <div class="hero">
-      <span class="pill">{{brandName}}</span>
-      <h1>Queremos ayudarte a mantener tu negocio al dia</h1>
-      <p>Tu cuenta sigue disponible para organizar ventas, inventario y cuentas por cobrar.</p>
-    </div>
-    <div class="card">
-      <h2>Hola, equipo de {{accountName}}.</h2>
-      <p>
-        Nos hemos dado cuenta de que no has seguido usando tu cuenta de {{brandName}}.
-        Nos importa que mantengas tu negocio en orden, llevando tus finanzas,
-        inventarios y cuentas por cobrar al dia.
-      </p>
-      <p>
-        Si por alguna razon no has entendido algo de la plataforma o necesitas
-        ayuda para usarla, no dudes en contactar con nosotros a traves de este
-        correo o del numero de WhatsApp
-        <a href="{{supportWhatsappUrl}}">{{supportWhatsapp}}</a>.
-      </p>
-      <a class="button" href="{{loginUrl}}">Volver a {{brandName}}</a>
-      <div class="support">
-        Tambien puedes responder directamente a este email:
-        <!-- Usar supportEmailAddress en mailto evita enlaces rotos cuando EMAIL_FROM incluye un nombre. -->
-        <a href="mailto:{{supportEmailAddress}}">{{supportEmailAddress}}</a>
-      </div>
-    </div>
-    <div class="footer">
-      © {{year}} {{brandName}} · <a href="{{appUrl}}">Ir al portal</a>
-    </div>
-  </div>
+<body style="margin:0; padding:0; background-color:#f1f5f9; color:#172033; font-family:Arial, Helvetica, sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; background-color:#f1f5f9;">
+    <tr><td align="center" style="padding:28px 16px;">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%; max-width:600px; background-color:#ffffff; border-radius:16px; overflow:hidden;">
+        <tr><td style="padding:28px 32px 24px; background-color:#ffffff; border-bottom:1px solid #e2e8f0;">
+          <img src="{{logoUrl}}" width="150" alt="{{brandName}}" style="display:block; width:150px; height:auto; border:0;" />
+        </td></tr>
+        <tr><td style="padding:32px;">
+          <p style="margin:0 0 16px; color:#172033; font-size:16px; line-height:25px;"><strong>Hola, equipo de {{accountName}}.</strong></p>
+          <h1 style="margin:0 0 18px; color:#172033; font-size:28px; line-height:36px; font-weight:700;">Estamos aquí para ayudarte</h1>
+          <p style="margin:0 0 24px; color:#475569; font-size:16px; line-height:25px;">Tu cuenta sigue disponible para organizar ventas, inventario y cuentas por cobrar.</p>
+          <p style="margin:0 0 24px; color:#475569; font-size:16px; line-height:25px;">Si necesitas ayuda para usar {{brandName}} o tienes alguna duda, estamos a un mensaje de distancia.</p>
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-radius:8px; background-color:#6d28d9;">
+            <a href="{{loginUrl}}" style="display:inline-block; padding:13px 20px; color:#ffffff; font-size:16px; font-weight:700; line-height:20px; text-decoration:none;">Entrar a {{brandName}}</a>
+          </td></tr></table>
+          <p style="margin:28px 0 0; padding-top:24px; border-top:1px solid #e2e8f0; color:#475569; font-size:15px; line-height:23px;">Responde directamente a este correo o escríbenos por WhatsApp al <a href="{{supportWhatsappUrl}}" style="color:#6d28d9; font-weight:700; text-decoration:none;">{{supportWhatsapp}}</a>.<br />También puedes contactarnos en <a href="mailto:{{supportEmailAddress}}" style="color:#6d28d9; font-weight:700; text-decoration:none;">{{supportEmailAddress}}</a>.</p>
+        </td></tr>
+        <tr><td style="padding:20px 32px; background-color:#172033; color:#cbd5e1; font-size:13px; line-height:20px; text-align:center;">© {{year}} {{brandName}} · <a href="{{appUrl}}" style="color:#ffffff; text-decoration:underline;">Ir al portal</a><br /><a href="{{unsubscribeUrl}}" style="color:#cbd5e1; text-decoration:underline;">Dejar de recibir estos recordatorios</a></td></tr>
+      </table>
+    </td></tr>
+  </table>
 </body>
 </html>

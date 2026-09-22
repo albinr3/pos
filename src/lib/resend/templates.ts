@@ -1,5 +1,6 @@
 import { readFile } from "fs/promises"
 import path from "path"
+import jwt from "jsonwebtoken"
 
 import { buildInventoryUploadWhatsAppUrl } from "@/lib/inventory-upload-offer"
 import { buildSupportWhatsAppUrl } from "@/lib/contact-info"
@@ -16,6 +17,30 @@ async function loadTemplate(templateName: string) {
   const content = await readFile(templatePath, "utf-8")
   templateCache.set(templateName, content)
   return content
+}
+
+function inlineLegacyTemplateStyles(template: string) {
+  const styleMatch = template.match(/<style[^>]*>([\s\S]*?)<\/style>/i)
+  if (!styleMatch) return template
+
+  const classRules = Array.from(styleMatch[1].matchAll(/\.([\w-]+)\s*\{([^}]*)\}/g))
+  let html = template.replace(styleMatch[0], "")
+
+  // Algunos correos históricos usaban CSS en <style>, que Gmail puede descartar.
+  // Se incorporan las reglas de clase directamente al elemento antes de enviarlo.
+  for (const [, className, declarations] of classRules) {
+    const normalized = declarations.replace(/\s+/g, " ").trim()
+    if (!normalized) continue
+    const classPattern = new RegExp(`(<[a-z][^>]*\\bclass=["'][^"']*\\b${className}\\b[^"']*["'][^>]*)(>)`, "gi")
+    html = html.replace(classPattern, (_, start, end) => {
+      if (/\bstyle=["']/i.test(start)) {
+        return start.replace(/\bstyle=(['"])(.*?)\1/i, (_style: string, quote: string, current: string) => `style=${quote}${normalized} ${current}${quote}`) + end
+      }
+      return `${start} style="${normalized}"${end}`
+    })
+  }
+
+  return html
 }
 
 function escapeHtml(value: string) {
@@ -35,7 +60,7 @@ function extractEmailAddress(value: string) {
   return (match?.[1] ?? value).trim()
 }
 
-function resolveSupportEmail() {
+export function resolveSupportEmail() {
   const configuredSupportEmail = process.env.SUPPORT_EMAIL?.trim()
 
   // Evita enviar el nombre del placeholder cuando una variable de entorno se configura como "SUPPORT_EMAIL".
@@ -47,11 +72,21 @@ function resolveSupportEmail() {
   return senderEmail ? extractEmailAddress(senderEmail) : "hola@movopos.com"
 }
 
+export function buildEngagementUnsubscribeUrl(appUrl: string, accountId: string) {
+  // La misma preferencia cubre marketing e emails de seguimiento, nunca facturación o acceso.
+  const token = jwt.sign(
+    { accountId, purpose: "engagement-email-unsubscribe" },
+    process.env.JWT_SECRET as string,
+    { expiresIn: "90d" }
+  )
+  return `${appUrl}/api/email-preferences/unsubscribe?token=${encodeURIComponent(token)}`
+}
+
 async function renderTemplate(
   templateName: string,
   variables: Record<string, string>
 ) {
-  const template = await loadTemplate(templateName)
+  const template = inlineLegacyTemplateStyles(await loadTemplate(templateName))
 
   // Primero reemplazar variables sin escapar {{{ variable }}}
   let rendered = template.replace(/{{{\s*([\w-]+)\s*}}}/g, (_, key) => {
@@ -112,7 +147,8 @@ export async function renderSubUserTemporaryCodeEmail(
   const appUrl = rawAppUrl.replace(/\/+$/, "")
   const loginUrl = `${appUrl}/select-user`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const logoUrl = `${appUrl}/movoLogoDark.png`
+  const supportEmail = resolveSupportEmail()
 
   const html = await renderTemplate("subuser-temp-code.html", {
     brandName,
@@ -121,6 +157,7 @@ export async function renderSubUserTemporaryCodeEmail(
     code: data.code,
     loginUrl,
     appUrl,
+    logoUrl,
     supportEmail,
   })
 
@@ -156,6 +193,7 @@ export async function renderWelcomeOwnerEmail(data: WelcomeOwnerTemplateData) {
 }
 
 type CustomerInactivityTemplateData = {
+  accountId: string
   accountName: string
 }
 
@@ -164,30 +202,47 @@ export async function renderCustomerInactivityEmail(
 ) {
   const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com"
   const appUrl = rawAppUrl.replace(/\/+$/, "")
-  const loginUrl = `${appUrl}/login`
+  // El middleware pide iniciar sesión si hace falta y luego devuelve al panel.
+  const loginUrl = `${appUrl}/dashboard`
+  const logoUrl = `${appUrl}/movoLogoDark.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MovoPos"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
-  const supportEmailAddress = extractEmailAddress(supportEmail)
+  // Nunca exponer el placeholder de configuración al destinatario.
+  const supportEmailAddress = resolveSupportEmail()
   const supportWhatsapp = "849-925-4434"
   const supportWhatsappUrl = `https://wa.me/18499254434`
+  const unsubscribeUrl = buildEngagementUnsubscribeUrl(appUrl, data.accountId)
 
   const html = await renderTemplate("customer-inactivity.html", {
     brandName,
     accountName: data.accountName,
     loginUrl,
     appUrl,
-    supportEmail,
+    logoUrl,
     supportEmailAddress,
     supportWhatsapp,
     supportWhatsappUrl,
+    unsubscribeUrl,
     year: new Date().getFullYear().toString(),
   })
 
   const subject = `¿Necesitas ayuda para seguir usando ${brandName}?`
-  return { subject, html }
+  const text = [
+    `Hola, equipo de ${data.accountName}.`,
+    "",
+    `${brandName}: estamos aquí para ayudarte`,
+    "",
+    `Tu cuenta sigue disponible para organizar ventas, inventario y cuentas por cobrar. Si necesitas ayuda para usar ${brandName}, responde a este correo o escríbenos por WhatsApp al ${supportWhatsapp}.`,
+    "",
+    `Entrar a ${brandName}: ${loginUrl}`,
+    `Soporte: ${supportEmailAddress}`,
+    `Dejar de recibir estos recordatorios: ${unsubscribeUrl}`,
+  ].join("\n")
+
+  return { subject, html, text }
 }
 
 type InitialSetupReminderTemplateData = {
+  accountId: string
   step: 1 | 2 | 3 | 4
 }
 
@@ -198,6 +253,8 @@ export async function renderInitialSetupReminderEmail(
   const appUrl = rawAppUrl.replace(/\/+$/, "")
   const setupUrl = `${appUrl}/select-user`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const logoUrl = `${appUrl}/movoLogoDark.png`
+  const unsubscribeUrl = buildEngagementUnsubscribeUrl(appUrl, data.accountId)
 
   const copy = {
     1: {
@@ -232,6 +289,7 @@ export async function renderInitialSetupReminderEmail(
 
   const html = await renderTemplate("initial-setup-reminder.html", {
     brandName,
+    logoUrl,
     subjectPreview: copy.subject,
     headline: copy.headline,
     message: copy.message,
@@ -242,6 +300,7 @@ export async function renderInitialSetupReminderEmail(
       "Hola, necesito ayuda para completar la configuración inicial de mi negocio en MOVOPos."
     ),
     appUrl,
+    unsubscribeUrl,
     year: new Date().getFullYear().toString(),
   })
 
@@ -266,7 +325,7 @@ export async function renderTrialExpiringEmail(
   const logoUrl = `${appUrl}/movoLogo.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
   const brandTagline = "Sistema de inventario y facturacion"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportEmail = resolveSupportEmail()
 
   const message =
     data.daysRemaining === 0
@@ -307,7 +366,7 @@ export async function renderSubscriptionDueEmail(
   const logoUrl = `${appUrl}/movoLogo.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
   const brandTagline = "Sistema de inventario y facturacion"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportEmail = resolveSupportEmail()
 
   const message =
     data.daysRemaining === 0
@@ -346,7 +405,7 @@ export async function renderGracePeriodEmail(data: GracePeriodTemplateData) {
   const logoUrl = `${appUrl}/movoLogo.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
   const brandTagline = "Sistema de inventario y facturacion"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportEmail = resolveSupportEmail()
 
   const message =
     data.daysRemaining === 0
@@ -386,7 +445,7 @@ export async function renderAccountBlockedEmail(
   const logoUrl = `${appUrl}/movoLogo.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
   const brandTagline = "Sistema de inventario y facturacion"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportEmail = resolveSupportEmail()
 
   const html = await renderTemplate("account-blocked.html", {
     brandName,
@@ -429,10 +488,12 @@ export async function renderManualPaymentPendingAlertEmail(
   const appUrl = rawAppUrl.replace(/\/+$/, "")
   const superAdminPaymentsUrl = `${appUrl}/super-admin/payments`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const logoUrl = `${appUrl}/movoLogoDark.png`
+  const supportEmail = resolveSupportEmail()
 
   const html = await renderTemplate("manual-payment-pending-alert.html", {
     brandName,
+    logoUrl,
     accountName: data.accountName,
     amountLabel: data.amountLabel,
     bankName: data.bankName,
@@ -468,7 +529,8 @@ export async function renderCardPaymentEventAlertEmail(
   const appUrl = rawAppUrl.replace(/\/+$/, "")
   const superAdminPaymentsUrl = `${appUrl}/super-admin/payments`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const logoUrl = `${appUrl}/movoLogoDark.png`
+  const supportEmail = resolveSupportEmail()
 
   const titleText =
     data.eventType === "success"
@@ -481,6 +543,7 @@ export async function renderCardPaymentEventAlertEmail(
 
   const html = await renderTemplate("card-payment-event-alert.html", {
     brandName,
+    logoUrl,
     titleText,
     introText,
     accountName: data.accountName,
@@ -517,7 +580,7 @@ export async function renderCardChargeSuccessCustomerEmail(
   const billingUrl = `${appUrl}/billing`
   const logoUrl = `${appUrl}/movoLogoDark.png`
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportEmail = resolveSupportEmail()
 
   const html = await renderTemplate("card-charge-success-customer.html", {
     brandName,
@@ -541,6 +604,7 @@ export async function renderNewUserSignupNotification(
   data: NewUserSignupNotificationData
 ) {
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com").replace(/\/+$/, "")
 
   const html = `
 <!DOCTYPE html>
@@ -554,6 +618,7 @@ export async function renderNewUserSignupNotification(
   <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff;">
     <tr>
       <td style="padding: 40px 30px; text-align: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <img src="${appUrl}/movoLogoDark.png" alt="${escapeHtml(brandName)}" width="150" style="display:block;width:150px;height:auto;margin:0 auto 18px;background:#ffffff;border-radius:8px;padding:6px;" />
         <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700;">
           🎉 Nuevo Usuario Registrado
         </h1>
@@ -638,6 +703,7 @@ type ErrorNotificationTemplateData = {
 
 export async function renderErrorNotification(data: ErrorNotificationTemplateData) {
   const brandName = process.env.NEXT_PUBLIC_APP_NAME || "MOVOPos"
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com").replace(/\/+$/, "")
 
   const metadataHtml = data.metadata
     ? `<pre style="background-color: #f4f4f5; padding: 10px; border-radius: 4px; overflow-x: auto;">${escapeHtml(JSON.stringify(data.metadata, null, 2))}</pre>`
@@ -645,6 +711,7 @@ export async function renderErrorNotification(data: ErrorNotificationTemplateDat
 
   const html = await renderTemplate("error-notification.html", {
     brandName,
+    logoUrl: `${appUrl}/movoLogoDark.png`,
     errorMessage: data.error.message,
     errorCode: data.code || "N/A",
     severity: data.severity,

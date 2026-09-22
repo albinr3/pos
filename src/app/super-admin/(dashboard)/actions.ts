@@ -87,6 +87,9 @@ export async function getDashboardData(): Promise<DashboardData> {
   const activeInstallationSince = new Date(now)
   activeInstallationSince.setDate(activeInstallationSince.getDate() - 30)
 
+  // MobileInstallation se creó mediante la migración 20260918130000_add_mobile_installations.
+  // Al desplegar cambios en este modelo, ejecutar siempre `prisma migrate deploy` antes de
+  // publicar código que consulte la tabla; así evitamos errores P2021 en el panel.
   const [historicalTotal, activeLast30Days, newInstallationsThisMonth] = await Promise.all([
     prisma.mobileInstallation.count(),
     prisma.mobileInstallation.count({ where: { lastSeenAt: { gte: activeInstallationSince } } }),

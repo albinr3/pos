@@ -7,6 +7,7 @@ import { sendResendEmail } from "@/lib/resend"
 import { sanitizeEmail } from "@/lib/sanitize"
 import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-auth"
 import { getAccountOwnerEmail } from "@/lib/account-owner-email"
+import { buildEngagementUnsubscribeUrl, resolveSupportEmail } from "@/lib/resend/templates"
 
 type BillingStatus = "TRIALING" | "ACTIVE" | "GRACE" | "BLOCKED" | "CANCELED"
 
@@ -33,6 +34,9 @@ type SendMassMarketingEmailResult = {
   failedCount?: number
   totalRecipients?: number
 }
+
+// Evita un doble clic o dos solicitudes simultáneas desde la misma instancia.
+const activeMarketingRequests = new Set<string>()
 
 function canAccessEmailMarketing(admin: Awaited<ReturnType<typeof getCurrentSuperAdmin>>) {
   if (!admin) return false
@@ -73,21 +77,24 @@ function sanitizeMarketingHtml(input: string): string {
   return html
 }
 
-function buildMarketingEmailHtml(accountName: string, messageHtml: string): string {
+function buildMarketingEmailHtml(accountName: string, messageHtml: string, unsubscribeUrl: string): string {
   const safeAccountName = escapeHtml(accountName)
-  const supportEmail = process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || "hola@movopos.com"
+  const supportEmail = resolveSupportEmail()
   const safeSupportEmail = escapeHtml(supportEmail)
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com").replace(/\/+$/, "")
 
   return `
-    <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; line-height: 1.6; color: #111827;">
-      <h2 style="margin: 0 0 16px;">MOVOPos</h2>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;line-height:1.6;color:#111827;background:#ffffff;">
+      <tr><td style="padding:24px;border-bottom:1px solid #e5e7eb;"><img src="${appUrl}/movoLogoDark.png" alt="MOVOPos" width="150" style="display:block;width:150px;height:auto;border:0;" /></td></tr>
+      <tr><td style="padding:24px;">
       <p style="margin: 0 0 12px;">Hola, equipo de <strong>${safeAccountName}</strong>.</p>
       <div style="margin: 0 0 16px;">${messageHtml}</div>
       <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
       <p style="font-size: 12px; color: #6b7280; margin: 0;">
         Si necesitas ayuda, puedes responder a este correo o escribir a ${safeSupportEmail}.
-      </p>
-    </div>
+      </p></td></tr>
+      <tr><td style="padding:16px 24px;background:#172033;color:#cbd5e1;font-size:12px;text-align:center;"><a href="${unsubscribeUrl}" style="color:#ffffff;text-decoration:underline;">Dejar de recibir comunicaciones de seguimiento</a></td></tr>
+    </table>
   `
 }
 
@@ -172,9 +179,17 @@ export async function sendMassMarketingEmail(
     return { success: false, error: "El contenido HTML no puede superar 60000 caracteres" }
   }
 
+  const requestKey = `${admin.id}:${subject}:${normalizedAccountIds.slice().sort().join(",")}`
+  if (activeMarketingRequests.has(requestKey)) {
+    return { success: false, error: "Este envío ya está en proceso." }
+  }
+  activeMarketingRequests.add(requestKey)
+
+  try {
   const accounts = await prisma.account.findMany({
     where: {
       id: { in: normalizedAccountIds },
+      engagementEmailsEnabled: true,
     },
     include: {
       billingProfile: {
@@ -222,11 +237,14 @@ export async function sendMassMarketingEmail(
   const failedRecipients: string[] = []
 
   for (const recipient of recipients) {
-    const html = buildMarketingEmailHtml(recipient.accountName, normalizedHtml)
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || "https://app.movopos.com").replace(/\/+$/, "")
+    const unsubscribeUrl = buildEngagementUnsubscribeUrl(appUrl, recipient.accountId)
+    const html = buildMarketingEmailHtml(recipient.accountName, normalizedHtml, unsubscribeUrl)
     const ok = await sendResendEmail({
       to: recipient.email,
       subject,
       html,
+      text: plainText,
       accountId: recipient.accountId,
       userId: admin.id,
     })
@@ -269,5 +287,8 @@ export async function sendMassMarketingEmail(
     sentCount,
     failedCount,
     totalRecipients: recipients.length,
+  }
+  } finally {
+    activeMarketingRequests.delete(requestKey)
   }
 }

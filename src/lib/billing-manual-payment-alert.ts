@@ -1,5 +1,5 @@
 import { sendResendEmail } from "@/lib/resend"
-import { renderManualPaymentPendingAlertEmail } from "@/lib/resend/templates"
+import { renderManualPaymentPendingAlertEmail, resolveSupportEmail } from "@/lib/resend/templates"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 
 type NotifyManualPaymentPendingInput = {
@@ -17,9 +17,7 @@ function resolveRecipientEmail() {
   return (
     process.env.BILLING_PENDING_PAYMENT_ALERT_EMAIL ||
     process.env.SUPER_ADMIN_EMAIL ||
-    process.env.SUPPORT_EMAIL ||
-    process.env.EMAIL_FROM ||
-    ""
+    resolveSupportEmail()
   ).trim()
 }
 

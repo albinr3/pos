@@ -75,19 +75,27 @@ async function hasNotificationBeenSent(
   return !!notification
 }
 
-async function recordNotification(
+async function reserveNotification(
   accountId: string,
   type: NotificationType,
   channel: NotificationChannel,
-  metadata?: Record<string, unknown>
-): Promise<void> {
-  await prisma.billingNotification.create({
-    data: {
-      accountId,
-      type,
-      channel,
-      metadata: metadata as object | undefined,
-    },
+  dedupeKey: string
+) {
+  try {
+    return await prisma.billingNotification.create({
+      data: { accountId, type, channel, dedupeKey, metadata: { status: "sending" } },
+    })
+  } catch (error) {
+    // La clave única protege contra dos cron ejecutándose al mismo tiempo.
+    if ((error as { code?: string }).code === "P2002") return null
+    throw error
+  }
+}
+
+async function completeReservation(id: string, metadata?: Record<string, unknown>) {
+  await prisma.billingNotification.update({
+    where: { id },
+    data: { metadata: { status: "sent", ...metadata } },
   })
 }
 
@@ -140,6 +148,8 @@ export async function sendBillingNotifications(): Promise<{
             const type = `trial_${day}` as NotificationType
             
             if (!(await hasNotificationBeenSent(account.id, type, "email"))) {
+              const reservation = await reserveNotification(account.id, type, "email", `billing:${account.id}:${type}:${now.toISOString().slice(0, 10)}`)
+              if (!reservation) break
               const { subject, html } = await renderTrialExpiringEmail({
                 accountName,
                 daysRemaining: day,
@@ -147,9 +157,10 @@ export async function sendBillingNotifications(): Promise<{
               const success = await sendResendEmail({ to: email, subject, html })
               
               if (success) {
-                await recordNotification(account.id, type, "email", { daysRemaining: day })
+                await completeReservation(reservation.id, { daysRemaining: day })
                 sent++
               } else {
+                await prisma.billingNotification.delete({ where: { id: reservation.id } })
                 errors++
               }
             }
@@ -171,6 +182,8 @@ export async function sendBillingNotifications(): Promise<{
             const type = `due_${day}` as NotificationType
             
             if (!(await hasNotificationBeenSent(account.id, type, "email"))) {
+              const reservation = await reserveNotification(account.id, type, "email", `billing:${account.id}:${type}:${now.toISOString().slice(0, 10)}`)
+              if (!reservation) break
               const { subject, html } = await renderSubscriptionDueEmail({
                 accountName,
                 daysRemaining: day,
@@ -178,9 +191,10 @@ export async function sendBillingNotifications(): Promise<{
               const success = await sendResendEmail({ to: email, subject, html })
               
               if (success) {
-                await recordNotification(account.id, type, "email", { daysRemaining: day })
+                await completeReservation(reservation.id, { daysRemaining: day })
                 sent++
               } else {
+                await prisma.billingNotification.delete({ where: { id: reservation.id } })
                 errors++
               }
             }
@@ -198,6 +212,8 @@ export async function sendBillingNotifications(): Promise<{
             const type = `grace_${day}` as NotificationType
             
             if (!(await hasNotificationBeenSent(account.id, type, "email"))) {
+              const reservation = await reserveNotification(account.id, type, "email", `billing:${account.id}:${type}:${now.toISOString().slice(0, 10)}`)
+              if (!reservation) break
               const { subject, html } = await renderGracePeriodEmail({
                 accountName,
                 daysRemaining: day,
@@ -205,9 +221,10 @@ export async function sendBillingNotifications(): Promise<{
               const success = await sendResendEmail({ to: email, subject, html })
               
               if (success) {
-                await recordNotification(account.id, type, "email", { daysRemaining: day })
+                await completeReservation(reservation.id, { daysRemaining: day })
                 sent++
               } else {
+                await prisma.billingNotification.delete({ where: { id: reservation.id } })
                 errors++
               }
             }
@@ -219,15 +236,18 @@ export async function sendBillingNotifications(): Promise<{
       // Check blocked notification (send once when blocked)
       if (subscription.status === "BLOCKED") {
         if (!(await hasNotificationBeenSent(account.id, "blocked", "email", false))) {
+          const reservation = await reserveNotification(account.id, "blocked", "email", `billing:${account.id}:blocked`)
+          if (!reservation) continue
           const { subject, html } = await renderAccountBlockedEmail({
             accountName,
           })
           const success = await sendResendEmail({ to: email, subject, html })
           
           if (success) {
-            await recordNotification(account.id, "blocked", "email")
+            await completeReservation(reservation.id)
             sent++
           } else {
+            await prisma.billingNotification.delete({ where: { id: reservation.id } })
             errors++
           }
         }

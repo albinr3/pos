@@ -14,6 +14,7 @@ async function hasInactivityEmailBeenSent(accountId: string) {
       accountId,
       type: INACTIVITY_NOTIFICATION_TYPE,
       channel: EMAIL_CHANNEL,
+      dedupeKey: `inactivity:${accountId}`,
     },
   })
 
@@ -21,7 +22,7 @@ async function hasInactivityEmailBeenSent(accountId: string) {
 }
 
 async function recordInactivityEmail(accountId: string, metadata?: Record<string, unknown>) {
-  await prisma.billingNotification.create({
+  return prisma.billingNotification.create({
     data: {
       accountId,
       type: INACTIVITY_NOTIFICATION_TYPE,
@@ -40,6 +41,7 @@ export async function sendCustomerInactivityNotifications(): Promise<{
   let errors = 0
 
   const accounts = await prisma.account.findMany({
+    where: { engagementEmailsEnabled: true },
     include: {
       billingProfile: true,
       companySettings: true,
@@ -63,10 +65,11 @@ export async function sendCustomerInactivityNotifications(): Promise<{
         continue
       }
 
-      const latestLogin = await prisma.auditLog.findFirst({
+      const latestActivity = await prisma.auditLog.findFirst({
         where: {
           accountId: account.id,
-          action: "LOGIN_SUCCESS",
+          userId: { not: null },
+          action: { not: "LOGIN_FAILED" },
         },
         orderBy: {
           createdAt: "desc",
@@ -77,7 +80,9 @@ export async function sendCustomerInactivityNotifications(): Promise<{
         },
       })
 
-      const lastActivityAt = latestLogin?.createdAt ?? account.createdAt
+      // No basarse solo en LOGIN_SUCCESS: una sesión persistente puede usar el POS varios
+      // días sin volver a iniciar sesión. Cualquier acción auditada del usuario cuenta.
+      const lastActivityAt = latestActivity?.createdAt ?? account.createdAt
       if (lastActivityAt > cutoff) {
         continue
       }
@@ -89,24 +94,49 @@ export async function sendCustomerInactivityNotifications(): Promise<{
       }
 
       const accountName = account.companySettings?.name || account.name
-      const { subject, html } = await renderCustomerInactivityEmail({ accountName })
-      const success = await sendResendEmail({
-        to: email,
-        subject,
-        html,
-        accountId: account.id,
-        userId: latestLogin?.userId || ownerUser?.id,
-      })
-
-      if (success) {
-        // Se registra una vez por cuenta para que no se reenvie aunque vuelva a quedar inactiva.
-        await recordInactivityEmail(account.id, {
+      // Reservar antes de llamar a Resend evita duplicados si dos cron se ejecutan a la vez.
+      let notificationId: string
+      try {
+        const notification = await recordInactivityEmail(account.id, {
+          status: "sending",
           inactivityDays: INACTIVITY_DAYS,
           lastActivityAt: lastActivityAt.toISOString(),
           recipient: email,
         })
+        notificationId = notification.id
+      } catch (error) {
+        // P2002 significa que otro cron ya reservó o completó este envío.
+        if ((error as { code?: string }).code === "P2002") continue
+        throw error
+      }
+
+      const { subject, html, text } = await renderCustomerInactivityEmail({
+        accountId: account.id,
+        accountName,
+      })
+      const success = await sendResendEmail({
+        to: email,
+        subject,
+        html,
+        text,
+        accountId: account.id,
+        userId: latestActivity?.userId || ownerUser?.id,
+      })
+
+      if (success) {
+        await prisma.billingNotification.update({
+          where: { id: notificationId },
+          data: { metadata: {
+            status: "sent",
+            inactivityDays: INACTIVITY_DAYS,
+            lastActivityAt: lastActivityAt.toISOString(),
+            recipient: email,
+          } },
+        })
         sent++
       } else {
+        // Liberar la reserva si Resend rechaza el envío para permitir un reintento.
+        await prisma.billingNotification.delete({ where: { id: notificationId } })
         errors++
       }
     } catch (error) {

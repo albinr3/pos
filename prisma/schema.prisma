@@ -217,6 +217,8 @@ model Account {
   name        String // Nombre del negocio
   clerkUserId String @unique // ID del usuario Clerk que es dueño
   ownerEmail  String? // Correo principal de Clerk, disponible antes del onboarding local
+  // Baja para comunicaciones de seguimiento; no afecta correos transaccionales.
+  engagementEmailsEnabled Boolean @default(true)
   registeredFromDevice RegistrationDeviceType @default(UNKNOWN)
   registeredWithMethod RegistrationMethod     @default(UNKNOWN)
   registeredUserAgent  String?
@@ -1650,6 +1652,8 @@ model BillingNotification {
 
   // Metadata adicional
   metadata Json?
+  // Reserva atómica para evitar duplicados cuando dos cron se ejecutan a la vez.
+  dedupeKey String? @unique
 
   @@index([accountId])
   @@index([accountId, type])

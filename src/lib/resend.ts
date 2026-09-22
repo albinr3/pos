@@ -4,6 +4,8 @@ type SendResendEmailOptions = {
   to: string
   subject: string
   html: string
+  /** Alternativa accesible para clientes que no muestran HTML. */
+  text?: string
   from?: string
   /** ID de la cuenta (para logging) */
   accountId?: string
@@ -18,6 +20,24 @@ const FALLBACK_RETRY_MIN_MS = 900
 const FALLBACK_RETRY_MAX_MS = 1300
 
 let nextAllowedSendAt = 0
+
+function createPlainTextFromHtml(html: string) {
+  // Respaldo para lectores accesibles y clientes que bloquean HTML. Las plantillas que
+  // requieren texto específico pueden seguir enviándolo mediante la opción `text`.
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|h[1-6]|tr|div|li)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(nbsp|#160);/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n\s*\n\s*/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim()
+}
 
 function randomBetween(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min
@@ -52,7 +72,7 @@ function getRetryDelayMs(response: Response): number {
   return randomBetween(FALLBACK_RETRY_MIN_MS, FALLBACK_RETRY_MAX_MS)
 }
 
-export async function sendResendEmail({ to, subject, html, from, accountId, userId }: SendResendEmailOptions): Promise<boolean> {
+export async function sendResendEmail({ to, subject, html, text, from, accountId, userId }: SendResendEmailOptions): Promise<boolean> {
   const resendApiKey = process.env.RESEND_API_KEY
   if (!resendApiKey) {
     console.warn("RESEND_API_KEY not configured, skipping email to", to)
@@ -78,6 +98,7 @@ export async function sendResendEmail({ to, subject, html, from, accountId, user
           to,
           subject,
           html,
+          text: text || createPlainTextFromHtml(html),
         }),
       })
 

@@ -49,7 +49,7 @@ export async function sendInitialSetupReminderNotifications(): Promise<{
   let errors = 0
 
   const accounts = await prisma.account.findMany({
-    where: { createdAt: { lte: firstReminderCutoff } },
+    where: { createdAt: { lte: firstReminderCutoff }, engagementEmailsEnabled: true },
     select: {
       id: true,
       clerkUserId: true,
@@ -91,7 +91,28 @@ export async function sendInitialSetupReminderNotifications(): Promise<{
         continue
       }
 
-      const { subject, html } = await renderInitialSetupReminderEmail({ step: dueStep.step })
+      // La reserva ocurre antes del proveedor: dos cron concurrentes no pueden enviar el mismo paso.
+      let notificationId: string
+      try {
+        const reservation = await prisma.billingNotification.create({
+          data: {
+            accountId: account.id,
+            type: dueStep.type,
+            channel: EMAIL_CHANNEL,
+            dedupeKey: `initial-setup:${account.id}:${dueStep.type}`,
+            metadata: { status: "sending", sequence: "initial_setup", step: dueStep.step },
+          },
+        })
+        notificationId = reservation.id
+      } catch (error) {
+        if ((error as { code?: string }).code === "P2002") continue
+        throw error
+      }
+
+      const { subject, html } = await renderInitialSetupReminderEmail({
+        accountId: account.id,
+        step: dueStep.step,
+      })
       const success = await sendResendEmail({
         to: email,
         subject,
@@ -100,22 +121,20 @@ export async function sendInitialSetupReminderNotifications(): Promise<{
       })
 
       if (!success) {
+        await prisma.billingNotification.delete({ where: { id: notificationId } })
         errors++
         continue
       }
 
-      await prisma.billingNotification.create({
-        data: {
-          accountId: account.id,
-          type: dueStep.type,
-          channel: EMAIL_CHANNEL,
-          metadata: {
+      await prisma.billingNotification.update({
+        where: { id: notificationId },
+        data: { metadata: {
+            status: "sent",
             sequence: "initial_setup",
             step: dueStep.step,
             delayHours: dueStep.delayHours,
             recipient: email,
-          },
-        },
+          } },
       })
       sent++
     } catch (error) {
