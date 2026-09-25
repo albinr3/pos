@@ -17,7 +17,7 @@ import {
   PaymentMethod,
   type Prisma,
 } from "@prisma/client"
-import { getCurrentUser } from "@/lib/auth"
+import { AuthenticationRequiredError, getCurrentUser, getCurrentUserWithDiagnostics } from "@/lib/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
@@ -937,8 +937,14 @@ export async function createSale(input: {
   username: string
   user?: any
 }) {
-  const user = input.user ?? await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+  let user = input.user
+  if (!user) {
+    const authResult = await getCurrentUserWithDiagnostics({ source: "sales/create-invoice" })
+    // Preventivo: el POS puede seguir abierto tras expirar una sesión. Esta causa
+    // concreta queda correlacionada en Vercel en vez de perderse en un digest.
+    if (!authResult.user) throw new AuthenticationRequiredError(authResult.reason, "sales/create-invoice")
+    user = authResult.user
+  }
   const soldAt = parseOptionalDateInput(input.soldAt)
   const requestedCustomerId = normalizeRequestedCustomerId(input.customerId)
 

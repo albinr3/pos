@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db"
-import { getCurrentUser } from "@/lib/auth"
+import { AuthenticationRequiredError, getCurrentUserWithDiagnostics } from "@/lib/auth"
 
 function decimalToNumber(decimal: unknown): number {
   if (typeof decimal === "number") return decimal
@@ -12,9 +12,17 @@ function decimalToNumber(decimal: unknown): number {
   return 0
 }
 
+async function requireSyncUser(source: string) {
+  const result = await getCurrentUserWithDiagnostics({ source })
+  if (result.user) return result.user
+
+  // Preventivo: conserva la causa real en Vercel con [AUTH_DIAGNOSTIC] y evita
+  // que una sincronización de caché aparezca como un ambiguo "No autenticado".
+  throw new AuthenticationRequiredError(result.reason, source)
+}
+
 export async function syncProductsToIndexedDB() {
-  const user = await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+  const user = await requireSyncUser("sync/products-cache")
 
   const products = await prisma.product.findMany({
     where: { accountId: user.accountId, isActive: true, isAvailableForSale: true },
@@ -113,8 +121,7 @@ export async function syncProductsToIndexedDB() {
 }
 
 export async function syncCustomersToIndexedDB() {
-  const user = await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+  const user = await requireSyncUser("sync/customers-cache")
 
   const customers = await prisma.customer.findMany({
     where: { accountId: user.accountId, isActive: true },
@@ -136,8 +143,7 @@ export async function syncCustomersToIndexedDB() {
 }
 
 export async function syncARToIndexedDB() {
-  const user = await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+  const user = await requireSyncUser("sync/accounts-receivable-cache")
 
   const arItems = await prisma.accountReceivable.findMany({
     where: {

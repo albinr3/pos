@@ -9,7 +9,7 @@
  */
 
 import { auth, currentUser } from "@clerk/nextjs/server"
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import jwt from "jsonwebtoken"
 import bcrypt from "bcryptjs"
 import type { UserRole } from "@prisma/client"
@@ -179,6 +179,69 @@ interface SessionPayload {
   userId: string
   iat: number
   exp: number
+}
+
+/**
+ * Motivos seguros y consultables de una sesión incompleta. No contienen
+ * identificadores ni el contenido de cookies/tokens: esos datos nunca deben
+ * terminar en los logs de Vercel.
+ */
+export type AuthenticationFailureReason =
+  | "CLERK_SESSION_MISSING"
+  | "SUBUSER_SESSION_MISSING"
+  | "SUBUSER_SESSION_EXPIRED"
+  | "SUBUSER_SESSION_INVALID"
+  | "ACCOUNT_NOT_FOUND_FOR_CLERK"
+  | "ACCOUNT_SESSION_MISMATCH"
+  | "SUBUSER_NOT_FOUND"
+  | "SUBUSER_INACTIVE"
+  | "SUBUSER_ACCOUNT_MISMATCH"
+
+type SubUserTokenSource = "header" | "cookie" | "none"
+
+type SubUserSessionLookup = {
+  session: { accountId: string; userId: string } | null
+  reason?: Extract<
+    AuthenticationFailureReason,
+    "SUBUSER_SESSION_MISSING" | "SUBUSER_SESSION_EXPIRED" | "SUBUSER_SESSION_INVALID"
+  >
+  tokenSource: SubUserTokenSource
+}
+
+export type CurrentUserDiagnosticResult =
+  | { user: CurrentUser; reason?: never }
+  | {
+      user: null
+      reason: AuthenticationFailureReason
+      subUserTokenSource: SubUserTokenSource
+    }
+
+const AUTH_FAILURE_MESSAGES: Record<AuthenticationFailureReason, string> = {
+  CLERK_SESSION_MISSING: "La sesión principal venció o no está disponible. Inicia sesión nuevamente.",
+  SUBUSER_SESSION_MISSING: "No hay una sesión de caja activa. Selecciona tu usuario para continuar.",
+  SUBUSER_SESSION_EXPIRED: "La sesión de caja venció. Selecciona tu usuario para continuar.",
+  SUBUSER_SESSION_INVALID: "La sesión de caja ya no es válida. Selecciona tu usuario para continuar.",
+  ACCOUNT_NOT_FOUND_FOR_CLERK: "No se encontró la cuenta asociada a esta sesión. Inicia sesión nuevamente.",
+  ACCOUNT_SESSION_MISMATCH: "La sesión de caja pertenece a otra cuenta. Selecciona tu usuario nuevamente.",
+  SUBUSER_NOT_FOUND: "El usuario de caja ya no existe. Contacta al administrador.",
+  SUBUSER_INACTIVE: "Este usuario de caja está desactivado. Contacta al administrador.",
+  SUBUSER_ACCOUNT_MISMATCH: "El usuario de caja no pertenece a esta cuenta. Selecciona tu usuario nuevamente.",
+}
+
+/**
+ * Error con texto apto para el POS. El detalle técnico se registra por separado
+ * con [AUTH_DIAGNOSTIC], para no exponerlo al cliente ni depender de un digest.
+ */
+export class AuthenticationRequiredError extends Error {
+  readonly reason: AuthenticationFailureReason
+  readonly source: string
+
+  constructor(reason: AuthenticationFailureReason, source: string) {
+    super(AUTH_FAILURE_MESSAGES[reason])
+    this.name = "AuthenticationRequiredError"
+    this.reason = reason
+    this.source = source
+  }
 }
 
 // ==========================================
@@ -828,11 +891,25 @@ export async function clearSubUserSession() {
 export async function getSubUserSession(
   subUserToken?: string | null
 ): Promise<{ accountId: string; userId: string } | null> {
+  const lookup = await getSubUserSessionLookup(subUserToken)
+  return lookup.session
+}
+
+/**
+ * Lee la sesión de caja preservando el motivo de fallo para diagnóstico.
+ * Mantener esta distinción evita que "No autenticado" oculte si la cookie
+ * faltaba, venció o fue alterada.
+ */
+async function getSubUserSessionLookup(
+  subUserToken?: string | null
+): Promise<SubUserSessionLookup> {
   let sessionToken: string | null = null
+  let tokenSource: SubUserTokenSource = "none"
 
   // Intentar leer del header X-SubUser-Token (para móvil)
   if (subUserToken) {
     sessionToken = subUserToken
+    tokenSource = "header"
   }
 
   // Si no hay token en el header, intentar leer de cookies (web)
@@ -840,6 +917,7 @@ export async function getSubUserSession(
     try {
       const cookieStore = await cookies()
       sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value || null
+      if (sessionToken) tokenSource = "cookie"
     } catch {
       // Si no hay cookies disponibles (por ejemplo, en API routes sin cookies)
       sessionToken = null
@@ -847,18 +925,63 @@ export async function getSubUserSession(
   }
 
   if (!sessionToken) {
-    return null
+    return { session: null, reason: "SUBUSER_SESSION_MISSING", tokenSource }
   }
 
   try {
     const payload = jwt.verify(sessionToken, JWT_SECRET_VALUE) as SessionPayload
     return {
-      accountId: payload.accountId,
-      userId: payload.userId,
+      session: {
+        accountId: payload.accountId,
+        userId: payload.userId,
+      },
+      tokenSource,
     }
+  } catch (error) {
+    return {
+      session: null,
+      reason: error instanceof jwt.TokenExpiredError ? "SUBUSER_SESSION_EXPIRED" : "SUBUSER_SESSION_INVALID",
+      tokenSource,
+    }
+  }
+}
+
+function pathFromReferer(referer: string | null): string | null {
+  if (!referer) return null
+  try {
+    return new URL(referer).pathname || null
   } catch {
     return null
   }
+}
+
+async function writeAuthenticationDiagnostic(
+  source: string,
+  result: Exclude<CurrentUserDiagnosticResult, { user: CurrentUser }>
+) {
+  // Preventivo: registrar solo metadatos no sensibles. Nunca incluir cookies,
+  // Authorization, IDs de cuenta/usuario ni IP en este log de producción.
+  let requestPath: string | null = null
+  let vercelRequestId: string | null = null
+  try {
+    const headerStore = await headers()
+    requestPath = headerStore.get("x-pathname") || pathFromReferer(headerStore.get("referer"))
+    vercelRequestId = headerStore.get("x-vercel-id")
+  } catch {
+    // Algunas tareas de servidor no tienen contexto HTTP; el origen sigue siendo útil.
+  }
+
+  console.warn(
+    "[AUTH_DIAGNOSTIC]",
+    JSON.stringify({
+      event: "AUTH_FAILURE",
+      source,
+      reason: result.reason,
+      subUserTokenSource: result.subUserTokenSource,
+      requestPath,
+      vercelRequestId,
+    })
+  )
 }
 
 // ==========================================
@@ -869,20 +992,36 @@ export async function getSubUserSession(
  * Obtiene el usuario actual (requiere sesión de Clerk + sesión de subusuario)
  * @param authHeader - Header Authorization opcional para leer token JWT (móvil)
  */
-export async function getCurrentUser(
+export async function getCurrentUserWithDiagnostics(options: {
+  source: string
   authHeader?: string | null
-): Promise<CurrentUser | null> {
+  /** Desactiva el log estructurado para wrappers de compatibilidad. */
+  report?: boolean
+}): Promise<CurrentUserDiagnosticResult> {
   // Verificar sesión de Clerk
   const clerkUserId = await getClerkUserId()
   if (!clerkUserId) {
-    return null
+    const result: CurrentUserDiagnosticResult = {
+      user: null,
+      reason: "CLERK_SESSION_MISSING",
+      subUserTokenSource: "none",
+    }
+    if (options.report !== false) await writeAuthenticationDiagnostic(options.source, result)
+    return result
   }
 
   // Verificar sesión de subusuario (puede leer de header o cookies)
-  const subUserSession = await getSubUserSession(authHeader)
-  if (!subUserSession) {
-    return null
+  const subUserLookup = await getSubUserSessionLookup(options.authHeader)
+  if (!subUserLookup.session) {
+    const result: CurrentUserDiagnosticResult = {
+      user: null,
+      reason: subUserLookup.reason ?? "SUBUSER_SESSION_INVALID",
+      subUserTokenSource: subUserLookup.tokenSource,
+    }
+    if (options.report !== false) await writeAuthenticationDiagnostic(options.source, result)
+    return result
   }
+  const subUserSession = subUserLookup.session
 
   // Verificar que el Account corresponde al clerkUserId
   const prisma = await getPrisma()
@@ -891,10 +1030,13 @@ export async function getCurrentUser(
   })
 
   if (!account || account.id !== subUserSession.accountId) {
-    // La sesión de subusuario no corresponde al Account del Clerk actual
-    // No podemos limpiar cookies aquí porque esta función puede ser llamada
-    // desde Server Components. La limpieza se hace en el middleware o logout.
-    return null
+    const result: CurrentUserDiagnosticResult = {
+      user: null,
+      reason: !account ? "ACCOUNT_NOT_FOUND_FOR_CLERK" : "ACCOUNT_SESSION_MISMATCH",
+      subUserTokenSource: subUserLookup.tokenSource,
+    }
+    if (options.report !== false) await writeAuthenticationDiagnostic(options.source, result)
+    return result
   }
 
   // Obtener el subusuario
@@ -903,9 +1045,17 @@ export async function getCurrentUser(
   })
 
   if (!user || !user.isActive || user.accountId !== account.id) {
-    // No podemos limpiar cookies aquí porque esta función puede ser llamada
-    // desde Server Components. La limpieza se hace en el middleware o logout.
-    return null
+    const result: CurrentUserDiagnosticResult = {
+      user: null,
+      reason: !user
+        ? "SUBUSER_NOT_FOUND"
+        : !user.isActive
+          ? "SUBUSER_INACTIVE"
+          : "SUBUSER_ACCOUNT_MISMATCH",
+      subUserTokenSource: subUserLookup.tokenSource,
+    }
+    if (options.report !== false) await writeAuthenticationDiagnostic(options.source, result)
+    return result
   }
 
   const currentUser = {
@@ -959,7 +1109,22 @@ export async function getCurrentUser(
     canReverseTreasuryTransfers: user.canReverseTreasuryTransfers,
   }
   
-  return currentUser
+  return { user: currentUser }
+}
+
+/**
+ * Obtiene el usuario actual manteniendo la API histórica para los módulos que
+ * aún no necesitan diagnóstico detallado.
+ */
+export async function getCurrentUser(
+  authHeader?: string | null
+): Promise<CurrentUser | null> {
+  const result = await getCurrentUserWithDiagnostics({
+    source: "auth/getCurrentUser",
+    authHeader,
+    report: false,
+  })
+  return result.user
 }
 
 /**
