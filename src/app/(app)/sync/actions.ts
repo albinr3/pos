@@ -1,7 +1,7 @@
 "use server"
 
 import { prisma } from "@/lib/db"
-import { AuthenticationRequiredError, getCurrentUserWithDiagnostics } from "@/lib/auth"
+import { getCurrentUserWithDiagnostics } from "@/lib/auth"
 
 function decimalToNumber(decimal: unknown): number {
   if (typeof decimal === "number") return decimal
@@ -12,17 +12,20 @@ function decimalToNumber(decimal: unknown): number {
   return 0
 }
 
-async function requireSyncUser(source: string) {
+async function getSyncUser(source: string) {
   const result = await getCurrentUserWithDiagnostics({ source })
   if (result.user) return result.user
 
-  // Preventivo: conserva la causa real en Vercel con [AUTH_DIAGNOSTIC] y evita
-  // que una sincronización de caché aparezca como un ambiguo "No autenticado".
-  throw new AuthenticationRequiredError(result.reason, source)
+  // Preventivo: la sesión puede vencer entre el preflight del navegador y esta
+  // acción. Es un estado esperado, no un 500. null significa "no sincronizar";
+  // nunca devolver [] aquí: los consumidores borrarían el caché offline válido.
+  // El motivo concreto ya queda registrado con [AUTH_DIAGNOSTIC].
+  return null
 }
 
 export async function syncProductsToIndexedDB() {
-  const user = await requireSyncUser("sync/products-cache")
+  const user = await getSyncUser("sync/products-cache")
+  if (!user) return null
 
   const products = await prisma.product.findMany({
     where: { accountId: user.accountId, isActive: true, isAvailableForSale: true },
@@ -121,7 +124,8 @@ export async function syncProductsToIndexedDB() {
 }
 
 export async function syncCustomersToIndexedDB() {
-  const user = await requireSyncUser("sync/customers-cache")
+  const user = await getSyncUser("sync/customers-cache")
+  if (!user) return null
 
   const customers = await prisma.customer.findMany({
     where: { accountId: user.accountId, isActive: true },
@@ -143,7 +147,8 @@ export async function syncCustomersToIndexedDB() {
 }
 
 export async function syncARToIndexedDB() {
-  const user = await requireSyncUser("sync/accounts-receivable-cache")
+  const user = await getSyncUser("sync/accounts-receivable-cache")
+  if (!user) return null
 
   const arItems = await prisma.accountReceivable.findMany({
     where: {

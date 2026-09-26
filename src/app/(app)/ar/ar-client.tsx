@@ -230,7 +230,8 @@ export function ARClient({
             // Pre-cargar a IndexedDB
             try {
               const arData = await syncARToIndexedDB()
-              await saveARCache(arData)
+              // Preventivo: null indica sesión vencida; mantener el caché previo.
+              if (arData !== null) await saveARCache(arData)
             } catch (error) {
               console.error("Error pre-cargando AR:", error)
             }

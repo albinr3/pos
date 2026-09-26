@@ -179,6 +179,17 @@ export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, c
         syncARToIndexedDB(),
       ])
 
+      // Preventivo: una sesión vencida no equivale a una lista vacía; conservar
+      // todos los stores offline y pedir autenticación sin provocar un 500.
+      if (productsData === null || customersData === null || arData === null) {
+        toast({
+          title: "Sesión no disponible",
+          description: "Selecciona tu usuario nuevamente para pre-cargar los datos.",
+          variant: "destructive",
+        })
+        return
+      }
+
       await Promise.all([
         saveProductsCache(productsData),
         saveCustomersCache(customersData),

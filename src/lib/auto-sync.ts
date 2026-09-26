@@ -31,6 +31,31 @@ function parseLastSyncDay(raw: string | null) {
   return null
 }
 
+async function hasActiveSessionForCacheSync(): Promise<boolean> {
+  try {
+    // Preventivo: el sincronizador también se ejecuta desde el POS y al recuperar
+    // conexión. Confirmar la sesión aquí evita que esas vías invoquen una Server
+    // Action protegida después de que la caja se haya cerrado o vencido.
+    const response = await fetch("/api/auth/me", {
+      cache: "no-store",
+      credentials: "same-origin",
+    })
+    if (!response.ok) return false
+
+    const payload: unknown = await response.json()
+    return Boolean(
+      payload &&
+        typeof payload === "object" &&
+        "user" in payload &&
+        (payload as { user?: unknown }).user
+    )
+  } catch {
+    // Una comprobación de sesión fallida no debe impedir usar el caché offline
+    // ni convertirse en una llamada de sincronización que termine en un 500.
+    return false
+  }
+}
+
 // Verificar si necesita sincronizar el cache
 async function shouldSyncCache(): Promise<boolean> {
   if (typeof window === "undefined") return false
@@ -68,13 +93,18 @@ export async function syncCacheData() {
   if (activeCacheSync) return activeCacheSync
 
   activeCacheSync = (async () => {
-    // Verificar si necesita sincronizar
-    if (!(await shouldSyncCache())) {
-      console.log("[AutoSync] Cache aún está actualizado, no es necesario sincronizar")
-      return false
-    }
-
     try {
+      // Verificar si necesita sincronizar
+      if (!(await shouldSyncCache())) {
+        console.log("[AutoSync] Cache aún está actualizado, no es necesario sincronizar")
+        return false
+      }
+
+      if (!(await hasActiveSessionForCacheSync())) {
+        console.warn("[AutoSync] Se omitió la sincronización: no hay una sesión activa")
+        return false
+      }
+
       console.log("[AutoSync] Sincronizando cache de datos...")
 
       const [productsData, customersData, arData] = await Promise.all([
@@ -82,6 +112,13 @@ export async function syncCacheData() {
         syncCustomersToIndexedDB(),
         syncARToIndexedDB(),
       ])
+
+      // La sesión puede vencer mientras viajan las peticiones. No sobrescribir
+      // ningún store ni marcar éxito cuando una de las acciones devuelve null.
+      if (productsData === null || customersData === null || arData === null) {
+        console.warn("[AutoSync] Sesión vencida durante la precarga; se conserva el caché")
+        return false
+      }
 
       await Promise.all([
         saveProductsCache(productsData),

@@ -980,6 +980,10 @@ async function writeAuthenticationDiagnostic(
       subUserTokenSource: result.subUserTokenSource,
       requestPath,
       vercelRequestId,
+      // Preventivo: identificar el código desplegado sin registrar credenciales.
+      diagnosticVersion: "cache-session-v2",
+      deploymentId: process.env.VERCEL_DEPLOYMENT_ID ?? null,
+      commitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
     })
   )
 }
