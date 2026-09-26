@@ -14,7 +14,6 @@ async function hasInactivityEmailBeenSent(accountId: string) {
       accountId,
       type: INACTIVITY_NOTIFICATION_TYPE,
       channel: EMAIL_CHANNEL,
-      dedupeKey: `inactivity:${accountId}`,
     },
   })
 
@@ -27,6 +26,9 @@ async function recordInactivityEmail(accountId: string, metadata?: Record<string
       accountId,
       type: INACTIVITY_NOTIFICATION_TYPE,
       channel: EMAIL_CHANNEL,
+      // La misma clave debe quedar persistida al reservar el envío. Sin ella,
+      // el cron diario no puede reconocer el envío previo y vuelve a enviarlo.
+      dedupeKey: `inactivity:${accountId}`,
       metadata: metadata as object | undefined,
     },
   })
