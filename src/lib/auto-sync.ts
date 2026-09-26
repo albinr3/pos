@@ -12,6 +12,7 @@ import {
 import { clientStorageKeys, getMigratedLocalStorageItem, legacyStorageKey } from "./client-storage"
 
 const CACHE_SYNC_KEY = clientStorageKeys.cacheSync
+let activeCacheSync: Promise<boolean> | null = null
 
 function formatDateKey(date: Date) {
   const year = date.getFullYear()
@@ -61,51 +62,73 @@ export async function syncCacheData() {
     return false
   }
 
-  // Verificar si necesita sincronizar
-  if (!(await shouldSyncCache())) {
-    console.log("[AutoSync] Cache aún está actualizado, no es necesario sincronizar")
-    return false
-  }
+  // Preventivo: el shell, el POS y el evento "online" pueden pedir la misma
+  // carga a la vez. Unificamos la petición para no disparar acciones de servidor
+  // redundantes (ni errores de autenticación repetidos durante una transición).
+  if (activeCacheSync) return activeCacheSync
+
+  activeCacheSync = (async () => {
+    // Verificar si necesita sincronizar
+    if (!(await shouldSyncCache())) {
+      console.log("[AutoSync] Cache aún está actualizado, no es necesario sincronizar")
+      return false
+    }
+
+    try {
+      console.log("[AutoSync] Sincronizando cache de datos...")
+
+      const [productsData, customersData, arData] = await Promise.all([
+        syncProductsToIndexedDB(),
+        syncCustomersToIndexedDB(),
+        syncARToIndexedDB(),
+      ])
+
+      await Promise.all([
+        saveProductsCache(productsData),
+        saveCustomersCache(customersData),
+        saveARCache(arData),
+      ])
+
+      markCacheSynced()
+      console.log("[AutoSync] Cache sincronizado exitosamente")
+      return true
+    } catch (error) {
+      console.error("[AutoSync] Error sincronizando cache:", error)
+      return false
+    }
+  })()
 
   try {
-    console.log("[AutoSync] Sincronizando cache de datos...")
-    
-    const [productsData, customersData, arData] = await Promise.all([
-      syncProductsToIndexedDB(),
-      syncCustomersToIndexedDB(),
-      syncARToIndexedDB(),
-    ])
-    
-    await Promise.all([
-      saveProductsCache(productsData),
-      saveCustomersCache(customersData),
-      saveARCache(arData),
-    ])
-    
-    markCacheSynced()
-    console.log("[AutoSync] Cache sincronizado exitosamente")
-    return true
-  } catch (error) {
-    console.error("[AutoSync] Error sincronizando cache:", error)
-    return false
+    return await activeCacheSync
+  } finally {
+    activeCacheSync = null
   }
 }
 
 // Inicializar auto-sincronización
 export function initAutoSync() {
-  if (typeof window === "undefined") return
+  if (typeof window === "undefined") return () => undefined
 
   // Sincronizar al cargar la página si está online
+  let initialSyncTimer: ReturnType<typeof setTimeout> | undefined
   if (navigator.onLine) {
     // Esperar un poco para que la app termine de cargar
-    setTimeout(() => {
-      syncCacheData()
+    initialSyncTimer = setTimeout(() => {
+      void syncCacheData()
     }, 2000)
   }
 
   // Sincronizar cuando vuelve la conexión
-  window.addEventListener("online", () => {
+  const handleOnline = () => {
     console.log("[AutoSync] Conexión restaurada, sincronizando cache...")
-    syncCacheData()
-  })
+    void syncCacheData()
+  }
+  window.addEventListener("online", handleOnline)
+
+  return () => {
+    // Preventivo: evita que un temporizador o listener de una sesión ya cerrada
+    // ejecute acciones protegidas después de desmontar AppShell.
+    if (initialSyncTimer) clearTimeout(initialSyncTimer)
+    window.removeEventListener("online", handleOnline)
+  }
 }

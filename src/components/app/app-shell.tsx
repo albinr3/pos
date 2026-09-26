@@ -278,6 +278,9 @@ export function AppShell({ children, billingState }: AppShellProps) {
   }, [user])
   
   useEffect(() => {
+    let isMounted = true
+    let stopAutoSync = () => undefined
+
     if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
       const originalFetch = window.fetch.bind(window)
       window.fetch = async (...args: Parameters<typeof fetch>) => {
@@ -298,19 +301,20 @@ export function AppShell({ children, billingState }: AppShellProps) {
       }
     }
     setMounted(true)
-    // Inicializar auto-sincronización de cache
-    initAutoSync()
     
-    // Obtener usuario actual
+    // Confirmar la sesión antes de registrar tareas que llaman server actions.
+    // Preventivo: iniciar el cache antes de esta respuesta permite que un timer
+    // de una sesión vencida produzca "No autenticado" en el servidor.
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then((data) => {
-        if (data.user) {
+        if (isMounted && data.user) {
           setUser(data.user)
           cacheUser(data.user)
+          stopAutoSync = initAutoSync()
           if (navigator.onLine) {
-            syncCacheData()
-            syncPendingData()
+            void syncCacheData()
+            void syncPendingData()
           }
         }
         // No redirigir aquí - el layout del servidor ya maneja la redirección
@@ -323,6 +327,11 @@ export function AppShell({ children, billingState }: AppShellProps) {
         }
         console.error("Error fetching user")
       })
+
+    return () => {
+      isMounted = false
+      stopAutoSync()
+    }
   }, [])
 
   useEffect(() => {
