@@ -279,7 +279,9 @@ export function AppShell({ children, billingState }: AppShellProps) {
   
   useEffect(() => {
     let isMounted = true
-    let stopAutoSync = () => undefined
+    // Mantener el cleanup como `void`: initAutoSync devuelve una función que no retorna valor.
+    // Así el fallback no infiere `undefined` y no rompe al asignar el cleanup real.
+    let stopAutoSync: () => void = () => {}
 
     if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
       const originalFetch = window.fetch.bind(window)
