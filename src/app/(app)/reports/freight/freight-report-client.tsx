@@ -3,14 +3,16 @@
 import { useState, useTransition, type FormEvent } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet } from "lucide-react"
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { normalizeCustomerSearchText } from "@/lib/customer-display"
 import { formatDateDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { getFreightReportForExport } from "./actions"
@@ -31,11 +33,28 @@ export function FreightReportClient({ report, customers }: { report: FreightRepo
   const [validationError, setValidationError] = useState("")
   const [exportError, setExportError] = useState("")
   const [exporting, setExporting] = useState<"pdf" | "csv" | null>(null)
+  const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
+  const [customerPickerQuery, setCustomerPickerQuery] = useState("")
   const [isPending, startTransition] = useTransition()
   const busy = isPending || exporting !== null
   const { summary, pagination } = report
-  const missingCustomer = filters.customerId && filters.customerId !== GENERAL_CUSTOMER
-    && !customers.some((customer) => customer.id === filters.customerId)
+  const customerOptions = [
+    { id: "", label: "Todos los clientes" },
+    { id: GENERAL_CUSTOMER, label: "Cliente general" },
+    ...customers,
+  ]
+  const selectedCustomerLabel = customerOptions.find((customer) => customer.id === filters.customerId)?.label
+    ?? "Cliente no disponible"
+  const normalizedCustomerQuery = normalizeCustomerSearchText(customerPickerQuery)
+  const filteredCustomers = customerOptions.filter((customer) =>
+    normalizeCustomerSearchText(customer.label).includes(normalizedCustomerQuery)
+  )
+
+  function changeCustomerPicker(open: boolean) {
+    setCustomerPickerOpen(open)
+    // Reiniciar la búsqueda evita ocultar clientes al volver a abrir el selector.
+    setCustomerPickerQuery("")
+  }
 
   function changeFilter<K extends keyof FreightFilters>(key: K, value: FreightFilters[K]) {
     setValidationError("")
@@ -150,16 +169,48 @@ export function FreightReportClient({ report, customers }: { report: FreightRepo
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="freight-customer">Cliente</Label>
-                <Select value={filters.customerId || "ALL"} disabled={busy}
-                  onValueChange={(value) => changeFilter("customerId", value === "ALL" ? "" : value)}>
-                  <SelectTrigger id="freight-customer"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">Todos los clientes</SelectItem>
-                    <SelectItem value={GENERAL_CUSTOMER}>Cliente general</SelectItem>
-                    {missingCustomer && <SelectItem value={filters.customerId}>Cliente no disponible</SelectItem>}
-                    {customers.map((customer) => <SelectItem key={customer.id} value={customer.id}>{customer.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <Dialog open={customerPickerOpen} onOpenChange={changeCustomerPicker}>
+                  <DialogTrigger asChild>
+                    <Button id="freight-customer" type="button" variant="outline" disabled={busy}
+                      className="h-10 w-full min-w-0 justify-between font-normal">
+                      <span className="truncate">{selectedCustomerLabel}</span>
+                      <Search className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="flex max-h-[85dvh] w-[calc(100%-2rem)] flex-col sm:max-w-[520px]">
+                    <DialogHeader>
+                      <DialogTitle>Seleccionar cliente</DialogTitle>
+                      <DialogDescription>Busca por nombre o ID y selecciona un cliente para el filtro.</DialogDescription>
+                    </DialogHeader>
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                      <Input id="freight-customer-search" type="search" className="pl-9"
+                        aria-label="Buscar cliente por nombre o ID" placeholder="Buscar cliente por nombre o ID"
+                        value={customerPickerQuery} onChange={(event) => setCustomerPickerQuery(event.target.value)} />
+                    </div>
+                    <ul aria-label="Clientes" className="max-h-[min(50dvh,320px)] min-h-0 overflow-y-auto rounded-md border divide-y">
+                      {filteredCustomers.map((customer) => (
+                        <li key={customer.id}>
+                          <button type="button" aria-pressed={filters.customerId === customer.id}
+                            className={`flex w-full items-center justify-between gap-3 px-3 py-3 text-left text-sm hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${filters.customerId === customer.id ? "bg-accent" : ""}`}
+                            onClick={() => {
+                              changeFilter("customerId", customer.id)
+                              changeCustomerPicker(false)
+                            }}>
+                            <span className="min-w-0 break-words">{customer.label}</span>
+                            {filters.customerId === customer.id && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                          </button>
+                        </li>
+                      ))}
+                      {filteredCustomers.length === 0 && (
+                        <li className="p-4 text-center text-sm text-muted-foreground">No se encontraron clientes.</li>
+                      )}
+                    </ul>
+                    <p className="text-xs text-muted-foreground" aria-live="polite">
+                      {filteredCustomers.length} {filteredCustomers.length === 1 ? "resultado" : "resultados"}
+                    </p>
+                  </DialogContent>
+                </Dialog>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="freight-type">Tipo de venta</Label>

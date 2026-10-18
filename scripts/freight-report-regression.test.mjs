@@ -353,6 +353,8 @@ function clientHarness(report, exportAction = async () => ({ data: null, error: 
     Input: "input", Label: "label", Select: "select", SelectContent: "optgroup", SelectItem: "option",
     SelectTrigger: "span", SelectValue: "span", Table: "table", TableBody: "tbody", TableCell: "td",
     TableHead: "th", TableHeader: "thead", TableRow: "tr",
+    Dialog: "dialog", DialogContent: "div", DialogDescription: "p", DialogHeader: "header",
+    DialogTitle: "h2", DialogTrigger: "span",
   }
   const mocks = {
     react: {
@@ -366,12 +368,13 @@ function clientHarness(report, exportAction = async () => ({ data: null, error: 
     "react/jsx-runtime": require("react/jsx-runtime"),
     "next/link": { __esModule: true, default: "a" },
     "next/navigation": { useRouter() { return { push: (url) => navigations.push(url) } } },
-    "lucide-react": Object.fromEntries(["ArrowLeft", "ChevronLeft", "ChevronRight", "FileDown", "FileSpreadsheet"].map((name) => [name, () => null])),
+    "lucide-react": Object.fromEntries(["ArrowLeft", "Check", "ChevronLeft", "ChevronRight", "FileDown", "FileSpreadsheet", "Search"].map((name) => [name, () => null])),
+    "@/lib/customer-display": customerDisplay,
     "@/lib/date-time": dateTime, "@/lib/money": money, "./model": model,
     "./actions": { getFreightReportForExport: exportAction },
     "./exports": { createFreightPDF: () => ({ save: (filename) => downloads.push(filename) }), freightExportFilename: exporters.freightExportFilename },
   }
-  for (const component of ["button", "card", "input", "label", "select", "table"]) {
+  for (const component of ["button", "card", "dialog", "input", "label", "select", "table"]) {
     mocks[`@/components/ui/${component}`] = primitives
   }
   const { FreightReportClient } = loadModule(reportPath + "freight-report-client.tsx", mocks)
