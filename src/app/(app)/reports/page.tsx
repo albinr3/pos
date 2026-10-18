@@ -38,6 +38,17 @@ export default async function ReportsPage() {
         </Card>
         <Card>
           <CardHeader>
+            <CardTitle>Fletes</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="mb-4 text-sm text-muted-foreground">Consulta los envíos facturados por período y cliente.</p>
+            <Button asChild>
+              <Link href="/reports/freight">Ver reporte de fletes</Link>
+            </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
             <CardTitle>Gastos operativos</CardTitle>
           </CardHeader>
           <CardContent>
