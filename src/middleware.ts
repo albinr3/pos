@@ -11,6 +11,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/auth/subuser(.*)", // Permitir acceso a login de subusuario (autenticación manual)
   "/api/webhooks(.*)", // Webhooks de Lemon Squeezy
   "/api/cron(.*)", // Cron jobs
+  "/calculadora",
   "/about",
   "/como-usar-la-plataforma",
   "/contact",
