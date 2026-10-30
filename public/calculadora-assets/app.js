@@ -70,7 +70,8 @@
     const tax = taxTotal === null ? 'Pendiente' : usd(taxTotal);
     $('summaryAuction').textContent = $('finalAuction').textContent = auction;
     $('summaryTax').textContent = $('finalTax').textContent = tax;
-    $('expensesTotal').textContent = usd(expenses);
+    // Ambas vistas usan la misma suma para evitar diferencias en el presupuesto.
+    $('expensesSectionTotal').textContent = $('expensesTotal').textContent = usd(expenses);
     const complete = taxTotal !== null && auctionTotal !== null;
     $('summarySubtotal').textContent = complete ? usd(taxTotal + auctionTotal) : 'Pendiente';
     $('finalTotal').textContent = complete ? usd(taxTotal + auctionTotal + expenses) : 'Pendiente';
