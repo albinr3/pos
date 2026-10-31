@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
+import { endOfDay, parseDateParam, startOfDay } from "@/lib/dates"
 import {
   calcPercentAmountCents,
   calcDiscountedDocumentTotalsByTaxMode,
@@ -297,7 +298,7 @@ export async function listCustomers() {
   })
 }
 
-export async function listSales(options?: { query?: string; cursor?: string | null; take?: number }) {
+export async function listSales(options?: { query?: string; cursor?: string | null; take?: number; from?: string; to?: string; type?: SaleType; status?: "active" | "cancelled" }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
@@ -306,10 +307,16 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
   const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
   const shouldIncludeLegacyNullGeneric = q ? isGenericCustomerQuery(q) : false
   const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
+  const from = parseDateParam(options?.from)
+  const to = parseDateParam(options?.to)
 
   const sales = await prisma.sale.findMany({
     where: {
       accountId: user.accountId,
+      // Filtrar antes de paginar para incluir todas las ventas coincidentes.
+      ...(from || to ? { soldAt: { ...(from ? { gte: startOfDay(from) } : {}), ...(to ? { lte: endOfDay(to) } : {}) } } : {}),
+      ...(options?.type ? { type: options.type } : {}),
+      ...(options?.status === "active" ? { cancelledAt: null } : options?.status === "cancelled" ? { cancelledAt: { not: null } } : {}),
       ...(q
         ? {
           OR: [

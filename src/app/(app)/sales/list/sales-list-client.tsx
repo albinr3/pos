@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useTransition, useMemo } from "react"
+import { useEffect, useState, useTransition, useMemo, useRef } from "react"
 import { Edit, Receipt, Trash2, Search, Printer, Plus } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -113,6 +113,12 @@ export function SalesListClient() {
   const [isLoading, startLoading] = useTransition()
   const [query, setQuery] = useState("")
   const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
+  const [filterType, setFilterType] = useState<"" | SaleType>("")
+  const [status, setStatus] = useState<"" | "active" | "cancelled">("")
+  const requestId = useRef(0)
+  const hasFilters = Boolean(query || from || to || filterType || status)
 
   const [openEdit, setOpenEdit] = useState(false)
   const [editingSale, setEditingSale] = useState<SaleDetail | null>(null)
@@ -189,21 +195,26 @@ export function SalesListClient() {
     }
   }, [effectiveCustomerId, autoDiscountPercentBp])
 
-  function refresh(q?: string) {
+  function refresh() {
+    const id = ++requestId.current
+    const filters = { query: query.trim(), from, to, type: filterType || undefined, status: status || undefined }
+    setNextCursor(null)
     startLoading(async () => {
       try {
-        const r = await listSales({ query: q, take: PAGE_SIZE })
+        const r = await listSales({ ...filters, take: PAGE_SIZE })
+        if (id !== requestId.current) return
         setSales(r.items)
         setNextCursor(r.nextCursor)
       } catch {
+        if (id !== requestId.current) return
         setSales([])
         setNextCursor(null)
+        toast({ title: "Error", description: "No se pudieron cargar las ventas" })
       }
     })
   }
 
   useEffect(() => {
-    refresh("")
     listCustomers().then(setCustomers).catch(() => { })
     listTreasuryAccounts()
       .then((accounts) => {
@@ -233,21 +244,25 @@ export function SalesListClient() {
   }, [saleType, paymentMethod, treasuryAccounts, treasuryAccountId])
 
   useEffect(() => {
-    const q = query.trim()
-    const t = setTimeout(() => refresh(q), 200)
+    // Invalidar peticiones anteriores evita mostrar resultados de filtros obsoletos.
+    requestId.current++
+    const t = setTimeout(() => refresh(), 200)
     return () => clearTimeout(t)
-  }, [query])
+  }, [query, from, to, filterType, status])
 
   function loadMore() {
     if (!nextCursor) return
-    const q = query.trim()
+    const id = requestId.current
+    const filters = { query: query.trim(), from, to, type: filterType || undefined, status: status || undefined }
     startLoading(async () => {
       try {
-        const r = await listSales({ query: q, cursor: nextCursor, take: PAGE_SIZE })
+        const r = await listSales({ ...filters, cursor: nextCursor, take: PAGE_SIZE })
+        if (id !== requestId.current) return
         setSales((prev) => [...prev, ...r.items])
         setNextCursor(r.nextCursor)
       } catch {
-        setNextCursor(null)
+        if (id !== requestId.current) return
+        toast({ title: "Error", description: "No se pudieron cargar más ventas" })
       }
     })
   }
@@ -454,7 +469,7 @@ export function SalesListClient() {
         toast({ title: "Guardado", description: "Venta actualizada" })
         setOpenEdit(false)
         setEditingSale(null)
-        refresh(query)
+        refresh()
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo actualizar" })
       }
@@ -473,7 +488,7 @@ export function SalesListClient() {
       const result = await cancelSale(id, "admin", reason.trim())
       if (result.success) {
         toast({ title: "Listo", description: "Venta cancelada" })
-        refresh(query)
+        refresh()
       } else {
         toast({ title: "No se pudo cancelar", description: result.error })
       }
@@ -519,6 +534,38 @@ export function SalesListClient() {
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-5 w-5 text-muted-foreground" />
             <Input className="pl-10" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar por factura, cliente o productos" />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-1.5">
+              <Label htmlFor="sales-from">Desde</Label>
+              <Input id="sales-from" type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="sales-to">Hasta</Label>
+              <Input id="sales-to" type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="sales-type">Tipo de venta</Label>
+              <select id="sales-type" className="h-10 rounded-md border bg-background px-3 text-sm" value={filterType} onChange={(e) => setFilterType(e.target.value as "" | SaleType)}>
+                <option value="">Todos</option>
+                <option value={SaleType.CONTADO}>Contado</option>
+                <option value={SaleType.CREDITO}>Crédito</option>
+              </select>
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="sales-status">Estado</Label>
+              <select id="sales-status" className="h-10 rounded-md border bg-background px-3 text-sm" value={status} onChange={(e) => setStatus(e.target.value as "" | "active" | "cancelled")}>
+                <option value="">Todos</option>
+                <option value="active">Activas</option>
+                <option value="cancelled">Canceladas</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <Button type="button" variant="outline" className="w-full" disabled={!hasFilters} onClick={() => { setQuery(""); setFrom(""); setTo(""); setFilterType(""); setStatus("") }}>
+                Limpiar filtros
+              </Button>
+            </div>
           </div>
 
           <div className="rounded-md border overflow-x-auto">
@@ -630,7 +677,7 @@ export function SalesListClient() {
                         />
                         <p className="text-lg font-medium text-muted-foreground">No se encontraron ventas</p>
                         <p className="mt-2 text-sm text-muted-foreground">
-                          {query ? "Intenta con otros términos de búsqueda" : "Aún no se han registrado ventas"}
+                          {hasFilters ? "Prueba con otros filtros o términos de búsqueda" : "Aún no se han registrado ventas"}
                         </p>
                       </div>
                     </TableCell>
