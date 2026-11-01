@@ -1568,7 +1568,7 @@ export function PosClient({
                 salePricesIncludeItbis,
                 onboardingSale: onboardingSaleGuide,
                 username: user.username,
-              }, soldAt: Date.now() }, user, stockConsumptions)
+              }, soldAt: Date.now() }, user, stockConsumptions, totalCents)
           if (controlled) {
             toast({ title: controlled.pending ? "Venta guardada pendiente de sincronización" : "Venta guardada", description: controlled.pending ? "Se conserva en este dispositivo y turno. Revisa los pendientes en Cuadre diario." : `Factura ${controlled.result.invoiceCode}` })
             if (controlled.result?.stockDecrements) {
@@ -1683,7 +1683,7 @@ export function PosClient({
       ) : null}
 
       {/* La práctica no requiere turno; mostrar el aviso aquí indicaría lo contrario. */}
-      {!onboardingDemoGuide && <CashShiftBanner />}
+      {!onboardingDemoGuide && <CashShiftBanner actor={user ?? undefined} />}
 
       {/* Indicador de modo offline */}
       {mounted && !isOnline && (

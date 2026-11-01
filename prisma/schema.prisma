@@ -634,6 +634,7 @@ model CompanySettings {
   quotePrintFormat   String @default("80mm")
   paymentPrintFormat String @default("80mm")
   returnPrintFormat  String @default("80mm")
+  shiftReportPrintFormat String @default("CARTA")
 
   @@index([accountId])
 }

@@ -30,7 +30,7 @@ import {
   saveARCache,
 } from "@/lib/indexed-db"
 
-import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings, updatePrintFormats, updateSalePriceTaxMode, updateLegalTipSetting } from "./actions"
+import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings, updatePrintFormats, updateShiftReportPrintFormat, updateSalePriceTaxMode, updateLegalTipSetting } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
 import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
@@ -85,6 +85,7 @@ export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, c
   const [quotePrintFormat, setQuotePrintFormat] = useState("80mm")
   const [paymentPrintFormat, setPaymentPrintFormat] = useState("80mm")
   const [returnPrintFormat, setReturnPrintFormat] = useState("80mm")
+  const [shiftReportPrintFormat, setShiftReportPrintFormat] = useState("CARTA")
 
   const [isSaving, startSaving] = useTransition()
   const isOnline = useOnlineStatus()
@@ -116,6 +117,7 @@ export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, c
       setQuotePrintFormat(s.quotePrintFormat ?? "80mm")
       setPaymentPrintFormat(s.paymentPrintFormat ?? "80mm")
       setReturnPrintFormat(s.returnPrintFormat ?? "80mm")
+      setShiftReportPrintFormat(s.shiftReportPrintFormat ?? "CARTA")
     })
 
     // Actualizar contadores de pendientes
@@ -460,8 +462,21 @@ export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, c
               </select>
             </div>
           </div>
+          <div className="grid gap-2 sm:max-w-sm">
+            <Label htmlFor="shift-report-format">Detalle del turno</Label>
+            <select id="shift-report-format" className="h-10 rounded-md border bg-background px-3 text-sm" value={shiftReportPrintFormat} disabled={!canEditSettings || isSaving} onChange={event => {
+              const previous = shiftReportPrintFormat, next = event.target.value
+              setShiftReportPrintFormat(next)
+              startSaving(async () => {
+                try { await updateShiftReportPrintFormat(next); toast({ title: "Formato guardado" }) }
+                catch (err) { setShiftReportPrintFormat(previous); toast({ title: "Error", description: err instanceof Error ? err.message : "Error", variant: "destructive" }) }
+              })
+            }}>
+              <option value="CARTA">A4</option><option value="80mm">80 mm</option>
+            </select>
+          </div>
           <Separator />
-          
+
           <div className="text-sm font-semibold">Tamaños de Etiquetas</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="grid gap-2">

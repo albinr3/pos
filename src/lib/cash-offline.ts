@@ -5,6 +5,7 @@ import type { StockConsumption } from "./pos-stock"
 
 import type { getCashContext } from "@/lib/cash-shifts"
 import type { CashOperationInput } from "@/lib/cash-context"
+import type { ShiftReportSnapshot } from "@/lib/cash-shift-report-types"
 
 export type CashContext = Awaited<ReturnType<typeof getCashContext>>
 export type CashActorIdentity = { id: string; accountId: string }
@@ -29,7 +30,7 @@ export function assertCashShiftAccess(context: CashContext, actor?: CashActorIde
   const reason = cashShiftBlockReason(context, actor)
   if (reason) throw new CashShiftAccessError(context, reason)
 }
-export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "expense" | "return" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; cashOperation: CashOperationInput; error?: string }
+export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "expense" | "return" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; reportAmountCents?: number; reportCreatedAt?: string; cashOperation: CashOperationInput; error?: string }
 type DocumentResult = { id?: string; reference?: string; invoiceCode?: string; returnCode?: string; stockDecrements?: Array<{ ingredientId: string; qty: number }>; paymentId?: string; paymentIds?: string[] }
 type SubmitResult = { pending: true; result: null } | { pending: false; result: DocumentResult }
 type ManualInput = { shiftId: string; kind: string; amountCents: number; otherAccountId?: string; note: string }
@@ -67,6 +68,7 @@ export async function refreshCashContext(): Promise<CashContext> {
   const data = await response.json()
   if (!response.ok) throw new CashContextRequestError(response.status, data.error ?? "No se pudo consultar el turno")
   await writeState("context", data)
+  if (data.activeShift?.isMine && data.activeShift.isDevice) void refreshCashShiftReport(data).catch(() => {})
   return data
 }
 export async function cachedCashContext(): Promise<CashContext | undefined> { return readState<CashContext>("context") }
@@ -88,10 +90,88 @@ export async function cashPending(): Promise<CashQueuedOperation[]> {
   const db = await database()
   return value(db.transaction("outbox").objectStore("outbox").getAll())
 }
-async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, bindToShift: boolean, stockConsumptions?: StockConsumption[]) {
+type ReportLocalOperation = { id: string; kind: string; payload: Record<string, unknown>; status: "pending" | "confirmed"; error?: string; reference?: string; amountCents?: number; recordedAt?: string }
+const reportKey = (context: CashContext) => `report:${context.accountId}:${context.userId}:${context.activeShift?.id}`
+const reportJournalPrefix = (context: CashContext) => `report-op:${context.accountId}:${context.userId}:${context.activeShift?.id}:`
+const closedReportKey = (context: CashContext) => `report-closed:${context.accountId}:${context.userId}:${context.activeShift?.id}`
+
+export async function refreshCashShiftReport(context: CashContext): Promise<ShiftReportSnapshot> {
+  const shift = context.activeShift
+  if (!shift?.isMine || !shift.isDevice) throw new Error("Usa el usuario y dispositivo del responsable del turno")
+  const response = await fetch(`/api/cash-shifts?view=report&shiftId=${encodeURIComponent(shift.id)}`, { cache: "no-store" })
+  // Un rechazo de sesión HTML tampoco es una desconexión que permita mostrar datos cacheados.
+  if (!response.ok) {
+    const failure = await response.json().catch(() => ({})) as { error?: string }
+    throw new CashContextRequestError(response.status, failure.error ?? "No se pudo consultar el detalle")
+  }
+  const report: ShiftReportSnapshot = await response.json()
+  if (report.accountId !== context.accountId || report.userId !== context.userId || report.shiftId !== shift.id || !Array.isArray(report.movements) || !Array.isArray(report.confirmedOperationIds)) throw new Error("El detalle no corresponde al turno actual")
+  const db = await database(), tx = db.transaction("state", "readwrite"), state = tx.objectStore("state")
+  let accepted = false
+  const current = state.get("context")
+  current.onsuccess = () => {
+    const active = current.result?.value as CashContext | undefined
+    // Una respuesta tardía nunca debe restaurar datos del empleado o del turno anterior.
+    if (active?.accountId !== context.accountId || active.userId !== context.userId || active.activeShift?.id !== shift.id || !active.activeShift.isMine || !active.activeShift.isDevice) return
+    const closed = state.get(closedReportKey(context))
+    closed.onsuccess = () => {
+      // Una respuesta de reporte iniciada antes del cierre no debe restaurar su copia después de eliminarla.
+      if (closed.result?.value) return
+      accepted = true
+      const previous = state.get(reportKey(context))
+      previous.onsuccess = () => {
+        if (previous.result?.value?.generatedAt > report.generatedAt) return
+        state.put({ key: reportKey(context), value: report })
+        for (const id of report.confirmedOperationIds) state.delete(`${reportJournalPrefix(context)}${id}`)
+      }
+    }
+  }
+  await completed(tx)
+  if (!accepted) throw new Error("El turno o empleado cambió; actualiza antes de imprimir")
+  return report
+}
+
+export async function loadCashShiftReport(context: CashContext, actor: CashActorIdentity) {
+  const shift = context.activeShift
+  if (!shift?.isMine || !shift.isDevice || context.accountId !== actor.accountId || context.userId !== actor.id) throw new Error("El detalle solo está disponible para el responsable de este turno y dispositivo")
+  let onlineSnapshot = false
+  if (navigator.onLine) {
+    try { await refreshCashShiftReport(context); onlineSnapshot = true }
+    catch (error) { if (error instanceof CashContextRequestError && error.status < 500) throw error }
+  }
+  const db = await database(), tx = db.transaction(["state", "outbox"], "readonly")
+  const state = tx.objectStore("state"), outbox = tx.objectStore("outbox")
+  // Leer cola, confirmaciones y movimiento manual en el mismo corte evita perder una respuesta concurrente.
+  const [cached, current, allState, allPending, manualRow] = await Promise.all([value(state.get(reportKey(context))), value(state.get("context")), value(state.getAll()), value(outbox.getAll()), value(state.get(`manual:${shift.id}`))])
+  await completed(tx)
+  const active = current?.value as CashContext | undefined
+  if (active?.accountId !== actor.accountId || active.userId !== actor.id || active.activeShift?.id !== shift.id || !active.activeShift.isMine || !active.activeShift.isDevice) throw new Error("El turno o empleado cambió; actualiza antes de imprimir")
+  const snapshot = cached?.value as ShiftReportSnapshot | undefined
+  const confirmed = new Set(snapshot?.confirmedOperationIds ?? [])
+  const pending: ReportLocalOperation[] = (allPending as CashQueuedOperation[]).filter(row => row.cashOperation.accountId === actor.accountId && row.cashOperation.userId === actor.id && row.cashOperation.cashShiftId === shift.id && !confirmed.has(row.id)).map(row => ({ id: row.id, kind: row.kind, payload: row.payload, status: "pending", error: row.error, amountCents: row.reportAmountCents, recordedAt: row.reportCreatedAt }))
+  const journal: ReportLocalOperation[] = allState.filter(row => typeof row.key === "string" && row.key.startsWith(reportJournalPrefix(context)) && !confirmed.has(row.value?.id)).map(row => row.value)
+  const manual = manualRow?.value as ManualPending | undefined
+  if (manual?.accountId === actor.accountId && manual.userId === actor.id && !confirmed.has(manual.body.operationId)) pending.push({ id: manual.body.operationId, kind: "manual", payload: { ...manual.input }, status: "pending" })
+  const seen = new Set(pending.map(row => row.id))
+  const local = [...pending, ...journal.filter(row => !seen.has(row.id))]
+  const sequenceGap = !!snapshot && snapshot.finalSequence !== null && snapshot.lastSequence !== snapshot.finalSequence
+  return { snapshot, context, local, provisional: !onlineSnapshot || !snapshot || local.length > 0 || sequenceGap, generatedAt: new Date().toISOString() }
+}
+export async function clearCashShiftReport(context: CashContext) {
+  if (!context.activeShift) return
+  const db = await database(), tx = db.transaction("state", "readwrite"), state = tx.objectStore("state")
+  const keys = state.getAllKeys(), prefix = reportJournalPrefix(context), snapshot = reportKey(context)
+  state.put({ key: closedReportKey(context), value: true })
+  keys.onsuccess = () => {
+    // Solo limpiar el reporte tras un cierre confirmado; la cola y sus recibos nunca se eliminan aquí.
+    for (const key of keys.result) if (typeof key === "string" && (key === snapshot || key.startsWith(prefix))) state.delete(key)
+  }
+  await completed(tx)
+}
+async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, bindToShift: boolean, stockConsumptions?: StockConsumption[], reportAmountCents?: number) {
   if (!bindToShift) {
     const db = await database(), tx = db.transaction("outbox", "readwrite"), id = crypto.randomUUID()
-    const record: CashQueuedOperation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, cashOperation: { accountId: context.accountId, userId: context.userId, clientOperationId: id, cashShiftId: null, clientSequence: null } }
+    const record: CashQueuedOperation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, reportAmountCents, reportCreatedAt: new Date().toISOString(), cashOperation: { accountId: context.accountId, userId: context.userId, clientOperationId: id, cashShiftId: null, clientSequence: null } }
     tx.objectStore("outbox").put(record)
     await completed(tx)
     if (kind === "sale") notifyStockAvailability()
@@ -113,7 +193,7 @@ async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], 
     const localSequence = Number.isSafeInteger(current.sequence) ? current.sequence : 0
     const sequence = Math.max(localSequence, shift.lastSequence ?? 0) + 1
     const id = crypto.randomUUID()
-    operation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, cashOperation: { accountId: context.accountId, userId: context.userId, cashShiftId: shift.id, clientOperationId: id, clientSequence: sequence } }
+    operation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, reportAmountCents, reportCreatedAt: new Date().toISOString(), cashOperation: { accountId: context.accountId, userId: context.userId, cashShiftId: shift.id, clientOperationId: id, clientSequence: sequence } }
     state.put({ key, value: { sequence, frozen: false } })
     outbox.put(operation)
   }
@@ -124,8 +204,19 @@ async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], 
 async function confirm(record: CashQueuedOperation, result: unknown) {
   if (record.kind === "sale") invalidateStockCache(record.cashOperation.accountId)
   const db = await database(), tx = db.transaction(["state", "outbox"], "readwrite")
-  tx.objectStore("state").put({ key: `receipt:${record.id}`, value: result })
-  tx.objectStore("outbox").delete(record.id)
+  const state = tx.objectStore("state"), outbox = tx.objectStore("outbox")
+  state.put({ key: `receipt:${record.id}`, value: result })
+  const existing = outbox.get(record.id)
+  existing.onsuccess = () => {
+    // Una respuesta tardía no debe resucitar como cobro un pendiente ya anulado o confirmado.
+    if (!existing.result) return
+    if (record.cashOperation.cashShiftId && !(result as { discarded?: boolean } | null)?.discarded) {
+      const { accountId, userId, cashShiftId } = record.cashOperation
+      // Guardar la confirmación en la misma transacción que borra la cola evita perderla antes de refrescar el reporte.
+      state.put({ key: `report-op:${accountId}:${userId}:${cashShiftId}:${record.id}`, value: { id: record.id, kind: record.kind, payload: record.payload, status: "confirmed", reference: (result as DocumentResult | null)?.invoiceCode ?? (result as DocumentResult | null)?.returnCode, amountCents: record.reportAmountCents, recordedAt: record.reportCreatedAt } })
+    }
+    outbox.delete(record.id)
+  }
   await completed(tx)
   window.dispatchEvent(new Event("cash-outbox-changed"))
 }
@@ -154,7 +245,7 @@ export async function syncCashOutbox(context?: CashContext) {
   if (navigator.locks) await navigator.locks.request(`cash-sync:${current.accountId}`, work)
   else await work()
 }
-export async function submitControlledDocument(kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, actor?: { id: string; accountId: string }, stockConsumptions?: StockConsumption[]): Promise<SubmitResult | undefined> {
+export async function submitControlledDocument(kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, actor?: { id: string; accountId: string }, stockConsumptions?: StockConsumption[], reportAmountCents?: number): Promise<SubmitResult | undefined> {
   const { context, connected } = await resolveCashContext(actor)
   const posOperation = ["sale", "payment", "batchPayment"].includes(kind)
   if (posOperation) assertCashShiftAccess(context, actor)
@@ -165,7 +256,7 @@ export async function submitControlledDocument(kind: CashQueuedOperation["kind"]
   const holder = Boolean(shift?.isMine && shift.isDevice && shift.status === "OPEN")
   if (cashAccount && (!context.canOperate || !holder)) throw new CashShiftAccessError(context, "Abre tu turno en Cuadre diario desde este dispositivo antes de usar la caja")
   if (shift?.isMine && shift.isDevice && shift.status !== "OPEN") throw new CashShiftAccessError(context, "Termina o reanuda el cierre antes de registrar operaciones")
-  const record = await enqueue(context, kind, payload, holder, stockConsumptions)
+  const record = await enqueue(context, kind, payload, holder, stockConsumptions, reportAmountCents)
   if (navigator.onLine) {
     try { await syncCashOutbox(context) }
     catch { /* El pendiente ya es durable: mostrar guardado pendiente, nunca volver a crearlo. */ }
@@ -218,6 +309,10 @@ async function settleManualMovement(key: string, operationId: string, failure?: 
   request.onsuccess = () => {
     // Una respuesta anterior no puede borrar el movimiento siguiente creado desde otra pestaña.
     if (request.result?.value?.body.operationId !== operationId) return
+    if (failure === undefined) {
+      const entry = request.result.value as ManualPending
+      store.put({ key: `report-op:${entry.accountId}:${entry.userId}:${entry.input.shiftId}:${operationId}`, value: { id: operationId, kind: "manual", payload: { ...entry.input }, status: "confirmed" } })
+    }
     if (failure !== undefined) store.put({ key: `manual-failed:${operationId}`, value: failure })
     store.put({ key, value: null })
   }

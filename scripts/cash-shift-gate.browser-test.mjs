@@ -42,12 +42,13 @@ async function browserSuite() {
     const actor = { id: "ana", accountId: `gate-${++serial}` }
     const context = { protocolVersion: 1, accountId: actor.accountId, userId: actor.id, userName: "Ana", isOwner: true, enabled: true, ledgerStartedAt: new Date().toISOString(), canOperate: true, canViewAll: true, canManage: true, canTransfer: true, canRecordMovements: true, treasuryAccountId: "box", expectedOpeningCents: 11100, breakdown: [], activeShift: null }
     context.collectionsByMethod = [{ method: "EFECTIVO", totalCents: 22200 }, { method: "TARJETA", totalCents: 7500 }, { method: "TRANSFERENCIA", totalCents: 18800 }]
-    const f = { actor, context, history: [], openRequests: 0, createdShifts: 0, documents: [], actions: [], getStatus: 200, networkError: false, delay: 0, dropOpen: false, failOperations: false }
+    const f = { actor, context, history: [], report: null, openRequests: 0, createdShifts: 0, documents: [], actions: [], getStatus: 200, networkError: false, delay: 0, dropOpen: false, failOperations: false }
     f.shift = () => ({ id: `shift-${actor.accountId}`, status: "OPEN", cashierName: "Ana", isMine: true, isDevice: true, openedAt: new Date().toISOString(), lastSequence: 0, finalSequence: null, openingCountedCents: 11100, expectedCashCents: 11100 })
     window.fetch = async (url, options = {}) => {
       if (!online || f.networkError) throw new TypeError("Network offline")
       if (!options.method) {
         if (f.delay) await sleep(f.delay)
+        if (url.includes("view=report")) return new Response(JSON.stringify(f.report ?? { error: "Sin reporte" }), { status: f.report ? 200 : 404 })
         const data = url.includes("view=history") ? f.history : url.includes("/treasury/accounts") ? { data: [{ id: "box", name: "Caja Efectivo" }, { id: "bank", name: "Banco" }] } : context
         return new Response(JSON.stringify(f.getStatus === 200 ? data : { error: "Sesión vencida" }), { status: f.getStatus })
       }
@@ -261,6 +262,43 @@ async function browserSuite() {
     assert(!document.getElementById("cash-shift-counted") && !screenText().includes("Faltan"), "No debe mostrar un conteo ni una diferencia falsa mientras trabaja")
     assert(f.actions.length === 0, "Consultar no debe iniciar el cierre")
   })
+  await test("Al cerrar centra y destaca el panel durante un segundo, también al volver a intentarlo", async () => {
+    const originalScroll = Element.prototype.scrollIntoView
+    const calls = []
+    Element.prototype.scrollIntoView = function (options) { calls.push({ element: this, options }) }
+    try {
+      const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar el turno")
+      button("Cerrar mi turno").click()
+      await until(() => document.querySelector('[aria-label="Cierre del turno"].cash-shift-closing-highlight'), "Debe destacar la sección nueva")
+      const section = document.querySelector('[aria-label="Cierre del turno"]')
+      assert(calls.length === 1 && calls[0].element === section && calls[0].options.block === "center" && calls[0].options.behavior === "smooth", "Debe desplazar suavemente al centro del cierre")
+      await sleep(1400)
+      assert(!section.classList.contains("cash-shift-closing-highlight"), "El borde debe desaparecer tras el destello")
+      await until(() => button("Actualizar") && !button("Actualizar").disabled, "Debe terminar de preparar")
+      button("Actualizar").click(); await sleep(200); await until(() => button("Actualizar") && !button("Actualizar").disabled, "Debe terminar de actualizar")
+      assert(calls.length === 1, "Actualizar no debe desplazar otra vez")
+      await until(() => button("Volver al turno y seguir trabajando") && !button("Volver al turno y seguir trabajando").disabled, "Debe permitir reanudar")
+      button("Volver al turno y seguir trabajando").click(); await until(() => button("Cerrar mi turno") && !button("Cerrar mi turno").disabled, "Debe regresar al turno")
+      button("Cerrar mi turno").click(); await until(() => calls.length === 2, "Al iniciar otro cierre debe repetir la guía")
+    } finally { Element.prototype.scrollIntoView = originalScroll }
+  })
+  await test("Movimiento reducido evita desplazamiento animado y cargar un cierre existente no mueve la pantalla", async () => {
+    const originalScroll = Element.prototype.scrollIntoView, originalMatchMedia = window.matchMedia
+    const calls = []
+    Element.prototype.scrollIntoView = function (options) { calls.push(options) }
+    window.matchMedia = query => query === "(prefers-reduced-motion: reduce)" ? { matches: true } : originalMatchMedia.call(window, query)
+    try {
+      let f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar el turno")
+      button("Cerrar mi turno").click(); await until(() => document.querySelector('[aria-label="Cierre del turno"].cash-shift-closing-highlight'), "Debe destacar el cierre")
+      assert(calls.length === 1 && calls[0].block === "center" && calls[0].behavior === "instant", "Debe centrar sin movimiento animado")
+      await sleep(1100)
+      assert(!document.querySelector('[aria-label="Cierre del turno"]').classList.contains("cash-shift-closing-highlight"), "El borde fijo debe retirarse después de un segundo")
+      f = await fixture(); mountWorkspace(f); f.context.activeShift.status = "CLOSING"; f.context.activeShift.finalSequence = 0
+      await until(() => button("Confirmar cierre y entregar caja"), "Debe cargar el cierre existente")
+      await sleep(50)
+      assert(calls.length === 1 && !document.querySelector('[aria-label="Cierre del turno"]').classList.contains("cash-shift-closing-highlight"), "Entrar a un cierre existente no debe desplazar sin un clic")
+    } finally { Element.prototype.scrollIntoView = originalScroll; window.matchMedia = originalMatchMedia }
+  })
   await test("Todos los cobros son visibles sin desplegar el detalle ni mezclarse con el fondo", async () => {
     const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
     const summary = document.querySelector('[aria-label="Cobros del turno"]')
@@ -294,6 +332,56 @@ async function browserSuite() {
     assert(screenText().includes("El efectivo cuadra") && !document.getElementById("cash-count-note"), "Explicar la coincidencia del efectivo sin pedir motivo")
     button("Confirmar cierre y entregar caja").click(); await until(() => screenText().includes("El turno quedó cerrado"), "Debe confirmar el cierre")
     assert(f.actions.at(-1).countedCents === 33300 && document.querySelector('a[href^="/receipts/cash-shift/"]'), "Guardar el conteo y ofrecer comprobante")
+  })
+  await test("Imprimir el detalle agrupa movimientos y usa el formato del negocio", async () => {
+    const originalOpen = window.open, frame = document.createElement("iframe")
+    document.body.appendChild(frame); const popup = frame.contentWindow; let printed = 0
+    popup.print = () => { printed++ }; popup.focus = () => {}; window.open = () => popup
+    try {
+      const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+      f.report = { accountId: f.actor.accountId, userId: f.actor.id, shiftId: f.context.activeShift.id, cashierName: "Ana", openedAt: new Date().toISOString(), generatedAt: new Date().toISOString(), companyName: "Negocio", format: "80mm", openingCents: 11100, expectedCashCents: 33300, lastSequence: 0, finalSequence: 0, status: "CLOSING", confirmedOperationIds: [], documents: [], movements: [{ id: "one", sourceType: "sale", sourceId: "sale", reference: "FAC-1", method: "TARJETA", amountCents: 7500, recordedAt: new Date().toISOString(), note: null, treasuryAccount: { name: "Banco" } }] }
+      button("Cerrar mi turno").click(); await until(() => button("Ver detalle del turno"), "Debe mostrar el botón en el cierre")
+      button("Ver detalle del turno").click(); await until(() => printed === 1, "Debe abrir la impresión")
+      assert(popup.document.body.textContent.includes("FAC-1") && popup.document.body.textContent.includes("Tarjeta") && popup.document.body.textContent.includes("75.00"), "Debe imprimir los movimientos por método")
+      assert(popup.document.head.textContent.includes("80mm auto"), "Debe usar el formato configurado")
+      assert(f.context.activeShift.status === "CLOSING" && !f.actions.some(action => action.action === "close"), "Imprimir no debe cerrar el turno")
+    } finally { window.open = originalOpen; frame.remove() }
+  })
+  await test("Sin conexión se abre el detalle provisional sin iniciar el cierre", async () => {
+    const originalOpen = window.open, frame = document.createElement("iframe")
+    document.body.appendChild(frame); const popup = frame.contentWindow; let printed = 0
+    popup.print = () => { printed++ }; popup.focus = () => {}; window.open = () => popup
+    try {
+      const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+      online = false; button("Cerrar mi turno").click()
+      await until(() => button("Ver detalle del turno"), "Debe permitir abrir el detalle sin conexión")
+      assert(screenText().includes("Detalle provisional sin conexión") && button("Confirmar cierre y entregar caja").disabled && f.context.activeShift.status === "OPEN", "No debe cerrar ni bloquear ventas")
+      button("Ver detalle del turno").click(); await until(() => printed === 1, "Debe imprimir sin conexión")
+      assert(popup.document.body.textContent.includes("REPORTE PROVISIONAL O INCOMPLETO") && popup.document.body.textContent.includes("No hay una copia previa"), "Debe aclarar la falta de datos confirmados")
+      assert(popup.document.head.textContent.includes("size: A4"), "A4 debe ser el formato inicial")
+      assert(!f.actions.some(action => action.action === "prepare" || action.action === "close"), "No debe registrar un cierre provisional en el servidor")
+    } finally { online = true; window.open = originalOpen; frame.remove() }
+  })
+  await test("Desde ventas o cobros se puede imprimir el detalle propio sin conexión", async () => {
+    const originalOpen = window.open, frame = document.createElement("iframe")
+    document.body.appendChild(frame); const popup = frame.contentWindow; let printed = 0
+    popup.print = () => { printed++ }; popup.focus = () => {}; window.open = () => popup
+    try {
+      const f = await fixture(); f.context.activeShift = f.shift(); await refreshCashContext()
+      online = false; currentRoot = createRoot(document.getElementById("test-root")); currentRoot.render(React.createElement(CashShiftBanner, { actor: f.actor }))
+      await until(() => button("Ver detalle del turno"), "El aviso de caja debe permitir imprimir sin navegar")
+      button("Ver detalle del turno").click(); await until(() => printed === 1, "Debe imprimir sin conexión")
+      assert(popup.document.body.textContent.includes("REPORTE PROVISIONAL O INCOMPLETO"), "El reporte debe identificarse como provisional")
+      assert(f.actions.length === 0, "Consultar no debe cambiar el turno")
+    } finally { online = true; window.open = originalOpen; frame.remove() }
+  })
+  await test("Si el navegador bloquea la impresión se muestra una indicación", async () => {
+    const originalOpen = window.open; window.open = () => null
+    try {
+      const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+      button("Cerrar mi turno").click(); await until(() => button("Ver detalle del turno"), "Debe ofrecer el detalle")
+      button("Ver detalle del turno").click(); await until(() => screenText().includes("El navegador bloqueó la ventana de impresión"), "Debe explicar cómo habilitar la impresión")
+    } finally { window.open = originalOpen }
   })
   await test("El faltante se expresa en palabras y requiere motivo antes de cerrar", async () => {
     const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
@@ -397,7 +485,7 @@ async function browserSuite() {
   document.getElementById("result").textContent = JSON.stringify(results)
 }
 
-const compiled = await build({ stdin: { contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { CashShiftGate, useCashShiftAccess } from "./src/components/app/cash-shift-gate"; import { CashShiftsClient } from "./src/app/(app)/daily-close/cash-shifts-client"; import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./src/components/ui/dialog"; import { cashPending, refreshCashContext, submitControlledDocument } from "./src/lib/cash-offline"; import { openCashShiftFromClient } from "./src/lib/cash-shift-opening"; import { isBeforeCurrentBusinessDay } from "./src/lib/dates"; import { getPendingCounts } from "./src/lib/indexed-db"; (${browserSuite.toString()})().catch(error => document.getElementById("result").textContent = JSON.stringify([{ok:false,error:error.message}]));`, resolveDir: rootDir }, bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "test-navigation", setup(build) { build.onResolve({ filter: /^next\/link$/ }, () => ({ path: "next-link", namespace: "test" })); build.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'import React from "react"; export default function Link(props) { return React.createElement("a", props); }', resolveDir: rootDir })) } }] })
+const compiled = await build({ stdin: { contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { CashShiftGate, useCashShiftAccess } from "./src/components/app/cash-shift-gate"; import { CashShiftBanner } from "./src/components/app/cash-shift-banner"; import { CashShiftsClient } from "./src/app/(app)/daily-close/cash-shifts-client"; import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./src/components/ui/dialog"; import { cashPending, refreshCashContext, submitControlledDocument } from "./src/lib/cash-offline"; import { openCashShiftFromClient } from "./src/lib/cash-shift-opening"; import { isBeforeCurrentBusinessDay } from "./src/lib/dates"; import { getPendingCounts } from "./src/lib/indexed-db"; (${browserSuite.toString()})().catch(error => document.getElementById("result").textContent = JSON.stringify([{ok:false,error:error.message}]));`, resolveDir: rootDir }, bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "test-navigation", setup(build) { build.onResolve({ filter: /^next\/link$/ }, () => ({ path: "next-link", namespace: "test" })); build.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'import React from "react"; export default function Link(props) { return React.createElement("a", props); }', resolveDir: rootDir })) } }] })
 const target = path.join(rootDir, "tmp", "cash-gate-browser.html")
 fs.mkdirSync(path.dirname(target), { recursive: true })
 fs.writeFileSync(target, `<!doctype html><meta charset="utf-8"><div id="test-root"></div><pre id="result">RUNNING</pre><script>${compiled.outputFiles[0].text.replace(/<\/script/gi, "<\\/script")}</script>`)

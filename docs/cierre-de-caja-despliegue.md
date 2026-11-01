@@ -13,6 +13,10 @@ La función se activa por negocio desde **Cuadre diario**. La migración no acti
 4. Mientras trabajas, **Cobros del turno** muestra el total cobrado y los importes de efectivo, tarjeta y transferencia; Otros aparece si tiene importe. Para entregar, pulsa **Cerrar mi turno**. La pantalla guía los pasos: guardar pendientes, revisar cobros y contar efectivo, y confirmar la entrega. El resumen permanece visible; el campo para contar aparece al iniciar el cierre. No se muestra un faltante por el cero inicial: hay que introducir el conteo, incluso si la caja está vacía. Si el monto difiere del esperado, se explica cuánto falta o sobra y se exige un motivo.
 5. El siguiente empleado abre con su propio conteo. La diferencia de recepción permanece separada del resultado de sus operaciones.
 
+Durante el conteo, **Ver detalle del turno** imprime los movimientos agrupados por método, con los traspasos identificados por cuenta y las operaciones sin movimiento de dinero aparte. En **Ajustes → Impresión y Etiquetas → Detalle del turno** se elige A4 (predeterminado) o 80 mm. La impresión no confirma ni modifica el cierre.
+
+Si se pierde la conexión, el responsable puede abrir un detalle provisional desde el turno o desde el aviso de caja en Ventas y Cuentas por cobrar. Se muestra el último corte disponible y los pendientes o confirmaciones locales por separado. Si no hay copia anterior, el reporte indica que los datos confirmados no están disponibles. Debe volver la conexión para completar el cierre definitivo.
+
 Un turno puede atravesar medianoche. Si sigue abierto en un día posterior, la aplicación muestra un aviso con la fecha de apertura; no lo cierra automáticamente. El cambio de día se calcula con la zona del negocio (UTC-4). Su responsable y dispositivo se verifican en el servidor. Los pendientes se conservan si expira la sesión o cambia el empleado; deben sincronizarse con la identidad original.
 
 ## Tesorería y correcciones

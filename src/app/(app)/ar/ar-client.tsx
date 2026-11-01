@@ -654,7 +654,7 @@ export function ARClient({
 
   return (
     <div className="grid gap-6">
-      <CashShiftBanner />
+      <CashShiftBanner actor={actor} />
       {/* Indicador de modo offline */}
       {mounted && !isOnline && (
         <div className="rounded-md border border-yellow-500 bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">

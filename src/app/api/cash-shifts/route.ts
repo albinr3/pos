@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { cashHash } from "@/lib/cash-context"
 import { cashErrorResponse } from "@/lib/cash-http"
-import { activateCashControl, cancelCashClose, correctClosedCashDocument, disableCashControl, finishCashClose, getCashContext, listCashHistory, manualCashMovement, openCashShift, prepareCashClose, previewCashActivation } from "@/lib/cash-shifts"
+import { activateCashControl, cancelCashClose, correctClosedCashDocument, disableCashControl, finishCashClose, getCashContext, getCashShiftReport, listCashHistory, manualCashMovement, openCashShift, prepareCashClose, previewCashActivation } from "@/lib/cash-shifts"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     if (!actor) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     const token = request.cookies.get("movopos-cash-device")?.value ?? randomUUID()
     const action = request.nextUrl.searchParams.get("view")
-    const data = action === "preview" ? await previewCashActivation(actor) : action === "history" ? await listCashHistory(actor, request.nextUrl.searchParams.get("before") ?? undefined) : await getCashContext(actor, cashHash(token))
+    const data = action === "preview" ? await previewCashActivation(actor) : action === "history" ? await listCashHistory(actor, request.nextUrl.searchParams.get("before") ?? undefined) : action === "report" ? await getCashShiftReport(actor, cashHash(token), request.nextUrl.searchParams.get("shiftId") ?? "") : await getCashContext(actor, cashHash(token))
     const response = NextResponse.json(data)
     response.headers.set("Cache-Control", "no-store")
     if (!request.cookies.has("movopos-cash-device")) response.cookies.set("movopos-cash-device", token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 365 })

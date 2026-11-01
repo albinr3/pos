@@ -18,6 +18,8 @@ try {
 
 // Derivar exclusivamente los cambios de esta entrega para ensayar el salto desde el esquema previo.
 let schema = fs.readFileSync(path.join(root, "prisma/schema.prisma"), "utf8")
+// La prueba debe aplicar también la migración real del formato de reporte.
+schema = schema.replace(/^.*shiftReportPrintFormat.*\r?\n/gm, "")
 schema = schema.replace(/^model (CashControl|CashShift|CashMovement|CashOperation|CashSourceLink) \{[\s\S]*?^\}\r?\n/gm, "")
 schema = schema.replace(/^.*\s(?:CashControl|CashShift|CashMovement|CashOperation|CashSourceLink)[?\[\]\s].*\r?\n/gm, "")
 schema = schema.replace(/^.*can(?:OperateCashShifts|ViewAllCashShifts|ManageCashShifts|RecordCashMovements).*\r?\n/gm, "")
@@ -39,4 +41,5 @@ function prisma(args) {
 prisma(["db", "push", "--schema", temporary, "--skip-generate"])
 prisma(["db", "execute", "--url", url, "--file", seed])
 prisma(["db", "execute", "--url", url, "--file", path.join(root, "prisma/migrations/20261031120000_add_cash_shifts/migration.sql")])
+prisma(["db", "execute", "--url", url, "--file", path.join(root, "prisma/migrations/20261101120000_add_shift_report_print_format/migration.sql")])
 console.log("Base local preparada: esquema previo, datos ficticios y migración aditiva verificados")

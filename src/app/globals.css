@@ -2,6 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Destaca el cierre recién desplegado sin animar el contenido ni cambiar su tamaño. */
+.cash-shift-closing-highlight {
+  outline: 3px solid transparent;
+  outline-offset: 8px;
+  animation: cash-shift-closing-flash 1s ease-in-out 250ms;
+}
+
+@keyframes cash-shift-closing-flash {
+  0%, 50%, 100% { outline-color: rgb(130 4 255 / 90%); }
+  25%, 75% { outline-color: transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cash-shift-closing-highlight {
+    animation: none;
+    outline-color: rgb(130 4 255 / 90%);
+  }
+}
+
 :root {
 
   --card: 0 0% 100%;

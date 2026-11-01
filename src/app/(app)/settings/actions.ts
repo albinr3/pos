@@ -33,6 +33,7 @@ export async function getSettings() {
     quotePrintFormat: s?.quotePrintFormat ?? "80mm",
     paymentPrintFormat: s?.paymentPrintFormat ?? "80mm",
     returnPrintFormat: s?.returnPrintFormat ?? "80mm",
+    shiftReportPrintFormat: s?.shiftReportPrintFormat ?? "CARTA",
   }
 }
 
@@ -234,6 +235,16 @@ export async function updatePurchasePricingSettings(defaultProfitMarginBp: numbe
 
   revalidatePath("/settings")
   revalidatePath("/purchases")
+}
+
+export async function updateShiftReportPrintFormat(format: string) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+  await ensurePermission(user, "canManageSettings", { allowAdminBypass: false, message: "No tienes permiso para modificar ajustes", resourceType: "CompanySettings" })
+  if (format !== "80mm" && format !== "CARTA") throw new Error("Formato de impresión inválido")
+  await prisma.companySettings.upsert({ where: { accountId: user.accountId }, update: { shiftReportPrintFormat: format }, create: { accountId: user.accountId, name: "Mi Negocio", phone: "", address: "", shiftReportPrintFormat: format } })
+  await logAuditEvent({ accountId: user.accountId, userId: user.id, action: "SETTINGS_CHANGED", resourceType: "CompanySettings", details: { shiftReportPrintFormat: format } })
+  revalidatePath("/settings")
 }
 
 export async function updatePrintFormats(formats: {

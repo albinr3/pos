@@ -22,11 +22,15 @@ async function browserSuite(compiled, stockCompiled) {
     const unique = "cash-browser-" + Date.now() + "-" + (++caseId)
     const exports = {}; new Function("exports", "require", compiled.replace('"movopos-cash-v1"', JSON.stringify(unique)))(exports, name => { if (name === "./stock-cache-state") return stockState; throw new Error(name) })
     const context = { protocolVersion: 1, enabled, accountId: unique, userId: "ana", userName: "Ana", canOperate: true, canManage: true, canViewAll: true, canTransfer: true, treasuryAccountId: "box", activeShift: { id: unique, isMine: true, isDevice: true, status: "OPEN", lastSequence: 0, finalSequence: null } }
-    let processed = 0, drop = false, validation = false, manualError = null
+    let processed = 0, drop = false, validation = false, manualError = null, report = null
     const seen = new Map(), manualSeen = new Map()
     window.fetch = async (url, options = {}) => {
       if (!online) throw new TypeError("Network offline")
-      if (!options.method) return new Response(JSON.stringify(context), { status: 200 })
+      if (!options.method) {
+        if (url.includes("view=report") && report === "unauthorized") return new Response("Sesión vencida", { status: 401 })
+        if (url.includes("view=report")) return new Response(JSON.stringify(report ?? { error: "Sin reporte" }), { status: report ? 200 : 404 })
+        return new Response(JSON.stringify(context), { status: 200 })
+      }
       const body = JSON.parse(options.body)
       if (body.action === "movement") {
         if (manualError?.code) { const error = manualError; manualError = null; return new Response(JSON.stringify(error), { status: error.status }) }
@@ -45,8 +49,65 @@ async function browserSuite(compiled, stockCompiled) {
       if (drop) { drop = false; throw new TypeError("Response lost after commit") }
       return new Response(JSON.stringify({ result: seen.get(op.clientOperationId) }), { status: 200 })
     }
-    return { api: exports, context, seen, manualSeen, setDrop: () => { drop = true }, setValidation: value => { validation = value }, setManualError: (status, code) => { manualError = { status, code, error: "Error de prueba" } } }
+    return { api: exports, context, seen, manualSeen, setReport: value => { report = value }, setDrop: () => { drop = true }, setValidation: value => { validation = value }, setManualError: (status, code) => { manualError = { status, code, error: "Error de prueba" } } }
   }
+  const reportFor = (f, ids = []) => ({ accountId: f.context.accountId, userId: f.context.userId, shiftId: f.context.activeShift.id, cashierName: "Ana", openedAt: new Date().toISOString(), generatedAt: new Date().toISOString(), companyName: "Negocio", format: "CARTA", openingCents: 10000, expectedCashCents: 10000, lastSequence: f.context.activeShift.lastSequence, finalSequence: null, status: "OPEN", confirmedOperationIds: ids, movements: [], documents: [] })
+  await test("Detalle offline usa la copia propia y separa pendientes sin inventar totales", async () => {
+    const f = fixture(); f.setReport(reportFor(f)); await f.api.refreshCashContext(); await f.api.refreshCashShiftReport(f.context)
+    online = false; await f.api.submitControlledDocument("payment", { method: "TARJETA", amountCents: 1250 }, { id: "ana", accountId: f.context.accountId })
+    await f.api.submitControlledDocument("sale", { paymentMethod: "EFECTIVO" }, { id: "ana", accountId: f.context.accountId }, undefined, 2300)
+    const report = await f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId })
+    assert(report.provisional && report.snapshot.expectedCashCents === 10000 && report.local.length === 2 && report.local[0].status === "pending", "Debe conservar el corte y separar los pendientes")
+    const sale = report.local.find(row => row.kind === "sale")
+    assert(sale.amountCents === 2300 && sale.recordedAt, "Debe conservar importe indicado y hora sin añadirlos al corte confirmado")
+    await rejects(() => f.api.loadCashShiftReport(f.context, { id: "otro", accountId: f.context.accountId }), "No entregar el detalle a otro empleado")
+  })
+  await test("Una respuesta perdida incluida en el corte no duplica el pendiente", async () => {
+    const f = fixture(); f.setReport(reportFor(f)); await f.api.refreshCashContext(); f.setDrop()
+    await f.api.submitControlledDocument("sale", { paymentMethod: "EFECTIVO" }, { id: "ana", accountId: f.context.accountId })
+    f.setReport(reportFor(f, [...f.seen.keys()]))
+    const report = await f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId })
+    assert(report.local.length === 0 && report.snapshot.confirmedOperationIds.length === 1, "No mostrar la misma operación dos veces")
+  })
+  await test("Una confirmación reciente sobrevive si no se pudo renovar la copia", async () => {
+    const f = fixture(); f.setReport(reportFor(f)); await f.api.refreshCashContext(); await f.api.refreshCashShiftReport(f.context)
+    f.setReport(null); await f.api.submitControlledDocument("sale", { paymentMethod: "EFECTIVO" }, { id: "ana", accountId: f.context.accountId })
+    online = false
+    const report = await f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId })
+    assert(report.provisional && report.local.length === 1 && report.local[0].status === "confirmed", "La respuesta confirmada debe permanecer hasta incorporarse al corte")
+    online = true; f.setReport(reportFor(f, [...f.seen.keys()]))
+    const refreshed = await f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId })
+    assert(refreshed.local.length === 0, "La confirmación deja de listarse por separado al incorporarse al corte")
+  })
+  await test("Un movimiento manual con respuesta perdida se muestra una sola vez", async () => {
+    const f = fixture(); f.setReport(reportFor(f)); await f.api.refreshCashContext(); await f.api.refreshCashShiftReport(f.context)
+    f.setDrop(); await rejects(() => f.api.sendManualCashMovement({ shiftId: f.context.activeShift.id, kind: "OWNER_OUT", amountCents: 500, note: "Retiro" }), "Debe conservar la operación por confirmar")
+    online = false
+    const local = await f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId })
+    assert(local.provisional && local.local.length === 1 && local.local[0].kind === "manual", "Debe incluir el movimiento incierto una sola vez")
+    online = true; f.setReport(reportFor(f, [...f.manualSeen.keys()]))
+    const updated = await f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId })
+    assert(updated.local.length === 0, "Un movimiento ya presente en el corte no se duplica")
+  })
+  await test("Sin copia previa el detalle offline se identifica como incompleto", async () => {
+    const f = fixture(); await f.api.refreshCashContext(); online = false
+    const report = await f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId })
+    assert(report.provisional && !report.snapshot, "No inventar datos confirmados")
+  })
+  await test("Limpiar el reporte de un cierre no borra la cola ni el contexto", async () => {
+    const f = fixture(); f.setReport(reportFor(f)); await f.api.refreshCashContext(); await f.api.refreshCashShiftReport(f.context)
+    online = false; await f.api.submitControlledDocument("payment", { amountCents: 300, method: "EFECTIVO" }, { id: "ana", accountId: f.context.accountId })
+    await f.api.clearCashShiftReport(f.context)
+    const report = await f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId })
+    assert(!report.snapshot && report.local.length === 1 && (await f.api.cashPending()).length === 1, "Solo debe eliminar datos del reporte, no pendientes")
+    online = true
+    await rejects(() => f.api.refreshCashShiftReport(f.context), "Una respuesta tardía no debe restaurar la copia del cierre")
+  })
+  await test("Una sesión rechazada no autoriza imprimir el reporte cacheado", async () => {
+    const f = fixture(); f.setReport(reportFor(f)); await f.api.refreshCashContext(); await f.api.refreshCashShiftReport(f.context)
+    f.setReport("unauthorized")
+    await rejects(() => f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId }), "Un 401, incluso sin JSON, no debe usar la copia")
+  })
   await test("Desactivado mantiene el camino legacy sin crear pendientes nuevos", async () => {
     const f = fixture(false)
     const result = await f.api.submitControlledDocument("sale", { total: 100 })
@@ -217,10 +278,16 @@ let startupError
 child.on("error", error => { startupError = error })
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const portFile = path.join(profile, "DevToolsActivePort")
-for (let i = 0; i < 150 && !fs.existsSync(portFile) && !startupError; i++) await wait(100)
+let connection
+for (let i = 0; i < 150 && !connection && !startupError; i++) {
+  // Windows puede bloquear el archivo mientras Chrome todavía escribe el puerto.
+  try { const lines = fs.readFileSync(portFile, "utf8").trim().split(/\r?\n/); if (lines[0] && lines[1]) connection = lines }
+  catch (error) { if (!["ENOENT", "EBUSY", "EACCES"].includes(error.code)) throw error }
+  if (!connection) await wait(100)
+}
 if (startupError) throw startupError
-if (!fs.existsSync(portFile)) throw new Error("Chrome no inició su instancia temporal de pruebas")
-const [port, socketPath] = fs.readFileSync(portFile, "utf8").trim().split(/\r?\n/)
+if (!connection) throw new Error("Chrome no inició su instancia temporal de pruebas")
+const [port, socketPath] = connection
 const socket = new WebSocket(`ws://127.0.0.1:${port}${socketPath}`)
 await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject })
 let nextId = 0

@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label"
 import { PriceInput } from "@/components/app/price-input"
 import { CashShiftWorkspace } from "@/components/app/cash-shift-workspace"
 import { ShiftCollectionsSummary } from "@/components/app/shift-collections-summary"
-import { discardCashPending, manualCashPending, sendManualCashMovement, cashPending, freezeCashShift, refreshCashContext, syncCashOutbox, unfreezeCashShift, type CashContext, type CashQueuedOperation } from "@/lib/cash-offline"
+import { clearCashShiftReport, discardCashPending, manualCashPending, sendManualCashMovement, cashPending, freezeCashShift, refreshCashContext, syncCashOutbox, unfreezeCashShift, type CashContext, type CashQueuedOperation } from "@/lib/cash-offline"
 import { assertNoCashOpeningPending, openCashShiftFromClient } from "@/lib/cash-shift-opening"
 import { formatRD } from "@/lib/money"
 import { formatDateTimeDO } from "@/lib/date-time"
@@ -57,6 +57,9 @@ export function CashShiftsClient() {
   const [correctionReason, setCorrectionReason] = useState("")
   const [moneyMoved, setMoneyMoved] = useState(true)
   const [closedShiftId, setClosedShiftId] = useState<string>()
+  const [provisionalClose, setProvisionalClose] = useState(false)
+  // El panel se desmonta al cambiar el estado; conservar la intención del clic fuera de él.
+  const revealClosingRef = useRef<string | null>(null)
   const refresh = useCallback(async () => {
     const state = await refreshCashContext()
     setContext(state)
@@ -109,19 +112,24 @@ export function CashShiftsClient() {
         </div>}
       </> : <>
         {closedShiftId && !shift && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><div><p className="font-semibold">El turno quedó cerrado</p><p>El conteo y las diferencias ya están guardados. El siguiente empleado puede abrir su turno.</p></div><Button asChild variant="outline"><a href={`/receipts/cash-shift/${encodeURIComponent(closedShiftId)}`} target="_blank" rel="noopener noreferrer">Ver comprobante</a></Button></div>}
-        <CashShiftWorkspace key={`${shift?.id ?? "opening"}:${shift?.status ?? "none"}`} context={context} busy={busy} pendingCount={pending.filter(record => record.cashOperation.cashShiftId === shift?.id).length} manualPending={Boolean(manualPending)} counted={counted} note={note} onCountChange={setCounted} onNoteChange={setNote} actions={{
+        <CashShiftWorkspace key={`${shift?.id ?? "opening"}:${shift?.status ?? "none"}`} context={context} provisionalClose={provisionalClose} revealClosingRef={revealClosingRef} busy={busy} pendingCount={pending.filter(record => record.cashOperation.cashShiftId === shift?.id).length} manualPending={Boolean(manualPending)} counted={counted} note={note} onCountChange={setCounted} onNoteChange={setNote} actions={{
           open: () => run(async () => { await openCashShiftFromClient({ id: context.userId, accountId: context.accountId }, counted, note); setNote(""); setClosedShiftId(undefined) }),
-          prepare: () => run(async () => {
+          prepare: () => {
             if (!shift) return
-            const finalSequence = await freezeCashShift(context)
-            await post({ action: "prepare", shiftId: shift.id, finalSequence })
-            // El conteo de apertura no es un conteo de cierre: el cajero debe introducir uno nuevo.
-            setCounted(0); setNote("")
-            await syncCashOutbox()
-          }),
+            revealClosingRef.current = shift.id
+            if (!navigator.onLine) { setProvisionalClose(true); return }
+            return run(async () => {
+              const finalSequence = await freezeCashShift(context)
+              await post({ action: "prepare", shiftId: shift.id, finalSequence })
+              setProvisionalClose(false)
+              // El conteo de apertura no es un conteo de cierre: el cajero debe introducir uno nuevo.
+              setCounted(0); setNote("")
+              await syncCashOutbox()
+            })
+          },
           sync: () => run(() => syncCashOutbox()),
-          close: () => run(async () => { if (!shift) return; await post({ action: "close", shiftId: shift.id, countedCents: counted, expectedCents: shift.expectedCashCents, note }); setClosedShiftId(shift.id); setCounted(0); setNote("") }),
-          resume: () => run(async () => { if (!shift) return; await post({ action: "resume", shiftId: shift.id }); await unfreezeCashShift(shift.id); setCounted(0); setNote("") }),
+          close: () => run(async () => { if (!shift) return; await post({ action: "close", shiftId: shift.id, countedCents: counted, expectedCents: shift.expectedCashCents, note }); await clearCashShiftReport(context).catch(() => {}); setClosedShiftId(shift.id); setCounted(0); setNote("") }),
+          resume: () => { if (provisionalClose && shift?.status !== "CLOSING") { setProvisionalClose(false); setCounted(0); setNote(""); return } return run(async () => { if (!shift) return; await post({ action: "resume", shiftId: shift.id }); await unfreezeCashShift(shift.id); setProvisionalClose(false); setCounted(0); setNote("") }) },
           emergency: () => run(async () => { if (!shift) return; await post({ action: "emergency", shiftId: shift.id, countedCents: counted, expectedCents: shift.expectedCashCents, note }); setClosedShiftId(shift.id); setCounted(0); setNote("") }),
           refresh: () => run(async () => {}),
           disable: () => run(() => post({ action: "disable" })),

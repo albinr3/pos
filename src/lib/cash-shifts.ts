@@ -158,6 +158,39 @@ export async function getCashReceipt(actor: Actor, id: string) {
   permit(hasPermission(actor, "canOperateCashShifts") || canViewAll(actor) || canManage(actor))
   return raw().cashShift.findFirst({ where: { ...historyWhere(actor), id, status: "CLOSED" }, select: historySelect })
 }
+export async function getCashShiftReport(actor: Actor, deviceHash: string, id: string) {
+  permit(hasPermission(actor, "canOperateCashShifts"))
+  return raw().$transaction(async tx => {
+    const shift = await tx.cashShift.findFirst({ where: { id, accountId: actor.accountId, cashierUserId: actor.id, deviceHash, status: { in: ["OPEN", "CLOSING"] } } })
+    if (!shift || !deviceHash) throw new CashControlError("CASH_SHIFT_NOT_FOUND", "Usa el usuario y dispositivo del turno para consultar su detalle", 404)
+    const generatedAt = new Date()
+    const [company, movements, sources, operations] = await Promise.all([
+      tx.companySettings.findUnique({ where: { accountId: actor.accountId }, select: { name: true, shiftReportPrintFormat: true } }),
+      tx.cashMovement.findMany({ where: { accountId: actor.accountId, cashShiftId: shift.id }, include: { treasuryAccount: { select: { name: true } } }, orderBy: [{ recordedAt: "asc" }, { id: "asc" }] }),
+      tx.cashSourceLink.findMany({ where: { accountId: actor.accountId, cashShiftId: shift.id } }),
+      tx.cashOperation.findMany({ where: { accountId: actor.accountId, cashShiftId: shift.id }, select: { clientOperationId: true } }),
+    ])
+    const movementSources = new Set(movements.map(movement => `${movement.sourceType}:${movement.sourceId}`))
+    const withoutMovement = sources.filter(source => !movementSources.has(`${source.sourceType}:${source.sourceId}`))
+    const ids = (type: string) => withoutMovement.filter(source => source.sourceType === type).map(source => source.sourceId)
+    const [sales, purchases, expenses, returns, payments] = await Promise.all([
+      tx.sale.findMany({ where: { accountId: actor.accountId, id: { in: ids("sale") } }, select: { id: true, invoiceCode: true, totalCents: true, cancelledAt: true, createdAt: true } }),
+      tx.purchase.findMany({ where: { accountId: actor.accountId, id: { in: ids("purchase") } }, select: { id: true, totalCents: true, cancelledAt: true, createdAt: true } }),
+      tx.operatingExpense.findMany({ where: { accountId: actor.accountId, id: { in: ids("operatingExpense") } }, select: { id: true, description: true, amountCents: true, cancelledAt: true, createdAt: true } }),
+      tx.return.findMany({ where: { accountId: actor.accountId, id: { in: ids("return") } }, select: { id: true, returnCode: true, totalCents: true, cancelledAt: true, createdAt: true } }),
+      tx.payment.findMany({ where: { id: { in: ids("payment") }, ar: { sale: { accountId: actor.accountId } } }, select: { id: true, receiptCode: true, amountCents: true, cancelledAt: true, createdAt: true } }),
+    ])
+    const documents = [
+      ...sales.map(row => ({ sourceType: "sale", id: row.id, reference: row.invoiceCode, amountCents: row.totalCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
+      ...purchases.map(row => ({ sourceType: "purchase", id: row.id, reference: row.id, amountCents: row.totalCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
+      ...expenses.map(row => ({ sourceType: "operatingExpense", id: row.id, reference: row.description, amountCents: row.amountCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
+      ...returns.map(row => ({ sourceType: "return", id: row.id, reference: row.returnCode, amountCents: row.totalCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
+      ...payments.map(row => ({ sourceType: "payment", id: row.id, reference: row.receiptCode, amountCents: row.amountCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
+    ]
+    // El corte y los identificadores deben proceder de la misma vista para no duplicar respuestas perdidas.
+    return { accountId: actor.accountId, userId: actor.id, shiftId: shift.id, cashierName: shift.cashierName, openedAt: shift.openedAt, generatedAt, companyName: company?.name ?? "Mi Negocio", format: company?.shiftReportPrintFormat === "80mm" ? "80mm" as const : "CARTA" as const, openingCents: shift.openingCountedCents, expectedCashCents: await expectedForShift(tx, shift), lastSequence: shift.lastSequence, finalSequence: shift.finalSequence, status: shift.status, confirmedOperationIds: operations.map(operation => operation.clientOperationId), movements, documents }
+  }, { isolationLevel: "RepeatableRead", timeout: 20000, maxWait: 5000 })
+}
 export async function openCashShift(actor: Actor, deviceHash: string, countedCents: number, note?: string) {
   permit(hasPermission(actor, "canOperateCashShifts"))
   if (!deviceHash) throw new CashControlError("CASH_DEVICE_REQUIRED", "Carga primero el contexto de caja en este dispositivo")

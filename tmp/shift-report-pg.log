@@ -1,0 +1,23 @@
+2026-11-01 17:14:55.467 GMT [10504] LOG:  starting PostgreSQL 18.1 on x86_64-windows, compiled by msvc-19.44.35221, 64-bit
+2026-11-01 17:14:55.468 GMT [10504] LOG:  listening on IPv4 address "127.0.0.1", port 55438
+2026-11-01 17:14:55.549 GMT [8480] LOG:  database system was shut down at 2026-11-01 15:59:30 GMT
+2026-11-01 17:14:55.589 GMT [10504] LOG:  database system is ready to accept connections
+2026-11-01 17:15:55.428 GMT [16140] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-11-01 17:15:56.704 GMT [27364] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-11-01 17:15:57.588 GMT [17464] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-11-01 17:15:58.525 GMT [20220] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-11-01 17:15:59.455 GMT [6120] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-11-01 17:19:55.665 GMT [8952] LOG:  checkpoint starting: time
+2026-11-01 17:22:41.937 GMT [8952] LOG:  checkpoint complete: wrote 1508 buffers (9.2%), wrote 5 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=164.498 s, sync=1.686 s, total=166.273 s; sync files=765, longest=0.035 s, average=0.003 s; distance=8531 kB, estimate=8531 kB; lsn=0/438B968, redo lsn=0/438B8D8
+2026-11-01 18:32:54.298 GMT [10504] LOG:  received fast shutdown request
+2026-11-01 18:32:54.304 GMT [10504] LOG:  aborting any active transactions
+2026-11-01 18:32:54.310 GMT [10504] LOG:  background worker "logical replication launcher" (PID 22288) exited with exit code 1
+2026-11-01 18:32:54.311 GMT [8952] LOG:  shutting down
+2026-11-01 18:32:54.314 GMT [8952] LOG:  checkpoint starting: shutdown immediate
+2026-11-01 18:32:55.062 GMT [8952] LOG:  checkpoint complete: wrote 365 buffers (2.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.150 s, sync=0.565 s, total=0.752 s; sync files=176, longest=0.032 s, average=0.004 s; distance=2273 kB, estimate=7905 kB; lsn=0/45C3F28, redo lsn=0/45C3F28
+2026-11-01 18:32:55.276 GMT [10504] LOG:  database system is shut down

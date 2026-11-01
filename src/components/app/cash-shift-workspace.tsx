@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState, type RefObject } from "react"
 import { ArrowDownLeft, ArrowRight, Banknote, Check, CheckCircle2, ChevronDown, CircleAlert, Clock3, RefreshCw, Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { PriceInput } from "@/components/app/price-input"
 import { CashShiftDayNotice } from "@/components/app/cash-shift-day-notice"
 import { ShiftCollectionsSummary } from "@/components/app/shift-collections-summary"
+import { ShiftReportButton } from "@/components/app/shift-report-button"
 import type { CashContext } from "@/lib/cash-offline"
 import { formatRD } from "@/lib/money"
 import { formatDateTimeDO } from "@/lib/date-time"
@@ -15,17 +16,18 @@ import { getPaymentMethodLabel } from "@/lib/payment-methods"
 
 type Actions = Record<"open" | "prepare" | "sync" | "close" | "resume" | "emergency" | "refresh" | "disable", () => void>
 type CountProps = { counted: number; note: string; onCountChange: (value: number) => void; onNoteChange: (value: string) => void }
-type Props = CountProps & { context: CashContext; busy: boolean; pendingCount: number; manualPending: boolean; actions: Actions }
+type Props = CountProps & { context: CashContext; provisionalClose: boolean; revealClosingRef: RefObject<string | null>; busy: boolean; pendingCount: number; manualPending: boolean; actions: Actions }
 
-function CashCount({ counted, note, onCountChange, onNoteChange, expected, busy, mode, ready = true, onSubmit }: CountProps & { expected: number; busy: boolean; mode: "open" | "close" | "emergency"; ready?: boolean; onSubmit: () => void }) {
+function CashCount({ counted, note, onCountChange, onNoteChange, expected, busy, mode, ready = true, onSubmit, reportButton }: CountProps & { expected: number; busy: boolean; mode: "open" | "close" | "emergency"; ready?: boolean; onSubmit: () => void; reportButton?: React.ReactNode }) {
   const [entered, setEntered] = useState(false)
   const difference = counted - expected
   const needsReason = difference !== 0 || mode === "emergency"
   const canSubmit = !busy && ready && entered && (!needsReason || Boolean(note.trim()))
   return <form className="grid gap-4 rounded-2xl border bg-background p-4 sm:p-5" onSubmit={event => { event.preventDefault(); if (canSubmit) onSubmit() }}>
-    <div className="flex items-start gap-3">
-      <span className="rounded-xl bg-purple-primary/10 p-2 text-purple-primary dark:text-purple-300"><Banknote className="h-5 w-5" aria-hidden="true" /></span>
-      <div><h3 className="font-semibold">{mode === "open" ? "Cuenta el dinero que recibes" : mode === "close" ? "Cuenta lo que vas a entregar" : "Cuenta la caja antes de cerrar"}</h3><p className="mt-1 text-sm text-muted-foreground">Cuenta solo billetes y monedas. Los pagos con tarjeta o transferencia van por separado.</p></div>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-start gap-3"><span className="rounded-xl bg-purple-primary/10 p-2 text-purple-primary dark:text-purple-300"><Banknote className="h-5 w-5" aria-hidden="true" /></span>
+      <div><h3 className="font-semibold">{mode === "open" ? "Cuenta el dinero que recibes" : mode === "close" ? "Cuenta lo que vas a entregar" : "Cuenta la caja antes de cerrar"}</h3><p className="mt-1 text-sm text-muted-foreground">Cuenta solo billetes y monedas. Los pagos con tarjeta o transferencia van por separado.</p></div></div>
+      {reportButton}
     </div>
     <div className="grid gap-2">
       <Label htmlFor="cash-shift-counted">¿Cuánto efectivo {mode === "open" ? "recibes" : "hay en la caja"}?</Label>
@@ -42,15 +44,36 @@ function CashCount({ counted, note, onCountChange, onNoteChange, expected, busy,
   </form>
 }
 
-export function CashShiftWorkspace({ context, busy, pendingCount, manualPending, actions, ...count }: Props) {
+export function CashShiftWorkspace({ context, provisionalClose, revealClosingRef, busy, pendingCount, manualPending, actions, ...count }: Props) {
+  const closingSectionRef = useRef<HTMLDivElement>(null)
   const shift = context.activeShift
   const owns = Boolean(shift?.isMine && shift.isDevice)
   const expected = shift ? shift.expectedCashCents : context.expectedOpeningCents
   const canRead = expected !== null && expected !== undefined
   const opening = shift?.openingCountedCents
   const net = canRead && opening != null ? expected - opening : 0
-  const closing = shift?.status === "CLOSING"
+  const serverClosing = shift?.status === "CLOSING"
+  const provisional = provisionalClose && !serverClosing
+  const closing = serverClosing || provisional
   const synced = pendingCount === 0 && !manualPending && shift?.lastSequence === shift?.finalSequence
+  useEffect(() => {
+    const section = closingSectionRef.current
+    if (!closing || !owns || !section || revealClosingRef.current !== shift?.id) return
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    let timer = 0
+    // Esperar al montaje del cierre evita desplazar hacia un panel que aún no existe.
+    const frame = window.requestAnimationFrame(() => {
+      section.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "center" })
+      section.classList.add("cash-shift-closing-highlight")
+      revealClosingRef.current = null
+      timer = window.setTimeout(() => section.classList.remove("cash-shift-closing-highlight"), reducedMotion ? 1000 : 1250)
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timer)
+      section.classList.remove("cash-shift-closing-highlight")
+    }
+  }, [closing, owns, revealClosingRef, shift?.id])
   return <div className="grid gap-5">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex items-start gap-3"><span className="rounded-xl bg-purple-primary/10 p-2.5 text-purple-primary dark:text-purple-300"><Wallet className="h-6 w-6" aria-hidden="true" /></span><div><h3 className="text-lg font-semibold">{!shift ? "Empieza tu turno" : owns ? closing ? "Vamos a cerrar tu caja" : "Tu caja está abierta" : `Caja de ${shift.cashierName}`}</h3><p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">{shift ? <><span>{shift.cashierName}</span><span aria-hidden="true">·</span><span className="inline-flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" aria-hidden="true" />Desde {formatDateTimeDO(shift.openedAt)}</span></> : "Confirma el efectivo que recibes antes de empezar a vender o cobrar."}</p></div></div>
@@ -74,12 +97,12 @@ export function CashShiftWorkspace({ context, busy, pendingCount, manualPending,
 
     {shift && !owns && <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4 text-sm"><CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" /><p>{shift.isMine ? "Este turno se abrió en otro dispositivo. Usa ese dispositivo para registrar movimientos o cerrar la caja." : `El responsable de este turno es ${shift.cashierName}. Debe cerrarlo y entregar el efectivo antes de que puedas abrir el tuyo.`}</p></div>}
 
-    {owns && !closing && <div className="flex flex-col justify-between gap-4 rounded-2xl border border-purple-primary/15 p-4 sm:flex-row sm:items-center sm:p-5"><div><h3 className="font-semibold">¿Terminaste tu turno?</h3><p className="mt-1 max-w-xl text-sm text-muted-foreground">Empieza el cierre para guardar los pendientes, revisar todos los cobros y contar el efectivo que vas a entregar. Las nuevas ventas de este turno se pausarán.</p>{manualPending && <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">Confirma el movimiento pendiente que aparece abajo antes de cerrar.</p>}</div><Button className="h-11 shrink-0 rounded-xl" disabled={busy || manualPending} onClick={actions.prepare}>Cerrar mi turno<ArrowRight className="h-4 w-4" aria-hidden="true" /></Button></div>}
+    {owns && !closing && <div className="flex flex-col justify-between gap-4 rounded-2xl border border-purple-primary/15 p-4 sm:flex-row sm:items-center sm:p-5"><div><h3 className="font-semibold">¿Terminaste tu turno?</h3><p className="mt-1 max-w-xl text-sm text-muted-foreground">Empieza el cierre para guardar los pendientes, revisar todos los cobros y contar el efectivo que vas a entregar. Las nuevas ventas de este turno se pausarán.</p>{manualPending && <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">Confirma el movimiento pendiente que aparece abajo antes de cerrar.</p>}</div><div className="flex flex-wrap items-center gap-2">{manualPending && <ShiftReportButton context={context} actor={{ id: context.userId, accountId: context.accountId }} />}<Button className="h-11 shrink-0 rounded-xl" disabled={busy || manualPending} onClick={actions.prepare}>Cerrar mi turno<ArrowRight className="h-4 w-4" aria-hidden="true" /></Button></div></div>}
 
-    {owns && closing && <div className="grid gap-4">
+    {owns && closing && <div ref={closingSectionRef} className="grid gap-4 rounded-2xl" aria-label="Cierre del turno">
       <ol className="grid grid-cols-3 gap-2" aria-label="Pasos para cerrar la caja">{[synced ? "Pendientes guardados" : "Guarda los pendientes", "Revisa cobros y cuenta efectivo", "Confirma y entrega"].map((step, index) => <li key={index} className={`flex min-w-0 flex-col items-start gap-2 rounded-xl px-3 py-3 text-xs sm:flex-row sm:items-center sm:text-sm ${index === 0 && synced ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200" : index === (synced ? 1 : 0) ? "bg-purple-primary/10 font-medium text-purple-primary dark:text-purple-300" : "bg-muted/40 text-muted-foreground"}`}><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current text-xs">{index === 0 && synced ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}</span>{step}</li>)}</ol>
-      {!synced && <div role="status" className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"><p className="font-medium">{pendingCount === 1 ? "Falta 1 operación por enviar" : pendingCount > 0 ? `Faltan ${pendingCount} operaciones por enviar` : "Todavía hay movimientos por confirmar"}</p><p>Guarda todos los pendientes antes de entregar la caja. Necesitas conexión para completar este paso.</p><Button className="w-fit" variant="outline" disabled={busy} onClick={actions.sync}>Enviar pendientes</Button></div>}
-      <CashCount {...count} expected={expected ?? 0} busy={busy} mode="close" ready={synced} onSubmit={actions.close} />
+      {provisional ? <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"><p className="font-medium">Detalle provisional sin conexión</p><p>Puedes imprimir los datos disponibles. Este detalle no confirma el cierre; vuelve a conectarte para completarlo.</p><Button className="mt-2" variant="outline" disabled={busy} onClick={actions.prepare}>Intentar iniciar el cierre</Button></div> : !synced && <div role="status" className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"><p className="font-medium">{pendingCount === 1 ? "Falta 1 operación por enviar" : pendingCount > 0 ? `Faltan ${pendingCount} operaciones por enviar` : "Todavía hay movimientos por confirmar"}</p><p>Guarda todos los pendientes antes de entregar la caja. Necesitas conexión para completar este paso.</p><Button className="w-fit" variant="outline" disabled={busy} onClick={actions.sync}>Enviar pendientes</Button></div>}
+      <CashCount {...count} expected={expected ?? 0} busy={busy} mode="close" ready={!provisional && synced} onSubmit={actions.close} reportButton={<ShiftReportButton context={context} actor={{ id: context.userId, accountId: context.accountId }} />} />
       <Button className="justify-self-start" variant="ghost" disabled={busy} onClick={actions.resume}>Volver al turno y seguir trabajando</Button>
     </div>}
 
