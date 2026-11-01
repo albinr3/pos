@@ -2,7 +2,13 @@ import { TreasuryClient } from "./treasury-client"
 
 export const dynamic = "force-dynamic"
 
-export default function TreasuryPage() {
+export default async function TreasuryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ newAccount?: string | string[] }>
+}) {
+  // Leer el parámetro en el servidor mantiene el estado inicial del modal durante la hidratación.
+  const openNewAccount = (await searchParams).newAccount === "1"
   return (
     <div className="grid gap-6">
       <div>
@@ -11,7 +17,7 @@ export default function TreasuryPage() {
           Control de saldos esperados por cuenta, transferencias internas y trazabilidad de movimientos.
         </p>
       </div>
-      <TreasuryClient />
+      <TreasuryClient openNewAccount={openNewAccount} />
     </div>
   )
 }

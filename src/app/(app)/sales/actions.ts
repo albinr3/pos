@@ -918,18 +918,18 @@ export async function checkSaleStock(items: CartItemInput[]) {
   if (!user) throw new Error("No autenticado")
   const allowNegativeStock = Boolean(user.canSellWithoutStock || user.isOwner)
   validateCartItems(items)
-  return prisma.$transaction(async (tx) => {
-    const lines = await resolveSaleLines(tx, user.accountId, items)
-    const consumptions = aggregateStockConsumptions(lines.flatMap(line => line.consumptions))
-    const products = await tx.product.findMany({
-      where: { accountId: user.accountId, id: { in: consumptions.map(item => item.ingredientId) } },
-      select: { id: true, name: true, stock: true, isActive: true },
-    })
-    const snapshotAt = Date.now()
-    const inventory: StockEntry[] = products.map(product => ({ ...product, stock: decimalToNumber(product.stock), snapshotAt }))
-    const issue = allowNegativeStock ? null : validateStockConsumptions(consumptions, new Map(inventory.map(item => [item.id, item])))
-    return { ok: issue === null, issue, inventory, consumptions, accountId: user.accountId, userId: user.id, allowNegativeStock, canSellWithoutStock: user.canSellWithoutStock, isOwner: user.isOwner }
-  }, TRANSACTION_OPTIONS)
+  // Esta comprobación solo informa antes de encolar; no reservar una transacción ni
+  // bloquear Account. createSale vuelve a validar el stock dentro de su transacción final.
+  const lines = await resolveSaleLines(prisma, user.accountId, items)
+  const consumptions = aggregateStockConsumptions(lines.flatMap(line => line.consumptions))
+  const products = await prisma.product.findMany({
+    where: { accountId: user.accountId, id: { in: consumptions.map(item => item.ingredientId) } },
+    select: { id: true, name: true, stock: true, isActive: true },
+  })
+  const snapshotAt = Date.now()
+  const inventory: StockEntry[] = products.map(product => ({ ...product, stock: decimalToNumber(product.stock), snapshotAt }))
+  const issue = allowNegativeStock ? null : validateStockConsumptions(consumptions, new Map(inventory.map(item => [item.id, item])))
+  return { ok: issue === null, issue, inventory, consumptions, accountId: user.accountId, userId: user.id, allowNegativeStock, canSellWithoutStock: user.canSellWithoutStock, isOwner: user.isOwner }
 }
 
 async function applyConsumptions(
@@ -1106,39 +1106,28 @@ async function createSaleInternal(input: {
         allowNegativeStock
       )
 
-      // Asegurar que el cliente genérico existe
-      const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
-
-      // Validar y usar customerId, o usar el cliente genérico por defecto
-      let finalCustomerId: string | null = genericCustomer.id
-      if (requestedCustomerId) {
-        const customer = await tx.customer.findFirst({
+      // Resolver el cliente elegido en una sola lectura. Preparar el genérico y su
+      // secuencia solo al necesitarlo evita consultas y escrituras en cada factura nominativa.
+      let finalCustomer = requestedCustomerId
+        ? await tx.customer.findFirst({
           where: { id: requestedCustomerId, accountId: user.accountId },
-          select: { id: true, accountId: true, isActive: true },
+          select: { id: true, isActive: true, creditDays: true, saleDiscountPercentBp: true, isGeneric: true },
         })
-        if (!customer) {
-          // Si el cliente no existe, usar el cliente genérico
-          console.warn(`Cliente ${requestedCustomerId} no existe, usando cliente genérico`)
-          finalCustomerId = genericCustomer.id
-        } else if (!customer.isActive) {
-          // Si el cliente está inactivo, usar el cliente genérico
-          console.warn(`Cliente ${requestedCustomerId} está inactivo, usando cliente genérico`)
-          finalCustomerId = genericCustomer.id
-        } else {
-          finalCustomerId = customer.id
+        : null
+      if (!finalCustomer?.isActive) {
+        if (requestedCustomerId) {
+          console.warn(`Cliente ${requestedCustomerId} no existe o está inactivo, usando cliente genérico`)
         }
+        const genericCustomer = await ensureGenericCustomer(tx, user.accountId)
+        finalCustomer = await tx.customer.findFirst({
+          where: { id: genericCustomer.id, accountId: user.accountId },
+          select: { id: true, isActive: true, creditDays: true, saleDiscountPercentBp: true, isGeneric: true },
+        })
       }
-
-      const finalCustomer =
-        finalCustomerId
-          ? await tx.customer.findFirst({
-              where: { id: finalCustomerId, accountId: user.accountId },
-              select: { id: true, creditDays: true, saleDiscountPercentBp: true, isGeneric: true },
-            })
-          : null
       if (!finalCustomer) {
         throw new Error("No se pudo resolver el cliente de la venta.")
       }
+      const finalCustomerId = finalCustomer.id
       if (input.type === SaleType.CREDITO && finalCustomer.isGeneric) {
         throw new Error("Para crédito debes seleccionar un cliente.")
       }

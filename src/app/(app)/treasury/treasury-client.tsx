@@ -92,15 +92,13 @@ function getMovementSourceLabel(source: string) {
   return MOVEMENT_SOURCE_LABELS[source] ?? source
 }
 
-export function TreasuryClient() {
-  const shouldAutoOpenCreateDialog =
-    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("newAccount") === "1"
+export function TreasuryClient({ openNewAccount = false }: { openNewAccount?: boolean }) {
   const [accounts, setAccounts] = useState<TreasuryAccountRow[]>([])
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
   const [fromDate, setFromDate] = useState(TODAY)
   const [toDate, setToDate] = useState(TODAY)
 
-  const [openAccountDialog, setOpenAccountDialog] = useState(shouldAutoOpenCreateDialog)
+  const [openAccountDialog, setOpenAccountDialog] = useState(openNewAccount)
   const [accountForm, setAccountForm] = useState<AccountForm>(EMPTY_FORM)
   const [openingAccountId, setOpeningAccountId] = useState("")
   const [openingAmount, setOpeningAmount] = useState("0")

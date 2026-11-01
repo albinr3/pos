@@ -84,7 +84,7 @@ function serverFixture({ permitted = false, owner = false, authenticated = true 
   const api = load("src/app/(app)/sales/actions.ts", {
     "@/lib/pos-stock": stock,
     "@/lib/auth": { getCurrentUser: async () => authenticated ? { id: "u", accountId: "A", canSellWithoutStock: permitted, isOwner: owner } : null },
-    "@/lib/db": { prisma: { $transaction: async callback => callback(tx) } },
+    "@/lib/db": { prisma: { ...tx, $transaction: async () => assert.fail("El preflight no debe reservar una transacción de escritura") } },
     "@prisma/client": { ProductKind: { RECIPE: "RECIPE" }, RecipeAdjustmentType: { SIN: "SIN", EXTRA: "EXTRA" } },
   })
   return { module: api, products, reads: () => reads }

@@ -173,6 +173,40 @@ async function browserSuite() {
     card("pan").click(); await sleep(20); await checkout()
     assert(f.saves === 1 && f.printed === 1 && card("pan").disabled, "La venta normal debe agotar el producto")
   })
+  await test("Imprime y termina el cobro aunque la precarga siga pendiente, con y sin turnos", async () => {
+    for (const cashEnabled of [true, false]) {
+      const f = await setup([basic("pan", 1)], { cashEnabled })
+      await syncCacheData({ force: true })
+      let releaseCache
+      f.syncProducts = () => new Promise(resolve => { releaseCache = () => resolve(f.snapshot()) })
+      try {
+        card("pan").click(); await sleep(20); await checkout()
+        assert(releaseCache && f.saves === 1 && f.printed === 1, "La impresión no debe esperar la descarga de productos")
+        assert(!qty("pan") && !target("sales-save-button").textContent.includes("Guardando"), "Debe cerrar el cobro y limpiar el carrito")
+        assert(card("pan").disabled, "El caché pendiente no debe liberar existencias antiguas")
+      } finally {
+        releaseCache?.()
+        delete f.syncProducts
+        await syncCacheData()
+      }
+      await until(() => card("pan").textContent.includes("Sin existencia"), "Debe reconciliar el inventario al terminar la descarga")
+      assert(f.products[0].stock === 0 && f.saves === 1, "El refresco no debe duplicar la venta")
+    }
+  })
+  await test("Una descarga fallida después del commit no repite la factura ni conserva el carrito", async () => {
+    const f = await setup([basic("pan", 1)], { cashEnabled: false })
+    await syncCacheData({ force: true })
+    f.syncProducts = async () => { throw new TypeError("Failed to fetch") }
+    try {
+      card("pan").click(); await sleep(20); await checkout()
+      assert(f.saves === 1 && f.printed === 1 && !qty("pan"), "La venta confirmada debe finalizar aunque falle la precarga")
+      assert(card("pan").disabled, "El fallo de precarga debe conservar la protección de stock")
+      assert(!f.toasts.some(t => t.title === "Venta guardada (offline)"), "No debe volver a guardar offline una factura confirmada")
+    } finally {
+      delete f.syncProducts
+      await syncCacheData({ force: true })
+    }
+  })
   await test("Empleado con permiso conserva autorización para vender sin existencia", async () => {
     const f = await setup([basic("pan", 0)], { permitted: true })
     card("pan").click(); await sleep(20); await checkout()
@@ -190,7 +224,7 @@ async function browserSuite() {
 
 const mocks = {
   "sales-actions": `export async function listCustomers(){return [{id:'generic',name:'Consumidor final',isGeneric:true}]} export async function listAllProductsForSale(){return window.__fixture.snapshot()} export async function searchProducts(q){return window.__fixture.snapshot().filter(p=>p.name.includes(q)||p.sku===q)} export async function findProductByBarcode(q){return window.__fixture.snapshot().find(p=>p.sku===q)} export async function checkSaleStock(items){return window.__fixture.check(items)} export async function createSale(input){return window.__fixture.save(input.items)}`,
-  "sync-actions": `export async function syncProductsToIndexedDB(){return window.__fixture.snapshot()} export async function syncCustomersToIndexedDB(){return [{id:'generic',name:'Consumidor final',isGeneric:true}]} export async function syncARToIndexedDB(){return [{id:'ar'}]}`,
+  "sync-actions": `export async function syncProductsToIndexedDB(){const f=window.__fixture;return f.syncProducts?f.syncProducts():f.snapshot()} export async function syncCustomersToIndexedDB(){return [{id:'generic',name:'Consumidor final',isGeneric:true}]} export async function syncARToIndexedDB(){return [{id:'ar'}]}`,
   "treasury-actions": `export async function listTreasuryAccounts(){return [{id:'cash',name:'Caja efectivo',type:'CAJA',bankName:null}]}`,
   "onboarding-actions": `export async function completeDemoCheckout(){}`,
   "navigation": `export const usePathname=()=>'/sales'; export const useRouter=()=>({push(){}})`,

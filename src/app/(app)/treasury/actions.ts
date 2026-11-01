@@ -103,6 +103,7 @@ export async function createTreasuryAccount(input: {
 
   if (exists) throw new Error("Ya existe una cuenta con ese nombre")
 
+  // Cuenta y saldo se guardan juntos; tolerar la espera del bloqueo de caja sin usar el límite de 5 s.
   await prisma.$transaction(async (tx) => {
     const createdAccount = await tx.treasuryAccount.create({
       data: {
@@ -127,7 +128,7 @@ export async function createTreasuryAccount(input: {
         createdByUserId: user.id,
       },
     })
-  })
+  }, { timeout: 15000, maxWait: 5000 })
 
   revalidatePath("/treasury")
 }

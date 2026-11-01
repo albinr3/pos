@@ -489,6 +489,15 @@ export function PosClient({
     setAllProducts(updateStock)
   }, [])
 
+  function refreshConfirmedSaleStock() {
+    // La factura ya está confirmada: la precarga completa no debe retrasar la impresión
+    // ni convertir un fallo de caché en otro intento de guardar la misma venta.
+    // El marcador stock-dirty sigue bloqueando el uso de existencias antiguas hasta reconciliar.
+    void syncCacheData({ force: true })
+      .then(() => refreshStockState())
+      .catch((error) => console.error("No se pudo actualizar el caché después de la venta", error))
+  }
+
   useEffect(() => {
     setApplyLegalTip(legalTipEnabled)
   }, [legalTipEnabled])
@@ -1573,9 +1582,10 @@ export function PosClient({
             toast({ title: controlled.pending ? "Venta guardada pendiente de sincronización" : "Venta guardada", description: controlled.pending ? "Se conserva en este dispositivo y turno. Revisa los pendientes en Cuadre diario." : `Factura ${controlled.result.invoiceCode}` })
             if (controlled.result?.stockDecrements) {
               applyStockDecrements(controlled.result.stockDecrements)
-              await syncCacheData({ force: true })
+              refreshConfirmedSaleStock()
+            } else {
+              await refreshStockState()
             }
-            await refreshStockState()
             if (controlled.result?.id && onboardingSaleGuide) {
               router.push(`/onboarding/completado?saleId=${encodeURIComponent(controlled.result.id)}`)
             } else if (controlled.result?.invoiceCode) {
@@ -1613,8 +1623,7 @@ export function PosClient({
               toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
               invalidateStockCache(user.accountId)
               applyStockDecrements(sale.stockDecrements)
-              await syncCacheData({ force: true })
-              await refreshStockState()
+              refreshConfirmedSaleStock()
 
               if (onboardingSaleGuide) {
                 router.push(`/onboarding/completado?saleId=${encodeURIComponent(sale.id)}`)

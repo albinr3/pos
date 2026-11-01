@@ -192,14 +192,23 @@ export function wrapCashTransaction(tx: any): any {
 export async function runCashTransaction(client: any, callback: (tx: any) => Promise<any>, options?: any) {
   const parent = cashRequest.getStore()
   if (parent?.tx) return callback(wrapCashTransaction(parent.tx))
-  return client.$transaction(async (tx: any) => cashRequest.run({ ...parent, tx }, async () => {
+  // Resolver sesión ANTES de reservar la conexión transaccional: la autenticación consulta
+  // por otra conexión y podía consumir los 5 s disponibles antes del primer bloqueo (P2028).
+  let identity: Awaited<ReturnType<typeof resolveCashIdentity>> | undefined
+  if (parent?.operation || !parent?.maintenance) {
+    try { identity = await resolveCashIdentity() } catch (error) {
+      if (parent?.operation) throw error
+      // Una tarea sin sesión conserva el flujo previo; cada mutación financiera verifica su tenant.
+    }
+  }
+  const requestScope = identity
+    ? { ...parent, trustedActor: identity.actor, deviceHash: identity.deviceHash }
+    : { ...parent }
+  return client.$transaction(async (tx: any) => cashRequest.run({ ...requestScope, tx }, async () => {
     const scope = cashRequest.getStore()!
     const operation = scope.operation
     if (!operation && !scope.maintenance) {
-      let identity
-      try { identity = await resolveCashIdentity() } catch { /* Una tarea sin sesión conserva el flujo previo; cada mutación financiera todavía verifica su tenant. */ }
       if (identity) {
-        Object.assign(scope, { trustedActor: identity.actor, deviceHash: identity.deviceHash })
         // Adquirir Account ANTES de inventario/secuencias también en compras y anulaciones.
         // Si se espera a guardar el documento, dos operaciones pueden bloquearse en orden inverso.
         await currentScope(tx, identity.actor.accountId)
