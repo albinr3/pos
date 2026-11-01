@@ -284,16 +284,17 @@ async function browserSuite() {
     const f = await fixture(); f.context.activeShift = f.shift(); await refreshCashContext(); online = false
     await submitControlledDocument("sale", { total: 100 }, f.actor)
     online = true; f.failOperations = true; mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
-    button("Cerrar mi turno").click(); await until(() => screenText().includes("Falta 1 operación por enviar"), "Debe mostrar CLOSING y el pendiente incluso tras el error")
+    button("Cerrar mi turno").click(); await until(() => screenText().includes("Falta 1 operación por enviar") && button("Confirmar cierre y entregar caja"), "Debe mostrar CLOSING y el pendiente incluso tras el error")
     await input("cash-shift-counted", "333.00")
     assert(button("Confirmar cierre y entregar caja").disabled && f.context.activeShift.status === "CLOSING", "No permitir cerrar con pendientes")
-    f.failOperations = false; button("Enviar pendientes").click()
-    await until(() => !button("Confirmar cierre y entregar caja").disabled, "Debe permitir cerrar cuando se confirma la secuencia")
+    f.failOperations = false; await until(() => button("Enviar pendientes") && !button("Enviar pendientes").disabled, "Debe permitir reenviar")
+    button("Enviar pendientes").click()
+    await until(() => button("Confirmar cierre y entregar caja") && !button("Confirmar cierre y entregar caja").disabled, "Debe permitir cerrar cuando se confirma la secuencia")
     assert(f.documents.length === 1 && (await cashPending()).length === 0, "Confirmar una sola venta")
   })
   await test("Volver a trabajar cancela la preparación y oculta el conteo", async () => {
     const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
-    button("Cerrar mi turno").click(); await until(() => document.getElementById("cash-shift-counted"), "Debe preparar")
+    button("Cerrar mi turno").click(); await until(() => button("Confirmar cierre y entregar caja"), "Debe preparar")
     await input("cash-shift-counted", "300.00")
     button("Volver al turno y seguir trabajando").click(); await until(() => button("Cerrar mi turno"), "Debe recuperar el turno abierto")
     assert(!document.getElementById("cash-shift-counted") && f.actions.at(-1).action === "resume" && f.context.activeShift.expectedCashCents === 33300, "Reanudar no cambia dinero ni guarda el conteo provisional")
@@ -301,7 +302,7 @@ async function browserSuite() {
   await test("Un conteo de cero válido requiere introducirse explícitamente", async () => {
     const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
     f.context.activeShift.expectedCashCents = 0
-    button("Cerrar mi turno").click(); await until(() => document.getElementById("cash-shift-counted"), "Debe preparar")
+    button("Cerrar mi turno").click(); await until(() => button("Confirmar cierre y entregar caja"), "Debe preparar")
     assert(button("Confirmar cierre y entregar caja").disabled, "El cero por defecto no confirma una caja vacía")
     await input("cash-shift-counted", "0")
     assert(!button("Confirmar cierre y entregar caja").disabled && screenText().includes("¡Tu caja cuadra!"), "Debe admitir una caja realmente vacía")
@@ -313,11 +314,65 @@ async function browserSuite() {
     await until(() => screenText().includes("Debe cerrarlo y entregar"), "Debe explicar quién tiene la caja")
     assert(!button("Cerrar mi turno") && !document.getElementById("cash-shift-counted") && !screenText().includes("Lo que debe haber"), "No mostrar controles ni saldos sin permiso")
   })
+  await test("El aviso usa el cambio de día UTC-4 y no una duración de 24 horas", async () => {
+    const before = new Date("2026-11-01T03:59:59Z"), after = new Date("2026-11-01T04:00:00Z")
+    assert(!isBeforeCurrentBusinessDay("2026-11-01T03:30:00Z", before), "Antes de medianoche sigue siendo el mismo día del negocio")
+    assert(isBeforeCurrentBusinessDay("2026-11-01T03:59:59Z", after), "El día cambia a las 04:00 UTC")
+    assert(!isBeforeCurrentBusinessDay("2026-11-01T04:00:00Z", after), "Una apertura a medianoche pertenece al nuevo día")
+    assert(!isBeforeCurrentBusinessDay("fecha inválida", after), "Una fecha inválida no debe generar el aviso")
+  })
+  await test("Un turno de hoy no muestra advertencia; uno anterior informa que sigue abierto", async () => {
+    let f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar el turno")
+    await sleep(40); assert(!screenText().includes("Este turno comenzó un día anterior"), "No debe advertir sobre un turno de hoy")
+    f = await fixture(); mountWorkspace(f); f.context.activeShift.openedAt = new Date(Date.now() - 86400000).toISOString()
+    await until(() => screenText().includes("Este turno comenzó un día anterior"), "Debe avisar del turno anterior")
+    assert(screenText().includes("sigue abierto") && screenText().includes("pueden continuar durante la noche") && button("Cerrar mi turno"), "Debe ser informativo y permitir el cierre normal")
+  })
+  await test("Actualizar con un turno de hoy retira el aviso del turno anterior", async () => {
+    const f = await fixture(); mountWorkspace(f); f.context.activeShift.openedAt = new Date(Date.now() - 86400000).toISOString()
+    await until(() => screenText().includes("Este turno comenzó un día anterior"), "Debe mostrar el aviso inicial")
+    f.context.activeShift.openedAt = new Date().toISOString()
+    button("Actualizar").click()
+    await until(() => !screenText().includes("Este turno comenzó un día anterior"), "No debe conservar un aviso que ya no corresponde")
+  })
+  await test("El aviso aparece al cruzar medianoche sin recargar ni cerrar el turno", async () => {
+    const RealDate = Date
+    let now = RealDate.parse("2026-11-01T03:59:59.950Z")
+    class FakeDate extends RealDate { constructor(...args) { super(...(args.length ? args : [now])) } static now() { return now } }
+    globalThis.Date = FakeDate
+    try {
+      const f = await fixture(); mountWorkspace(f); f.context.activeShift.openedAt = "2026-11-01T03:00:00Z"
+      await until(() => button("Cerrar mi turno"), "Debe cargar el turno")
+      await sleep(30); assert(!screenText().includes("Este turno comenzó un día anterior"), "No debe aparecer antes del cambio de día")
+      now = RealDate.parse("2026-11-01T04:00:01Z")
+      await until(() => screenText().includes("Este turno comenzó un día anterior"), "Debe actualizarse sin recargar")
+      assert(f.context.activeShift.status === "OPEN" && f.actions.length === 0, "El aviso no debe modificar ni cerrar el turno")
+    } finally { currentRoot?.unmount(); currentRoot = undefined; globalThis.Date = RealDate }
+  })
+  await test("El aviso distingue un cierre en preparación y aparece al bloquear a otro empleado", async () => {
+    let f = await fixture(); mountWorkspace(f); f.context.activeShift.openedAt = new Date(Date.now() - 86400000).toISOString(); f.context.activeShift.status = "CLOSING"; f.context.activeShift.finalSequence = 0
+    await until(() => screenText().includes("sigue en proceso de cierre"), "Debe indicar que el cierre está en preparación")
+    f = await fixture(); f.context.activeShift = { ...f.shift(), isMine: false, cashierName: "Carlos", openedAt: new Date(Date.now() - 86400000).toISOString() }; mount(f)
+    await until(() => dialog()?.textContent.includes("Este turno comenzó un día anterior"), "El empleado siguiente debe ver el aviso")
+    assert(!button("Abrir mi turno y comenzar") && f.openRequests === 0, "El aviso no autoriza un segundo turno")
+  })
+  await test("El dueño puede contar y justificar un cierre excepcional desde Opciones del dueño", async () => {
+    const f = await fixture(); mountWorkspace(f); f.context.activeShift.isMine = false; f.context.activeShift.cashierName = "Carlos"
+    await until(() => screenText().includes("Opciones del dueño"), "Debe mostrar las opciones del dueño")
+    const section = [...document.querySelectorAll("summary")].find(item => item.textContent === "Opciones del dueño")
+    section.click(); await until(() => section.parentElement.open, "Debe desplegar la opción")
+    await input("cash-shift-counted", "333.00")
+    assert(button("Confirmar cierre excepcional").disabled, "Incluso si cuadra, debe indicar el motivo")
+    await input("cash-count-note", "El responsable no está disponible y se revisarán sus pendientes")
+    button("Confirmar cierre excepcional").click(); await until(() => screenText().includes("El turno quedó cerrado"), "Debe mostrar el cierre confirmado")
+    const action = f.actions.find(item => item.action === "emergency")
+    assert(action?.countedCents === 33300 && action.expectedCents === 33300 && action.note.includes("responsable"), "Debe enviar conteo, esperado y motivo")
+  })
   currentRoot?.unmount()
   document.getElementById("result").textContent = JSON.stringify(results)
 }
 
-const compiled = await build({ stdin: { contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { CashShiftGate, useCashShiftAccess } from "./src/components/app/cash-shift-gate"; import { CashShiftsClient } from "./src/app/(app)/daily-close/cash-shifts-client"; import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./src/components/ui/dialog"; import { cashPending, refreshCashContext, submitControlledDocument } from "./src/lib/cash-offline"; import { openCashShiftFromClient } from "./src/lib/cash-shift-opening"; import { getPendingCounts } from "./src/lib/indexed-db"; (${browserSuite.toString()})().catch(error => document.getElementById("result").textContent = JSON.stringify([{ok:false,error:error.message}]));`, resolveDir: rootDir }, bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "test-navigation", setup(build) { build.onResolve({ filter: /^next\/link$/ }, () => ({ path: "next-link", namespace: "test" })); build.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'import React from "react"; export default function Link(props) { return React.createElement("a", props); }', resolveDir: rootDir })) } }] })
+const compiled = await build({ stdin: { contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { CashShiftGate, useCashShiftAccess } from "./src/components/app/cash-shift-gate"; import { CashShiftsClient } from "./src/app/(app)/daily-close/cash-shifts-client"; import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./src/components/ui/dialog"; import { cashPending, refreshCashContext, submitControlledDocument } from "./src/lib/cash-offline"; import { openCashShiftFromClient } from "./src/lib/cash-shift-opening"; import { isBeforeCurrentBusinessDay } from "./src/lib/dates"; import { getPendingCounts } from "./src/lib/indexed-db"; (${browserSuite.toString()})().catch(error => document.getElementById("result").textContent = JSON.stringify([{ok:false,error:error.message}]));`, resolveDir: rootDir }, bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "test-navigation", setup(build) { build.onResolve({ filter: /^next\/link$/ }, () => ({ path: "next-link", namespace: "test" })); build.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'import React from "react"; export default function Link(props) { return React.createElement("a", props); }', resolveDir: rootDir })) } }] })
 const target = path.join(rootDir, "tmp", "cash-gate-browser.html")
 fs.mkdirSync(path.dirname(target), { recursive: true })
 fs.writeFileSync(target, `<!doctype html><meta charset="utf-8"><div id="test-root"></div><pre id="result">RUNNING</pre><script>${compiled.outputFiles[0].text.replace(/<\/script/gi, "<\\/script")}</script>`)

@@ -203,6 +203,30 @@ test("Preparar cierre permite pendientes anteriores y rechaza ventas nuevas", as
   assert.equal((await operation(f, 1, callback, id)).id, sale.id)
   await assert.rejects(operation(f, 2, callback), /Abre un turno/)
 })
+test("El cierre excepcional exige dueño y motivo, conserva diferencias y no reasigna pendientes", async () => {
+  const f = await fixture(), id = randomUUID(), oldShift = f.shift
+  const create = tx => tx.sale.create({ data: saleData(f) })
+  const original = await operation(f, 1, create, id)
+  await service.prepareCashClose(f.actor, device, oldShift.id, 2)
+  const input = { emergency: true, countedCents: 109000, expectedCents: 110000, note: "Responsable ausente; revisar ventas pendientes en su dispositivo" }
+  await assert.rejects(service.finishCashClose({ ...f.actor, isOwner: false }, "owner-device", oldShift.id, input), /permiso/)
+  await assert.rejects(service.finishCashClose(f.actor, "owner-device", oldShift.id, { ...input, note: "" }), /motivo/)
+  await assert.rejects(service.finishCashClose(f.actor, "owner-device", oldShift.id, { ...input, expectedCents: 100000 }), /cambió/)
+  await service.finishCashClose(f.actor, "owner-device", oldShift.id, input)
+  const saved = await db.cashShift.findUnique({ where: { id: oldShift.id } })
+  assert.equal(saved.status, "CLOSED"); assert.equal(saved.closingDifferenceCents, -1000)
+  assert.equal(saved.closingSnapshot.emergency, true); assert.equal(saved.closingNote, input.note)
+  assert.equal(await service.drawerBalance(db, f.account.id, f.box.id), 109000)
+  const audit = await db.auditLog.findFirst({ where: { accountId: f.account.id, resourceType: "CashShift", resourceId: oldShift.id, details: { path: ["event"], equals: "SHIFT_EMERGENCY_CLOSED" } } })
+  assert.ok(audit)
+  await assert.rejects(operation(f, 2, create), /Abre un turno/)
+  f.shift = await service.openCashShift(f.actor, device, 109000)
+  const old = { ...f, shift: oldShift }
+  assert.equal((await operation(old, 1, create, id)).id, original.id)
+  await assert.rejects(operation(old, 2, create), /Sincroniza los pendientes anteriores/)
+  assert.equal(await db.sale.count({ where: { accountId: f.account.id } }), 1)
+  assert.equal(await expected(f), 109000)
+})
 test("Faltante del saliente no se traslada al siguiente; recepción queda separada", async () => {
   const f = await fixture()
   await operation(f, 1, tx => tx.sale.create({ data: saleData(f) }))

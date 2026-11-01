@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PriceInput } from "@/components/app/price-input"
 import { CashShiftIllustration } from "@/components/app/cash-shift-illustration"
+import { CashShiftDayNotice } from "@/components/app/cash-shift-day-notice"
 import { assertCashShiftAccess, CashShiftAccessError, resolveCashContext, type CashActorIdentity, type CashContext } from "@/lib/cash-offline"
 import { openCashShiftFromClient } from "@/lib/cash-shift-opening"
 import { formatRD } from "@/lib/money"
@@ -116,6 +117,7 @@ export function CashShiftGate({ actor, bypass = false, children }: { actor: Cash
           <DialogTitle className="text-xl">{canOpen ? "Abre tu turno para comenzar" : "Revisa tu turno de caja"}</DialogTitle>
           <DialogDescription className="max-w-sm leading-relaxed">{state.message}</DialogDescription>
         </DialogHeader>
+        {context?.enabled && context.activeShift && <CashShiftDayNotice openedAt={context.activeShift.openedAt} closing={context.activeShift.status === "CLOSING"} compact />}
         {formError && <p role="alert" className="text-sm text-destructive">{formError}</p>}
         {canOpen && <form className="grid gap-3" onSubmit={event => { event.preventDefault(); void openShift() }}>
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-purple-primary/10 bg-purple-primary/5 px-4 py-3">

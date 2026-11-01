@@ -1,17 +1,20 @@
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { DollarSign, CreditCard, TrendingUp, Receipt, Wallet, AlertTriangle, Clock3 } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { formatRD } from "@/lib/money"
 import { cn } from "@/lib/utils"
-import { requireModuleAccess } from "@/lib/module-access"
+import { getCurrentUser } from "@/lib/auth"
+import { getDashboardFallbackPath, hasPermission } from "@/lib/permissions"
 
 import { getDashboardStats, getSalesChartData } from "./actions"
 import { SalesChart } from "./sales-chart"
 import { getAccountOnboardingState } from "../onboarding/actions"
 import { OnboardingCard } from "./onboarding-card"
 import { OnboardingActivationModal } from "./onboarding-activation-modal"
+import { NoModuleAccess } from "./no-module-access"
 
 // Marcar como dinámica para evitar prerender (requiere autenticación)
 export const dynamic = "force-dynamic"
@@ -21,7 +24,16 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ onboarding?: string | string[] }>
 }) {
-  await requireModuleAccess("canAccessDashboard")
+  const user = await getCurrentUser()
+  if (!user) redirect("/select-user")
+
+  // Resolver el acceso antes de consultar estadísticas u onboarding: ocultar el
+  // menú no protege los datos ni evita el 404 al entrar directamente al dashboard.
+  if (!hasPermission(user, "canAccessDashboard")) {
+    const destination = getDashboardFallbackPath(user)
+    if (destination) redirect(destination)
+    return <NoModuleAccess />
+  }
 
   const params = await searchParams
   const onboardingRaw = params.onboarding

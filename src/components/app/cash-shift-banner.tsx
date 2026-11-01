@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { cachedCashContext, cashPending, refreshCashContext, type CashContext } from "@/lib/cash-offline"
 import { formatRD } from "@/lib/money"
+import { CashShiftDayNotice } from "@/components/app/cash-shift-day-notice"
 
 export function CashShiftBanner() {
   const [context, setContext] = useState<CashContext>()
@@ -35,5 +36,6 @@ export function CashShiftBanner() {
     </div>
     {shift?.expectedCashCents !== null && shift?.expectedCashCents !== undefined && <p>Efectivo esperado: {formatRD(shift.expectedCashCents)}</p>}
     {pending > 0 && <p className="text-amber-700 dark:text-amber-400">{pending} operación(es) pendiente(s). Sincroniza antes de cerrar o entregar.</p>}
+    {shift && <CashShiftDayNotice openedAt={shift.openedAt} closing={shift.status === "CLOSING"} compact />}
   </div>
 }

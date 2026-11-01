@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PriceInput } from "@/components/app/price-input"
+import { CashShiftDayNotice } from "@/components/app/cash-shift-day-notice"
 import type { CashContext } from "@/lib/cash-offline"
 import { formatRD } from "@/lib/money"
 import { formatDateTimeDO } from "@/lib/date-time"
@@ -54,6 +55,8 @@ export function CashShiftWorkspace({ context, busy, pendingCount, manualPending,
       <div className="flex items-start gap-3"><span className="rounded-xl bg-purple-primary/10 p-2.5 text-purple-primary dark:text-purple-300"><Wallet className="h-6 w-6" aria-hidden="true" /></span><div><h3 className="text-lg font-semibold">{!shift ? "Empieza tu turno" : owns ? closing ? "Vamos a cerrar tu caja" : "Tu caja está abierta" : `Caja de ${shift.cashierName}`}</h3><p className="mt-1 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">{shift ? <><span>{shift.cashierName}</span><span aria-hidden="true">·</span><span className="inline-flex items-center gap-1"><Clock3 className="h-3.5 w-3.5" aria-hidden="true" />Desde {formatDateTimeDO(shift.openedAt)}</span></> : "Confirma el efectivo que recibes antes de empezar a vender o cobrar."}</p></div></div>
       <div className="flex items-center gap-2">{shift && <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium ${closing ? "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"}`}><span className={`h-1.5 w-1.5 rounded-full ${closing ? "bg-amber-500" : "bg-emerald-500"}`} />{closing ? "Cierre en curso" : "En curso"}</span>}<Button size="sm" variant="ghost" disabled={busy} onClick={actions.refresh}><RefreshCw className={`h-4 w-4 ${busy ? "motion-safe:animate-spin" : ""}`} aria-hidden="true" />Actualizar</Button></div>
     </div>
+
+    {shift && <CashShiftDayNotice openedAt={shift.openedAt} closing={closing} />}
 
     {canRead && <div className={`grid gap-3 ${shift && !closing ? "grid-cols-2 lg:grid-cols-3" : ""}`}>
       <div className={`grid content-center gap-2 rounded-2xl border border-purple-primary/15 bg-purple-primary/5 p-5 ${shift && !closing ? "col-span-2 lg:col-span-1" : ""}`}><p className="text-sm font-medium">{shift ? "Lo que debe haber en efectivo" : "Efectivo esperado al recibir"}</p><p className="break-words text-3xl font-bold tracking-tight text-purple-primary tabular-nums dark:text-purple-300 sm:text-4xl">{formatRD(expected)}</p>{!closing && <p className="text-xs text-muted-foreground">{shift ? "Este es el dinero físico que deberías tener ahora en la caja." : "Compara este monto con los billetes y monedas que recibes."}</p>}</div>

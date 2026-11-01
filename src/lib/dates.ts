@@ -25,6 +25,12 @@ export function endOfDay(d: Date = new Date()) {
   return new Date(start + (24 * 60 * 60 * 1000) - 1)
 }
 
+export function isBeforeCurrentBusinessDay(value: Date | string | number, now: Date = new Date()) {
+  const date = value instanceof Date ? value : new Date(value)
+  // Comparar con el inicio del día del negocio, no con la medianoche del dispositivo ni con 24 horas transcurridas.
+  return Number.isFinite(date.getTime()) && date.getTime() < startOfDay(now).getTime()
+}
+
 export function parseDateParam(value?: string | null) {
   if (!value) return null
 

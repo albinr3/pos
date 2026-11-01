@@ -208,6 +208,35 @@ export function hasPermission(
   return Boolean(user[key])
 }
 
+export function getDashboardFallbackPath(user: PermissionAwareUser): string | null {
+  // Priorizar Vender y luego el orden del menú. No incluir dashboard evita bucles
+  // al entrar desde login o un enlace directo sin permiso para ver sus datos.
+  const destinations: [string, readonly PermissionKey[]][] = [
+    ["/sales", ["canAccessSales"]],
+    ["/quotes", ["canManageQuotes"]],
+    ["/returns", ["canAccessReturns"]],
+    ["/customers", ["canManageCustomers"]],
+    ["/products", ["canAccessProducts"]],
+    ["/categories", ["canManageCategories"]],
+    ["/suppliers", ["canManageSuppliers"]],
+    [hasPermission(user, "canManagePurchases") ? "/purchases" : "/purchases/list", ["canManagePurchases", "canCancelPurchases"]],
+    ["/ar", ["canAccessAccountsReceivable"]],
+    ["/payments/list", ["canAccessPayments"]],
+    ["/daily-close", ["canAccessDailyClose", "canOperateCashShifts", "canViewAllCashShifts", "canManageCashShifts"]],
+    ["/reports", ["canAccessReports"]],
+    ["/shipping-labels", ["canAccessShippingLabels"]],
+    ["/operating-expenses", ["canManageExpenses", "canCancelExpenses"]],
+    ["/treasury", ["canViewTreasury", "canManageTreasuryAccounts", "canCreateTreasuryTransfers", "canReverseTreasuryTransfers"]],
+    ["/billing", ["canAccessBilling"]],
+    ["/settings", ["canAccessSettings"]],
+    // Backups está deshabilitado en AppShell; no debe ser un destino de entrada.
+  ]
+
+  return destinations.find(([, permissions]) =>
+    permissions.some((permission) => hasPermission(user, permission))
+  )?.[0] ?? null
+}
+
 export function getModulePermissionState(
   user: PermissionAwareUser,
   module: PermissionModule,

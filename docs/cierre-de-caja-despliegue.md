@@ -13,7 +13,7 @@ La función se activa por negocio desde **Cuadre diario**. La migración no acti
 4. Para entregar, pulsa **Cerrar mi turno**. La pantalla guía los pasos: guardar pendientes, contar el efectivo y confirmar la entrega. Mientras trabajas muestra el resumen de caja; el campo para contar aparece al iniciar el cierre. No se muestra un faltante por el cero inicial: hay que introducir el conteo, incluso si la caja está vacía. Si el monto difiere del esperado, se explica cuánto falta o sobra y se exige un motivo.
 5. El siguiente empleado abre con su propio conteo. La diferencia de recepción permanece separada del resultado de sus operaciones.
 
-Un turno puede atravesar medianoche. Su responsable y dispositivo se verifican en el servidor. Los pendientes se conservan si expira la sesión o cambia el empleado; deben sincronizarse con la identidad original.
+Un turno puede atravesar medianoche. Si sigue abierto en un día posterior, la aplicación muestra un aviso con la fecha de apertura; no lo cierra automáticamente. El cambio de día se calcula con la zona del negocio (UTC-4). Su responsable y dispositivo se verifican en el servidor. Los pendientes se conservan si expira la sesión o cambia el empleado; deben sincronizarse con la identidad original.
 
 ## Tesorería y correcciones
 
@@ -60,10 +60,10 @@ Los artefactos de prueba permanecen en `tmp/cash-*`, fuera del control de versio
 
 ### Resultado de la implementación: 31 de octubre de 2026
 
-- 36 pruebas de integración aprobadas con PostgreSQL 18 local: migración del esquema anterior, concurrencia, permisos, saldos, cierres, correcciones y reintentos de las acciones reales.
+- 37 pruebas de integración aprobadas con PostgreSQL 18 local: migración del esquema anterior, concurrencia, permisos, saldos, cierres, correcciones, cierre excepcional y reintentos de las acciones reales.
 - 28 pruebas existentes de sincronización e informes aprobadas.
 - 15 casos aprobados en Chrome con IndexedDB y Web Locks reales, incluyendo pérdida de respuesta, cambio de empleado, respuestas tardías entre pestañas y recuperación de secuencia al reanudar sin estado local.
-- 27 casos adicionales de interfaz con React y Radix reales en Chrome: apertura desde la ventana, bloqueo por permisos o dispositivo, desconexión, recuperación de respuestas perdidas, conservación de datos y cierre guiado. Incluyen un fallo al enviar pendientes que ya dejó el turno en preparación, conteo explícito de cero, diferencias justificadas, reanudación y comprobante del cierre.
+- 33 casos adicionales de interfaz con React y Radix reales en Chrome: apertura desde la ventana, bloqueo por permisos o dispositivo, desconexión, recuperación de respuestas perdidas, conservación de datos y cierre guiado. Incluyen aviso al cambiar el día sin recargar, actualización del turno, cierre excepcional, un fallo al enviar pendientes, conteo explícito de cero, diferencias justificadas, reanudación y comprobante.
 - TypeScript, ESLint de los módulos nuevos, validación de Prisma y compilación de producción aprobados. La compilación utilizó una copia aislada del proyecto.
 
 Estas verificaciones no aplicaron la migración ni activaron turnos en la base del negocio. La prueba piloto con usuarios y dispositivos reales sigue pendiente.
@@ -86,5 +86,9 @@ Una respuesta perdida se reintenta con el mismo identificador y contenido. Si un
 ## Incidencias y reversión
 
 Un cierre normal requiere todas las secuencias confirmadas. Solo el dueño puede cerrar excepcionalmente por ausencia o pérdida del dispositivo, con conteo y motivo explícitos. Los pendientes posteriores de ese turno se rechazan para revisión y no se reasignan al siguiente empleado.
+
+Para hacerlo, el dueño entra a **Cuadre diario** con su usuario y despliega **Opciones del dueño** mientras esté abierto el turno de otro responsable o en otro dispositivo. Cuenta el efectivo, introduce el monto y explica por qué el responsable no puede cerrar y qué ocurre con sus pendientes; después confirma el cierre excepcional. Si el dueño es también el responsable y está en el dispositivo del turno, utiliza el cierre normal.
+
+Antes de un cierre excepcional conviene sincronizar los pendientes del dispositivo original si está disponible: el efectivo esperado solo incluye operaciones confirmadas. Las operaciones que nunca llegaron al servidor permanecen para revisión y no pasan al turno siguiente; una respuesta perdida de una operación ya confirmada puede recuperarse sin volver a registrarla.
 
 Ante una incidencia, detener nuevas activaciones. Desactivar turnos requiere que no haya un turno abierto o en preparación; se conservan el registro y las protecciones de los cierres existentes. No eliminar las tablas ni volver a una versión que ignore el corte financiero. La baja administrativa completa de un negocio conserva su procedimiento autorizado y elimina también sus datos de caja.
