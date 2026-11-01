@@ -1,7 +1,7 @@
 import type { CashShift, Prisma, User } from "@prisma/client"
 import { getRawPrismaClient, prisma } from "@/lib/db"
 import { cashHash, cashRequest, CashControlError } from "@/lib/cash-context"
-import { cents, difference, documentLegs, type MoneyDocument } from "@/lib/cash-money"
+import { cents, difference, documentLegs, shiftCollectionsByMethod, type MoneyDocument } from "@/lib/cash-money"
 import { hasPermission, type PermissionKey } from "@/lib/permissions"
 import { endOfDay } from "@/lib/dates"
 
@@ -121,6 +121,7 @@ export async function getCashContext(actor: Actor, deviceHash: string) {
   const active = await db.cashShift.findFirst({ where: { accountId: actor.accountId, status: { in: ["OPEN", "CLOSING"] } } })
   const mayRead = canViewAll(actor) || canManage(actor) || active?.cashierUserId === actor.id
   const groups = active && mayRead ? await db.cashMovement.groupBy({ by: ["treasuryAccountId", "method"], where: { accountId: actor.accountId, cashShiftId: active.id, sourceType: { notIn: ["OPENING_DIFFERENCE", "CLOSING_DIFFERENCE"] } }, _sum: { amountCents: true } }) : []
+  const collections = active && mayRead ? await db.cashMovement.groupBy({ by: ["sourceType", "method"], where: { accountId: actor.accountId, cashShiftId: active.id, sourceType: { in: ["sale", "payment"] } }, _sum: { amountCents: true } }) : []
   const names = groups.length ? await db.treasuryAccount.findMany({ where: { accountId: actor.accountId, id: { in: groups.map(g => g.treasuryAccountId) } }, select: { id: true, name: true } }) : []
   const namesById = new Map(names.map(a => [a.id, a.name]))
   return {
@@ -129,6 +130,7 @@ export async function getCashContext(actor: Actor, deviceHash: string) {
     canTransfer: hasPermission(actor, "canCreateTreasuryTransfers"),
     canRecordMovements: hasPermission(actor, "canRecordCashMovements"),
     breakdown: groups.map(g => ({ accountName: namesById.get(g.treasuryAccountId) ?? "Cuenta", method: g.method, totalCents: g._sum.amountCents ?? 0 })),
+    collectionsByMethod: active && mayRead ? shiftCollectionsByMethod(collections.map(g => ({ sourceType: g.sourceType, method: g.method, amountCents: g._sum.amountCents ?? 0 }))) : null,
     treasuryAccountId: config?.treasuryAccountId ?? null,
     canOperate: hasPermission(actor, "canOperateCashShifts"), canViewAll: canViewAll(actor), canManage: canManage(actor),
     expectedOpeningCents: config && !active && hasPermission(actor, "canOperateCashShifts") ? await drawerBalance(db, actor.accountId, config.treasuryAccountId) : null,

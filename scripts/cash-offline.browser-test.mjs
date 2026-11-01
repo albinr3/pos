@@ -9,7 +9,9 @@ const candidates = [process.env.CASH_TEST_BROWSER, "C:/Program Files/Google/Chro
 const browser = candidates.find(p => fs.existsSync(p))
 if (!browser) throw new Error("Define CASH_TEST_BROWSER con Chrome o Edge para estas pruebas")
 const source = ts.transpileModule(fs.readFileSync(path.join(root, "src/lib/cash-offline.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-async function browserSuite(compiled) {
+const stockStateSource = ts.transpileModule(fs.readFileSync(path.join(root, "src/lib/stock-cache-state.ts"), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+async function browserSuite(compiled, stockCompiled) {
+  const stockState = {}; new Function("exports", stockCompiled)(stockState)
   const results = []
   let caseId = 0, online = true
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => online })
@@ -18,7 +20,7 @@ async function browserSuite(compiled) {
   async function test(name, fn) { try { online = true; await fn(); results.push({ name, ok: true }) } catch (e) { results.push({ name, ok: false, error: e.message }) } }
   function fixture(enabled = true) {
     const unique = "cash-browser-" + Date.now() + "-" + (++caseId)
-    const exports = {}; new Function("exports", compiled.replace('"movopos-cash-v1"', JSON.stringify(unique)))(exports)
+    const exports = {}; new Function("exports", "require", compiled.replace('"movopos-cash-v1"', JSON.stringify(unique)))(exports, name => { if (name === "./stock-cache-state") return stockState; throw new Error(name) })
     const context = { protocolVersion: 1, enabled, accountId: unique, userId: "ana", userName: "Ana", canOperate: true, canManage: true, canViewAll: true, canTransfer: true, treasuryAccountId: "box", activeShift: { id: unique, isMine: true, isDevice: true, status: "OPEN", lastSequence: 0, finalSequence: null } }
     let processed = 0, drop = false, validation = false, manualError = null
     const seen = new Map(), manualSeen = new Map()
@@ -208,7 +210,7 @@ async function browserSuite(compiled) {
 }
 const target = path.join(root, "tmp", "cash-offline-browser.html")
 fs.mkdirSync(path.dirname(target), { recursive: true })
-fs.writeFileSync(target, `<!doctype html><meta charset="utf-8"><pre id="result">RUNNING</pre><script>(${browserSuite.toString()})(${JSON.stringify(source)}).catch(e=>document.getElementById('result').textContent=JSON.stringify([{ok:false,error:e.message}]));</script>`)
+fs.writeFileSync(target, `<!doctype html><meta charset="utf-8"><pre id="result">RUNNING</pre><script>(${browserSuite.toString()})(${JSON.stringify(source)}, ${JSON.stringify(stockStateSource)}).catch(e=>document.getElementById('result').textContent=JSON.stringify([{ok:false,error:e.message}]));</script>`)
 const profile = path.join(root, "tmp", `cash-browser-profile-${Date.now()}`)
 const child = spawn(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--disable-extensions", "--disable-background-networking", "--disable-component-update", "--disable-sync", `--user-data-dir=${profile}`, "--allow-file-access-from-files", "--remote-debugging-port=0", "about:blank"], { windowsHide: true, stdio: "ignore" })
 let startupError

@@ -1,5 +1,8 @@
 "use client"
 
+import { invalidateStockCache } from "./stock-cache-state"
+import { syncCacheData } from "./auto-sync"
+
 import { refreshCashContext, syncCashOutbox } from "./cash-offline"
 
 import { toast } from "@/hooks/use-toast"
@@ -90,7 +93,8 @@ export async function syncPendingData() {
 
   try {
     const cashContext = await refreshCashContext()
-    await syncCashOutbox(cashContext)
+    try { await syncCashOutbox(cashContext) }
+    finally { await syncCacheData({ force: true }) }
     // Los pendientes legacy no tienen autoría verificable: conservarlos para revisión, nunca reasignarlos.
     if (cashContext.enabled) return
 
@@ -131,7 +135,8 @@ export async function syncPendingData() {
           username: sale.username,
         })
 
-        // Eliminar de IndexedDB solo si se sincronizó exitosamente
+        // Invalidar antes de liberar la reserva; una caída de red exige refrescar stock.
+        invalidateStockCache(sale.accountId ?? cashContext.accountId)
         await deletePendingSale(sale.tempId)
         salesSynced++
       } catch (error) {
@@ -140,6 +145,8 @@ export async function syncPendingData() {
         // Continuar con las demás ventas
       }
     }
+
+    await syncCacheData({ force: true })
 
     // Luego sincronizar pagos batch (para conservar un solo recibo por lote)
     const pendingBatchPayments = await getPendingBatchPayments()

@@ -91,6 +91,7 @@ function clientHarness({ online = true, authorized = true, missingIndex = -1, st
   const cacheSync = loadModule("src/lib/auto-sync.ts", {
     "@/app/(app)/sync/actions": actions,
     "./indexed-db": cache,
+    "./stock-cache-state": { acknowledgeStockCache() {}, hasDirtyStockCache: () => false, stockCacheToken: () => null },
     "./client-storage": {
       clientStorageKeys: { cacheSync: "sync" }, legacyStorageKey: (key) => key,
       getMigratedLocalStorageItem() { if (storageError) throw new Error("storage denied"); return null },

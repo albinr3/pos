@@ -1,5 +1,8 @@
 "use client"
 
+import { invalidateStockCache, notifyStockAvailability } from "./stock-cache-state"
+import type { StockConsumption } from "./pos-stock"
+
 import type { getCashContext } from "@/lib/cash-shifts"
 import type { CashOperationInput } from "@/lib/cash-context"
 
@@ -26,7 +29,7 @@ export function assertCashShiftAccess(context: CashContext, actor?: CashActorIde
   const reason = cashShiftBlockReason(context, actor)
   if (reason) throw new CashShiftAccessError(context, reason)
 }
-export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "expense" | "return" | "transfer"; payload: Record<string, unknown>; cashOperation: CashOperationInput; error?: string }
+export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "expense" | "return" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; cashOperation: CashOperationInput; error?: string }
 type DocumentResult = { id?: string; reference?: string; invoiceCode?: string; returnCode?: string; stockDecrements?: Array<{ ingredientId: string; qty: number }>; paymentId?: string; paymentIds?: string[] }
 type SubmitResult = { pending: true; result: null } | { pending: false; result: DocumentResult }
 type ManualInput = { shiftId: string; kind: string; amountCents: number; otherAccountId?: string; note: string }
@@ -85,12 +88,13 @@ export async function cashPending(): Promise<CashQueuedOperation[]> {
   const db = await database()
   return value(db.transaction("outbox").objectStore("outbox").getAll())
 }
-async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, bindToShift: boolean) {
+async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, bindToShift: boolean, stockConsumptions?: StockConsumption[]) {
   if (!bindToShift) {
     const db = await database(), tx = db.transaction("outbox", "readwrite"), id = crypto.randomUUID()
-    const record: CashQueuedOperation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), cashOperation: { accountId: context.accountId, userId: context.userId, clientOperationId: id, cashShiftId: null, clientSequence: null } }
+    const record: CashQueuedOperation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, cashOperation: { accountId: context.accountId, userId: context.userId, clientOperationId: id, cashShiftId: null, clientSequence: null } }
     tx.objectStore("outbox").put(record)
     await completed(tx)
+    if (kind === "sale") notifyStockAvailability()
     return record
   }
   const shift = context.activeShift!
@@ -109,14 +113,16 @@ async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], 
     const localSequence = Number.isSafeInteger(current.sequence) ? current.sequence : 0
     const sequence = Math.max(localSequence, shift.lastSequence ?? 0) + 1
     const id = crypto.randomUUID()
-    operation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), cashOperation: { accountId: context.accountId, userId: context.userId, cashShiftId: shift.id, clientOperationId: id, clientSequence: sequence } }
+    operation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, cashOperation: { accountId: context.accountId, userId: context.userId, cashShiftId: shift.id, clientOperationId: id, clientSequence: sequence } }
     state.put({ key, value: { sequence, frozen: false } })
     outbox.put(operation)
   }
   await completed(tx).catch(error => { throw failure ?? error })
+  if (kind === "sale") notifyStockAvailability()
   return operation!
 }
 async function confirm(record: CashQueuedOperation, result: unknown) {
+  if (record.kind === "sale") invalidateStockCache(record.cashOperation.accountId)
   const db = await database(), tx = db.transaction(["state", "outbox"], "readwrite")
   tx.objectStore("state").put({ key: `receipt:${record.id}`, value: result })
   tx.objectStore("outbox").delete(record.id)
@@ -148,7 +154,7 @@ export async function syncCashOutbox(context?: CashContext) {
   if (navigator.locks) await navigator.locks.request(`cash-sync:${current.accountId}`, work)
   else await work()
 }
-export async function submitControlledDocument(kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, actor?: { id: string; accountId: string }): Promise<SubmitResult | undefined> {
+export async function submitControlledDocument(kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, actor?: { id: string; accountId: string }, stockConsumptions?: StockConsumption[]): Promise<SubmitResult | undefined> {
   const { context, connected } = await resolveCashContext(actor)
   const posOperation = ["sale", "payment", "batchPayment"].includes(kind)
   if (posOperation) assertCashShiftAccess(context, actor)
@@ -159,7 +165,7 @@ export async function submitControlledDocument(kind: CashQueuedOperation["kind"]
   const holder = Boolean(shift?.isMine && shift.isDevice && shift.status === "OPEN")
   if (cashAccount && (!context.canOperate || !holder)) throw new CashShiftAccessError(context, "Abre tu turno en Cuadre diario desde este dispositivo antes de usar la caja")
   if (shift?.isMine && shift.isDevice && shift.status !== "OPEN") throw new CashShiftAccessError(context, "Termina o reanuda el cierre antes de registrar operaciones")
-  const record = await enqueue(context, kind, payload, holder)
+  const record = await enqueue(context, kind, payload, holder, stockConsumptions)
   if (navigator.onLine) {
     try { await syncCashOutbox(context) }
     catch { /* El pendiente ya es durable: mostrar guardado pendiente, nunca volver a crearlo. */ }

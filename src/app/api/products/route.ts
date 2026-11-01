@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
       minStock: typeof p.minStock === "number" ? p.minStock : p.minStock?.toNumber?.() || 0,
       itbisRateBp: p.itbisRateBp,
       isAvailableForSale: p.isAvailableForSale,
+      isActive: p.isActive,
       imageUrls: p.imageUrls,
       productKind: p.productKind,
       unit: p.unit,
@@ -52,6 +53,8 @@ export async function GET(request: NextRequest) {
             qty: typeof item.qty === "number" ? item.qty : item.qty?.toNumber?.() || 0,
             ingredientName: item.ingredient?.name ?? null,
             ingredientUnit: item.ingredient?.unit ?? null,
+            ingredientStock: Number(item.ingredient?.stock ?? 0),
+            ingredientIsActive: item.ingredient?.isActive ?? false,
           }))
         : [],
       categoryId: p.category?.categoryId ?? null,

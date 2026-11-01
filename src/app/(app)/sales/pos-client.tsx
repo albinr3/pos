@@ -1,5 +1,8 @@
 "use client"
 
+import { buildStockInventory, getStockConsumptions, initialStockQuantity, roundStockQty, stockConsumptionDoesNotIncrease, validateStockConsumptions, type StockConsumption, type StockEntry, type StockIssue, type StockLine } from "@/lib/pos-stock"
+import { readPosStockState } from "@/lib/pos-stock-offline"
+import { invalidateStockCache, stockCacheToken } from "@/lib/stock-cache-state"
 import { submitControlledDocument } from "@/lib/cash-offline"
 import { CashShiftBanner } from "@/components/app/cash-shift-banner"
 import { useCashShiftAccess } from "@/components/app/cash-shift-gate"
@@ -53,7 +56,7 @@ import {
 import type { CurrentUser } from "@/lib/auth"
 import { clientStorageKeys, getMigratedLocalStorageItem, getMigratedSessionStorageItem, legacyStorageKey } from "@/lib/client-storage"
 
-import { createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode } from "./actions"
+import { checkSaleStock, createSale, listCustomers, searchProducts, listAllProductsForSale, findProductByBarcode } from "./actions"
 import { listTreasuryAccounts } from "../treasury/actions"
 import { completeDemoCheckout } from "../onboarding/actions"
 
@@ -228,6 +231,12 @@ export function PosClient({
   const [pendingCounts, setPendingCounts] = useState({ sales: 0, payments: 0 })
 
   const [cart, setCart] = useState<CartItem[]>([])
+  const cartRef = useRef(cart)
+  cartRef.current = cart
+  const quantityRejectedRef = useRef(false)
+  const [stockState, setStockState] = useState<Awaited<ReturnType<typeof readPosStockState>> | null>(null)
+  const [liveInventory, setLiveInventory] = useState<StockEntry[]>([])
+  const stockLoadVersion = useRef(0)
   const [shippingInput, setShippingInput] = useState("")
   const [applyLegalTip, setApplyLegalTip] = useState(legalTipEnabled)
   const [discountMode, setDiscountMode] = useState<DiscountMode>("AUTO")
@@ -258,6 +267,101 @@ export function PosClient({
     () => cart.find((item) => item.lineId === recipeDialogLineId) ?? null,
     [cart, recipeDialogLineId]
   )
+
+  const refreshStockState = useCallback(async () => {
+    const version = ++stockLoadVersion.current
+    if (!user?.accountId) return null
+    try {
+      const state = await readPosStockState(user.accountId)
+      if (version === stockLoadVersion.current) setStockState(state)
+      return state
+    } catch {
+      if (version === stockLoadVersion.current) setStockState(null)
+      return null
+    }
+  }, [user?.accountId])
+
+  useEffect(() => {
+    setStockState(null)
+    setLiveInventory([])
+    const refresh = () => { void refreshStockState() }
+    refresh()
+    const events = ["cash-outbox-changed", "pending-sales-changed", "products-cache-changed", "stock-cache-changed", "storage"]
+    events.forEach(event => window.addEventListener(event, refresh))
+    const cancelPendingLoad = () => { stockLoadVersion.current++ }
+    return () => {
+      cancelPendingLoad()
+      events.forEach(event => window.removeEventListener(event, refresh))
+    }
+  }, [refreshStockState])
+
+  const stockProducts = useMemo(() => [...(stockState?.products ?? []), ...allProducts, ...results], [stockState, allProducts, results])
+  const inventory = useMemo(() => buildStockInventory(stockProducts, user?.accountId ?? "", liveInventory), [stockProducts, user?.accountId, liveInventory])
+  const latestStockProducts = useMemo(() => {
+    const byId = new Map<string, typeof stockProducts[number]>()
+    for (const product of stockProducts) {
+      if (product.accountId === user?.accountId && (byId.get(product.id)?.stockSnapshotAt ?? -1) <= (product.stockSnapshotAt ?? 0)) byId.set(product.id, product)
+    }
+    return byId
+  }, [stockProducts, user?.accountId])
+
+  function stockLines(lines: CartItem[]): StockLine[] {
+    return lines.map(line => {
+      const latest = latestStockProducts.get(line.productId)
+      return { ...line, productKind: latest?.productKind ?? line.productKind, recipeItems: latest?.recipeItems ?? line.recipeItems }
+    })
+  }
+
+  function stockProblem(lines: CartItem[], state = stockState): StockIssue | null {
+    const consumed = getStockConsumptions(stockLines(lines))
+    if (consumed.issue) return consumed.issue
+    if (allowNegativeStock || onboardingDemoGuide) return null
+    if (!user || !state || state.incomplete || state.stale || stockCacheToken(user.accountId) !== null) return {
+      kind: "missing", name: "", message: "No hay datos completos de existencia. Conéctate y sincroniza los productos y pendientes antes de vender.",
+    }
+    const currentInventory = state === stockState ? inventory : buildStockInventory([...state.products, ...allProducts, ...results], user.accountId, liveInventory)
+    return validateStockConsumptions(consumed.consumptions, currentInventory, state.reserved)
+  }
+
+  function showStockProblem(issue: StockIssue) {
+    toast({ title: "No se puede vender esa cantidad", description: issue.message, variant: "destructive" })
+  }
+
+  function commitCartChange(next: CartItem[], allowReduction = false): boolean {
+    if (isSaving) return false
+    const issue = stockProblem(next)
+    if (issue && !(allowReduction && stockConsumptionDoesNotIncrease(stockLines(cartRef.current), stockLines(next)))) {
+      showStockProblem(issue)
+      return false
+    }
+    cartRef.current = next
+    setCart(next)
+    return true
+  }
+
+  function changeCartQuantity(lineId: string, qty: number, fromInput = false) {
+    const next = cartRef.current.map(line => line.lineId === lineId ? { ...line, qty } : line)
+    const accepted = commitCartChange(next, true)
+    // Solo el blur puede preceder al mismo clic de guardar. Rechazar un botón +
+    // no debe obligar al usuario a pulsar Guardar dos veces para su carrito válido.
+    quantityRejectedRef.current = !accepted && fromInput
+    return accepted
+  }
+
+  function flushEditingQuantities() {
+    if (quantityRejectedRef.current) { quantityRejectedRef.current = false; return false }
+    const next = cartRef.current.map(line => {
+      const raw = editingQuantities[line.lineId]
+      if (raw === undefined) return line
+      const parsed = parseQty(raw.trim(), line.unit)
+      return { ...line, qty: parsed < (unitAllowsDecimals(line.unit) ? 0.01 : 1) ? (unitAllowsDecimals(line.unit) ? 0.5 : 1) : parsed }
+    })
+    if (!commitCartChange(next)) return false
+    setEditingQuantities({})
+    return true
+  }
+
+  const cartStockIssue = cart.length ? stockProblem(cart) : null
 
   // Ref para rastrear el tiempo de la primera y última tecla (para detectar escaneo de código de barras)
   const firstKeyPressTime = useRef<number>(0)
@@ -337,6 +441,7 @@ export function PosClient({
   }, [router])
 
   const resetSaleFormState = useCallback(() => {
+    cartRef.current = []
     setCart([])
     setCustomerId("generic")
     setSaleType(SaleType.CONTADO)
@@ -1130,44 +1235,52 @@ export function PosClient({
     viewMode,
   ])
 
-  const addToCart = useCallback((p: ProductResult, recipeAdjustments: RecipeAdjustment[] = []) => {
+  function availableProductStock(productId: string, fallback: number) {
+    const reserved = (stockState?.reserved ?? []).filter(item => item.ingredientId === productId).reduce((sum, item) => sum + item.qty, 0)
+    return roundStockQty((inventory.get(productId)?.stock ?? fallback) - reserved)
+  }
+
+  function proposedProductCart(p: ProductResult, recipeAdjustments: RecipeAdjustment[] = []) {
     const productUnit = (p.unit as UnitType) ?? "UNIDAD"
-    const stockNum = decimalToNumber(p.stock)
     const normalizedAdjustments = sortRecipeAdjustments(recipeAdjustments)
     const lineId = buildCartLineId(p.id, normalizedAdjustments)
+    const current = cartRef.current
+    const existing = current.find(line => line.lineId === lineId)
+    if (existing) {
+      const increment = unitAllowsDecimals(productUnit) ? 0.5 : 1
+      return current.map(line => line.lineId === lineId ? { ...line, qty: line.qty + increment } : line)
+    }
+    let qty = 1
+    if (!allowNegativeStock && unitAllowsDecimals(productUnit) && p.productKind !== "RECIPE") {
+      const consumed = getStockConsumptions(stockLines(current)).consumptions
+      const reserved = [...(stockState?.reserved ?? []), ...consumed].filter(item => item.ingredientId === p.id).reduce((sum, item) => sum + item.qty, 0)
+      const available = (inventory.get(p.id)?.stock ?? decimalToNumber(p.stock)) - reserved
+      // Nunca redondear hacia arriba una existencia fraccionaria (por ejemplo 0,3 kg).
+      qty = initialStockQuantity(available, true, false)
+    }
+    return [...current, {
+      lineId, productId: p.id, name: p.name, sku: p.sku ?? null, reference: p.reference ?? null,
+      stock: decimalToNumber(p.stock), qty, unitPriceCents: normalizeUnitPriceCents(p.priceCents),
+      wasPriceOverridden: false, unit: productUnit, itbisRateBp: p.itbisRateBp ?? 1800,
+      productKind: p.productKind === "RECIPE" ? "RECIPE" as const : p.productKind === "MEASURED" ? "MEASURED" as const : "BASIC" as const,
+      recipeItems: p.recipeItems ?? [], recipeAdjustments: normalizedAdjustments,
+    }]
+  }
 
-    setCart((prev) => {
-      const existing = prev.find((x) => x.lineId === lineId)
-      if (existing) {
-        // Para productos con medidas, incrementar en 0.5; para unidades, incrementar en 1
-        const increment = unitAllowsDecimals(productUnit) ? 0.5 : 1
-        return prev.map((x) => (x.lineId === lineId ? { ...x, qty: x.qty + increment } : x))
-      }
-      return [
-        ...prev,
-        {
-          lineId,
-          productId: p.id,
-          name: p.name,
-          sku: p.sku ?? null,
-          reference: p.reference ?? null,
-          stock: stockNum,
-          qty: 1,
-          unitPriceCents: normalizeUnitPriceCents(p.priceCents),
-          wasPriceOverridden: false,
-          unit: productUnit,
-          itbisRateBp: p.itbisRateBp ?? 1800,
-          productKind: p.productKind === "RECIPE" ? "RECIPE" : p.productKind === "MEASURED" ? "MEASURED" : "BASIC",
-          recipeItems: p.recipeItems ?? [],
-          recipeAdjustments: normalizedAdjustments,
-        },
-      ]
-    })
-  }, [])
+  function productStockIssue(product: ProductResult) {
+    return stockProblem(proposedProductCart(product))
+  }
+
+  function productStockLabel(product: ProductResult) {
+    const issue = productStockIssue(product)
+    if (!issue) return null
+    return issue.kind === "missing" ? "Sincroniza para validar" : issue.kind === "insufficient" && (issue.available ?? 0) <= 0 ? "Sin existencia" : "Existencia insuficiente"
+  }
 
   function handleProductSelection(p: ProductResult) {
-    addToCart(p)
+    if (!commitCartChange(proposedProductCart(p))) return false
     setHasReviewedOnboardingCart(false)
+    return true
   }
 
   function closeRecipeDialog() {
@@ -1199,16 +1312,11 @@ export function PosClient({
     recipeAdjustments: RecipeAdjustment[],
     scope: RecipeApplyScope
   ) {
-    setCart((prev) =>
-      applyRecipeAdjustmentsWithScope({
-        lines: prev,
-        lineId,
-        recipeAdjustments,
-        scope,
-        buildLineId: buildCartLineId,
-        splitQty: 1,
-      })
-    )
+    const next = applyRecipeAdjustmentsWithScope({
+      lines: cartRef.current, lineId, recipeAdjustments, scope,
+      buildLineId: buildCartLineId, splitQty: 1,
+    })
+    return commitCartChange(next, true)
   }
 
   async function handleBarcodeScan(code: string) {
@@ -1233,9 +1341,10 @@ export function PosClient({
           priceCents: product.priceCents ?? product.unitPriceCents ?? 0,
           itbisRateBp: product.itbisRateBp ?? 1800,
         }
-        handleProductSelection(normalized as any)
-        setQuery("")
-        toast({ title: "Producto agregado", description: product.name })
+        if (handleProductSelection(normalized as ProductResult)) {
+          setQuery("")
+          toast({ title: "Producto agregado", description: product.name })
+        }
       } else {
         toast({ title: "Producto no encontrado", description: `No se encontró producto con código: ${trimmedCode}`, variant: "destructive" })
       }
@@ -1245,8 +1354,6 @@ export function PosClient({
   }
 
   function isLikelyOfflineError(error: unknown) {
-    if (typeof navigator !== "undefined" && !navigator.onLine) return true
-    if (error instanceof TypeError) return true
     if (error instanceof Error) {
       const msg = error.message.toLowerCase()
       return msg.includes("failed to fetch") || msg.includes("network") || msg.includes("fetch")
@@ -1255,6 +1362,7 @@ export function PosClient({
   }
 
   async function onSave() {
+    if (isSaving) return
     if (onboardingDemoGuide) {
       if (cart.length === 0) {
         toast({ title: "Selecciona un producto", description: "Agrega Café Americano al carrito para continuar." })
@@ -1272,6 +1380,7 @@ export function PosClient({
       return
     }
 
+    if (!flushEditingQuantities()) return
     if (!cashAccess.allowed) { await cashAccess.ensureAccess(); return }
     // Validaciones iniciales
     if (saleType === SaleType.CREDITO && (!effectiveCustomerId || !selectedCustomer || selectedCustomer.isGeneric)) {
@@ -1312,6 +1421,8 @@ export function PosClient({
   }
 
   async function doSave() {
+    if (isSaving) return
+    if (!flushEditingQuantities()) return
     if (!user) {
       toast({ title: "Error", description: "Usuario no disponible. Por favor, recarga la p gina.", variant: "destructive" })
       return
@@ -1352,7 +1463,7 @@ export function PosClient({
       saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.TRANSFERENCIA
         ? resolveTransferBankNameForAccount(treasuryAccountId)
         : null
-    const normalizedSaleItems = cart.map((c) => ({
+    const normalizedSaleItems = cartRef.current.map((c) => ({
       productId: c.productId,
       qty: c.qty,
       unitPriceCents: normalizeUnitPriceCents(c.unitPriceCents),
@@ -1373,10 +1484,14 @@ export function PosClient({
       return
     }
 
+    let stockConsumptions: StockConsumption[] = getStockConsumptions(stockLines(cartRef.current)).consumptions
     const saveSaleOffline = async () => {
       const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
       await savePendingSale({
         tempId,
+        accountId: user.accountId,
+        userId: user.id,
+        stockConsumptions,
         customerId: customerId === "generic" ? null : customerId,
         type: saleType,
         paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
@@ -1402,103 +1517,141 @@ export function PosClient({
 
       const counts = await getPendingCounts()
       setPendingCounts(counts)
+      await refreshStockState()
     }
 
     startSave(async () => {
-      try {
-        // La comprobación también forma parte del guardado: evita dos envíos mientras espera la red.
-        if (!await cashAccess.ensureAccess()) return
-        const controlled = await submitControlledDocument("sale", { ...{
-              customerId: customerId === "generic" ? null : customerId,
-              type: saleType,
-              paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
-              treasuryAccountId:
-                saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? treasuryAccountId : null,
-              transferBankName: saleTransferBankName,
-              paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
-              items: normalizedSaleItems,
-              shippingCents: shippingCents > 0 ? shippingCents : undefined,
-              applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
-              discountMode: discountModeForSave,
-              manualDiscountPercentBp:
-                discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
-              salePricesIncludeItbis,
-              onboardingSale: onboardingSaleGuide,
-              username: user.username,
-            }, soldAt: Date.now() }, user)
-        if (controlled) {
-          toast({ title: controlled.pending ? "Venta guardada pendiente de sincronización" : "Venta guardada", description: controlled.pending ? "Se conserva en este dispositivo y turno. Revisa los pendientes en Cuadre diario." : `Factura ${controlled.result.invoiceCode}` })
-          if (controlled.result?.stockDecrements) applyStockDecrements(controlled.result.stockDecrements)
-          if (controlled.result?.id && onboardingSaleGuide) {
-            router.push(`/onboarding/completado?saleId=${encodeURIComponent(controlled.result.id)}`)
-          } else if (controlled.result?.invoiceCode) {
-            sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
-            const receiptUrl = `/api/print/sale/${controlled.result.invoiceCode}?autoprint=1`
-            const popup = window.open(receiptUrl, "_blank")
-            if (!popup || popup.closed) router.push(receiptUrl)
+      const save = async () => {
+        try {
+          // La comprobación también forma parte del guardado: evita dos envíos mientras espera la red.
+          if (!await cashAccess.ensureAccess()) return
+          // Comprobar antes de cualquier outbox: un error de negocio nunca es una venta offline.
+          const localState = await refreshStockState()
+          if (navigator.onLine) {
+            try {
+              const checked = await checkSaleStock(normalizedSaleItems)
+              if (checked.accountId !== user.accountId || checked.userId !== user.id) throw new Error("El usuario cambió. Recarga la página antes de vender.")
+              setLiveInventory(checked.inventory)
+              const currentUser = { ...user, canSellWithoutStock: checked.canSellWithoutStock, isOwner: checked.isOwner }
+              setUser(currentUser)
+              cacheUser(currentUser)
+              if (!checked.ok && checked.issue) { showStockProblem(checked.issue); return }
+              stockConsumptions = checked.consumptions
+              if (!checked.allowNegativeStock) {
+                if (!localState || localState.incomplete) { showStockProblem({ kind: "missing", name: "", message: "Sincroniza los pendientes antes de continuar." }); return }
+                const issue = validateStockConsumptions(stockConsumptions, new Map(checked.inventory.map(item => [item.id, item])), localState.reserved)
+                if (issue) { showStockProblem(issue); return }
+              }
+            } catch (error) {
+              if (!isLikelyOfflineError(error)) throw error
+              const issue = stockProblem(cartRef.current, localState)
+              if (issue) { showStockProblem(issue); return }
+            }
+          } else {
+            const issue = stockProblem(cartRef.current, localState)
+            if (issue) { showStockProblem(issue); return }
           }
-          resetSaleFormState()
-          return
-        }
-        if (!isOnline) {
-          await saveSaleOffline()
-        } else {
-          try {
-            const sale = await createSale({
-              customerId: customerId === "generic" ? null : customerId,
-              type: saleType,
-              paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
-              treasuryAccountId:
-                saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? treasuryAccountId : null,
-              transferBankName: saleTransferBankName,
-              paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
-              items: normalizedSaleItems,
-              shippingCents: shippingCents > 0 ? shippingCents : undefined,
-              applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
-              discountMode: discountModeForSave,
-              manualDiscountPercentBp:
-                discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
-              salePricesIncludeItbis,
-              onboardingSale: onboardingSaleGuide,
-              username: user.username,
-            })
-
-            toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
-            applyStockDecrements(sale.stockDecrements)
-
-            if (onboardingSaleGuide) {
-              router.push(`/onboarding/completado?saleId=${encodeURIComponent(sale.id)}`)
-            } else {
+          const controlled = await submitControlledDocument("sale", { ...{
+                customerId: customerId === "generic" ? null : customerId,
+                type: saleType,
+                paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
+                treasuryAccountId:
+                  saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? treasuryAccountId : null,
+                transferBankName: saleTransferBankName,
+                paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
+                items: normalizedSaleItems,
+                shippingCents: shippingCents > 0 ? shippingCents : undefined,
+                applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
+                discountMode: discountModeForSave,
+                manualDiscountPercentBp:
+                  discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
+                salePricesIncludeItbis,
+                onboardingSale: onboardingSaleGuide,
+                username: user.username,
+              }, soldAt: Date.now() }, user, stockConsumptions)
+          if (controlled) {
+            toast({ title: controlled.pending ? "Venta guardada pendiente de sincronización" : "Venta guardada", description: controlled.pending ? "Se conserva en este dispositivo y turno. Revisa los pendientes en Cuadre diario." : `Factura ${controlled.result.invoiceCode}` })
+            if (controlled.result?.stockDecrements) {
+              applyStockDecrements(controlled.result.stockDecrements)
+              await syncCacheData({ force: true })
+            }
+            await refreshStockState()
+            if (controlled.result?.id && onboardingSaleGuide) {
+              router.push(`/onboarding/completado?saleId=${encodeURIComponent(controlled.result.id)}`)
+            } else if (controlled.result?.invoiceCode) {
               sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
-
-              // Autoimpresión térmica por navegador/OS (impresora predeterminada del sistema).
-              const receiptUrl = `/api/print/sale/${sale.invoiceCode}?autoprint=1`
+              const receiptUrl = `/api/print/sale/${controlled.result.invoiceCode}?autoprint=1`
               const popup = window.open(receiptUrl, "_blank")
+              if (!popup || popup.closed) router.push(receiptUrl)
+            }
+            resetSaleFormState()
+            return
+          }
+          if (!isOnline) {
+            await saveSaleOffline()
+          } else {
+            try {
+              const sale = await createSale({
+                customerId: customerId === "generic" ? null : customerId,
+                type: saleType,
+                paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
+                treasuryAccountId:
+                  saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? treasuryAccountId : null,
+                transferBankName: saleTransferBankName,
+                paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
+                items: normalizedSaleItems,
+                shippingCents: shippingCents > 0 ? shippingCents : undefined,
+                applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
+                discountMode: discountModeForSave,
+                manualDiscountPercentBp:
+                  discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
+                salePricesIncludeItbis,
+                onboardingSale: onboardingSaleGuide,
+                username: user.username,
+              })
 
-              // Fallback cuando el navegador bloquea popups.
-              if (!popup || popup.closed || typeof popup.closed === "undefined") {
-                toast({
-                  title: "Popup bloqueado",
-                  description: "Se abrirá el ticket en esta pestaña para continuar con la impresión.",
-                })
-                router.push(receiptUrl)
+              toast({ title: "Venta guardada", description: `Factura ${sale.invoiceCode}` })
+              invalidateStockCache(user.accountId)
+              applyStockDecrements(sale.stockDecrements)
+              await syncCacheData({ force: true })
+              await refreshStockState()
+
+              if (onboardingSaleGuide) {
+                router.push(`/onboarding/completado?saleId=${encodeURIComponent(sale.id)}`)
+              } else {
+                sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
+
+                // Autoimpresión térmica por navegador/OS (impresora predeterminada del sistema).
+                const receiptUrl = `/api/print/sale/${sale.invoiceCode}?autoprint=1`
+                const popup = window.open(receiptUrl, "_blank")
+
+                // Fallback cuando el navegador bloquea popups.
+                if (!popup || popup.closed || typeof popup.closed === "undefined") {
+                  toast({
+                    title: "Popup bloqueado",
+                    description: "Se abrirá el ticket en esta pestaña para continuar con la impresión.",
+                  })
+                  router.push(receiptUrl)
+                }
+              }
+            } catch (e) {
+              if (isLikelyOfflineError(e)) {
+                await saveSaleOffline()
+              } else {
+                throw e
               }
             }
-          } catch (e) {
-            if (isLikelyOfflineError(e)) {
-              await saveSaleOffline()
-            } else {
-              throw e
-            }
           }
-        }
 
-        resetSaleFormState()
-      } catch (e) {
-        if (cashAccess.handleError(e)) return
-        const msg = e instanceof Error ? e.message : "Error guardando venta"
-        toast({ title: "No se pudo guardar", description: msg })
+          resetSaleFormState()
+        } catch (e) {
+          if (cashAccess.handleError(e)) return
+          const msg = e instanceof Error ? e.message : "Error guardando venta"
+          toast({ title: "No se pudo guardar", description: msg })
+        }
       }
+      if (navigator.locks) await navigator.locks.request(`pos-stock:${user.accountId}`, save)
+      else await save()
     })
   }
 
@@ -1529,7 +1682,8 @@ export function PosClient({
         />
       ) : null}
 
-      <CashShiftBanner />
+      {/* La práctica no requiere turno; mostrar el aviso aquí indicaría lo contrario. */}
+      {!onboardingDemoGuide && <CashShiftBanner />}
 
       {/* Indicador de modo offline */}
       {mounted && !isOnline && (
@@ -1910,16 +2064,18 @@ export function PosClient({
                           type="button"
                           key={p.id}
                           onClick={() => handleProductSelection(p)}
+                          disabled={isSaving || Boolean(productStockIssue(p))}
+                          title={productStockIssue(p)?.message}
                           data-onboarding-target={getProductOnboardingTarget(p, "sales-product-result")}
-                          className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-muted"
+                          className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <div className="min-w-0">
                             <div className="truncate font-medium">{p.name}</div>
                             <div className="truncate text-xs text-muted-foreground">
                               Código: {p.sku ?? "—"} · Ref: {p.reference ?? "—"} · {" "}
-                              {p.productKind === "RECIPE"
+                              {productStockLabel(p) ?? (p.productKind === "RECIPE"
                                 ? "Disponibilidad por insumos"
-                                : `Existencia: ${formatQty(decimalToNumber(p.stock), (p.unit as UnitType) ?? "UNIDAD")}`}
+                                : `Existencia: ${formatQty(availableProductStock(p.id, decimalToNumber(p.stock)), (p.unit as UnitType) ?? "UNIDAD")}`)}
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
@@ -1948,8 +2104,10 @@ export function PosClient({
                           type="button"
                           key={p.id}
                           onClick={() => handleProductSelection(p)}
+                          disabled={isSaving || Boolean(productStockIssue(p))}
+                          title={productStockIssue(p)?.message}
                           data-onboarding-target={getProductOnboardingTarget(p, "sales-product-result")}
-                          className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
+                          className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
                             {p.imageUrls && p.imageUrls.length > 0 ? (
@@ -1983,9 +2141,9 @@ export function PosClient({
                             <div className="text-xs text-muted-foreground truncate">{p.reference ?? "—"}</div>
                             <div className="text-sm font-semibold text-purple-primary">{formatRD(p.priceCents)}</div>
                             <div className="text-xs text-muted-foreground">
-                              {p.productKind === "RECIPE"
+                              {productStockLabel(p) ?? (p.productKind === "RECIPE"
                                 ? "Por receta"
-                                : `${p.stock} disponible${p.stock !== 1 ? "s" : ""}`}
+                                : `${availableProductStock(p.id, p.stock)} disponible${availableProductStock(p.id, p.stock) !== 1 ? "s" : ""}`)}
                             </div>
                           </div>
                         </button>
@@ -2015,8 +2173,10 @@ export function PosClient({
                             type="button"
                             key={p.id}
                             onClick={() => handleProductSelection(p)}
+                          disabled={isSaving || Boolean(productStockIssue(p))}
+                          title={productStockIssue(p)?.message}
                             data-onboarding-target={getProductOnboardingTarget(p, "sales-product-card")}
-                            className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm"
+                            className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
                               {p.imageUrls && p.imageUrls.length > 0 ? (
@@ -2050,9 +2210,9 @@ export function PosClient({
                               <div className="text-xs text-muted-foreground truncate">{p.reference ?? "—"}</div>
                               <div className="text-sm font-semibold text-purple-primary">{formatRD(p.priceCents)}</div>
                               <div className="text-xs text-muted-foreground">
-                                {p.productKind === "RECIPE"
+                                {productStockLabel(p) ?? (p.productKind === "RECIPE"
                                   ? "Disponibilidad por insumos"
-                                  : `${formatQty(decimalToNumber(p.stock), (p.unit as UnitType) ?? "UNIDAD")} disponible`}
+                                  : `${formatQty(decimalToNumber(p.stock), (p.unit as UnitType) ?? "UNIDAD")} disponible`)}
                               </div>
                             </div>
                           </button>
@@ -2114,11 +2274,7 @@ export function PosClient({
                                   delete next[c.lineId]
                                   return next
                                 })
-                                setCart((p) =>
-                                  p.map((x) =>
-                                    x.lineId === c.lineId ? { ...x, qty: Math.max(minQty, x.qty - increment) } : x
-                                  )
-                                )
+                                changeCartQuantity(c.lineId, Math.max(minQty, c.qty - increment))
                               }}
                             >
                               -
@@ -2126,6 +2282,8 @@ export function PosClient({
                             <Input
                               type="text"
                               inputMode={allowsDecimals ? "decimal" : "numeric"}
+                                aria-label={`Cantidad de ${c.name}`}
+                                disabled={isSaving}
                               className="w-16 text-center text-sm font-semibold h-9"
                               value={editingQuantities[c.lineId] ?? formatQtyNumber(c.qty, c.unit)}
                               onChange={(e) => {
@@ -2151,11 +2309,7 @@ export function PosClient({
                                 const newQty = parseQty(rawValue, c.unit)
                                 const finalQty = newQty < (allowsDecimals ? 0.01 : 1) ? (allowsDecimals ? 0.5 : 1) : newQty
 
-                                setCart((p) =>
-                                  p.map((x) =>
-                                    x.lineId === c.lineId ? { ...x, qty: finalQty } : x
-                                  )
-                                )
+                                changeCartQuantity(c.lineId, finalQty, true)
 
                                 // Limpiar el estado de edición
                                 setEditingQuantities((prev) => {
@@ -2182,7 +2336,7 @@ export function PosClient({
                                   delete next[c.lineId]
                                   return next
                                 })
-                                setCart((p) => p.map((x) => (x.lineId === c.lineId ? { ...x, qty: x.qty + increment } : x)))
+                                changeCartQuantity(c.lineId, (cartRef.current.find(line => line.lineId === c.lineId)?.qty ?? c.qty) + increment)
                               }}
                             >
                               +
@@ -2193,6 +2347,7 @@ export function PosClient({
                                 <PriceInput
                                   className="text-right px-2"
                                   valueCents={c.unitPriceCents}
+                                  disabled={isSaving}
                                   onChangeCents={(unitPriceCents) => {
                                     // Obtener el precio original del producto para comparar
                                     const product = allProducts.find((p) => p.id === c.productId) || results.find((p) => p.id === c.productId)
@@ -2215,13 +2370,7 @@ export function PosClient({
                               <div className="text-sm text-muted-foreground">{formatRD(c.unitPriceCents)}</div>
                             )}
                           </div>
-                          {c.productKind === "RECIPE" ? (
-                            <div className="mt-2 text-xs text-muted-foreground">Disponibilidad validada por insumos al guardar la venta.</div>
-                          ) : !allowNegativeStock && c.qty > c.stock ? (
-                            <div className="mt-2 text-xs font-medium text-destructive">
-                              Existencia insuficiente (Existencia: {formatQty(c.stock, c.unit)}). Ajustes → &quot;Permitir vender sin existencia&quot;.
-                            </div>
-                          ) : null}
+                          {cartStockIssue && <div className="mt-2 text-xs font-medium text-destructive">{cartStockIssue.message}</div>}
                         </div>
                         <div className="flex flex-col items-end gap-2">
                           <div className="text-sm font-semibold">{formatRD(c.unitPriceCents * c.qty)}</div>
@@ -2231,6 +2380,7 @@ export function PosClient({
                               variant="outline"
                               size="sm"
                               onClick={() => openRecipeDialogForCartItem(c)}
+                              disabled={isSaving}
                             >
                               Personalizar
                             </Button>
@@ -2239,7 +2389,8 @@ export function PosClient({
                             type="button"
                             variant="ghost"
                             size="icon"
-                            onClick={() => setCart((p) => p.filter((x) => x.lineId !== c.lineId))}
+                            disabled={isSaving}
+                            onClick={() => { const next = cartRef.current.filter(line => line.lineId !== c.lineId); cartRef.current = next; setCart(next) }}
                             aria-label="Quitar"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -2263,7 +2414,8 @@ export function PosClient({
               {cart.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => setCart([])}
+                  onClick={() => { cartRef.current = []; setCart([]) }}
+                  disabled={isSaving}
                   className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Vaciar canasta
@@ -2309,7 +2461,7 @@ export function PosClient({
                             <div className="text-xs text-destructive">
                               {c.productKind === "RECIPE"
                                 ? "Disponibilidad por insumos"
-                                : `${formatQty(c.stock, c.unit)} Disponible${c.stock !== 1 ? "s" : ""}`}
+                                : `${formatQty(availableProductStock(c.productId, c.stock), c.unit)} Disponible${availableProductStock(c.productId, c.stock) !== 1 ? "s" : ""}`}
                             </div>
                             {c.recipeItems.length > 0 && (
                               <div className="mt-1 flex flex-wrap gap-1">
@@ -2336,11 +2488,7 @@ export function PosClient({
                                     delete next[c.lineId]
                                     return next
                                   })
-                                  setCart((p) =>
-                                    p.map((x) =>
-                                      x.lineId === c.lineId ? { ...x, qty: Math.max(minQty, x.qty - increment) } : x
-                                    )
-                                  )
+                                  changeCartQuantity(c.lineId, Math.max(minQty, c.qty - increment))
                                 }}
                               >
                                 -
@@ -2348,6 +2496,8 @@ export function PosClient({
                               <Input
                                 type="text"
                                 inputMode={allowsDecimals ? "decimal" : "numeric"}
+                                aria-label={`Cantidad de ${c.name}`}
+                                disabled={isSaving}
                                 className="h-8 w-16 text-center text-sm font-semibold"
                                 value={editingQuantities[c.lineId] ?? formatQtyNumber(c.qty, c.unit)}
                                 onChange={(e) => {
@@ -2365,11 +2515,7 @@ export function PosClient({
                                   const newQty = parseQty(rawValue, c.unit)
                                   const finalQty = newQty < (allowsDecimals ? 0.01 : 1) ? (allowsDecimals ? 0.5 : 1) : newQty
 
-                                  setCart((p) =>
-                                    p.map((x) =>
-                                      x.lineId === c.lineId ? { ...x, qty: finalQty } : x
-                                    )
-                                  )
+                                  changeCartQuantity(c.lineId, finalQty, true)
 
                                   setEditingQuantities((prev) => {
                                     const next = { ...prev }
@@ -2394,7 +2540,7 @@ export function PosClient({
                                     delete next[c.lineId]
                                     return next
                                   })
-                                  setCart((p) => p.map((x) => (x.lineId === c.lineId ? { ...x, qty: x.qty + increment } : x)))
+                                  changeCartQuantity(c.lineId, (cartRef.current.find(line => line.lineId === c.lineId)?.qty ?? c.qty) + increment)
                                 }}
                               >
                                 +
@@ -2404,6 +2550,7 @@ export function PosClient({
                                   <PriceInput
                                     className="text-right px-2"
                                     valueCents={c.unitPriceCents}
+                                  disabled={isSaving}
                                     onChangeCents={(unitPriceCents) => {
                                       // Obtener el precio original del producto para comparar
                                       const product = allProducts.find((p) => p.id === c.productId) || results.find((p) => p.id === c.productId)
@@ -2432,6 +2579,7 @@ export function PosClient({
                                   size="sm"
                                   className="h-8"
                                   onClick={() => openRecipeDialogForCartItem(c)}
+                              disabled={isSaving}
                                 >
                                   Personalizar
                                 </Button>
@@ -2441,7 +2589,8 @@ export function PosClient({
                                 variant="ghost"
                                 size="icon"
                                 className="h-8 w-8 text-destructive hover:text-destructive"
-                                onClick={() => setCart((p) => p.filter((x) => x.lineId !== c.lineId))}
+                                disabled={isSaving}
+                            onClick={() => { const next = cartRef.current.filter(line => line.lineId !== c.lineId); cartRef.current = next; setCart(next) }}
                                 aria-label="Quitar"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -2538,12 +2687,16 @@ export function PosClient({
               type="button"
               className="w-full"
               size="lg"
-              disabled={isSaving || cart.length === 0}
+              disabled={isSaving || cart.length === 0 || Boolean(cartStockIssue)}
               onClick={onSave}
               data-onboarding-target="sales-save-button"
             >
               {isSaving ? "Guardando…" : onboardingDemoGuide ? "Completar venta de práctica" : "Guardar e imprimir"}
             </Button>
+            {cartStockIssue && <div role="alert" className="space-y-2 text-sm text-destructive">
+              <p>{cartStockIssue.message}</p>
+              {cartStockIssue.kind === "missing" && <Button type="button" variant="outline" disabled={isSaving || !isOnline} onClick={async () => { await syncCacheData({ force: true }); await refreshStockState() }}>Actualizar existencias</Button>}
+            </div>}
             {!onboardingDemoGuide && <div className="text-xs text-muted-foreground">
               {salePricesIncludeItbis
                 ? "Precios incluyen ITBIS. Factura tamaño carta con serie A."
@@ -2643,7 +2796,7 @@ export function PosClient({
             </Button>
             <Button
               onClick={doSave}
-              disabled={isSaving || changeCents < 0 || amountPaidCents === 0}
+              disabled={isSaving || Boolean(cartStockIssue) || changeCents < 0 || amountPaidCents === 0}
               data-onboarding-target="sales-change-confirm"
             >
               {isSaving ? "Guardando…" : "Confirmar"}
@@ -2852,7 +3005,7 @@ export function PosClient({
             <Button
               onClick={doSave}
               disabled={
-                isSaving ||
+                isSaving || Boolean(cartStockIssue) ||
                 paymentSplits.length === 0 ||
                 paymentSplits.reduce((sum, s) => sum + s.amountCents, 0) !== totalCents ||
                 paymentSplits.some((s) => {
@@ -2977,7 +3130,7 @@ export function PosClient({
                       } as RecipeAdjustment,
                     ]
                   })
-                  applyRecipeAdjustmentsToCartLine(recipeDialogCartItem.lineId, adjustments, scope)
+                  if (!applyRecipeAdjustmentsToCartLine(recipeDialogCartItem.lineId, adjustments, scope)) return
                   const variantLabel =
                     adjustments.length > 0 ? adjustments.map(formatAdjustmentLabel).join(", ") : "Normal"
                   const description =

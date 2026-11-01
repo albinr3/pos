@@ -54,6 +54,8 @@ export async function syncProductsToIndexedDB() {
             select: {
               name: true,
               unit: true,
+              stock: true,
+              isActive: true,
             },
           },
         },
@@ -76,6 +78,8 @@ export async function syncProductsToIndexedDB() {
   // Convertir Decimal a número y Date a string para serialización
   const mapped = products.map((p) => ({
     id: p.id,
+    accountId: user.accountId,
+    stockSnapshotAt: Date.now(),
     name: p.name,
     sku: p.sku,
     reference: p.reference,
@@ -94,6 +98,8 @@ export async function syncProductsToIndexedDB() {
       qty: decimalToNumber(item.qty),
       ingredientName: item.ingredient.name,
       ingredientUnit: item.ingredient.unit,
+      ingredientStock: decimalToNumber(item.ingredient.stock),
+      ingredientIsActive: item.ingredient.isActive,
     })),
     supplier: p.supplier
       ? {

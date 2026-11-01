@@ -10,7 +10,7 @@ La función se activa por negocio desde **Cuadre diario**. La migración no acti
 2. Al entrar a Ventas o Cuentas por cobrar, cada empleado sin turno recibe una ventana para confirmar el efectivo que recibe y abrir su turno desde ese dispositivo. También puede abrirlo desde Cuadre diario. Cerrar el aviso mantiene los formularios bloqueados; abrir el turno habilita la pantalla sin registrar automáticamente facturas ni cobros.
 3. Las ventas y los abonos se guardan primero en una cola persistente del dispositivo, incluso con conexión. El responsable puede seguir operando sin Internet dentro del turno abierto.
    Las compras, compras por escaneo, gastos, devoluciones y traspasos se inician con conexión y también conservan su identificador antes de enviarse. Si se pierde la respuesta, el reintento no duplica documentos, inventario ni dinero.
-4. Para entregar, pulsa **Cerrar mi turno**. La pantalla guía los pasos: guardar pendientes, contar el efectivo y confirmar la entrega. Mientras trabajas muestra el resumen de caja; el campo para contar aparece al iniciar el cierre. No se muestra un faltante por el cero inicial: hay que introducir el conteo, incluso si la caja está vacía. Si el monto difiere del esperado, se explica cuánto falta o sobra y se exige un motivo.
+4. Mientras trabajas, **Cobros del turno** muestra el total cobrado y los importes de efectivo, tarjeta y transferencia; Otros aparece si tiene importe. Para entregar, pulsa **Cerrar mi turno**. La pantalla guía los pasos: guardar pendientes, revisar cobros y contar efectivo, y confirmar la entrega. El resumen permanece visible; el campo para contar aparece al iniciar el cierre. No se muestra un faltante por el cero inicial: hay que introducir el conteo, incluso si la caja está vacía. Si el monto difiere del esperado, se explica cuánto falta o sobra y se exige un motivo.
 5. El siguiente empleado abre con su propio conteo. La diferencia de recepción permanece separada del resultado de sus operaciones.
 
 Un turno puede atravesar medianoche. Si sigue abierto en un día posterior, la aplicación muestra un aviso con la fecha de apertura; no lo cierra automáticamente. El cambio de día se calcula con la zona del negocio (UTC-4). Su responsable y dispositivo se verifican en el servidor. Los pendientes se conservan si expira la sesión o cambia el empleado; deben sincronizarse con la identidad original.
@@ -18,6 +18,8 @@ Un turno puede atravesar medianoche. Si sigue abierto en un día posterior, la a
 ## Tesorería y correcciones
 
 - Abrir un turno no suma ingresos. El efectivo esperado parte del conteo recibido más las entradas y menos las salidas.
+- Los cobros por método incluyen ventas y abonos, con los signos de sus anulaciones y ajustes. Los pagos divididos aportan cada parte a su método. El fondo inicial, aportes, retiros, traspasos, compras, gastos y devoluciones no forman parte de este total; se consultan en los movimientos. El bloque **Efectivo para entregar** conserva el cálculo del dinero físico.
+- El detalle del cierre y el ticket de 80 mm muestran el mismo resumen desde la instantánea guardada, sin modificar cierres anteriores. Si un contexto antiguo carece del resumen se solicita actualizar; si una instantánea no identifica el origen de sus movimientos se informa que el resumen no está disponible, sin inventar importes.
 - Al activar se captura una base de saldos por cuenta. Desde ese corte los movimientos nuevos alimentan tesorería; los documentos originales no se suman otra vez.
 - Si el período consultado alcanza la activación, tesorería muestra el registro nuevo y su saldo inicial, indicando la fecha de inicio. Los períodos completos anteriores conservan la vista histórica. No se mezclan documentos con fechas editables y asientos nuevos, evitando duplicar ventas retroactivas.
 - Los faltantes y sobrantes se identifican como diferencias de recepción o de cierre, sin convertirlos automáticamente en ventas o gastos operativos.
@@ -48,6 +50,7 @@ Con PostgreSQL local y una base **vacía**, definir `TEST_DATABASE_URL` y ejecut
 $env:TEST_DATABASE_URL = 'postgresql://postgres@127.0.0.1:55438/cash_test?schema=public'
 node scripts/setup-cash-test-db.mjs
 node --test --experimental-test-isolation=none scripts/cash-shifts.integration.test.mjs scripts/cache-sync-regression.test.mjs scripts/freight-report-regression.test.mjs
+node --test --experimental-test-isolation=none scripts/shift-collections.test.mjs
 node scripts/cash-offline.browser-test.mjs
 node scripts/cash-shift-gate.browser-test.mjs
 npx tsc --noEmit --incremental false

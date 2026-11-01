@@ -13,6 +13,24 @@ export type CashClosingSnapshot = {
   movements: Array<{ id: string; reference: string; sourceType?: string; method: string | null; amountCents: number; treasuryAccount?: { name: string } }>;
   documents: Array<{ id: string; sourceType: string; reference: string; totalCents: number; type: string | null; cancelled: boolean }>;
 }
+export type ShiftCollection = { method: "EFECTIVO" | "TARJETA" | "TRANSFERENCIA" | "OTRO"; totalCents: number }
+
+export function shiftCollectionsByMethod(movements: ReadonlyArray<{ sourceType?: string; method: string | null; amountCents: number }>): ShiftCollection[] | null {
+  // Una instantánea antigua sin origen no permite distinguir cobros de gastos: no inventar ceros.
+  if (movements.some(m => !m.sourceType)) return null
+  const totals: Record<ShiftCollection["method"], number> = { EFECTIVO: 0, TARJETA: 0, TRANSFERENCIA: 0, OTRO: 0 }
+  for (const movement of movements) {
+    // Cobrado no es saldo de caja ni flujo neto: solo ventas y abonos, con sus reversos.
+    // El fondo, traspasos, gastos y devoluciones conservan su propio movimiento por separado.
+    if (movement.sourceType !== "sale" && movement.sourceType !== "payment") continue
+    const method = movement.method === "EFECTIVO" || movement.method === "TARJETA" || movement.method === "TRANSFERENCIA" ? movement.method : "OTRO"
+    totals[method] += movement.amountCents
+  }
+  return (Object.keys(totals) as ShiftCollection["method"][])
+    .filter(method => method !== "OTRO" || totals[method] !== 0)
+    .map(method => ({ method, totalCents: totals[method] }))
+}
+
 export function snapshotBreakdown(movements: CashClosingSnapshot["movements"]) {
   const totals = new Map<string, { method: string | null; accountName: string; totalCents: number }>()
   for (const m of movements) {

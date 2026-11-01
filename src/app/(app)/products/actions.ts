@@ -272,6 +272,7 @@ export async function listProducts(options?: { query?: string; cursor?: string |
               minStock: true,
               unit: true,
               productKind: true,
+              isActive: true,
             },
           },
         },

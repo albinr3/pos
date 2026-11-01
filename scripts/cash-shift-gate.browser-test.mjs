@@ -41,13 +41,14 @@ async function browserSuite() {
     await clearDatabase("movopos-cash-v1"); await clearDatabase("movopos-offline")
     const actor = { id: "ana", accountId: `gate-${++serial}` }
     const context = { protocolVersion: 1, accountId: actor.accountId, userId: actor.id, userName: "Ana", isOwner: true, enabled: true, ledgerStartedAt: new Date().toISOString(), canOperate: true, canViewAll: true, canManage: true, canTransfer: true, canRecordMovements: true, treasuryAccountId: "box", expectedOpeningCents: 11100, breakdown: [], activeShift: null }
-    const f = { actor, context, openRequests: 0, createdShifts: 0, documents: [], actions: [], getStatus: 200, networkError: false, delay: 0, dropOpen: false, failOperations: false }
+    context.collectionsByMethod = [{ method: "EFECTIVO", totalCents: 22200 }, { method: "TARJETA", totalCents: 7500 }, { method: "TRANSFERENCIA", totalCents: 18800 }]
+    const f = { actor, context, history: [], openRequests: 0, createdShifts: 0, documents: [], actions: [], getStatus: 200, networkError: false, delay: 0, dropOpen: false, failOperations: false }
     f.shift = () => ({ id: `shift-${actor.accountId}`, status: "OPEN", cashierName: "Ana", isMine: true, isDevice: true, openedAt: new Date().toISOString(), lastSequence: 0, finalSequence: null, openingCountedCents: 11100, expectedCashCents: 11100 })
     window.fetch = async (url, options = {}) => {
       if (!online || f.networkError) throw new TypeError("Network offline")
       if (!options.method) {
         if (f.delay) await sleep(f.delay)
-        const data = url.includes("view=history") ? [] : url.includes("/treasury/accounts") ? { data: [{ id: "box", name: "Caja Efectivo" }, { id: "bank", name: "Banco" }] } : context
+        const data = url.includes("view=history") ? f.history : url.includes("/treasury/accounts") ? { data: [{ id: "box", name: "Caja Efectivo" }, { id: "bank", name: "Banco" }] } : context
         return new Response(JSON.stringify(f.getStatus === 200 ? data : { error: "Sesión vencida" }), { status: f.getStatus })
       }
       const body = JSON.parse(options.body)
@@ -260,13 +261,37 @@ async function browserSuite() {
     assert(!document.getElementById("cash-shift-counted") && !screenText().includes("Faltan"), "No debe mostrar un conteo ni una diferencia falsa mientras trabaja")
     assert(f.actions.length === 0, "Consultar no debe iniciar el cierre")
   })
+  await test("Todos los cobros son visibles sin desplegar el detalle ni mezclarse con el fondo", async () => {
+    const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+    const summary = document.querySelector('[aria-label="Cobros del turno"]')
+    assert(summary && !summary.closest("details"), "Los cobros deben estar visibles")
+    assert([...summary.querySelectorAll("dt")].map(e => e.textContent).join(",") === "Efectivo,Tarjeta,Transferencia", "Mismos métodos y jerarquía")
+    assert(summary.textContent.includes("485.00") && summary.textContent.includes("222.00") && summary.textContent.includes("75.00") && summary.textContent.includes("188.00"), "Total cobrado y métodos, sin incluir el fondo")
+    assert(document.querySelector('[aria-label="Efectivo para entregar"]').textContent.includes("333.00"), "El efectivo esperado se muestra aparte")
+    button("Cerrar mi turno").click(); await until(() => button("Confirmar cierre y entregar caja"), "Debe preparar")
+    assert(document.querySelector('[aria-label="Cobros del turno"]').textContent.includes("485.00") && screenText().includes("Revisa cobros y cuenta efectivo"), "El resumen permanece al cerrar sin otro paso obligatorio")
+  })
+  await test("Un contexto antiguo pide actualizar y no inventa importes de tarjeta o transferencia", async () => {
+    const f = await fixture(); delete f.context.collectionsByMethod; mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+    const summary = document.querySelector('[aria-label="Cobros del turno"]')
+    assert(summary.textContent.includes("Actualiza el turno") && !summary.querySelector("dd"), "Mostrar ausencia de datos, no ceros falsos")
+  })
+  await test("El comprobante del historial usa los mismos métodos y distingue la diferencia de efectivo", async () => {
+    const f = await fixture()
+    f.history = [{ id: "closed-summary", cashierName: "Histórico", status: "CLOSED", openedAt: new Date().toISOString(), closedAt: new Date().toISOString(), openingCountedCents: 11100, openingDifferenceCents: 0, expectedClosingCents: 33300, countedClosingCents: 33300, closingDifferenceCents: 0, closingSnapshot: { emergency: false, documents: [], movements: f.context.collectionsByMethod.map((item, index) => ({ id: String(index), sourceType: "sale", reference: "Venta", method: item.method, amountCents: item.totalCents })) } }]
+    mountWorkspace(f); await until(() => [...document.querySelectorAll("button")].some(b => b.textContent.includes("Histórico")), "Debe cargar historial")
+    ;[...document.querySelectorAll("button")].find(b => b.textContent.includes("Histórico")).click()
+    await until(() => document.querySelectorAll('[aria-label="Cobros del turno"]').length === 2, "Debe mostrar el resumen guardado")
+    assert([...document.querySelectorAll('[aria-label="Cobros del turno"]')].every(s => s.textContent.includes("485.00")), "Mismo total en turno y comprobante")
+    assert(screenText().includes("Efectivo contado") && screenText().includes("Diferencia de efectivo del turno"), "Etiquetar el conteo y la diferencia como efectivo")
+  })
   await test("Cerrar guía el conteo, exige introducirlo y guarda el comprobante al coincidir", async () => {
     const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
     button("Cerrar mi turno").click(); await until(() => button("Confirmar cierre y entregar caja"), "Debe mostrar el conteo tras preparar")
     assert(f.actions[0].action === "prepare", "Debe preparar el cierre antes de contar")
     assert(button("Confirmar cierre y entregar caja").disabled && !screenText().includes("Faltan"), "No interpretar el cero inicial como conteo")
     await input("cash-shift-counted", "333.00")
-    assert(screenText().includes("¡Tu caja cuadra!") && !document.getElementById("cash-count-note"), "Explicar la coincidencia sin pedir motivo")
+    assert(screenText().includes("El efectivo cuadra") && !document.getElementById("cash-count-note"), "Explicar la coincidencia del efectivo sin pedir motivo")
     button("Confirmar cierre y entregar caja").click(); await until(() => screenText().includes("El turno quedó cerrado"), "Debe confirmar el cierre")
     assert(f.actions.at(-1).countedCents === 33300 && document.querySelector('a[href^="/receipts/cash-shift/"]'), "Guardar el conteo y ofrecer comprobante")
   })
@@ -305,7 +330,7 @@ async function browserSuite() {
     button("Cerrar mi turno").click(); await until(() => button("Confirmar cierre y entregar caja"), "Debe preparar")
     assert(button("Confirmar cierre y entregar caja").disabled, "El cero por defecto no confirma una caja vacía")
     await input("cash-shift-counted", "0")
-    assert(!button("Confirmar cierre y entregar caja").disabled && screenText().includes("¡Tu caja cuadra!"), "Debe admitir una caja realmente vacía")
+    assert(!button("Confirmar cierre y entregar caja").disabled && screenText().includes("El efectivo cuadra"), "Debe admitir una caja realmente vacía")
   })
   await test("Otra persona sin acceso a saldos no recibe controles de cierre ni importes inventados", async () => {
     const f = await fixture(); mountWorkspace(f)

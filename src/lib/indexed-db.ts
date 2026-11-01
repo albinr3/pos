@@ -1,5 +1,8 @@
 "use client"
 
+import type { StockConsumption } from "./pos-stock"
+import { notifyStockAvailability } from "./stock-cache-state"
+
 const DB_NAME = "movopos-offline"
 const LEGACY_DB_NAME = "tejada-pos-offline"
 const DB_VERSION = 4
@@ -186,6 +189,9 @@ function openDB(): Promise<IDBDatabase> {
 
 // Pending Sales
 export async function savePendingSale(sale: {
+  accountId?: string
+  userId?: string
+  stockConsumptions?: StockConsumption[]
   tempId: string
   customerId: string | null
   type: "CONTADO" | "CREDITO"
@@ -215,6 +221,8 @@ export async function savePendingSale(sale: {
   const tx = db.transaction(STORES.PENDING_SALES, "readwrite")
   tx.objectStore(STORES.PENDING_SALES).put(sale)
   await waitForTransaction(tx)
+  notifyStockAvailability()
+  window.dispatchEvent(new Event("pending-sales-changed"))
 }
 
 export async function getPendingSales(): Promise<any[]> {
@@ -234,6 +242,8 @@ export async function deletePendingSale(tempId: string) {
   const tx = db.transaction(STORES.PENDING_SALES, "readwrite")
   tx.objectStore(STORES.PENDING_SALES).delete(tempId)
   await waitForTransaction(tx)
+  notifyStockAvailability()
+  window.dispatchEvent(new Event("pending-sales-changed"))
 }
 
 // Pending Payments
@@ -365,14 +375,11 @@ export async function saveProductsCache(products: any[]) {
   const db = await openDB()
   const tx = db.transaction(STORES.PRODUCTS_CACHE, "readwrite")
   const store = tx.objectStore(STORES.PRODUCTS_CACHE)
-  
-  // Limpiar cache anterior
-  await store.clear()
-  
-  // Guardar nuevos productos
-  for (const product of products) {
-    await store.put(product)
-  }
+  store.clear()
+  for (const product of products) store.put(product)
+  await waitForTransaction(tx)
+  notifyStockAvailability()
+  window.dispatchEvent(new Event("products-cache-changed"))
 }
 
 export async function getProductsCache(): Promise<any[]> {

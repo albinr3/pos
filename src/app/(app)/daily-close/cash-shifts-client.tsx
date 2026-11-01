@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PriceInput } from "@/components/app/price-input"
 import { CashShiftWorkspace } from "@/components/app/cash-shift-workspace"
+import { ShiftCollectionsSummary } from "@/components/app/shift-collections-summary"
 import { discardCashPending, manualCashPending, sendManualCashMovement, cashPending, freezeCashShift, refreshCashContext, syncCashOutbox, unfreezeCashShift, type CashContext, type CashQueuedOperation } from "@/lib/cash-offline"
 import { assertNoCashOpeningPending, openCashShiftFromClient } from "@/lib/cash-shift-opening"
 import { formatRD } from "@/lib/money"
@@ -14,7 +15,7 @@ import { formatDateTimeDO } from "@/lib/date-time"
 import { getPaymentMethodLabel } from "@/lib/payment-methods"
 import type { listCashHistory, previewCashActivation } from "@/lib/cash-shifts"
 import type { CashClosingSnapshot } from "@/lib/cash-money"
-import { snapshotBreakdown, snapshotSalesSummary } from "@/lib/cash-money"
+import { shiftCollectionsByMethod, snapshotBreakdown, snapshotSalesSummary } from "@/lib/cash-money"
 
 type History = Awaited<ReturnType<typeof listCashHistory>>
 type Preview = Awaited<ReturnType<typeof previewCashActivation>>
@@ -84,7 +85,7 @@ export function CashShiftsClient() {
   const snapshot = selected?.closingSnapshot as unknown as CashClosingSnapshot | undefined
   const summary = snapshot ? snapshotSalesSummary(snapshot.documents) : null
   return <section className="grid gap-4" aria-label="Turnos de caja">
-    <Card><CardHeader><CardTitle>Turnos de caja</CardTitle>{context?.enabled && <p className="text-sm text-muted-foreground">Revisa tu efectivo y entrega la caja con todo en orden.</p>}</CardHeader><CardContent className="grid gap-5">
+    <Card><CardHeader><CardTitle>Turnos de caja</CardTitle>{context?.enabled && <p className="text-sm text-muted-foreground">Revisa todos los cobros de tu turno y el efectivo que vas a entregar.</p>}</CardHeader><CardContent className="grid gap-5">
       {error && <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{error}</div>}
       {!context ? <p>Consultando caja…</p> : !context.enabled ? <>
         <p className="text-sm text-muted-foreground">El control por turnos está desactivado. Puedes seguir usando el resumen diario.</p>
@@ -138,14 +139,16 @@ export function CashShiftsClient() {
       {pendingDiscard && <div className="grid gap-2 rounded-md border p-3"><Label htmlFor="cash-discard-reason">Motivo para anular el pendiente</Label><Input id="cash-discard-reason" value={discardReason} onChange={e => setDiscardReason(e.target.value)} /><Button disabled={busy} onClick={() => run(async () => { await discardCashPending(pendingDiscard, discardReason); setPendingDiscard(""); setDiscardReason("") })}>Confirmar anulación del pendiente</Button></div>}
     </CardContent></Card>
     {history.length > 0 && <Card><CardHeader><CardTitle>Historial de turnos</CardTitle></CardHeader><CardContent className="grid gap-3">
-      {history.map(row => <button type="button" key={row.id} onClick={() => { setSelected(row); setCorrection(undefined) }} className="flex flex-wrap justify-between gap-2 rounded-md border p-3 text-left text-sm"><span>{row.cashierName} · {formatDateTimeDO(row.openedAt)}</span><span>{row.status === "CLOSED" ? `Contado: ${formatRD(row.countedClosingCents ?? 0)} · Diferencia: ${formatRD(row.closingDifferenceCents ?? 0)}` : "En curso"}</span></button>)}
+      {history.map(row => <button type="button" key={row.id} onClick={() => { setSelected(row); setCorrection(undefined) }} className="flex flex-wrap justify-between gap-2 rounded-md border p-3 text-left text-sm"><span>{row.cashierName} · {formatDateTimeDO(row.openedAt)}</span><span>{row.status === "CLOSED" ? `Efectivo contado: ${formatRD(row.countedClosingCents ?? 0)} · Diferencia de efectivo: ${formatRD(row.closingDifferenceCents ?? 0)}` : "En curso"}</span></button>)}
       {hasMoreHistory && <Button disabled={busy} variant="outline" onClick={() => run(async () => { const rows: History = await read(`history&before=${encodeURIComponent(history[history.length - 1].id)}`); setHistory(previous => [...previous, ...rows]); setHasMoreHistory(rows.length === 100) }, false)}>Cargar turnos anteriores</Button>}
     </CardContent></Card>}
     {selected?.status === "CLOSED" && <Card><CardHeader><CardTitle>Comprobante de cierre · {selected.cashierName}</CardTitle></CardHeader><CardContent className="grid gap-2 text-sm">
       <p>Apertura: {formatDateTimeDO(selected.openedAt)} · Cierre: {selected.closedAt ? formatDateTimeDO(selected.closedAt) : ""}</p>
-      <p>Recibido: {formatRD(selected.openingCountedCents)} · Diferencia de recepción: {formatRD(selected.openingDifferenceCents)}</p>{selected.openingNote && <p>Recepción: {selected.openingNote}</p>}
-      <p>Esperado al cerrar: {formatRD(selected.expectedClosingCents ?? 0)} · Contado: {formatRD(selected.countedClosingCents ?? 0)}</p>
-      <p className="font-semibold">Diferencia del turno: {formatRD(selected.closingDifferenceCents ?? 0)}</p>{selected.closingNote && <p>Motivo: {selected.closingNote}</p>}
+      {snapshot && <ShiftCollectionsSummary collections={shiftCollectionsByMethod(snapshot.movements)} />}
+      <h3 className="mt-2 font-semibold">Efectivo entregado</h3>
+      <p>Efectivo recibido al abrir: {formatRD(selected.openingCountedCents)} · Diferencia de efectivo al recibir: {formatRD(selected.openingDifferenceCents)}</p>{selected.openingNote && <p>Recepción: {selected.openingNote}</p>}
+      <p>Efectivo esperado al cerrar: {formatRD(selected.expectedClosingCents ?? 0)} · Efectivo contado: {formatRD(selected.countedClosingCents ?? 0)}</p>
+      <p className="font-semibold">Diferencia de efectivo del turno: {formatRD(selected.closingDifferenceCents ?? 0)}</p>{selected.closingNote && <p>Motivo: {selected.closingNote}</p>}
       {snapshot?.emergency && <p>Cierre excepcional realizado por el dueño.</p>}
       {summary && <p>Ventas al contado: {formatRD(summary.cashSalesCents)} · Ventas a crédito: {formatRD(summary.creditSalesCents)} · Abonos: {formatRD(summary.collectionsCents)}</p>}
       {snapshot && <div className="rounded-md border p-3"><p className="font-medium">Movimiento neto por método y cuenta</p>{snapshotBreakdown(snapshot.movements).map((item, index) => <p key={index}>{item.accountName} · {item.method ? getPaymentMethodLabel(item.method) : "Tesorería"}: {formatRD(item.totalCents)}</p>)}</div>}

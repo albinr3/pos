@@ -1,5 +1,6 @@
 "use server"
 
+import { aggregateStockConsumptions, validateStockConsumptions, type StockEntry } from "@/lib/pos-stock"
 import { CashControlError, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
 
 import { revalidatePath } from "next/cache"
@@ -90,6 +91,8 @@ export async function searchProducts(query: string, options?: { onboardingDemoOn
             select: {
               name: true,
               unit: true,
+              stock: true,
+              isActive: true,
             },
           },
         },
@@ -99,12 +102,16 @@ export async function searchProducts(query: string, options?: { onboardingDemoOn
 
   return products.map((p) => ({
     ...p,
+    accountId: user.accountId,
+    stockSnapshotAt: Date.now(),
     stock: decimalToNumber(p.stock),
     recipeItems: p.recipeItems.map((item) => ({
       ingredientId: item.ingredientId,
       qty: decimalToNumber(item.qty),
       ingredientName: item.ingredient.name,
       ingredientUnit: item.ingredient.unit,
+      ingredientStock: decimalToNumber(item.ingredient.stock),
+      ingredientIsActive: item.ingredient.isActive,
     })),
   }))
 }
@@ -141,6 +148,8 @@ export async function listAllProductsForSale(options?: { onboardingDemoOnly?: bo
             select: {
               name: true,
               unit: true,
+              stock: true,
+              isActive: true,
             },
           },
         },
@@ -151,12 +160,16 @@ export async function listAllProductsForSale(options?: { onboardingDemoOnly?: bo
 
   return products.map((p) => ({
     ...p,
+    accountId: user.accountId,
+    stockSnapshotAt: Date.now(),
     stock: decimalToNumber(p.stock),
     recipeItems: p.recipeItems.map((item) => ({
       ingredientId: item.ingredientId,
       qty: decimalToNumber(item.qty),
       ingredientName: item.ingredient.name,
       ingredientUnit: item.ingredient.unit,
+      ingredientStock: decimalToNumber(item.ingredient.stock),
+      ingredientIsActive: item.ingredient.isActive,
     })),
   }))
 }
@@ -198,6 +211,8 @@ export async function findProductByBarcode(code: string) {
             select: {
               name: true,
               unit: true,
+              stock: true,
+              isActive: true,
             },
           },
         },
@@ -209,12 +224,16 @@ export async function findProductByBarcode(code: string) {
 
   return {
     ...product,
+    accountId: user.accountId,
+    stockSnapshotAt: Date.now(),
     stock: decimalToNumber(product.stock),
     recipeItems: product.recipeItems.map((item) => ({
       ingredientId: item.ingredientId,
       qty: decimalToNumber(item.qty),
       ingredientName: item.ingredient.name,
       ingredientUnit: item.ingredient.unit,
+      ingredientStock: decimalToNumber(item.ingredient.stock),
+      ingredientIsActive: item.ingredient.isActive,
     })),
   }
 }
@@ -255,6 +274,8 @@ export async function getOnboardingProduct(productId: string) {
             select: {
               name: true,
               unit: true,
+              stock: true,
+              isActive: true,
             },
           },
         },
@@ -273,12 +294,16 @@ export async function getOnboardingProduct(productId: string) {
     ok: true as const,
     product: {
       ...product,
+      accountId: user.accountId,
+      stockSnapshotAt: Date.now(),
       stock: decimalToNumber(product.stock),
       recipeItems: product.recipeItems.map((item) => ({
         ingredientId: item.ingredientId,
         qty: decimalToNumber(item.qty),
         ingredientName: item.ingredient.name,
         ingredientUnit: item.ingredient.unit,
+        ingredientStock: decimalToNumber(item.ingredient.stock),
+        ingredientIsActive: item.ingredient.isActive,
       })),
     },
   }
@@ -727,19 +752,7 @@ async function loadProductsForSaleResolution(
 }
 
 function aggregateConsumptions(consumptions: ResolvedConsumption[]) {
-  const byIngredientId = new Map<string, number>()
-
-  for (const consumption of consumptions) {
-    byIngredientId.set(
-      consumption.ingredientId,
-      roundQty((byIngredientId.get(consumption.ingredientId) ?? 0) + consumption.qty)
-    )
-  }
-
-  return Array.from(byIngredientId.entries()).map(([ingredientId, qty]) => ({
-    ingredientId,
-    qty,
-  }))
+  return aggregateStockConsumptions(consumptions)
 }
 
 async function resolveSaleLines(
@@ -892,17 +905,31 @@ async function validateConsumptionsStock(
     },
   })
 
-  const byId = new Map(products.map((product) => [product.id, product]))
+  const snapshotAt = Date.now()
+  const inventory = products.map(product => ({ ...product, stock: decimalToNumber(product.stock), snapshotAt }))
+  const issue = validateStockConsumptions(aggregatedConsumptions, new Map(inventory.map(product => [product.id, product])))
+  if (issue) throw new Error(issue.message)
+}
 
-  for (const consumption of aggregatedConsumptions) {
-    const product = byId.get(consumption.ingredientId)
-    if (!product || !product.isActive) {
-      throw new Error("Hay un insumo inválido o inactivo en la receta.")
-    }
-    if (decimalToNumber(product.stock) < consumption.qty) {
-      throw new Error(`Stock insuficiente para el insumo "${product.name}".`)
-    }
-  }
+// Comprobar antes de encolar: un rechazo de stock no debe convertirse en una
+// operación durable de caja. createSale conserva su validación final.
+export async function checkSaleStock(items: CartItemInput[]) {
+  const user = await getCurrentUser()
+  if (!user) throw new Error("No autenticado")
+  const allowNegativeStock = Boolean(user.canSellWithoutStock || user.isOwner)
+  validateCartItems(items)
+  return prisma.$transaction(async (tx) => {
+    const lines = await resolveSaleLines(tx, user.accountId, items)
+    const consumptions = aggregateStockConsumptions(lines.flatMap(line => line.consumptions))
+    const products = await tx.product.findMany({
+      where: { accountId: user.accountId, id: { in: consumptions.map(item => item.ingredientId) } },
+      select: { id: true, name: true, stock: true, isActive: true },
+    })
+    const snapshotAt = Date.now()
+    const inventory: StockEntry[] = products.map(product => ({ ...product, stock: decimalToNumber(product.stock), snapshotAt }))
+    const issue = allowNegativeStock ? null : validateStockConsumptions(consumptions, new Map(inventory.map(item => [item.id, item])))
+    return { ok: issue === null, issue, inventory, consumptions, accountId: user.accountId, userId: user.id, allowNegativeStock, canSellWithoutStock: user.canSellWithoutStock, isOwner: user.isOwner }
+  }, TRANSACTION_OPTIONS)
 }
 
 async function applyConsumptions(
@@ -1452,6 +1479,8 @@ export async function getSaleById(id: string) {
                     select: {
                       name: true,
                       unit: true,
+                      stock: true,
+                      isActive: true,
                     },
                   },
                 },
@@ -1488,6 +1517,8 @@ export async function getSaleById(id: string) {
           qty: decimalToNumber(recipeItem.qty),
           ingredientName: recipeItem.ingredient.name,
           ingredientUnit: recipeItem.ingredient.unit,
+          ingredientStock: decimalToNumber(recipeItem.ingredient.stock),
+          ingredientIsActive: recipeItem.ingredient.isActive,
         })),
       },
     })),

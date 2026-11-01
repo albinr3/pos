@@ -13,6 +13,8 @@
 # testing
 /coverage
 /tmp/cash-*
+# Perfiles de navegador y resultados temporales de las pruebas de existencia.
+/tmp/pos-stock-*
 
 # next.js
 /.next/
