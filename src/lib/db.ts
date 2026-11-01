@@ -158,6 +158,15 @@ function wrapPrismaModel(model: any, modelName: string): any {
       if (typeof value === "function") {
         return async (...args: unknown[]) => {
           try {
+            const { isCashMutation, runCashTransaction } = await import("@/lib/cash-financial-db")
+            if (isCashMutation(modelName, prop)) {
+              // La misma transacción contiene documento, inventario y asiento; nunca registrar dinero después del commit.
+              return await runCashTransaction(getPrismaClient(), (tx) => tx[modelName][prop](args[0]), { timeout: 15000, maxWait: 5000 })
+            }
+            if (modelName === "operatingExpense" && ["findMany", "findFirst", "count", "aggregate", "groupBy"].includes(prop)) {
+              const input = (args[0] ?? {}) as any
+              args[0] = { ...input, where: { AND: [input.where ?? {}, { cancelledAt: null }] } }
+            }
             return await value.apply(target, args)
           } catch (error) {
             if (modelName === "errorLog") {
@@ -204,6 +213,10 @@ export const prisma = new Proxy({} as PrismaClient, {
       if (prop === "$transaction" || prop === "$executeRaw" || prop === "$queryRaw") {
         return async (...args: unknown[]) => {
           try {
+            if (prop === "$transaction" && typeof args[0] === "function") {
+              const { runCashTransaction } = await import("@/lib/cash-financial-db")
+              return await runCashTransaction(client, args[0] as any, args[1])
+            }
             return await (value as Function).apply(client, args)
           } catch (error) {
             if (shouldAutoLogPrismaError(error, { operation: `prisma.${prop}`, args: args[0] }) && globalForPrisma.prismaErrorLogger) {

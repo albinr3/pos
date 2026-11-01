@@ -5,12 +5,14 @@ import { Input } from "@/components/ui/input"
 import { toCents } from "@/lib/money"
 
 export function PriceInput({
+  id,
   valueCents,
   onChangeCents,
   disabled,
   maxCents,
   className,
 }: {
+  id?: string
   valueCents: number
   onChangeCents: (cents: number) => void
   disabled?: boolean
@@ -84,6 +86,7 @@ export function PriceInput({
 
   return (
     <Input
+      id={id}
       value={inputValue}
       onChange={handleChange}
       onBlur={handleBlur}

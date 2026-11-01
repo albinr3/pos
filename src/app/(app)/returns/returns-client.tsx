@@ -1,5 +1,7 @@
 "use client"
 
+import { submitControlledDocument } from "@/lib/cash-offline"
+
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { Search, Plus, Minus, X } from "lucide-react"
 import { PaymentMethod } from "@prisma/client"
@@ -250,7 +252,7 @@ export function ReturnsClient() {
 
     startSaving(async () => {
       try {
-        const result = await createReturn({
+        const input = {
           saleId: selectedSale.id,
           items: returnItems.map((item) => ({
             saleItemId: item.saleItemId,
@@ -261,7 +263,15 @@ export function ReturnsClient() {
           notes: notes || null,
           refundMethod: selectedSale.type === "CONTADO" ? refundMethod : null,
           refundTreasuryAccountId: selectedSale.type === "CONTADO" ? refundTreasuryAccountId : null,
-        })
+        }
+        const controlled = await submitControlledDocument("return", input)
+        if (controlled?.pending) {
+          toast({ title: "Guardado pendiente de sincronización", description: "La operación queda pendiente. Revísala en Cuadre diario antes de cerrar." })
+          setSelectedSale(null); setReturnItems([]); setNotes("")
+          return
+        }
+        const result = controlled ? controlled.result : await createReturn(input)
+        if (!result?.id) throw new Error("No se pudo obtener el comprobante; revisa el historial antes de registrar de nuevo")
 
         const printUrl = `/api/print/return/${result.returnCode}`
         const printWindow = window.open(printUrl, "_blank")

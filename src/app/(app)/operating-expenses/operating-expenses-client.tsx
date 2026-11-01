@@ -1,5 +1,7 @@
 "use client"
 
+import { submitControlledDocument } from "@/lib/cash-offline"
+
 import { useEffect, useState, useTransition } from "react"
 import { Edit, Plus, Search, Trash2, DollarSign, Filter } from "lucide-react"
 import { PaymentMethod } from "@prisma/client"
@@ -167,7 +169,7 @@ export function OperatingExpensesClient() {
           })
           toast({ title: "Guardado", description: "Gasto operativo actualizado" })
         } else {
-          await createOperatingExpense({
+          const input = {
             description,
             amountCents,
             paymentMethod,
@@ -175,8 +177,10 @@ export function OperatingExpensesClient() {
             expenseDate: date,
             category: category || null,
             notes: notes || null,
-          })
-          toast({ title: "Guardado", description: "Gasto operativo creado" })
+          }
+          const controlled = await submitControlledDocument("expense", input)
+          if (!controlled) await createOperatingExpense(input)
+          toast({ title: controlled?.pending ? "Gasto guardado pendiente de sincronización" : "Guardado", description: controlled?.pending ? "Se conserva para enviar una sola vez." : "Gasto operativo creado" })
         }
         const normalizedCategory = category.trim()
         if (normalizedCategory && !savedCategories.some((c) => c.toLowerCase() === normalizedCategory.toLowerCase())) {

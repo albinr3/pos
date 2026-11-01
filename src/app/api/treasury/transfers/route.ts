@@ -1,3 +1,5 @@
+import { withCashOperation } from "@/lib/cash-context"
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 
 import { prisma } from "@/lib/db"
@@ -95,6 +97,8 @@ export async function GET(request: NextRequest) {
       nextSkip,
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/treasury/transfers:", error)
     return NextResponse.json(
       { error: getSafeErrorMessage(error, "Error al listar transferencias") },
@@ -105,6 +109,12 @@ export async function GET(request: NextRequest) {
 
 // POST /api/treasury/transfers
 export async function POST(request: NextRequest) {
+  const body = await request.clone().json().catch(() => ({}))
+  const { cashOperation, ...payload } = body
+  return withCashOperation(cashOperation, { kind: "api-transfer", ...payload }, () => postCashTransfer(request))
+}
+
+async function postCashTransfer(request: NextRequest) {
   try {
     const user = await getCurrentUserFromRequest(request)
     if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
@@ -189,6 +199,8 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en POST /api/treasury/transfers:", error)
     return NextResponse.json(
       { error: getSafeErrorMessage(error, "Error al crear transferencia") },

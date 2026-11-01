@@ -43,6 +43,10 @@ export type CurrentUser = {
   canManageTreasuryAccounts: boolean
   canCreateTreasuryTransfers: boolean
   canReverseTreasuryTransfers: boolean
+  canOperateCashShifts: boolean
+  canViewAllCashShifts: boolean
+  canManageCashShifts: boolean
+  canRecordCashMovements: boolean
 }
 
 export function getCurrentUserStub(): CurrentUser {
@@ -90,6 +94,10 @@ export function getCurrentUserStub(): CurrentUser {
     canManageTreasuryAccounts: true,
     canCreateTreasuryTransfers: true,
     canReverseTreasuryTransfers: true,
+    canOperateCashShifts: true,
+    canViewAllCashShifts: true,
+    canManageCashShifts: true,
+    canRecordCashMovements: true,
   }
 }
 

@@ -1,5 +1,7 @@
 "use server"
 
+import { CashControlError, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { endOfDay, parseDateParam, startOfDay } from "@/lib/dates"
@@ -925,7 +927,16 @@ async function applyConsumptions(
   }
 }
 
-export async function createSale(input: {
+export async function createSale(input: Parameters<typeof createSaleInternal>[0]) {
+  const { cashOperation, ...payload } = input
+  const hashPayload = { ...payload } as Record<string, unknown>
+  delete hashPayload.user
+  // El nombre puede cambiar mientras una respuesta queda pendiente; la identidad estable es userId.
+  delete hashPayload.username
+  return withCashOperation(cashOperation, { kind: "createSale", ...hashPayload }, () => createSaleInternal(input))
+}
+
+async function createSaleInternal(input: {
   customerId: string | null
   type: SaleType
   paymentMethod?: PaymentMethod | null
@@ -943,6 +954,7 @@ export async function createSale(input: {
   onboardingSale?: boolean
   username: string
   user?: any
+  cashOperation?: CashOperationInput
 }) {
   let user = input.user
   if (!user) {
@@ -1391,6 +1403,7 @@ export async function createSale(input: {
       return { ...sale, stockDecrements }
     }, TRANSACTION_OPTIONS)
   } catch (error) {
+    if (error instanceof CashControlError) throw error
     await logError(error as Error, {
       code: ErrorCodes.SALE_CREATE_ERROR,
       severity: "HIGH",
@@ -1572,6 +1585,7 @@ export async function cancelSale(id: string, username: string, reason: string, c
       return { success: true }
     }, TRANSACTION_OPTIONS)
   } catch (error) {
+    if (error instanceof CashControlError) return { success: false, error: error.message }
     await logError(error as Error, {
       code: ErrorCodes.SALE_CANCEL_ERROR,
       severity: "HIGH",

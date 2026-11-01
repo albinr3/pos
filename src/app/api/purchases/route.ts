@@ -1,3 +1,7 @@
+import { withCashOperation } from "@/lib/cash-context"
+import { requireTreasuryAccount } from "@/lib/treasury"
+import { PaymentMethod } from "@prisma/client"
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
@@ -190,6 +194,8 @@ export async function GET(request: NextRequest) {
       nextSkip,
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/purchases:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al obtener compras" },
@@ -200,6 +206,12 @@ export async function GET(request: NextRequest) {
 
 // POST /api/purchases - Crear compra
 export async function POST(request: NextRequest) {
+  const body = await request.clone().json().catch(() => ({}))
+  const { cashOperation, ...payload } = body
+  return withCashOperation(cashOperation, { kind: "api-purchase", ...payload }, () => postCashDocument(request))
+}
+
+async function postCashDocument(request: NextRequest) {
   try {
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
@@ -271,9 +283,15 @@ export async function POST(request: NextRequest) {
       const updateProductCost = Boolean(body?.updateProductCost)
       const updateProductPrice = body?.updateProductPrice !== false
 
+      const paymentAccount = body.treasuryAccountId ? await requireTreasuryAccount(tx, { accountId: user.accountId, treasuryAccountId: String(body.treasuryAccountId), requireActive: true }) : null
+      const method = body.paymentMethod as PaymentMethod | undefined
+      if (paymentAccount && (!method || !([PaymentMethod.EFECTIVO, PaymentMethod.TARJETA, PaymentMethod.TRANSFERENCIA, PaymentMethod.OTRO] as PaymentMethod[]).includes(method))) throw new Error("Selecciona un método de pago válido")
+
       const purchase = await tx.purchase.create({
         data: {
           accountId: user.accountId,
+          treasuryAccountId: paymentAccount?.id ?? null,
+          paymentMethod: paymentAccount ? method : null,
           supplierName,
           notes: (body?.notes || "").trim() || null,
           userId: user.id,
@@ -320,6 +338,8 @@ export async function POST(request: NextRequest) {
       updatedAt: result.updatedAt.toISOString(),
     }, { status: 201 })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en POST /api/purchases:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al crear compra" },

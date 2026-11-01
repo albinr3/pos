@@ -123,6 +123,10 @@ export async function POST(request: NextRequest) {
         canManageTreasuryAccounts: result.user.canManageTreasuryAccounts,
         canCreateTreasuryTransfers: result.user.canCreateTreasuryTransfers,
         canReverseTreasuryTransfers: result.user.canReverseTreasuryTransfers,
+        canOperateCashShifts: result.user.canOperateCashShifts,
+        canViewAllCashShifts: result.user.canViewAllCashShifts,
+        canManageCashShifts: result.user.canManageCashShifts,
+        canRecordCashMovements: result.user.canRecordCashMovements,
       },
     })
   } catch (error: any) {

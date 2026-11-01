@@ -1,5 +1,7 @@
 "use server"
 
+import { withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
@@ -385,13 +387,21 @@ export async function listAllPayments() {
   })
 }
 
-export async function addPayment(input: {
+export async function addPayment(input: Parameters<typeof addPaymentInternal>[0], actor?: AuthActor) {
+  const { cashOperation, ...payload } = input
+  const hashPayload = { ...payload } as Record<string, unknown>
+  delete hashPayload.user
+  return withCashOperation(cashOperation, { kind: "addPayment", ...hashPayload }, () => addPaymentInternal(input, actor))
+}
+
+async function addPaymentInternal(input: {
   arId: string
   amountCents: number
   method: PaymentMethod
   transferBankName?: string | null
   treasuryAccountId?: string | null
   note?: string | null
+  cashOperation?: CashOperationInput
 }, actor?: AuthActor) {
   const currentUser = actor ?? await getCurrentUser()
   assertAuthActor(currentUser)
@@ -550,15 +560,23 @@ export async function addPayment(input: {
   }
 }
 
-export async function addBatchPayment(input: {
+export async function addBatchPayment(input: Parameters<typeof addBatchPaymentInternal>[0], actor?: AuthActor) {
+  const { cashOperation, ...payload } = input
+  const hashPayload = { ...payload } as Record<string, unknown>
+  delete hashPayload.user
+  return withCashOperation(cashOperation, { kind: "addBatchPayment", ...hashPayload }, () => addBatchPaymentInternal(input, actor))
+}
+
+async function addBatchPaymentInternal(input: {
   arIds: string[]
   amountCents: number
   method: PaymentMethod
   transferBankName?: string | null
   treasuryAccountId?: string | null
   note?: string | null
-}) {
-  const currentUser = await getCurrentUser()
+  cashOperation?: CashOperationInput
+}, actor?: AuthActor) {
+  const currentUser = actor ?? await getCurrentUser()
   assertAuthActor(currentUser)
 
   if (!input.arIds.length) throw new Error("Debes seleccionar al menos una factura")
@@ -579,7 +597,7 @@ export async function addBatchPayment(input: {
       transferBankName: input.transferBankName,
       treasuryAccountId: input.treasuryAccountId,
       note: input.note,
-    })
+    }, actor)
     return {
       receiptCode: result.receiptCode,
       paymentIds: [result.paymentId],

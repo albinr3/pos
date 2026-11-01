@@ -1,4 +1,5 @@
-const CACHE_VERSION = "v4"
+// Renovar los recursos de caja sin tocar IndexedDB ni los pendientes de ventas.
+const CACHE_VERSION = "v5"
 const STATIC_CACHE = `pos-static-${CACHE_VERSION}`
 const RUNTIME_CACHE = `pos-runtime-${CACHE_VERSION}`
 const OFFLINE_URL = "/offline.html"

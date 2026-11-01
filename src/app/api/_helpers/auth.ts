@@ -36,6 +36,9 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
     const prisma = (await import("@/lib/db")).prisma
     const user = await prisma.user.findFirst({
       where: {
+        // La cuenta de Clerk y el empleado activo deben pertenecer al mismo negocio.
+        account: { clerkUserId },
+        isActive: true,
         id: session.userId,
         accountId: session.accountId,
       },
@@ -93,6 +96,10 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
       canManageTreasuryAccounts: user.canManageTreasuryAccounts,
       canCreateTreasuryTransfers: user.canCreateTreasuryTransfers,
       canReverseTreasuryTransfers: user.canReverseTreasuryTransfers,
+      canOperateCashShifts: user.canOperateCashShifts,
+      canViewAllCashShifts: user.canViewAllCashShifts,
+      canManageCashShifts: user.canManageCashShifts,
+      canRecordCashMovements: user.canRecordCashMovements,
     }
   }
   // Si no hay headers de Clerk, usar el método normal (para web)

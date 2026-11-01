@@ -1,5 +1,8 @@
 "use client"
 
+import { submitControlledDocument } from "@/lib/cash-offline"
+import { CashShiftBanner } from "@/components/app/cash-shift-banner"
+
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { SaleType, PaymentMethod, UnitType } from "@prisma/client"
 import { Plus, Search, Trash2, Grid3x3, List, AlertCircle, X, WifiOff, ChevronDown, ChevronUp, ShoppingCart } from "lucide-react"
@@ -1400,6 +1403,38 @@ export function PosClient({
 
     startSave(async () => {
       try {
+        const controlled = await submitControlledDocument("sale", { ...{
+              customerId: customerId === "generic" ? null : customerId,
+              type: saleType,
+              paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
+              treasuryAccountId:
+                saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? treasuryAccountId : null,
+              transferBankName: saleTransferBankName,
+              paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
+              items: normalizedSaleItems,
+              shippingCents: shippingCents > 0 ? shippingCents : undefined,
+              applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
+              discountMode: discountModeForSave,
+              manualDiscountPercentBp:
+                discountModeForSave === "MANUAL" ? manualDiscountPercentBp : undefined,
+              salePricesIncludeItbis,
+              onboardingSale: onboardingSaleGuide,
+              username: user.username,
+            }, soldAt: Date.now() }, user)
+        if (controlled) {
+          toast({ title: controlled.pending ? "Venta guardada pendiente de sincronización" : "Venta guardada", description: controlled.pending ? "Se conserva en este dispositivo y turno. Revisa los pendientes en Cuadre diario." : `Factura ${controlled.result.invoiceCode}` })
+          if (controlled.result?.stockDecrements) applyStockDecrements(controlled.result.stockDecrements)
+          if (controlled.result?.id && onboardingSaleGuide) {
+            router.push(`/onboarding/completado?saleId=${encodeURIComponent(controlled.result.id)}`)
+          } else if (controlled.result?.invoiceCode) {
+            sessionStorage.setItem(POS_FORCE_RESET_KEY, "1")
+            const receiptUrl = `/api/print/sale/${controlled.result.invoiceCode}?autoprint=1`
+            const popup = window.open(receiptUrl, "_blank")
+            if (!popup || popup.closed) router.push(receiptUrl)
+          }
+          resetSaleFormState()
+          return
+        }
         if (!isOnline) {
           await saveSaleOffline()
         } else {
@@ -1487,6 +1522,8 @@ export function PosClient({
           resumePath={onboardingDemoGuide ? "/sales?onboarding=demo" : "/sales?onboarding=sale"}
         />
       ) : null}
+
+      <CashShiftBanner />
 
       {/* Indicador de modo offline */}
       {mounted && !isOnline && (

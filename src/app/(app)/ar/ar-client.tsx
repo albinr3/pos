@@ -1,5 +1,8 @@
 "use client"
 
+import { submitControlledDocument } from "@/lib/cash-offline"
+import { CashShiftBanner } from "@/components/app/cash-shift-banner"
+
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
@@ -138,7 +141,9 @@ function sortARItems<T extends { customer?: { name?: string | null } | null; due
 
 export function ARClient({
   initialTreasuryAccounts = [],
+  actor,
 }: {
+  actor?: { id: string; accountId: string; username: string }
   initialTreasuryAccounts?: TreasuryAccountOption[]
 }) {
   const router = useRouter()
@@ -461,6 +466,12 @@ export function ARClient({
 
     startBatchSaving(async () => {
       try {
+        const controlled = await submitControlledDocument("batchPayment", { arIds: selectedItems.map(i => i.id), amountCents: batchAmountCents, method: batchMethod, transferBankName: batchMethod === PaymentMethod.TRANSFERENCIA ? resolveTransferBankNameForAccount(batchTreasuryAccountId) : null, treasuryAccountId: batchTreasuryAccountId, note: batchNote || null }, actor)
+        if (controlled) {
+          toast({ title: controlled.pending ? "Abono guardado pendiente de sincronización" : "Pago registrado" })
+          if (controlled.result?.paymentIds?.[0]) window.open(`/api/print/payment/${controlled.result.paymentIds[0]}`, "_blank")
+          setOpenBatch(false); setSelectedIds(new Set()); refresh(); return
+        }
         if (!isOnline) {
           const sortedItems = [...selectedItems].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
           const tempId = `temp_batch_payment_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -475,7 +486,7 @@ export function ARClient({
                 : null,
             treasuryAccountId: batchTreasuryAccountId,
             note: batchNote || null,
-            username: "admin",
+            username: actor?.username ?? "",
             createdAt: Date.now(),
           })
           toast({ title: "Pago múltiple guardado (offline)", description: "Se sincronizará cuando vuelva la conexión" })
@@ -563,7 +574,7 @@ export function ARClient({
           method === PaymentMethod.TRANSFERENCIA ? resolveTransferBankNameForAccount(treasuryAccountId) : null,
         treasuryAccountId,
         note: note || null,
-        username: "admin",
+        username: actor?.username ?? "",
         createdAt: Date.now(),
       })
 
@@ -594,6 +605,12 @@ export function ARClient({
         // Asegurar que no se exceda el balance (por si acaso)
         const finalAmount = Math.min(amountCents, selected.balanceCents)
 
+        const controlled = await submitControlledDocument("payment", { arId: selected.id, amountCents: finalAmount, method, transferBankName: method === PaymentMethod.TRANSFERENCIA ? resolveTransferBankNameForAccount(treasuryAccountId) : null, treasuryAccountId, note: note || null }, actor)
+        if (controlled) {
+          toast({ title: controlled.pending ? "Abono guardado pendiente de sincronización" : "Pago registrado" })
+          if (controlled.result?.paymentId) window.open(`/api/print/payment/${controlled.result.paymentId}`, "_blank")
+          setOpen(false); refresh(); return
+        }
         if (!isOnline) {
           await savePaymentOffline(finalAmount)
         } else {
@@ -629,6 +646,7 @@ export function ARClient({
 
   return (
     <div className="grid gap-6">
+      <CashShiftBanner />
       {/* Indicador de modo offline */}
       {mounted && !isOnline && (
         <div className="rounded-md border border-yellow-500 bg-yellow-50 p-3 text-sm text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-200">

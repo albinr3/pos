@@ -1,3 +1,5 @@
+import { withCashOperation } from "@/lib/cash-context"
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { PaymentMethod } from "@prisma/client"
@@ -19,6 +21,12 @@ function getErrorMessage(error: unknown) {
 }
 
 export async function POST(request: NextRequest) {
+  const body = await request.clone().json().catch(() => ({}))
+  const { cashOperation, ...payload } = body
+  return withCashOperation(cashOperation, { kind: "batch-api", ...payload }, () => postPaymentBatch(request))
+}
+
+async function postPaymentBatch(request: NextRequest) {
   try {
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
@@ -227,6 +235,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(result, { status: 201 })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en POST /api/payments/batch:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al registrar pago múltiple" },

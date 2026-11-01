@@ -1,3 +1,4 @@
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 
 import { prisma } from "@/lib/db"
@@ -83,6 +84,8 @@ export async function GET(request: NextRequest) {
       nextSkip,
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/treasury/opening-balances:", error)
     return NextResponse.json(
       { error: getSafeErrorMessage(error, "Error al listar saldos iniciales") },
@@ -162,6 +165,8 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en POST /api/treasury/opening-balances:", error)
     return NextResponse.json(
       { error: getSafeErrorMessage(error, "Error al crear saldo inicial") },

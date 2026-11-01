@@ -1,5 +1,7 @@
 "use client"
 
+import { refreshCashContext, syncCashOutbox } from "./cash-offline"
+
 import { toast } from "@/hooks/use-toast"
 import {
   getPendingSales,
@@ -87,6 +89,11 @@ export async function syncPendingData() {
   notifySyncStatus(true)
 
   try {
+    const cashContext = await refreshCashContext()
+    await syncCashOutbox(cashContext)
+    // Los pendientes legacy no tienen autoría verificable: conservarlos para revisión, nunca reasignarlos.
+    if (cashContext.enabled) return
+
     // Primero sincronizar ventas
     const pendingSales = await getPendingSales()
     let salesSynced = 0

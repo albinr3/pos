@@ -39,6 +39,10 @@ export const PERMISSION_LABELS = {
   canManageTreasuryAccounts: "Gestionar cuentas de tesoreria",
   canCreateTreasuryTransfers: "Crear transferencias de tesoreria",
   canReverseTreasuryTransfers: "Reversar transferencias de tesoreria",
+  canOperateCashShifts: "Abrir y cerrar mi turno de caja",
+  canViewAllCashShifts: "Ver todos los cierres de caja",
+  canManageCashShifts: "Gestionar control e incidencias de caja",
+  canRecordCashMovements: "Registrar aportes y retiros de caja",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSION_LABELS
@@ -62,6 +66,7 @@ export const MODULE_ACCESS_PERMISSION_KEYS = [
 ] as const satisfies readonly PermissionKey[]
 
 export const CRITICAL_PERMISSION_KEYS = [
+  "canManageCashShifts",
   "canManageUsers",
   "canManageSettings",
   "canViewAuditLogs",
@@ -117,7 +122,7 @@ export const PERMISSION_MODULES: PermissionModule[] = [
   {
     id: "daily_close",
     label: "Cuadre diario",
-    permissions: ["canAccessDailyClose"],
+    permissions: ["canAccessDailyClose", "canOperateCashShifts", "canViewAllCashShifts", "canManageCashShifts", "canRecordCashMovements"],
   },
   {
     id: "reports",

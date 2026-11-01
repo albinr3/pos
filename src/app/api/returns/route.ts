@@ -1,3 +1,5 @@
+import { withCashOperation } from "@/lib/cash-context"
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { createReturn, listReturns } from "@/app/(app)/returns/actions"
@@ -82,6 +84,8 @@ export async function GET(request: NextRequest) {
       nextSkip,
     })
   } catch (error: any) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/returns:", error)
     return NextResponse.json(
       { error: error.message || "Error al listar devoluciones" },
@@ -92,6 +96,12 @@ export async function GET(request: NextRequest) {
 
 // POST /api/returns - Crear devolución
 export async function POST(request: NextRequest) {
+  const body = await request.clone().json().catch(() => ({}))
+  const { cashOperation, ...payload } = body
+  return withCashOperation(cashOperation, { kind: "api-return", ...payload }, () => postCashDocument(request))
+}
+
+async function postCashDocument(request: NextRequest) {
   try {
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
@@ -136,6 +146,8 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error: any) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en POST /api/returns:", error)
     return NextResponse.json(
       { error: error.message || "Error al crear devolución" },

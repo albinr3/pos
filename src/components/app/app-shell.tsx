@@ -99,7 +99,7 @@ function canAccessNavItem(user: CurrentUser, href: string) {
     case "/payments/list":
       return user.canAccessPayments ?? true
     case "/daily-close":
-      return user.canAccessDailyClose ?? true
+      return user.canAccessDailyClose || user.canOperateCashShifts || user.canViewAllCashShifts || user.canManageCashShifts
     case "/reports":
       return user.canAccessReports ?? true
     case "/shipping-labels":

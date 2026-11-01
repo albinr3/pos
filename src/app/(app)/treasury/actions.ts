@@ -1,5 +1,9 @@
 "use server"
 
+import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+
+import { cashLedgerDashboard } from "@/lib/cash-treasury"
+
 import { revalidatePath } from "next/cache"
 import { PaymentMethod, TreasuryTransferStatus, type Prisma } from "@prisma/client"
 
@@ -261,6 +265,10 @@ async function getTreasuryAccountBalanceUntil(
     at: Date
   }
 ) {
+  const control = await db.cashControl.findUnique({ where: { accountId: input.accountId } })
+  if (control && input.at >= control.ledgerStartedAt) {
+    return (await db.cashMovement.aggregate({ where: { accountId: input.accountId, treasuryAccountId: input.treasuryAccountId, recordedAt: { lte: input.at } }, _sum: { amountCents: true } }))._sum.amountCents ?? 0
+  }
   const [
     openingBalanceSum,
     saleSplitSum,
@@ -421,10 +429,12 @@ export async function previewTreasuryTransfer(input: {
     }),
   ])
 
+  const control = await prisma.cashControl.findUnique({ where: { accountId: user.accountId } })
+  // Con registro financiero, una fecha documental anterior no vuelve a mover el dinero en el pasado.
   const sourceBalanceCents = await getTreasuryAccountBalanceUntil(prisma, {
     accountId: user.accountId,
     treasuryAccountId: fromAccount.id,
-    at: transferredAt,
+    at: control ? new Date() : transferredAt,
   })
 
   const projectedSourceBalanceCents = sourceBalanceCents - amountCents
@@ -442,14 +452,20 @@ export async function previewTreasuryTransfer(input: {
   }
 }
 
-export async function createTreasuryTransfer(input: {
+export async function createTreasuryTransfer(input: Parameters<typeof createTreasuryTransferInternal>[0]) {
+  const { cashOperation, ...payload } = input
+  return withCashOperation(cashOperation, { kind: "createTreasuryTransfer", ...payload }, () => createTreasuryTransferInternal(input))
+}
+
+async function createTreasuryTransferInternal(input: {
   fromTreasuryAccountId: string
   toTreasuryAccountId: string
   amountCents: number
   transferredAt?: Date
   note?: string | null
+  cashOperation?: CashOperationInput
 }) {
-  const user = await getCurrentUser()
+  const user = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
   await ensurePermission(user, "canCreateTreasuryTransfers", {
@@ -1060,7 +1076,8 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
     .filter((movement) => movement.occurredAt >= from && movement.occurredAt <= to)
     .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
 
-  return {
+  return cashLedgerDashboard(user.accountId, from, to, {
+    ledgerStartedAt: null as Date | null,
     from,
     to,
     accounts,
@@ -1074,5 +1091,5 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
         .reduce((sum, movement) => sum + movement.amountCents, 0),
       balanceCents: accounts.reduce((sum, account) => sum + account.balanceCents, 0),
     },
-  }
+  }, canReverseTransfers)
 }

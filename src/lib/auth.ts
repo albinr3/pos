@@ -131,6 +131,10 @@ export type CurrentUser = {
   canManageTreasuryAccounts: boolean
   canCreateTreasuryTransfers: boolean
   canReverseTreasuryTransfers: boolean
+  canOperateCashShifts: boolean
+  canViewAllCashShifts: boolean
+  canManageCashShifts: boolean
+  canRecordCashMovements: boolean
 }
 
 export type AccountInfo = {
@@ -699,6 +703,10 @@ export async function authenticateSubUser(
         canManageTreasuryAccounts: user.canManageTreasuryAccounts,
         canCreateTreasuryTransfers: user.canCreateTreasuryTransfers,
         canReverseTreasuryTransfers: user.canReverseTreasuryTransfers,
+        canOperateCashShifts: user.canOperateCashShifts,
+        canViewAllCashShifts: user.canViewAllCashShifts,
+        canManageCashShifts: user.canManageCashShifts,
+        canRecordCashMovements: user.canRecordCashMovements,
       },
     }
   } catch (error) {
@@ -766,6 +774,10 @@ export async function createSubUser(
       canManageTreasuryAccounts: boolean
       canCreateTreasuryTransfers: boolean
       canReverseTreasuryTransfers: boolean
+      canOperateCashShifts: boolean
+      canViewAllCashShifts: boolean
+      canManageCashShifts: boolean
+      canRecordCashMovements: boolean
     }>
   }
 ): Promise<{ success: boolean; user?: SubUser; error?: string }> {
@@ -813,6 +825,10 @@ export async function createSubUser(
         canManageTreasuryAccounts: permissions.canManageTreasuryAccounts ?? isOwner,
         canCreateTreasuryTransfers: permissions.canCreateTreasuryTransfers ?? isOwner,
         canReverseTreasuryTransfers: permissions.canReverseTreasuryTransfers ?? isOwner,
+        canOperateCashShifts: permissions.canOperateCashShifts ?? isOwner,
+        canViewAllCashShifts: permissions.canViewAllCashShifts ?? isOwner,
+        canManageCashShifts: permissions.canManageCashShifts ?? isOwner,
+        canRecordCashMovements: permissions.canRecordCashMovements ?? isOwner,
       },
     })
 
@@ -1111,6 +1127,10 @@ export async function getCurrentUserWithDiagnostics(options: {
     canManageTreasuryAccounts: user.canManageTreasuryAccounts,
     canCreateTreasuryTransfers: user.canCreateTreasuryTransfers,
     canReverseTreasuryTransfers: user.canReverseTreasuryTransfers,
+    canOperateCashShifts: user.canOperateCashShifts,
+    canViewAllCashShifts: user.canViewAllCashShifts,
+    canManageCashShifts: user.canManageCashShifts,
+    canRecordCashMovements: user.canRecordCashMovements,
   }
   
   return { user: currentUser }

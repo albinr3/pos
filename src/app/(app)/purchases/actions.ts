@@ -1,5 +1,7 @@
 "use server"
 
+import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { PaymentMethod, Prisma, ProductKind } from "@prisma/client"
@@ -143,7 +145,12 @@ export async function listAllPurchases() {
   return purchases.map(normalizePurchase)
 }
 
-export async function createPurchase(input: {
+export async function createPurchase(input: Parameters<typeof createPurchaseInternal>[0]) {
+  const { cashOperation, ...payload } = input
+  return withCashOperation(cashOperation, { kind: "createPurchase", ...payload }, () => createPurchaseInternal(input))
+}
+
+async function createPurchaseInternal(input: {
   supplierId?: string | null
   supplierName?: string | null
   notes?: string | null
@@ -152,8 +159,9 @@ export async function createPurchase(input: {
   items: PurchaseItemInput[]
   updateProductCost?: boolean
   updateProductPrice?: boolean
+  cashOperation?: CashOperationInput
 }) {
-  const currentUser = await getCurrentUser()
+  const currentUser = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
   await ensurePermission(currentUser, "canManagePurchases", {
     message: "No tienes permiso para gestionar compras",

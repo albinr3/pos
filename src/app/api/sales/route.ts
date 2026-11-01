@@ -1,3 +1,5 @@
+import type { CashOperationInput } from "@/lib/cash-context"
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { createSale } from "@/app/(app)/sales/actions"
@@ -40,6 +42,7 @@ type SaleCreateBody = {
   treasuryAccountId?: string | null
   paymentSplits?: SalePaymentSplitBody[]
   customerId?: string | null
+  cashOperation?: CashOperationInput
   soldAt?: string | number | null
   createdAt?: string | number | null
   salePricesIncludeItbis?: boolean
@@ -240,6 +243,8 @@ export async function GET(request: NextRequest) {
       nextSkip,
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/sales:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al listar ventas") },
@@ -331,6 +336,7 @@ export async function POST(request: NextRequest) {
         : undefined
 
     const sale = await createSale({
+      cashOperation: body.cashOperation,
       customerId: body.customerId || null,
       type: saleType,
       paymentMethod: saleType === SaleType.CONTADO ? paymentMethod : null,
@@ -368,6 +374,8 @@ export async function POST(request: NextRequest) {
       discountTotalCents: sale.discountTotalCents,
     }, { status: 201 })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en POST /api/sales:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al crear venta") },

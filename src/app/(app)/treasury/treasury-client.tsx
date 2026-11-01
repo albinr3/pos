@@ -1,5 +1,7 @@
 "use client"
 
+import { submitControlledDocument } from "@/lib/cash-offline"
+
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { AlertTriangle, ArrowLeftRight, Landmark, Plus, RefreshCw, RotateCcw } from "lucide-react"
 
@@ -12,6 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
+import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD, toCents } from "@/lib/money"
 
 import {
@@ -70,6 +73,12 @@ const RD_BANK_OPTIONS: string[] = [
 ]
 
 const MOVEMENT_SOURCE_LABELS: Record<string, string> = {
+  BASELINE: "Saldo al activar turnos",
+  ACTIVATION_DIFFERENCE: "Diferencia anterior al control",
+  OPENING_DIFFERENCE: "Diferencia de recepción",
+  CLOSING_DIFFERENCE: "Diferencia de cierre",
+  OWNER_IN: "Aporte del propietario",
+  OWNER_OUT: "Retiro del propietario",
   OPENING_BALANCE: "Saldo inicial",
   SALE_CASH: "Venta contado",
   AR_PAYMENT: "Cobro CxC",
@@ -357,13 +366,18 @@ export function TreasuryClient() {
           if (!confirmed) return
         }
 
-        const result = await createTreasuryTransfer({
+        const input = {
           fromTreasuryAccountId: transferFromAccountId,
           toTreasuryAccountId: transferToAccountId,
           amountCents,
           transferredAt,
           note: transferNote || null,
-        })
+        }
+        const controlled = await submitControlledDocument("transfer", input)
+        if (controlled?.pending) {
+          toast({ title: "Traspaso pendiente de sincronización", description: "Revísalo en Cuadre diario antes de cerrar." }); setTransferAmount(""); setTransferNote(""); return
+        }
+        const result = controlled ? controlled.result : await createTreasuryTransfer(input)
 
         toast({ title: "Transferencia registrada", description: result.reference })
         setTransferAmount("")
@@ -424,6 +438,7 @@ export function TreasuryClient() {
 
   return (
     <div className="grid gap-6">
+      {dashboard?.ledgerStartedAt && <p className="rounded-md border p-3 text-sm text-muted-foreground">Los movimientos de esta vista comienzan el {formatDateTimeDO(dashboard.ledgerStartedAt)}. El dinero anterior figura como saldo inicial; puedes consultar períodos anteriores a esa fecha con el filtro.</p>}
       <div className="flex flex-wrap items-end gap-3">
         <div className="grid gap-1">
           <Label className="text-xs text-muted-foreground">Desde</Label>

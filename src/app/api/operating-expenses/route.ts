@@ -1,3 +1,5 @@
+import { withCashOperation } from "@/lib/cash-context"
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { PaymentMethod } from "@prisma/client"
 import { prisma } from "@/lib/db"
@@ -110,6 +112,8 @@ export async function GET(request: NextRequest) {
       nextSkip,
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/operating-expenses:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al obtener gastos operativos" },
@@ -120,6 +124,12 @@ export async function GET(request: NextRequest) {
 
 // POST /api/operating-expenses - Crear gasto operativo
 export async function POST(request: NextRequest) {
+  const body = await request.clone().json().catch(() => ({}))
+  const { cashOperation, ...payload } = body
+  return withCashOperation(cashOperation, { kind: "api-expense", ...payload }, () => postCashDocument(request))
+}
+
+async function postCashDocument(request: NextRequest) {
   try {
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
@@ -214,6 +224,8 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     if (error instanceof TreasuryAccountValidationError) {
       // Comentario preventivo: si el móvil manda una cuenta eliminada o inactiva desde caché,
       // debe tratarse como validación recuperable y no como 500 reportable por Gmail.

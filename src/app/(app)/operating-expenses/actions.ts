@@ -1,5 +1,7 @@
 "use server"
 
+import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { startOfDay, endOfDay, parseDateParam } from "@/lib/dates"
@@ -54,7 +56,12 @@ export async function listOperatingExpenseCategories() {
     .filter((value): value is string => Boolean(value))
 }
 
-export async function createOperatingExpense(input: {
+export async function createOperatingExpense(input: Parameters<typeof createOperatingExpenseInternal>[0]) {
+  const { cashOperation, ...payload } = input
+  return withCashOperation(cashOperation, { kind: "createOperatingExpense", ...payload }, () => createOperatingExpenseInternal(input))
+}
+
+async function createOperatingExpenseInternal(input: {
   description: string
   amountCents: number
   paymentMethod?: PaymentMethod | null
@@ -62,8 +69,9 @@ export async function createOperatingExpense(input: {
   expenseDate?: Date
   category?: string | null
   notes?: string | null
+  cashOperation?: CashOperationInput
 }) {
-  const currentUser = await getCurrentUser()
+  const currentUser = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
   await ensurePermission(currentUser, "canManageExpenses", {
     message: "No tienes permiso para registrar gastos",
@@ -119,6 +127,7 @@ export async function createOperatingExpense(input: {
   revalidatePath("/operating-expenses")
   revalidatePath("/reports/profit")
   revalidatePath("/dashboard")
+  return { id: created.id }
 }
 
 export async function updateOperatingExpense(input: {

@@ -18,6 +18,7 @@ type MethodBreakdown = {
 export async function getDailyClose(input?: { from?: string; to?: string }) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  if (!user.isOwner && !user.canAccessDailyClose && !user.canViewAllCashShifts) throw new Error("No tienes permiso para ver el resumen del negocio")
 
   const fromDate = parseDateParam(input?.from) ?? new Date()
   const toDate = parseDateParam(input?.to) ?? fromDate

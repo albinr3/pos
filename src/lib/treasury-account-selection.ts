@@ -4,6 +4,8 @@ type TreasuryAccountLike = {
   id: string
   name: string
   type: string
+  cashControlEnabled?: boolean
+  cashControlled?: boolean
 }
 
 const CASH_ACCOUNT_NAME = "caja efectivo"
@@ -30,6 +32,11 @@ export function filterTreasuryAccountsByPaymentMethod<T extends TreasuryAccountL
   accounts: T[],
   method: PaymentMethod | null | undefined
 ) {
+  const controlled = accounts.find(account => account.cashControlEnabled && account.cashControlled)
+  if (controlled) {
+    // El nombre de una cuenta no determina la caja: usar el ID configurado para este negocio.
+    return method === PaymentMethod.EFECTIVO ? accounts.filter(account => account.id === controlled.id) : accounts.filter(isBankAccount)
+  }
   if (method === PaymentMethod.EFECTIVO) {
     const preferredCashAccounts = accounts.filter(isPreferredCashAccount)
     if (preferredCashAccounts.length > 0) return preferredCashAccounts

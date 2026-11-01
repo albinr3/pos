@@ -1,5 +1,7 @@
 "use server"
 
+import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { calcDiscountedLineTotalsByTaxMode, calcPercentAmountCents } from "@/lib/money"
@@ -297,14 +299,20 @@ type ReturnItemInput = {
   unitPriceCents: number
 }
 
-export async function createReturn(input: {
+export async function createReturn(input: Parameters<typeof createReturnInternal>[0], currentUserArg?: unknown) {
+  const { cashOperation, ...payload } = input
+  return withCashOperation(cashOperation, { kind: "createReturn", ...payload }, () => createReturnInternal(input, currentUserArg))
+}
+
+async function createReturnInternal(input: {
   saleId: string
   items: ReturnItemInput[]
   notes?: string | null
   refundMethod?: PaymentMethod | null
   refundTreasuryAccountId?: string | null
+  cashOperation?: CashOperationInput
 }, currentUserArg?: unknown) {
-  const currentUser = currentUserArg ?? await getCurrentUser()
+  const currentUser = currentUserArg ?? cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
   assertReturnUserLike(currentUser)
 
   if (!input.items.length) throw new Error("La devolución no tiene productos.")

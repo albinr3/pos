@@ -1,3 +1,4 @@
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { TreasuryAccountType } from "@prisma/client"
 
@@ -107,6 +108,8 @@ export async function PUT(
       updatedAt: updated.updatedAt.toISOString(),
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en PUT /api/treasury/accounts/[id]:", error)
     return NextResponse.json(
       { error: getSafeErrorMessage(error, "Error al actualizar cuenta de tesorería") },

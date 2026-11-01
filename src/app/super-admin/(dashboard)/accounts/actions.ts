@@ -1,5 +1,7 @@
 "use server"
 
+import { cashRequest } from "@/lib/cash-context"
+
 import { prisma } from "@/lib/db"
 import { Decimal } from "@prisma/client/runtime/library"
 import { getCurrentSuperAdmin, logSuperAdminAction } from "@/lib/super-admin-auth"
@@ -459,7 +461,16 @@ export async function deleteAccount(accountId: string): Promise<{ success: boole
     }
 
     // Eliminar en orden para evitar errores de llaves foráneas por userId
-    await prisma.$transaction(async (tx) => {
+    await cashRequest.run({ maintenance: true }, () => prisma.$transaction(async (tx) => {
+      // La baja completa espera a cualquier operación de caja en curso antes de quitar sus datos.
+      await tx.$queryRaw`SELECT id FROM "Account" WHERE id = ${accountId} FOR UPDATE`
+      // Solo esta baja administrativa autorizada elimina el registro financiero del negocio completo.
+      await tx.cashSourceLink.deleteMany({ where: { accountId } })
+      await tx.cashOperation.deleteMany({ where: { accountId } })
+      await tx.cashMovement.deleteMany({ where: { accountId } })
+      await tx.cashShift.deleteMany({ where: { accountId } })
+      await tx.cashControl.deleteMany({ where: { accountId } })
+      await tx.treasuryTransfer.deleteMany({ where: { accountId } })
       // 1) Eliminar entidades dependientes de usuarios (sin onDelete cascade)
       await tx.return.deleteMany({ where: { accountId } })
       await tx.payment.deleteMany({
@@ -489,7 +500,7 @@ export async function deleteAccount(accountId: string): Promise<{ success: boole
 
       // 3) Eliminar el account (cascade eliminará lo restante)
       await tx.account.delete({ where: { id: accountId } })
-    })
+    }))
 
     await logSuperAdminAction(admin.id, "deleted_account", {
       targetAccountId: accountId,

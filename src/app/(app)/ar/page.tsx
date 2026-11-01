@@ -7,7 +7,7 @@ import { listTreasuryAccounts } from "../treasury/actions"
 import { ARClient } from "./ar-client"
 
 export default async function AccountsReceivablePage() {
-  await requireModuleAccess("canAccessAccountsReceivable")
+  const actor = await requireModuleAccess("canAccessAccountsReceivable")
   const treasuryAccounts = await listTreasuryAccounts()
 
   return (
@@ -25,7 +25,7 @@ export default async function AccountsReceivablePage() {
           </Button>
         </div>
       </div>
-      <ARClient initialTreasuryAccounts={treasuryAccounts} />
+      <ARClient initialTreasuryAccounts={treasuryAccounts} actor={{ id: actor.id, accountId: actor.accountId, username: actor.username }} />
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { PaymentMethod } from "@prisma/client"
 import { prisma } from "@/lib/db"
@@ -74,6 +75,8 @@ export async function GET(
       updatedAt: item.updatedAt.toISOString(),
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/operating-expenses/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al obtener gasto operativo" },
@@ -197,6 +200,8 @@ export async function PUT(
       updatedAt: updated.updatedAt.toISOString(),
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     if (error instanceof TreasuryAccountValidationError) {
       // Comentario preventivo: editar desde datos offline puede traer una cuenta de tesorería vieja.
       // Responder 400 evita clasificar esa validación como error interno de producción.
@@ -261,6 +266,8 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en DELETE /api/operating-expenses/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al eliminar gasto operativo" },

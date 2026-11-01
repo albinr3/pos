@@ -1,3 +1,4 @@
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../../_helpers/auth"
@@ -114,6 +115,8 @@ export async function POST(
 
     return NextResponse.json(result)
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en POST /api/payments/[id]/cancel:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al cancelar pago" },

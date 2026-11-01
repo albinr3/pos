@@ -1,3 +1,4 @@
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { addPayment } from "@/app/(app)/ar/actions"
@@ -128,6 +129,8 @@ export async function GET(request: NextRequest) {
       nextSkip,
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/payments:", error)
     return NextResponse.json({ error: getErrorMessage(error) || "Error al obtener pagos" }, { status: 500 })
   }
@@ -186,6 +189,7 @@ export async function POST(request: NextRequest) {
     }
 
     const paymentResult = await addPayment({
+      cashOperation: body.cashOperation,
       arId,
       amountCents,
       method,
@@ -218,6 +222,8 @@ export async function POST(request: NextRequest) {
       newBalanceCents: paymentResult.newBalanceCents,
     }, { status: 201 })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en POST /api/payments:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al registrar pago" },

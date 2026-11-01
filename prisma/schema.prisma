@@ -249,6 +249,11 @@ model Account {
   treasuryAccounts     TreasuryAccount[]
   treasuryOpeningBalances TreasuryOpeningBalance[]
   treasuryTransfers    TreasuryTransfer[]
+  cashControl          CashControl?
+  cashShifts           CashShift[]
+  cashMovements        CashMovement[]
+  cashOperations       CashOperation[]
+  cashSourceLinks      CashSourceLink[]
   subUserLoginTokens   SubUserLoginToken[]
   onboarding           AccountOnboarding?
 
@@ -363,6 +368,10 @@ model User {
   canManageTreasuryAccounts   Boolean @default(false)
   canCreateTreasuryTransfers  Boolean @default(false)
   canReverseTreasuryTransfers Boolean @default(false)
+  canOperateCashShifts        Boolean @default(false)
+  canViewAllCashShifts        Boolean @default(false)
+  canManageCashShifts         Boolean @default(false)
+  canRecordCashMovements      Boolean @default(false)
 
   isActive           Boolean             @default(true)
   subUserLoginTokens SubUserLoginToken[]
@@ -422,10 +431,105 @@ model TreasuryAccount {
   openingBalances   TreasuryOpeningBalance[]
   outgoingTransfers TreasuryTransfer[] @relation("TreasuryTransferFromAccount")
   incomingTransfers TreasuryTransfer[] @relation("TreasuryTransferToAccount")
+  cashControl       CashControl?
+  cashShifts        CashShift[]
+  cashMovements     CashMovement[]
 
   @@unique([accountId, name])
   @@index([accountId, isActive])
   @@index([accountId, type, isActive])
+}
+
+// El registro permanece activo tras deshabilitar turnos: nunca reinterpretar cierres históricos.
+model CashControl {
+  accountId         String @id
+  account           Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  enabled           Boolean @default(false)
+  treasuryAccountId String @unique
+  treasuryAccount   TreasuryAccount @relation(fields: [treasuryAccountId], references: [id], onDelete: Restrict)
+  ledgerStartedAt   DateTime
+  createdAt         DateTime @default(now())
+}
+
+model CashShift {
+  id                     String @id @default(cuid())
+  accountId              String
+  account                Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  treasuryAccountId      String
+  treasuryAccount        TreasuryAccount @relation(fields: [treasuryAccountId], references: [id], onDelete: Restrict)
+  cashierUserId          String
+  cashierName            String
+  deviceHash             String
+  status                 String @default("OPEN")
+  openedAt               DateTime @default(now())
+  closedAt               DateTime?
+  openingExpectedCents   Int
+  openingCountedCents    Int
+  openingDifferenceCents Int
+  openingNote            String?
+  lastSequence           Int @default(0)
+  finalSequence          Int?
+  expectedClosingCents   Int?
+  countedClosingCents    Int?
+  closingDifferenceCents Int?
+  closingNote            String?
+  closedByUserId         String?
+  closingSnapshot        Json?
+  movements              CashMovement[]
+  operations             CashOperation[]
+  sourceLinks            CashSourceLink[]
+  @@index([accountId, openedAt])
+  @@index([accountId, cashierUserId, openedAt])
+}
+
+model CashMovement {
+  id                String @id @default(cuid())
+  accountId         String
+  account           Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  treasuryAccountId String
+  treasuryAccount   TreasuryAccount @relation(fields: [treasuryAccountId], references: [id], onDelete: Restrict)
+  cashShiftId       String?
+  cashShift         CashShift? @relation(fields: [cashShiftId], references: [id], onDelete: SetNull)
+  userId            String?
+  sourceType        String
+  sourceId          String
+  reference         String
+  method            PaymentMethod?
+  amountCents       Int
+  note              String?
+  recordedAt        DateTime @default(now())
+  @@index([accountId, recordedAt])
+  @@index([treasuryAccountId, recordedAt])
+  @@index([cashShiftId])
+  @@index([accountId, sourceType, sourceId])
+}
+
+model CashOperation {
+  id                String @id @default(cuid())
+  accountId         String
+  account           Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  clientOperationId String
+  payloadHash       String
+  cashShiftId       String?
+  cashShift         CashShift? @relation(fields: [cashShiftId], references: [id], onDelete: SetNull)
+  clientSequence    Int?
+  userId            String
+  response          Json
+  createdAt         DateTime @default(now())
+  @@unique([accountId, clientOperationId])
+  @@unique([cashShiftId, clientSequence])
+}
+
+model CashSourceLink {
+  id          String @id @default(cuid())
+  accountId   String
+  account     Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  sourceType  String
+  sourceId    String
+  cashShiftId String
+  cashShift   CashShift @relation(fields: [cashShiftId], references: [id], onDelete: Cascade)
+  @@unique([accountId, sourceType, sourceId])
+  @@index([cashShiftId])
 }
 
 model TreasuryOpeningBalance {
@@ -1253,6 +1357,10 @@ model OperatingExpense {
   user   User   @relation(fields: [userId], references: [id])
 
   notes String?
+  // Anular conserva la evidencia de gastos incluidos en cierres; no borrarla.
+  cancelledAt DateTime?
+  cancelledBy String?
+  cancellationReason String?
 
   @@index([accountId])
   @@index([accountId, expenseDate])

@@ -63,13 +63,15 @@ export async function ensureDefaultTreasuryAccount(
 export async function listTreasuryAccountsByAccount(accountId: string, includeInactive = false) {
   await ensureDefaultTreasuryAccount(prisma, accountId)
 
-  return prisma.treasuryAccount.findMany({
+  const accounts = await prisma.treasuryAccount.findMany({
     where: {
       accountId,
       ...(includeInactive ? {} : { isActive: true }),
     },
     orderBy: [{ isActive: "desc" }, { name: "asc" }],
   })
+  const control = await prisma.cashControl.findUnique({ where: { accountId } })
+  return accounts.map(account => ({ ...account, cashControlEnabled: control?.enabled ?? false, cashControlled: control?.treasuryAccountId === account.id }))
 }
 
 export async function requireTreasuryAccount(

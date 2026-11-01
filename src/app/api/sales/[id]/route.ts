@@ -1,3 +1,4 @@
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { PaymentMethod, SaleType } from "@prisma/client"
 import { prisma } from "@/lib/db"
@@ -230,6 +231,8 @@ export async function GET(
       })),
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/sales/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al obtener venta") },
@@ -410,6 +413,8 @@ export async function PUT(
       cancelledAt: updatedSale?.cancelledAt ? updatedSale.cancelledAt.toISOString() : null,
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en PUT /api/sales/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al editar venta") },
@@ -439,6 +444,8 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en DELETE /api/sales/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al cancelar venta") },

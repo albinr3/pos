@@ -1,3 +1,4 @@
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 
 import { prisma } from "@/lib/db"
@@ -106,6 +107,8 @@ export async function POST(request: NextRequest) {
       reverseReference: formatTransferReference(result.reverseId),
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     const errorMessage = getSafeErrorMessage(error, "")
     const message = errorMessage.toLowerCase()
     if (message.includes("no encontrada") || message.includes("ya fue reversada") || message.includes("ya es reverso")) {

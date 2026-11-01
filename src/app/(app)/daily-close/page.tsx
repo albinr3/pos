@@ -1,10 +1,13 @@
+import { prisma } from "@/lib/db"
+import { CashShiftsClient } from "./cash-shifts-client"
+import { getCurrentUser } from "@/lib/auth"
+import { notFound } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatRD } from "@/lib/money"
 
 import { getDailyClose } from "./actions"
 
 import { DateRangeFilter } from "./filter-client"
-import { requireModuleAccess } from "@/lib/module-access"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -14,8 +17,15 @@ export default async function DailyClosePage({
 }: {
   searchParams: Promise<{ from?: string; to?: string }>
 }) {
-  await requireModuleAccess("canAccessDailyClose")
+  const actor = await getCurrentUser()
+  if (!actor || !(actor.isOwner || actor.canAccessDailyClose || actor.canOperateCashShifts || actor.canViewAllCashShifts || actor.canManageCashShifts)) notFound()
 
+  // Operar el turno propio no concede acceso al resumen financiero de todo el negocio.
+  if (!actor.isOwner && !actor.canAccessDailyClose && !actor.canViewAllCashShifts) {
+    return <div className="grid gap-6"><h1 className="text-2xl font-semibold">Mi turno de caja</h1><CashShiftsClient /></div>
+  }
+
+  const control = await prisma.cashControl.findUnique({ where: { accountId: actor.accountId }, select: { enabled: true } })
   const sp = await searchParams
   const data = await getDailyClose({ from: sp.from, to: sp.to })
 
@@ -28,6 +38,8 @@ export default async function DailyClosePage({
         </div>
         <DateRangeFilter basePath="/daily-close" />
       </div>
+
+      <CashShiftsClient />
 
       {/* ─── SECCIÓN 1: VENTAS DEL DÍA ──────────────────── */}
       <section className="grid gap-4">
@@ -196,7 +208,7 @@ export default async function DailyClosePage({
       </section>
 
       {/* ─── SECCIÓN 3: TOTAL EN CAJA ──────────────────── */}
-      <section className="grid gap-4">
+      {!control?.enabled && <section className="grid gap-4">
         <h2 className="text-lg font-semibold">🏦 Efectivo en caja</h2>
         <p className="text-sm text-muted-foreground -mt-2">
           Dinero físico ingresado (efectivo de ventas al contado + efectivo de cobros)
@@ -250,7 +262,7 @@ export default async function DailyClosePage({
             </CardContent>
           </Card>
         )}
-      </section>
+      </section>}
     </div>
   )
 }

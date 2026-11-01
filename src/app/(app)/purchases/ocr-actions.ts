@@ -1,5 +1,11 @@
 "use server"
 
+import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+
+import { requireTreasuryAccount } from "@/lib/treasury"
+import type { PaymentMethod } from "@prisma/client"
+
+
 import { openai } from "@/lib/openai"
 import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
@@ -195,7 +201,14 @@ export async function processInvoiceImage(base64Image: string): Promise<Extracte
 }
 
 // Función para crear productos nuevos y la compra
-export async function createPurchaseFromOCR(input: {
+export async function createPurchaseFromOCR(input: Parameters<typeof createPurchaseFromOCRInternal>[0]) {
+  const { cashOperation, ...payload } = input
+  return withCashOperation(cashOperation, { kind: "createPurchaseFromOCR", ...payload }, () => createPurchaseFromOCRInternal(input))
+}
+
+async function createPurchaseFromOCRInternal(input: {
+  paymentMethod?: PaymentMethod | null
+  treasuryAccountId?: string | null
   supplierId?: string | null
   supplierName: string | null
   products: Array<{
@@ -214,8 +227,9 @@ export async function createPurchaseFromOCR(input: {
   }>
   updateProductCost?: boolean
   updateProductPrice?: boolean
+  cashOperation?: CashOperationInput
 }) {
-  const currentUser = await getCurrentUser()
+  const currentUser = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
   await ensurePermission(currentUser, "canManagePurchases", {
     message: "No tienes permiso para gestionar compras",
@@ -369,10 +383,15 @@ export async function createPurchaseFromOCR(input: {
     // Calcular total usando costo neto
     const totalCents = items.reduce((s, i) => s + i.qty * i.netCostCents, 0)
 
+    const paymentAccount = input.treasuryAccountId ? await requireTreasuryAccount(tx, { accountId: currentUser.accountId, treasuryAccountId: input.treasuryAccountId, requireActive: true }) : null
+    if (paymentAccount && (!input.paymentMethod || input.paymentMethod === "DIVIDIR_PAGO")) throw new Error("Selecciona el método del pago de la compra")
+
     // Crear la compra
     const purchase = await tx.purchase.create({
       data: {
         accountId: currentUser.accountId,
+        treasuryAccountId: paymentAccount?.id ?? null,
+        paymentMethod: paymentAccount ? input.paymentMethod : null,
         supplierName: input.supplierName?.trim() || supplier?.name || null,
         userId: currentUser.id,
         totalCents,

@@ -1,5 +1,11 @@
 "use client"
 
+import { submitControlledDocument } from "@/lib/cash-offline"
+
+import { PaymentMethod } from "@prisma/client"
+import { listTreasuryAccounts } from "../../treasury/actions"
+import { filterTreasuryAccountsByPaymentMethod } from "@/lib/treasury-account-selection"
+
 import { useRef, useState, useTransition, useEffect } from "react"
 import { Camera, Upload, X, Loader2, Check, AlertCircle, Plus, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -28,6 +34,10 @@ type ReviewProduct = ExtractedProduct & {
 
 export function ScanInvoiceClient() {
   const router = useRouter()
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
+  const [paymentAccount, setPaymentAccount] = useState("")
+  const [paymentAccounts, setPaymentAccounts] = useState<Awaited<ReturnType<typeof listTreasuryAccounts>>>([])
+  useEffect(() => { listTreasuryAccounts().then(setPaymentAccounts).catch(() => {}) }, [])
   const fileInputRef = useRef<HTMLInputElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -362,7 +372,9 @@ export function ScanInvoiceClient() {
 
     startSaving(async () => {
       try {
-        const purchase = await createPurchaseFromOCR({
+        const input = {
+          treasuryAccountId: paymentAccount || null,
+          paymentMethod: paymentAccount ? paymentMethod : null,
           supplierId: supplierId || null,
           supplierName: supplierName || null,
           products: includedProducts.map((p) => {
@@ -388,7 +400,15 @@ export function ScanInvoiceClient() {
           }),
           updateProductCost: updateCost,
           updateProductPrice: updatePrice,
-        })
+        }
+        const controlled = await submitControlledDocument("ocrPurchase", input)
+        if (controlled?.pending) {
+          toast({ title: "Guardado pendiente de sincronización", description: "La operación queda pendiente. Revísala en Cuadre diario antes de cerrar." })
+          setStep("capture")
+          return
+        }
+        const purchase = controlled ? controlled.result : await createPurchaseFromOCR(input)
+        if (!purchase?.id) throw new Error("No se pudo obtener el comprobante; revisa el historial antes de registrar de nuevo")
 
         const printUrl = `/receipts/purchase/${purchase.id}`
         const printWindow = window.open(printUrl, "_blank")
@@ -505,6 +525,12 @@ export function ScanInvoiceClient() {
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Paso 2: Revisión de datos */}
+      {step === "review" && <Card><CardHeader><CardTitle>Pago de la compra</CardTitle></CardHeader><CardContent className="grid gap-3">
+        <p className="text-sm">Si pagaste esta compra, selecciona el método y la cuenta. Sin cuenta se registra únicamente la entrada de mercancía.</p>
+        <Label htmlFor="ocr-payment-method">Método de pago</Label><select id="ocr-payment-method" className="rounded-md border bg-background p-2" value={paymentMethod} onChange={e => { setPaymentMethod(e.target.value as PaymentMethod); setPaymentAccount("") }}><option value="EFECTIVO">Efectivo</option><option value="TRANSFERENCIA">Transferencia</option><option value="TARJETA">Tarjeta</option><option value="OTRO">Otro</option></select>
+        <Label htmlFor="ocr-payment-account">Cuenta del pago</Label><select id="ocr-payment-account" className="rounded-md border bg-background p-2" value={paymentAccount} onChange={e => setPaymentAccount(e.target.value)}><option value="">Sin pago registrado</option>{filterTreasuryAccountsByPaymentMethod(paymentAccounts, paymentMethod).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+      </CardContent></Card>}
+
       {step === "review" && extractedData && (
         <>
           <Card>

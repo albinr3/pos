@@ -1,5 +1,7 @@
+import { requireTreasuryAccount } from "@/lib/treasury"
+import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
-import { Prisma } from "@prisma/client"
+import { PaymentMethod, Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
@@ -154,6 +156,8 @@ export async function GET(
       })),
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en GET /api/purchases/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al obtener compra" },
@@ -258,9 +262,19 @@ export async function PUT(
       const updateProductCost = Boolean(body?.updateProductCost)
       const updateProductPrice = body?.updateProductPrice !== false
 
+      let paymentChanges: { treasuryAccountId?: string | null; paymentMethod?: PaymentMethod | null } = {}
+      if (body.treasuryAccountId !== undefined || body.paymentMethod !== undefined) {
+        const requestedAccount = body.treasuryAccountId === undefined ? existingPurchase.treasuryAccountId : body.treasuryAccountId
+        const paymentAccount = requestedAccount ? await requireTreasuryAccount(tx, { accountId: user.accountId, treasuryAccountId: String(requestedAccount), requireActive: true }) : null
+        const method = body.paymentMethod === undefined ? existingPurchase.paymentMethod : body.paymentMethod as PaymentMethod
+        if (paymentAccount && (!method || !([PaymentMethod.EFECTIVO, PaymentMethod.TARJETA, PaymentMethod.TRANSFERENCIA, PaymentMethod.OTRO] as PaymentMethod[]).includes(method))) throw new Error("Selecciona un método de pago válido")
+        paymentChanges = { treasuryAccountId: paymentAccount?.id ?? null, paymentMethod: paymentAccount ? method : null }
+      }
+
       await tx.purchase.update({
         where: { id },
         data: {
+          ...paymentChanges,
           supplierName,
           notes: (body?.notes || "").trim() || null,
           totalCents,
@@ -311,6 +325,8 @@ export async function PUT(
       updatedAt: result.updatedAt.toISOString(),
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en PUT /api/purchases/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al editar compra" },
@@ -369,6 +385,8 @@ export async function DELETE(
       cancelledAt: cancelledPurchase.cancelledAt?.toISOString() ?? null,
     })
   } catch (error: unknown) {
+    const cashFailure = cashErrorResponse(error)
+    if (cashFailure) return cashFailure
     console.error("Error en DELETE /api/purchases/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al anular compra" },
