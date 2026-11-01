@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PriceInput } from "@/components/app/price-input"
 import { discardCashPending, manualCashPending, sendManualCashMovement, cashPending, freezeCashShift, refreshCashContext, syncCashOutbox, unfreezeCashShift, type CashContext, type CashQueuedOperation } from "@/lib/cash-offline"
-import { getPendingCounts } from "@/lib/indexed-db"
+import { assertNoCashOpeningPending, openCashShiftFromClient } from "@/lib/cash-shift-opening"
 import { formatRD } from "@/lib/money"
 import { formatDateTimeDO } from "@/lib/date-time"
 import { getPaymentMethodLabel } from "@/lib/payment-methods"
@@ -41,6 +41,7 @@ export function CashShiftsClient() {
   const [pending, setPending] = useState<CashQueuedOperation[]>([])
   const [accountId, setAccountId] = useState("")
   const [counted, setCounted] = useState(0)
+  const [activationCountEntered, setActivationCountEntered] = useState(false)
   const [note, setNote] = useState("")
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
@@ -71,15 +72,11 @@ export function CashShiftsClient() {
     try { await fn(); if (refreshAfter) await refresh() } catch (e) { setError(e instanceof Error ? e.message : "No se pudo completar la acción") }
     finally { setBusy(false) }
   }
-  async function noLegacyPending(all = true) {
-    const legacy = await getPendingCounts()
-    if (legacy.sales || legacy.payments) throw new Error("Sincroniza las ventas y abonos anteriores antes de activar o abrir la caja")
-    const queued = await cashPending()
-    if (queued.some(record => all || record.cashOperation.cashShiftId !== null)) throw new Error("Hay operaciones pendientes de este u otro turno. Resuélvelas antes de continuar")
-  }
   const shift = context?.activeShift
   const owns = Boolean(shift?.isMine && shift.isDevice)
   const expected = shift?.expectedCashCents ?? context?.expectedOpeningCents ?? 0
+  const activationAccount = preview?.accounts.find(account => account.id === accountId)
+  const activationDifference = activationAccount ? counted - activationAccount.balanceCents : null
   const snapshot = selected?.closingSnapshot as unknown as CashClosingSnapshot | undefined
   const summary = snapshot ? snapshotSalesSummary(snapshot.documents) : null
   return <section className="grid gap-4" aria-label="Turnos de caja">
@@ -87,18 +84,22 @@ export function CashShiftsClient() {
       {error && <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{error}</div>}
       {!context ? <p>Consultando caja…</p> : !context.enabled ? <>
         <p className="text-sm text-muted-foreground">El control por turnos está desactivado. Puedes seguir usando el resumen diario.</p>
-        {context.canManage && <Button disabled={busy} onClick={() => run(async () => { await noLegacyPending(); setPreview(await read("preview")) })}>Revisar saldos y activar turnos</Button>}
+        {context.canManage && <Button disabled={busy} onClick={() => run(async () => { await assertNoCashOpeningPending(true); setPreview(await read("preview")); setActivationCountEntered(false) })}>Revisar saldos y activar turnos</Button>}
         {preview && <div className="grid gap-3 rounded-md border p-4">
-          <p>Antes de activar, confirma el efectivo físico. Las operaciones anteriores conservarán su historial y no se asignarán a empleados.</p>
-          {preview.unclassified > 0 && <p className="text-amber-700">Hay {preview.unclassified} operación(es) anteriores sin cuenta o sin movimiento de dinero. Revisa los saldos iniciales; su importe no se asignará automáticamente.</p>}
+          <div className="grid gap-1"><h3 className="font-semibold">Prepara tu caja para trabajar por turnos</h3><p className="text-sm text-muted-foreground">Esta revisión se hace al activar el control. Después, cada empleado abrirá y cerrará su propio turno.</p></div>
+          <p className="text-sm">Las operaciones anteriores a la primera activación conservarán su historial. Como entonces no había turnos registrados, no se asignarán a ninguno.</p>
+          {preview.unclassified > 0 && <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"><p className="font-medium">Revisa {preview.unclassified} operación(es) anteriores</p><p>No tienen un movimiento de dinero identificado en una cuenta. Algunas pueden no haber movido dinero; otras pueden no tener una cuenta registrada. Sus importes no se asignan automáticamente, así que revisa los saldos antes de continuar.</p></div>}
           {preview.future > 0 && <p className="text-red-700">Revisa {preview.future} operación(es) con fecha futura antes de activar.</p>}
-          <ul className="text-sm">{preview.accounts.map(a => <li key={a.id}>{a.name}: {formatRD(a.balanceCents)}</li>)}</ul>
+          <div className="grid gap-1 text-sm"><p className="font-medium">Saldos calculados por el sistema</p><p className="text-muted-foreground">Se basan en los movimientos con cuenta identificada. Compara el saldo de caja con el dinero que tienes físicamente.</p><ul>{preview.accounts.map(a => <li key={a.id}>{a.name}: <strong>{formatRD(a.balanceCents)}</strong></li>)}</ul></div>
           <Label htmlFor="cash-activation-account">Caja que usarán los empleados</Label>
           <select id="cash-activation-account" className="rounded-md border bg-background p-2" value={accountId} onChange={e => setAccountId(e.target.value)}><option value="">Selecciona una caja</option>{preview.accounts.filter(a => a.type === "CAJA" && a.isActive && a.currency === "DOP").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
-          <Label htmlFor="cash-counted">Efectivo físico contado</Label><PriceInput id="cash-counted" valueCents={counted} onChangeCents={setCounted} />
-          <Label htmlFor="cash-activation-note">Motivo de cualquier diferencia con el saldo anterior</Label><Input id="cash-activation-note" value={note} onChange={e => setNote(e.target.value)} />
-          <p className="text-sm text-muted-foreground">Los dispositivos antiguos deben sincronizar antes de activar. Esta primera versión opera la caja desde la web.</p>
-          <Button disabled={busy || !accountId || preview.future > 0} onClick={() => run(async () => { await noLegacyPending(); await post({ action: "activate", treasuryAccountId: accountId, countedCents: counted, note, previewToken: preview.previewToken }); setPreview(undefined); setNote("") })}>Confirmar y activar control por turnos</Button>
+          {activationAccount && <p className="text-sm">Para <strong>{activationAccount.name}</strong>, el sistema calcula <strong>{formatRD(activationAccount.balanceCents)}</strong>.</p>}
+          <Label htmlFor="cash-counted">¿Cuánto efectivo hay en la caja?</Label><PriceInput id="cash-counted" valueCents={counted} onChangeCents={value => { setCounted(value); setActivationCountEntered(true) }} />
+          <p className="text-sm text-muted-foreground">Cuenta los billetes y monedas y escribe el total real. {activationAccount && activationAccount.balanceCents >= 0 && <>Si cuentas {formatRD(activationAccount.balanceCents)}, introduce ese mismo monto. </>}Escribe 0 solo si la caja está vacía.</p>
+          {activationCountEntered && activationDifference !== null && <p className="text-sm" aria-live="polite">{activationDifference === 0 ? "El efectivo contado coincide con el saldo calculado." : <>Diferencia: <strong>{formatRD(Math.abs(activationDifference))} {activationDifference < 0 ? "menos" : "más"}</strong> que el saldo calculado. Explica el motivo; la diferencia se registrará al activar.</>}</p>}
+          <Label htmlFor="cash-activation-note">Motivo de la diferencia {activationCountEntered && activationDifference !== null && activationDifference !== 0 ? "(obligatorio)" : "(solo si hay diferencia)"}</Label><Input id="cash-activation-note" value={note} onChange={e => setNote(e.target.value)} />
+          <p className="text-sm text-muted-foreground">Antes de activar, sincroniza las ventas y los abonos pendientes de todos los dispositivos. Los turnos se usan desde la web.</p>
+          <Button disabled={busy || !accountId || preview.future > 0} onClick={() => run(async () => { await assertNoCashOpeningPending(true); await post({ action: "activate", treasuryAccountId: accountId, countedCents: counted, note, previewToken: preview.previewToken }); setPreview(undefined); setNote("") })}>Confirmar y activar control por turnos</Button>
         </div>}
       </> : <>
         <p>{shift ? `Responsable: ${shift.cashierName} · ${shift.status === "OPEN" ? "Turno abierto" : "Cierre en preparación"}` : "No hay turno abierto. Cuenta el dinero físico que recibes para comenzar."}</p>
@@ -111,7 +112,7 @@ export function CashShiftsClient() {
           <Label htmlFor="cash-count-note">Motivo del sobrante o faltante</Label><Input id="cash-count-note" value={note} onChange={e => setNote(e.target.value)} disabled={busy} />
         </>}
         <div className="flex flex-wrap gap-2">
-          {!shift && context.canOperate && <Button disabled={busy} onClick={() => run(async () => { await noLegacyPending(false); await post({ action: "open", countedCents: counted, note }); setNote("") })}>Abrir mi turno</Button>}
+          {!shift && context.canOperate && <Button disabled={busy} onClick={() => run(async () => { await openCashShiftFromClient({ id: context.userId, accountId: context.accountId }, counted, note); setNote("") })}>Abrir mi turno</Button>}
           {owns && shift?.status === "OPEN" && <Button disabled={busy} onClick={() => run(async () => {
             const finalSequence = await freezeCashShift(context)
             await post({ action: "prepare", shiftId: shift.id, finalSequence })

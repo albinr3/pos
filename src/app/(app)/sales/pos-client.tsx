@@ -2,6 +2,7 @@
 
 import { submitControlledDocument } from "@/lib/cash-offline"
 import { CashShiftBanner } from "@/components/app/cash-shift-banner"
+import { useCashShiftAccess } from "@/components/app/cash-shift-gate"
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { SaleType, PaymentMethod, UnitType } from "@prisma/client"
@@ -194,6 +195,7 @@ export function PosClient({
   onboardingSaleGuide?: boolean
   onboardingAccountId?: string | null
 }) {
+  const cashAccess = useCashShiftAccess()
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState("")
@@ -1270,6 +1272,7 @@ export function PosClient({
       return
     }
 
+    if (!cashAccess.allowed) { await cashAccess.ensureAccess(); return }
     // Validaciones iniciales
     if (saleType === SaleType.CREDITO && (!effectiveCustomerId || !selectedCustomer || selectedCustomer.isGeneric)) {
       toast({ title: "Crédito", description: "Para crédito debes seleccionar un cliente." })
@@ -1403,6 +1406,8 @@ export function PosClient({
 
     startSave(async () => {
       try {
+        // La comprobación también forma parte del guardado: evita dos envíos mientras espera la red.
+        if (!await cashAccess.ensureAccess()) return
         const controlled = await submitControlledDocument("sale", { ...{
               customerId: customerId === "generic" ? null : customerId,
               type: saleType,
@@ -1490,6 +1495,7 @@ export function PosClient({
 
         resetSaleFormState()
       } catch (e) {
+        if (cashAccess.handleError(e)) return
         const msg = e instanceof Error ? e.message : "Error guardando venta"
         toast({ title: "No se pudo guardar", description: msg })
       }
@@ -1617,7 +1623,7 @@ export function PosClient({
                         <Search className="h-4 w-4 text-muted-foreground" />
                       </Button>
                       <Dialog
-                        open={customerPickerOpen}
+                        open={customerPickerOpen && cashAccess.allowed}
                         onOpenChange={(open) => {
                           setCustomerPickerOpen(open)
                           if (!open) setCustomerPickerQuery("")
@@ -2572,7 +2578,7 @@ export function PosClient({
         )}
       </div>
 
-      <Dialog open={showChangeDialog} onOpenChange={setShowChangeDialog}>
+      <Dialog open={showChangeDialog && cashAccess.allowed} onOpenChange={setShowChangeDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Calcula el cambio de tu venta</DialogTitle>
@@ -2646,7 +2652,7 @@ export function PosClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showSplitPaymentDialog} onOpenChange={setShowSplitPaymentDialog}>
+      <Dialog open={showSplitPaymentDialog && cashAccess.allowed} onOpenChange={setShowSplitPaymentDialog}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Dividir pago</DialogTitle>
@@ -2863,7 +2869,7 @@ export function PosClient({
       </Dialog>
 
       <Dialog
-        open={!!recipeDialogCartItem}
+        open={!!recipeDialogCartItem && cashAccess.allowed}
         onOpenChange={(open) => {
           if (!open) {
             closeRecipeDialog()
@@ -2996,7 +3002,7 @@ export function PosClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showNavigationDialog} onOpenChange={setShowNavigationDialog}>
+      <Dialog open={showNavigationDialog && cashAccess.allowed} onOpenChange={setShowNavigationDialog}>
         <DialogContent>
           <div className="space-y-4 py-4">
             <div className="flex flex-col items-center gap-4">

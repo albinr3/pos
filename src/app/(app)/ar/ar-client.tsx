@@ -2,6 +2,7 @@
 
 import { submitControlledDocument } from "@/lib/cash-offline"
 import { CashShiftBanner } from "@/components/app/cash-shift-banner"
+import { useCashShiftAccess } from "@/components/app/cash-shift-gate"
 
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
@@ -146,6 +147,7 @@ export function ARClient({
   actor?: { id: string; accountId: string; username: string }
   initialTreasuryAccounts?: TreasuryAccountOption[]
 }) {
+  const cashAccess = useCashShiftAccess()
   const router = useRouter()
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -466,6 +468,8 @@ export function ARClient({
 
     startBatchSaving(async () => {
       try {
+        // Mantener el botón ocupado también durante la comprobación del turno.
+        if (!await cashAccess.ensureAccess()) return
         const controlled = await submitControlledDocument("batchPayment", { arIds: selectedItems.map(i => i.id), amountCents: batchAmountCents, method: batchMethod, transferBankName: batchMethod === PaymentMethod.TRANSFERENCIA ? resolveTransferBankNameForAccount(batchTreasuryAccountId) : null, treasuryAccountId: batchTreasuryAccountId, note: batchNote || null }, actor)
         if (controlled) {
           toast({ title: controlled.pending ? "Abono guardado pendiente de sincronización" : "Pago registrado" })
@@ -512,6 +516,7 @@ export function ARClient({
         setSelectedIds(new Set())
         refresh()
       } catch (e) {
+        if (cashAccess.handleError(e)) return
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo registrar el pago", variant: "destructive" })
       }
     })
@@ -602,6 +607,8 @@ export function ARClient({
 
     startSaving(async () => {
       try {
+        // Mantener el botón ocupado también durante la comprobación del turno.
+        if (!await cashAccess.ensureAccess()) return
         // Asegurar que no se exceda el balance (por si acaso)
         const finalAmount = Math.min(amountCents, selected.balanceCents)
 
@@ -639,6 +646,7 @@ export function ARClient({
         setSelected(null)
         refresh()
       } catch (e) {
+        if (cashAccess.handleError(e)) return
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo registrar el pago" })
       }
     })
@@ -904,7 +912,7 @@ export function ARClient({
         </CardContent>
       </Card>
 
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open && cashAccess.allowed} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-[520px]">
           <DialogHeader>
             <DialogTitle>Registrar abono</DialogTitle>
@@ -1065,7 +1073,7 @@ export function ARClient({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={openReceipts} onOpenChange={setOpenReceipts}>
+      <Dialog open={openReceipts && cashAccess.allowed} onOpenChange={setOpenReceipts}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>
@@ -1160,7 +1168,7 @@ export function ARClient({
       </Dialog>
 
       {/* Batch payment dialog */}
-      <Dialog open={openBatch} onOpenChange={setOpenBatch}>
+      <Dialog open={openBatch && cashAccess.allowed} onOpenChange={setOpenBatch}>
         <DialogContent className="flex max-h-[90vh] flex-col overflow-hidden sm:max-w-[560px]">
           <DialogHeader>
             <DialogTitle>Cobrar {selectedItems.length} factura(s)</DialogTitle>

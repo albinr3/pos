@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { requireModuleAccess } from "@/lib/module-access"
 import { listTreasuryAccounts } from "../treasury/actions"
 import { ARClient } from "./ar-client"
+import { CashShiftGate } from "@/components/app/cash-shift-gate"
 
 export default async function AccountsReceivablePage() {
   const actor = await requireModuleAccess("canAccessAccountsReceivable")
@@ -25,7 +26,9 @@ export default async function AccountsReceivablePage() {
           </Button>
         </div>
       </div>
-      <ARClient initialTreasuryAccounts={treasuryAccounts} actor={{ id: actor.id, accountId: actor.accountId, username: actor.username }} />
+      <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }}>
+        <ARClient initialTreasuryAccounts={treasuryAccounts} actor={{ id: actor.id, accountId: actor.accountId, username: actor.username }} />
+      </CashShiftGate>
     </div>
   )
 }

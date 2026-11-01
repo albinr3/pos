@@ -4,13 +4,14 @@ import { PosClient } from "./pos-client"
 import { getSettings } from "../settings/actions"
 import { getAccountOnboardingState } from "../onboarding/actions"
 import { requireModuleAccess } from "@/lib/module-access"
+import { CashShiftGate } from "@/components/app/cash-shift-gate"
 
 export default async function SalesPage({
   searchParams,
 }: {
   searchParams: Promise<{ onboarding?: string | string[]; onboardingProductId?: string | string[] }>
 }) {
-  await requireModuleAccess("canAccessSales")
+  const actor = await requireModuleAccess("canAccessSales")
   const settings = await getSettings()
   const params = await searchParams
   const onboardingRaw = params.onboarding
@@ -38,15 +39,17 @@ export default async function SalesPage({
           </Button>
         </div>
       </div>
-      <PosClient
-        defaultViewMode={settings.defaultViewMode}
-        showItbisOnReceipts={settings.showItbisOnReceipts}
-        salePricesIncludeItbis={settings.salePricesIncludeItbis}
-        legalTipEnabled={settings.legalTipEnabled}
-        onboardingDemoGuide={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}
-        onboardingSaleGuide={isOnboardingSale && onboardingState?.phase === "SALE"}
-        onboardingAccountId={onboardingState?.accountId ?? null}
-      />
+      <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }} bypass={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}>
+        <PosClient
+          defaultViewMode={settings.defaultViewMode}
+          showItbisOnReceipts={settings.showItbisOnReceipts}
+          salePricesIncludeItbis={settings.salePricesIncludeItbis}
+          legalTipEnabled={settings.legalTipEnabled}
+          onboardingDemoGuide={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}
+          onboardingSaleGuide={isOnboardingSale && onboardingState?.phase === "SALE"}
+          onboardingAccountId={onboardingState?.accountId ?? null}
+        />
+      </CashShiftGate>
     </div>
   )
 }

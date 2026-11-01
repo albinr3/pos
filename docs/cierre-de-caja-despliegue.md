@@ -7,7 +7,7 @@ La función se activa por negocio desde **Cuadre diario**. La migración no acti
 ## Uso
 
 1. El dueño revisa los saldos propuestos, selecciona la caja, cuenta el efectivo y explica cualquier diferencia anterior al control. Todos los dispositivos anteriores deben sincronizar antes de activar.
-2. Cada empleado abre su turno desde su dispositivo y confirma el efectivo que recibe.
+2. Al entrar a Ventas o Cuentas por cobrar, cada empleado sin turno recibe una ventana para confirmar el efectivo que recibe y abrir su turno desde ese dispositivo. También puede abrirlo desde Cuadre diario. Cerrar el aviso mantiene los formularios bloqueados; abrir el turno habilita la pantalla sin registrar automáticamente facturas ni cobros.
 3. Las ventas y los abonos se guardan primero en una cola persistente del dispositivo, incluso con conexión. El responsable puede seguir operando sin Internet dentro del turno abierto.
    Las compras, compras por escaneo, gastos, devoluciones y traspasos se inician con conexión y también conservan su identificador antes de enviarse. Si se pierde la respuesta, el reintento no duplica documentos, inventario ni dinero.
 4. Para entregar, prepara el cierre, sincroniza los pendientes y confirma el conteo final. El sistema muestra el esperado y exige un motivo si hay diferencia.
@@ -49,6 +49,7 @@ $env:TEST_DATABASE_URL = 'postgresql://postgres@127.0.0.1:55438/cash_test?schema
 node scripts/setup-cash-test-db.mjs
 node --test --experimental-test-isolation=none scripts/cash-shifts.integration.test.mjs scripts/cache-sync-regression.test.mjs scripts/freight-report-regression.test.mjs
 node scripts/cash-offline.browser-test.mjs
+node scripts/cash-shift-gate.browser-test.mjs
 npx tsc --noEmit --incremental false
 npx prisma validate
 ```
@@ -62,6 +63,7 @@ Los artefactos de prueba permanecen en `tmp/cash-*`, fuera del control de versio
 - 36 pruebas de integración aprobadas con PostgreSQL 18 local: migración del esquema anterior, concurrencia, permisos, saldos, cierres, correcciones y reintentos de las acciones reales.
 - 28 pruebas existentes de sincronización e informes aprobadas.
 - 15 casos aprobados en Chrome con IndexedDB y Web Locks reales, incluyendo pérdida de respuesta, cambio de empleado, respuestas tardías entre pestañas y recuperación de secuencia al reanudar sin estado local.
+- 20 casos adicionales de la ventana de apertura con React y Radix reales en Chrome: bloqueo antes de montar formularios, cierre del aviso, conteo y motivo, permisos, otros responsables o dispositivos, desconexión, sesión rechazada, conservación de datos y recuperación de aperturas confirmadas sin respuesta.
 - TypeScript, ESLint de los módulos nuevos, validación de Prisma y compilación de producción aprobados. La compilación utilizó una copia aislada del proyecto.
 
 Estas verificaciones no aplicaron la migración ni activaron turnos en la base del negocio. La prueba piloto con usuarios y dispositivos reales sigue pendiente.

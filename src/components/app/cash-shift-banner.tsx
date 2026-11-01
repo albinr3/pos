@@ -23,7 +23,8 @@ export function CashShiftBanner() {
     window.addEventListener("focus", listener)
     window.addEventListener("online", listener)
     window.addEventListener("cash-outbox-changed", listener)
-    return () => { live = false; window.removeEventListener("focus", listener); window.removeEventListener("online", listener); window.removeEventListener("cash-outbox-changed", listener) }
+    window.addEventListener("cash-shift-changed", listener)
+    return () => { live = false; window.removeEventListener("focus", listener); window.removeEventListener("online", listener); window.removeEventListener("cash-outbox-changed", listener); window.removeEventListener("cash-shift-changed", listener) }
   }, [])
   if (!context?.enabled) return null
   const shift = context.activeShift

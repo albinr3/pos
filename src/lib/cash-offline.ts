@@ -4,6 +4,28 @@ import type { getCashContext } from "@/lib/cash-shifts"
 import type { CashOperationInput } from "@/lib/cash-context"
 
 export type CashContext = Awaited<ReturnType<typeof getCashContext>>
+export type CashActorIdentity = { id: string; accountId: string }
+export class CashShiftAccessError extends Error {
+  constructor(public context: CashContext | undefined, message: string) { super(message); this.name = "CashShiftAccessError" }
+}
+class CashContextRequestError extends Error {
+  constructor(public status: number, message: string) { super(message) }
+}
+export function cashShiftBlockReason(context: CashContext, actor?: CashActorIdentity): string | null {
+  if (actor && (actor.id !== context.userId || actor.accountId !== context.accountId)) return "El empleado cambió. Recarga la página para continuar con la sesión actual."
+  if (!context.enabled) return null
+  if (!context.canOperate) return "Necesitas el permiso de abrir y cerrar tu turno de caja. Solicítalo al dueño del negocio."
+  const shift = context.activeShift
+  if (!shift) return "Antes de facturar o cobrar, cuenta el efectivo que recibes y abre tu turno."
+  if (!shift.isMine) return `La caja tiene un turno de ${shift.cashierName}. Ese turno debe cerrarse antes de que puedas abrir el tuyo.`
+  if (!shift.isDevice) return "Tu turno está abierto en otro dispositivo. Usa el dispositivo donde lo abriste o revisa el turno en Cuadre diario."
+  if (shift.status !== "OPEN") return "Tu turno se está cerrando. Termina o reanuda el cierre en Cuadre diario antes de facturar o cobrar."
+  return null
+}
+export function assertCashShiftAccess(context: CashContext, actor?: CashActorIdentity) {
+  const reason = cashShiftBlockReason(context, actor)
+  if (reason) throw new CashShiftAccessError(context, reason)
+}
 export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "expense" | "return" | "transfer"; payload: Record<string, unknown>; cashOperation: CashOperationInput; error?: string }
 type DocumentResult = { id?: string; reference?: string; invoiceCode?: string; returnCode?: string; stockDecrements?: Array<{ ingredientId: string; qty: number }>; paymentId?: string; paymentIds?: string[] }
 type SubmitResult = { pending: true; result: null } | { pending: false; result: DocumentResult }
@@ -40,11 +62,25 @@ async function writeState(key: string, data: unknown) {
 export async function refreshCashContext(): Promise<CashContext> {
   const response = await fetch("/api/cash-shifts", { cache: "no-store" })
   const data = await response.json()
-  if (!response.ok) throw new Error(data.error ?? "No se pudo consultar el turno")
+  if (!response.ok) throw new CashContextRequestError(response.status, data.error ?? "No se pudo consultar el turno")
   await writeState("context", data)
   return data
 }
 export async function cachedCashContext(): Promise<CashContext | undefined> { return readState<CashContext>("context") }
+export async function resolveCashContext(actor?: CashActorIdentity) {
+  let context = await cachedCashContext(), connected = false
+  if (navigator.onLine) {
+    try { context = await refreshCashContext(); connected = true }
+    catch (error) {
+      // Una sesión rechazada no es una desconexión: no habilitar formularios con permisos cacheados.
+      if (error instanceof CashContextRequestError && error.status < 500) throw new CashShiftAccessError(undefined, error.message)
+      if (!context) throw new CashShiftAccessError(undefined, "No se pudo comprobar la caja. Conéctate e inténtalo de nuevo.")
+    }
+  }
+  if (!context) throw new CashShiftAccessError(undefined, "Conéctate para comprobar la caja antes de facturar o cobrar.")
+  if (actor && (actor.id !== context.userId || actor.accountId !== context.accountId)) throw new CashShiftAccessError(undefined, "El empleado cambió. Recarga la página para continuar con la sesión actual.")
+  return { context, connected }
+}
 export async function cashPending(): Promise<CashQueuedOperation[]> {
   const db = await database()
   return value(db.transaction("outbox").objectStore("outbox").getAll())
@@ -68,7 +104,7 @@ async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], 
   const request = state.get(key)
   request.onsuccess = () => {
     const current = request.result?.value ?? { sequence: shift.lastSequence ?? 0, frozen: false }
-    if (current.frozen) { failure = new Error("El turno se está cerrando. Reanúdalo para seguir operando"); tx.abort(); return }
+    if (current.frozen) { failure = new CashShiftAccessError(context, "El turno se está cerrando. Reanúdalo en Cuadre diario para seguir operando."); tx.abort(); return }
     // Tras perder el estado local, recuperar la secuencia del servidor en vez de guardar NaN.
     const localSequence = Number.isSafeInteger(current.sequence) ? current.sequence : 0
     const sequence = Math.max(localSequence, shift.lastSequence ?? 0) + 1
@@ -113,21 +149,16 @@ export async function syncCashOutbox(context?: CashContext) {
   else await work()
 }
 export async function submitControlledDocument(kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, actor?: { id: string; accountId: string }): Promise<SubmitResult | undefined> {
-  let context = await cachedCashContext()
-  let connected = false
-  if (navigator.onLine) {
-    try { context = await refreshCashContext(); connected = true }
-    catch (error) { if (!context?.enabled) throw error }
-  }
-  if (!context?.enabled) return undefined
+  const { context, connected } = await resolveCashContext(actor)
   const posOperation = ["sale", "payment", "batchPayment"].includes(kind)
+  if (posOperation) assertCashShiftAccess(context, actor)
+  if (!context?.enabled) return undefined
   if (!posOperation && !connected) throw new Error("Necesitas conexión para registrar esta operación")
-  if (actor && (actor.id !== context.userId || actor.accountId !== context.accountId)) throw new Error("El empleado cambió. Recarga la pantalla antes de operar")
   const shift = context.activeShift
   const cashAccount = payload.treasuryAccountId === context.treasuryAccountId || payload.refundTreasuryAccountId === context.treasuryAccountId || payload.paymentMethod === "EFECTIVO" || payload.refundMethod === "EFECTIVO" || payload.fromTreasuryAccountId === context.treasuryAccountId || payload.toTreasuryAccountId === context.treasuryAccountId
   const holder = Boolean(shift?.isMine && shift.isDevice && shift.status === "OPEN")
-  if ((posOperation || cashAccount) && (!context.canOperate || !holder)) throw new Error("Abre tu turno en Cuadre diario desde este dispositivo antes de usar la caja")
-  if (shift?.isMine && shift.isDevice && shift.status !== "OPEN") throw new Error("Termina o reanuda el cierre antes de registrar operaciones")
+  if (cashAccount && (!context.canOperate || !holder)) throw new CashShiftAccessError(context, "Abre tu turno en Cuadre diario desde este dispositivo antes de usar la caja")
+  if (shift?.isMine && shift.isDevice && shift.status !== "OPEN") throw new CashShiftAccessError(context, "Termina o reanuda el cierre antes de registrar operaciones")
   const record = await enqueue(context, kind, payload, holder)
   if (navigator.onLine) {
     try { await syncCashOutbox(context) }
