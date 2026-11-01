@@ -17,6 +17,8 @@ async function browserSuite() {
   async function until(predicate, message) { for (let i = 0; i < 200; i++) { if (predicate()) return; await sleep(10) } throw new Error(message) }
   async function rejected(fn, message) { let failed = false; try { await fn() } catch { failed = true } assert(failed, message) }
   function button(label) { return [...document.querySelectorAll("button")].find(b => b.textContent === label) }
+  // Consultar el componente, no body.textContent: el script inline también contiene los textos de las pruebas.
+  function screenText() { return document.getElementById("test-root").textContent ?? "" }
   async function input(id, text) {
     const element = document.getElementById(id)
     assert(element, `Falta campo ${id}`)
@@ -39,13 +41,14 @@ async function browserSuite() {
     await clearDatabase("movopos-cash-v1"); await clearDatabase("movopos-offline")
     const actor = { id: "ana", accountId: `gate-${++serial}` }
     const context = { protocolVersion: 1, accountId: actor.accountId, userId: actor.id, userName: "Ana", isOwner: true, enabled: true, ledgerStartedAt: new Date().toISOString(), canOperate: true, canViewAll: true, canManage: true, canTransfer: true, canRecordMovements: true, treasuryAccountId: "box", expectedOpeningCents: 11100, breakdown: [], activeShift: null }
-    const f = { actor, context, openRequests: 0, createdShifts: 0, documents: [], getStatus: 200, networkError: false, delay: 0, dropOpen: false }
+    const f = { actor, context, openRequests: 0, createdShifts: 0, documents: [], actions: [], getStatus: 200, networkError: false, delay: 0, dropOpen: false, failOperations: false }
     f.shift = () => ({ id: `shift-${actor.accountId}`, status: "OPEN", cashierName: "Ana", isMine: true, isDevice: true, openedAt: new Date().toISOString(), lastSequence: 0, finalSequence: null, openingCountedCents: 11100, expectedCashCents: 11100 })
-    window.fetch = async (_url, options = {}) => {
+    window.fetch = async (url, options = {}) => {
       if (!online || f.networkError) throw new TypeError("Network offline")
       if (!options.method) {
         if (f.delay) await sleep(f.delay)
-        return new Response(JSON.stringify(f.getStatus === 200 ? context : { error: "Sesión vencida" }), { status: f.getStatus })
+        const data = url.includes("view=history") ? [] : url.includes("/treasury/accounts") ? { data: [{ id: "box", name: "Caja Efectivo" }, { id: "bank", name: "Banco" }] } : context
+        return new Response(JSON.stringify(f.getStatus === 200 ? data : { error: "Sesión vencida" }), { status: f.getStatus })
       }
       const body = JSON.parse(options.body)
       if (body.action === "open") {
@@ -56,6 +59,14 @@ async function browserSuite() {
         if (f.dropOpen) { f.dropOpen = false; if (f.loseRecovery) f.networkError = true; throw new TypeError("Lost open response after commit") }
         return new Response(JSON.stringify({ ok: true, data: { id: context.activeShift.id } }), { status: 200 })
       }
+      if (body.action) {
+        f.actions.push(body)
+        if (body.action === "prepare") { context.activeShift.status = "CLOSING"; context.activeShift.finalSequence = body.finalSequence }
+        if (body.action === "resume") { context.activeShift.status = "OPEN"; context.activeShift.finalSequence = null }
+        if (body.action === "close" || body.action === "emergency") { context.activeShift = null; context.expectedOpeningCents = body.countedCents }
+        return new Response(JSON.stringify({ ok: true }), { status: 200 })
+      }
+      if (f.failOperations) return new Response(JSON.stringify({ error: "No se pudo confirmar la venta" }), { status: 400 })
       f.documents.push(body)
       if (body.cashOperation.cashShiftId) context.activeShift.lastSequence = body.cashOperation.clientSequence
       return new Response(JSON.stringify({ result: { id: "document-1" } }), { status: 200 })
@@ -80,6 +91,13 @@ async function browserSuite() {
   function mount(f, bypass = false) {
     currentRoot = createRoot(document.getElementById("test-root"))
     currentRoot.render(React.createElement(CashShiftGate, { actor: f.actor, bypass }, React.createElement(Editor, { actor: f.actor })))
+  }
+  function mountWorkspace(f) {
+    f.context.activeShift = { ...f.shift(), openingCountedCents: 11100, expectedCashCents: 33300 }
+    f.context.expectedOpeningCents = null
+    f.context.breakdown = [{ accountName: "Caja Efectivo", method: "EFECTIVO", totalCents: 22200 }]
+    currentRoot = createRoot(document.getElementById("test-root"))
+    currentRoot.render(React.createElement(CashShiftsClient))
   }
   const dialog = () => document.querySelector('[role="dialog"]')
   async function test(name, fn) { try { await fn(); results.push({ name, ok: true }) } catch (error) { results.push({ name, ok: false, error: error.message }) } }
@@ -235,11 +253,71 @@ async function browserSuite() {
     }
     assert(f.documents.length === 0 && (await cashPending()).length === 0, "No debe crear pendientes sin turno")
   })
+  await test("La caja abierta muestra un resumen y no un faltante antes de contar", async () => {
+    const f = await fixture(); mountWorkspace(f)
+    await until(() => button("Cerrar mi turno"), "Debe mostrar el turno abierto")
+    assert(screenText().includes("333") && screenText().includes("111") && screenText().includes("222"), "Debe distinguir efectivo esperado, recibido y movimiento")
+    assert(!document.getElementById("cash-shift-counted") && !screenText().includes("Faltan"), "No debe mostrar un conteo ni una diferencia falsa mientras trabaja")
+    assert(f.actions.length === 0, "Consultar no debe iniciar el cierre")
+  })
+  await test("Cerrar guía el conteo, exige introducirlo y guarda el comprobante al coincidir", async () => {
+    const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+    button("Cerrar mi turno").click(); await until(() => button("Confirmar cierre y entregar caja"), "Debe mostrar el conteo tras preparar")
+    assert(f.actions[0].action === "prepare", "Debe preparar el cierre antes de contar")
+    assert(button("Confirmar cierre y entregar caja").disabled && !screenText().includes("Faltan"), "No interpretar el cero inicial como conteo")
+    await input("cash-shift-counted", "333.00")
+    assert(screenText().includes("¡Tu caja cuadra!") && !document.getElementById("cash-count-note"), "Explicar la coincidencia sin pedir motivo")
+    button("Confirmar cierre y entregar caja").click(); await until(() => screenText().includes("El turno quedó cerrado"), "Debe confirmar el cierre")
+    assert(f.actions.at(-1).countedCents === 33300 && document.querySelector('a[href^="/receipts/cash-shift/"]'), "Guardar el conteo y ofrecer comprobante")
+  })
+  await test("El faltante se expresa en palabras y requiere motivo antes de cerrar", async () => {
+    const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+    button("Cerrar mi turno").click(); await until(() => document.getElementById("cash-shift-counted"), "Debe contar")
+    await input("cash-shift-counted", "321.00")
+    assert(screenText().includes("Faltan") && screenText().includes("12.00") && button("Confirmar cierre y entregar caja").disabled, "Debe explicar el faltante y pedir motivo")
+    await input("cash-count-note", "Se recibieron doce pesos menos")
+    assert(!button("Confirmar cierre y entregar caja").disabled, "El motivo permite confirmar")
+    button("Confirmar cierre y entregar caja").click(); await until(() => f.actions.some(a => a.action === "close"), "Debe enviar cierre")
+    assert(f.actions.at(-1).countedCents === 32100 && f.actions.at(-1).note === "Se recibieron doce pesos menos", "Conservar conteo y motivo")
+  })
+  await test("Preparar con un pendiente rechazado refresca el estado real y permite reenviar antes de cerrar", async () => {
+    const f = await fixture(); f.context.activeShift = f.shift(); await refreshCashContext(); online = false
+    await submitControlledDocument("sale", { total: 100 }, f.actor)
+    online = true; f.failOperations = true; mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+    button("Cerrar mi turno").click(); await until(() => screenText().includes("Falta 1 operación por enviar"), "Debe mostrar CLOSING y el pendiente incluso tras el error")
+    await input("cash-shift-counted", "333.00")
+    assert(button("Confirmar cierre y entregar caja").disabled && f.context.activeShift.status === "CLOSING", "No permitir cerrar con pendientes")
+    f.failOperations = false; button("Enviar pendientes").click()
+    await until(() => !button("Confirmar cierre y entregar caja").disabled, "Debe permitir cerrar cuando se confirma la secuencia")
+    assert(f.documents.length === 1 && (await cashPending()).length === 0, "Confirmar una sola venta")
+  })
+  await test("Volver a trabajar cancela la preparación y oculta el conteo", async () => {
+    const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+    button("Cerrar mi turno").click(); await until(() => document.getElementById("cash-shift-counted"), "Debe preparar")
+    await input("cash-shift-counted", "300.00")
+    button("Volver al turno y seguir trabajando").click(); await until(() => button("Cerrar mi turno"), "Debe recuperar el turno abierto")
+    assert(!document.getElementById("cash-shift-counted") && f.actions.at(-1).action === "resume" && f.context.activeShift.expectedCashCents === 33300, "Reanudar no cambia dinero ni guarda el conteo provisional")
+  })
+  await test("Un conteo de cero válido requiere introducirse explícitamente", async () => {
+    const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
+    f.context.activeShift.expectedCashCents = 0
+    button("Cerrar mi turno").click(); await until(() => document.getElementById("cash-shift-counted"), "Debe preparar")
+    assert(button("Confirmar cierre y entregar caja").disabled, "El cero por defecto no confirma una caja vacía")
+    await input("cash-shift-counted", "0")
+    assert(!button("Confirmar cierre y entregar caja").disabled && screenText().includes("¡Tu caja cuadra!"), "Debe admitir una caja realmente vacía")
+  })
+  await test("Otra persona sin acceso a saldos no recibe controles de cierre ni importes inventados", async () => {
+    const f = await fixture(); mountWorkspace(f)
+    f.context.activeShift.isMine = false; f.context.activeShift.openingCountedCents = null; f.context.activeShift.expectedCashCents = null
+    f.context.isOwner = false; f.context.canManage = false; f.context.canViewAll = false; f.context.breakdown = []
+    await until(() => screenText().includes("Debe cerrarlo y entregar"), "Debe explicar quién tiene la caja")
+    assert(!button("Cerrar mi turno") && !document.getElementById("cash-shift-counted") && !screenText().includes("Lo que debe haber"), "No mostrar controles ni saldos sin permiso")
+  })
   currentRoot?.unmount()
   document.getElementById("result").textContent = JSON.stringify(results)
 }
 
-const compiled = await build({ stdin: { contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { CashShiftGate, useCashShiftAccess } from "./src/components/app/cash-shift-gate"; import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./src/components/ui/dialog"; import { cashPending, refreshCashContext, submitControlledDocument } from "./src/lib/cash-offline"; import { openCashShiftFromClient } from "./src/lib/cash-shift-opening"; import { getPendingCounts } from "./src/lib/indexed-db"; (${browserSuite.toString()})().catch(error => document.getElementById("result").textContent = JSON.stringify([{ok:false,error:error.message}]));`, resolveDir: rootDir }, bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "test-navigation", setup(build) { build.onResolve({ filter: /^next\/link$/ }, () => ({ path: "next-link", namespace: "test" })); build.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'import React from "react"; export default function Link(props) { return React.createElement("a", props); }', resolveDir: rootDir })) } }] })
+const compiled = await build({ stdin: { contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { CashShiftGate, useCashShiftAccess } from "./src/components/app/cash-shift-gate"; import { CashShiftsClient } from "./src/app/(app)/daily-close/cash-shifts-client"; import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./src/components/ui/dialog"; import { cashPending, refreshCashContext, submitControlledDocument } from "./src/lib/cash-offline"; import { openCashShiftFromClient } from "./src/lib/cash-shift-opening"; import { getPendingCounts } from "./src/lib/indexed-db"; (${browserSuite.toString()})().catch(error => document.getElementById("result").textContent = JSON.stringify([{ok:false,error:error.message}]));`, resolveDir: rootDir }, bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "test-navigation", setup(build) { build.onResolve({ filter: /^next\/link$/ }, () => ({ path: "next-link", namespace: "test" })); build.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'import React from "react"; export default function Link(props) { return React.createElement("a", props); }', resolveDir: rootDir })) } }] })
 const target = path.join(rootDir, "tmp", "cash-gate-browser.html")
 fs.mkdirSync(path.dirname(target), { recursive: true })
 fs.writeFileSync(target, `<!doctype html><meta charset="utf-8"><div id="test-root"></div><pre id="result">RUNNING</pre><script>${compiled.outputFiles[0].text.replace(/<\/script/gi, "<\\/script")}</script>`)
@@ -249,10 +327,16 @@ let startupError
 child.on("error", error => { startupError = error })
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const portFile = path.join(profile, "DevToolsActivePort")
-for (let i = 0; i < 150 && !fs.existsSync(portFile) && !startupError; i++) await wait(100)
+let connection
+for (let i = 0; i < 150 && !startupError; i++) {
+  // Chrome puede crear el archivo antes de terminar de escribirlo o liberar su bloqueo en Windows.
+  try { const lines = fs.readFileSync(portFile, "utf8").trim().split(/\r?\n/); if (lines[0] && lines[1]) { connection = lines; break } }
+  catch (error) { if (!["ENOENT", "EBUSY"].includes(error.code)) throw error }
+  await wait(100)
+}
 if (startupError) throw startupError
-if (!fs.existsSync(portFile)) throw new Error("Chrome no inició la instancia temporal")
-const [port, socketPath] = fs.readFileSync(portFile, "utf8").trim().split(/\r?\n/)
+if (!connection) throw new Error("Chrome no inició la instancia temporal")
+const [port, socketPath] = connection
 const socket = new WebSocket(`ws://127.0.0.1:${port}${socketPath}`)
 await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject })
 let nextId = 0

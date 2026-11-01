@@ -10,7 +10,7 @@ La función se activa por negocio desde **Cuadre diario**. La migración no acti
 2. Al entrar a Ventas o Cuentas por cobrar, cada empleado sin turno recibe una ventana para confirmar el efectivo que recibe y abrir su turno desde ese dispositivo. También puede abrirlo desde Cuadre diario. Cerrar el aviso mantiene los formularios bloqueados; abrir el turno habilita la pantalla sin registrar automáticamente facturas ni cobros.
 3. Las ventas y los abonos se guardan primero en una cola persistente del dispositivo, incluso con conexión. El responsable puede seguir operando sin Internet dentro del turno abierto.
    Las compras, compras por escaneo, gastos, devoluciones y traspasos se inician con conexión y también conservan su identificador antes de enviarse. Si se pierde la respuesta, el reintento no duplica documentos, inventario ni dinero.
-4. Para entregar, prepara el cierre, sincroniza los pendientes y confirma el conteo final. El sistema muestra el esperado y exige un motivo si hay diferencia.
+4. Para entregar, pulsa **Cerrar mi turno**. La pantalla guía los pasos: guardar pendientes, contar el efectivo y confirmar la entrega. Mientras trabajas muestra el resumen de caja; el campo para contar aparece al iniciar el cierre. No se muestra un faltante por el cero inicial: hay que introducir el conteo, incluso si la caja está vacía. Si el monto difiere del esperado, se explica cuánto falta o sobra y se exige un motivo.
 5. El siguiente empleado abre con su propio conteo. La diferencia de recepción permanece separada del resultado de sus operaciones.
 
 Un turno puede atravesar medianoche. Su responsable y dispositivo se verifican en el servidor. Los pendientes se conservan si expira la sesión o cambia el empleado; deben sincronizarse con la identidad original.
@@ -63,7 +63,7 @@ Los artefactos de prueba permanecen en `tmp/cash-*`, fuera del control de versio
 - 36 pruebas de integración aprobadas con PostgreSQL 18 local: migración del esquema anterior, concurrencia, permisos, saldos, cierres, correcciones y reintentos de las acciones reales.
 - 28 pruebas existentes de sincronización e informes aprobadas.
 - 15 casos aprobados en Chrome con IndexedDB y Web Locks reales, incluyendo pérdida de respuesta, cambio de empleado, respuestas tardías entre pestañas y recuperación de secuencia al reanudar sin estado local.
-- 20 casos adicionales de la ventana de apertura con React y Radix reales en Chrome: bloqueo antes de montar formularios, cierre del aviso, conteo y motivo, permisos, otros responsables o dispositivos, desconexión, sesión rechazada, conservación de datos y recuperación de aperturas confirmadas sin respuesta.
+- 27 casos adicionales de interfaz con React y Radix reales en Chrome: apertura desde la ventana, bloqueo por permisos o dispositivo, desconexión, recuperación de respuestas perdidas, conservación de datos y cierre guiado. Incluyen un fallo al enviar pendientes que ya dejó el turno en preparación, conteo explícito de cero, diferencias justificadas, reanudación y comprobante del cierre.
 - TypeScript, ESLint de los módulos nuevos, validación de Prisma y compilación de producción aprobados. La compilación utilizó una copia aislada del proyecto.
 
 Estas verificaciones no aplicaron la migración ni activaron turnos en la base del negocio. La prueba piloto con usuarios y dispositivos reales sigue pendiente.

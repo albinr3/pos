@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { PriceInput } from "@/components/app/price-input"
+import { CashShiftWorkspace } from "@/components/app/cash-shift-workspace"
 import { discardCashPending, manualCashPending, sendManualCashMovement, cashPending, freezeCashShift, refreshCashContext, syncCashOutbox, unfreezeCashShift, type CashContext, type CashQueuedOperation } from "@/lib/cash-offline"
 import { assertNoCashOpeningPending, openCashShiftFromClient } from "@/lib/cash-shift-opening"
 import { formatRD } from "@/lib/money"
@@ -54,6 +55,7 @@ export function CashShiftsClient() {
   const [correction, setCorrection] = useState<{ sourceType: string; sourceId: string }>()
   const [correctionReason, setCorrectionReason] = useState("")
   const [moneyMoved, setMoneyMoved] = useState(true)
+  const [closedShiftId, setClosedShiftId] = useState<string>()
   const refresh = useCallback(async () => {
     const state = await refreshCashContext()
     setContext(state)
@@ -69,18 +71,20 @@ export function CashShiftsClient() {
   useEffect(() => { void refresh().catch(e => setError(e.message)) }, [refresh])
   async function run(fn: () => Promise<unknown>, refreshAfter = true) {
     setBusy(true); setError("")
-    try { await fn(); if (refreshAfter) await refresh() } catch (e) { setError(e instanceof Error ? e.message : "No se pudo completar la acción") }
-    finally { setBusy(false) }
+    let failure: string | undefined
+    try { await fn() } catch (e) { failure = e instanceof Error ? e.message : "No se pudo completar la acción" }
+    // Preparar puede confirmar CLOSING antes de fallar la sincronización. Mostrar siempre el estado real y sus pendientes.
+    if (refreshAfter) { try { await refresh() } catch (e) { failure ??= e instanceof Error ? e.message : "No se pudo actualizar la caja" } }
+    setError(failure ?? ""); setBusy(false)
   }
   const shift = context?.activeShift
   const owns = Boolean(shift?.isMine && shift.isDevice)
-  const expected = shift?.expectedCashCents ?? context?.expectedOpeningCents ?? 0
   const activationAccount = preview?.accounts.find(account => account.id === accountId)
   const activationDifference = activationAccount ? counted - activationAccount.balanceCents : null
   const snapshot = selected?.closingSnapshot as unknown as CashClosingSnapshot | undefined
   const summary = snapshot ? snapshotSalesSummary(snapshot.documents) : null
   return <section className="grid gap-4" aria-label="Turnos de caja">
-    <Card><CardHeader><CardTitle>Turnos de caja</CardTitle></CardHeader><CardContent className="grid gap-4">
+    <Card><CardHeader><CardTitle>Turnos de caja</CardTitle>{context?.enabled && <p className="text-sm text-muted-foreground">Revisa tu efectivo y entrega la caja con todo en orden.</p>}</CardHeader><CardContent className="grid gap-5">
       {error && <div role="alert" className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-200">{error}</div>}
       {!context ? <p>Consultando caja…</p> : !context.enabled ? <>
         <p className="text-sm text-muted-foreground">El control por turnos está desactivado. Puedes seguir usando el resumen diario.</p>
@@ -99,39 +103,34 @@ export function CashShiftsClient() {
           {activationCountEntered && activationDifference !== null && <p className="text-sm" aria-live="polite">{activationDifference === 0 ? "El efectivo contado coincide con el saldo calculado." : <>Diferencia: <strong>{formatRD(Math.abs(activationDifference))} {activationDifference < 0 ? "menos" : "más"}</strong> que el saldo calculado. Explica el motivo; la diferencia se registrará al activar.</>}</p>}
           <Label htmlFor="cash-activation-note">Motivo de la diferencia {activationCountEntered && activationDifference !== null && activationDifference !== 0 ? "(obligatorio)" : "(solo si hay diferencia)"}</Label><Input id="cash-activation-note" value={note} onChange={e => setNote(e.target.value)} />
           <p className="text-sm text-muted-foreground">Antes de activar, sincroniza las ventas y los abonos pendientes de todos los dispositivos. Los turnos se usan desde la web.</p>
-          <Button disabled={busy || !accountId || preview.future > 0} onClick={() => run(async () => { await assertNoCashOpeningPending(true); await post({ action: "activate", treasuryAccountId: accountId, countedCents: counted, note, previewToken: preview.previewToken }); setPreview(undefined); setNote("") })}>Confirmar y activar control por turnos</Button>
+          {/* La base de activación no confirma el conteo con el que un empleado recibe su turno. */}
+          <Button disabled={busy || !accountId || preview.future > 0} onClick={() => run(async () => { await assertNoCashOpeningPending(true); await post({ action: "activate", treasuryAccountId: accountId, countedCents: counted, note, previewToken: preview.previewToken }); setPreview(undefined); setCounted(0); setNote("") })}>Confirmar y activar control por turnos</Button>
         </div>}
       </> : <>
-        <p>{shift ? `Responsable: ${shift.cashierName} · ${shift.status === "OPEN" ? "Turno abierto" : "Cierre en preparación"}` : "No hay turno abierto. Cuenta el dinero físico que recibes para comenzar."}</p>
-        {shift?.openingCountedCents !== null && shift?.openingCountedCents !== undefined && <p>Recibido al abrir: <strong>{formatRD(shift.openingCountedCents)}</strong></p>}
-        {(owns || !shift || context.canViewAll || context.canManage) && <p>Efectivo esperado: <strong>{formatRD(expected)}</strong></p>}
-        {context.breakdown.length > 0 && <div className="grid gap-2 rounded-md border p-3 text-sm"><p className="font-medium">Movimiento neto por método y cuenta</p>{context.breakdown.map((item, index) => <div key={index} className="flex justify-between gap-3"><span>{item.accountName} · {item.method ? getPaymentMethodLabel(item.method) : "Movimientos de tesorería"}</span><strong>{formatRD(item.totalCents)}</strong></div>)}</div>}
-        {(!shift && context.canOperate || owns || context.canManage && shift) && <>
-          <Label>Efectivo físico contado</Label><PriceInput valueCents={counted} onChangeCents={setCounted} disabled={busy} />
-          <p className="text-sm">Diferencia: {formatRD(counted - expected)}</p>
-          <Label htmlFor="cash-count-note">Motivo del sobrante o faltante</Label><Input id="cash-count-note" value={note} onChange={e => setNote(e.target.value)} disabled={busy} />
-        </>}
-        <div className="flex flex-wrap gap-2">
-          {!shift && context.canOperate && <Button disabled={busy} onClick={() => run(async () => { await openCashShiftFromClient({ id: context.userId, accountId: context.accountId }, counted, note); setNote("") })}>Abrir mi turno</Button>}
-          {owns && shift?.status === "OPEN" && <Button disabled={busy} onClick={() => run(async () => {
+        {closedShiftId && !shift && <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"><div><p className="font-semibold">El turno quedó cerrado</p><p>El conteo y las diferencias ya están guardados. El siguiente empleado puede abrir su turno.</p></div><Button asChild variant="outline"><a href={`/receipts/cash-shift/${encodeURIComponent(closedShiftId)}`} target="_blank" rel="noopener noreferrer">Ver comprobante</a></Button></div>}
+        <CashShiftWorkspace key={`${shift?.id ?? "opening"}:${shift?.status ?? "none"}`} context={context} busy={busy} pendingCount={pending.filter(record => record.cashOperation.cashShiftId === shift?.id).length} manualPending={Boolean(manualPending)} counted={counted} note={note} onCountChange={setCounted} onNoteChange={setNote} actions={{
+          open: () => run(async () => { await openCashShiftFromClient({ id: context.userId, accountId: context.accountId }, counted, note); setNote(""); setClosedShiftId(undefined) }),
+          prepare: () => run(async () => {
+            if (!shift) return
             const finalSequence = await freezeCashShift(context)
             await post({ action: "prepare", shiftId: shift.id, finalSequence })
+            // El conteo de apertura no es un conteo de cierre: el cajero debe introducir uno nuevo.
+            setCounted(0); setNote("")
             await syncCashOutbox()
-          })}>Preparar cierre y sincronizar</Button>}
-          {owns && shift?.status === "CLOSING" && <>
-            <Button disabled={busy} variant="secondary" onClick={() => run(() => syncCashOutbox())}>Sincronizar pendientes</Button>
-            <Button disabled={busy || pending.some(record => record.cashOperation.cashShiftId === shift.id)} onClick={() => run(async () => { await post({ action: "close", shiftId: shift.id, countedCents: counted, expectedCents: expected, note }); setCounted(0); setNote("") })}>Confirmar cierre y entregar caja</Button>
-            <Button disabled={busy} variant="outline" onClick={() => run(async () => { await post({ action: "resume", shiftId: shift.id }); await unfreezeCashShift(shift.id) })}>Reanudar turno</Button>
-          </>}
-          {shift && context.isOwner && !owns && <Button disabled={busy} variant="destructive" onClick={() => run(() => post({ action: "emergency", shiftId: shift.id, countedCents: counted, expectedCents: expected, note }))}>Cierre excepcional del dueño</Button>}
-          {!shift && context.canManage && <Button disabled={busy} variant="outline" onClick={() => run(() => post({ action: "disable" }))}>Desactivar nuevos turnos</Button>}
-          <Button variant="ghost" disabled={busy} onClick={() => run(refresh)}>Actualizar</Button>
-        </div>
-        {owns && shift?.status === "OPEN" && (context.canRecordMovements || context.canTransfer) && <details className="rounded-md border p-3"><summary className="cursor-pointer font-medium">Registrar entrada, retiro o traspaso</summary><div className="mt-3 grid gap-3">
-          <Label htmlFor="cash-movement-type">Tipo de movimiento</Label><select id="cash-movement-type" className="rounded-md border bg-background p-2" value={kind} onChange={e => setKind(e.target.value)}>{context.canTransfer && <><option value="TRANSFER_OUT">Traspasar desde caja a otra cuenta</option><option value="TRANSFER_IN">Recibir desde otra cuenta</option></>}{context.canRecordMovements && <><option value="OWNER_IN">Aporte del propietario</option><option value="OWNER_OUT">Retiro del propietario</option></>}</select>
-          {kind.startsWith("TRANSFER") && <><Label htmlFor="cash-other-account">Otra cuenta</Label><select id="cash-other-account" className="rounded-md border bg-background p-2" value={otherAccount} onChange={e => setOtherAccount(e.target.value)}><option value="">Selecciona una cuenta</option>{accounts.filter(a => a.id !== context.treasuryAccountId).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></>}
+          }),
+          sync: () => run(() => syncCashOutbox()),
+          close: () => run(async () => { if (!shift) return; await post({ action: "close", shiftId: shift.id, countedCents: counted, expectedCents: shift.expectedCashCents, note }); setClosedShiftId(shift.id); setCounted(0); setNote("") }),
+          resume: () => run(async () => { if (!shift) return; await post({ action: "resume", shiftId: shift.id }); await unfreezeCashShift(shift.id); setCounted(0); setNote("") }),
+          emergency: () => run(async () => { if (!shift) return; await post({ action: "emergency", shiftId: shift.id, countedCents: counted, expectedCents: shift.expectedCashCents, note }); setClosedShiftId(shift.id); setCounted(0); setNote("") }),
+          refresh: () => run(async () => {}),
+          disable: () => run(() => post({ action: "disable" })),
+        }} />
+        {owns && shift?.status === "OPEN" && (context.canRecordMovements || context.canTransfer) && <details className="rounded-xl border p-4"><summary className="cursor-pointer text-sm font-medium">Registrar dinero que entra o sale</summary><div className="mt-4 grid gap-3">
+          <p className="text-sm text-muted-foreground">Registra aquí el dinero que muevas durante tu turno. Si lo pasas a otra cuenta, elige de dónde sale o dónde lo guardarás.</p>
+          <Label htmlFor="cash-movement-type">¿Qué vas a hacer con el dinero?</Label><select id="cash-movement-type" className="rounded-md border bg-background p-2" value={kind} onChange={e => setKind(e.target.value)}>{context.canTransfer && <><option value="TRANSFER_OUT">Pasar dinero de caja a otra cuenta</option><option value="TRANSFER_IN">Traer dinero de otra cuenta a caja</option></>}{context.canRecordMovements && <><option value="OWNER_IN">El dueño agrega dinero a la caja</option><option value="OWNER_OUT">El dueño retira dinero de la caja</option></>}</select>
+          {kind.startsWith("TRANSFER") && <><Label htmlFor="cash-other-account">{kind === "TRANSFER_OUT" ? "¿Dónde guardarás ese dinero?" : "¿De qué cuenta viene el dinero?"}</Label><select id="cash-other-account" className="rounded-md border bg-background p-2" value={otherAccount} onChange={e => setOtherAccount(e.target.value)}><option value="">Selecciona una cuenta</option>{accounts.filter(a => a.id !== context.treasuryAccountId).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></>}
           <Label htmlFor="cash-movement-amount">Monto</Label><PriceInput id="cash-movement-amount" valueCents={movementAmount} onChangeCents={setMovementAmount} /><Label htmlFor="cash-movement-note">Motivo</Label><Input id="cash-movement-note" value={movementNote} onChange={e => setMovementNote(e.target.value)} />
-          <Button disabled={busy} onClick={() => run(async () => { await sendManualCashMovement({ shiftId: shift.id, kind, amountCents: movementAmount, otherAccountId: otherAccount, note: movementNote }); setMovementAmount(0); setMovementNote("") })}>Registrar movimiento</Button>
+          <Button disabled={busy || Boolean(manualPending) || movementAmount <= 0 || !movementNote.trim() || kind.startsWith("TRANSFER") && !otherAccount} onClick={() => run(async () => { await sendManualCashMovement({ shiftId: shift.id, kind, amountCents: movementAmount, otherAccountId: otherAccount, note: movementNote }); setMovementAmount(0); setMovementNote("") })}>Guardar movimiento de dinero</Button>
         </div></details>}
       </>}
       {manualPending && <div className="rounded-md border border-amber-400 p-3"><p>Hay un movimiento de caja sin confirmación. Reinténtalo para verificar si fue registrado.</p>{manualPending.userId === context?.userId ? <Button disabled={busy} onClick={() => run(() => sendManualCashMovement(manualPending.input))}>Reintentar movimiento pendiente</Button> : <p>Vuelve al empleado que registró este movimiento para confirmarlo.</p>}</div>}
