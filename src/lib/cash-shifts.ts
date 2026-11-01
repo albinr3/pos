@@ -173,22 +173,34 @@ export async function getCashShiftReport(actor: Actor, deviceHash: string, id: s
     const movementSources = new Set(movements.map(movement => `${movement.sourceType}:${movement.sourceId}`))
     const withoutMovement = sources.filter(source => !movementSources.has(`${source.sourceType}:${source.sourceId}`))
     const ids = (type: string) => withoutMovement.filter(source => source.sourceType === type).map(source => source.sourceId)
+    // Consultar por origen, no por movimiento: una factura puede tener varios métodos de pago.
+    const movementIds = (type: string) => [...new Set(movements.filter(row => row.sourceType === type).map(row => row.sourceId))]
+    const [movementSales, movementPayments, movementReturns] = await Promise.all([
+      tx.sale.findMany({ where: { accountId: actor.accountId, id: { in: movementIds("sale") } }, select: { id: true, customer: { select: { name: true } } } }),
+      tx.payment.findMany({ where: { id: { in: movementIds("payment") }, ar: { sale: { accountId: actor.accountId } } }, select: { id: true, ar: { select: { customer: { select: { name: true } } } } } }),
+      tx.return.findMany({ where: { accountId: actor.accountId, id: { in: movementIds("return") } }, select: { id: true, sale: { select: { customer: { select: { name: true } } } } } }),
+    ])
+    const customerNames = new Map<string, string | null>([
+      ...movementSales.map(row => [`sale:${row.id}`, row.customer?.name ?? null] as const),
+      ...movementPayments.map(row => [`payment:${row.id}`, row.ar.customer.name] as const),
+      ...movementReturns.map(row => [`return:${row.id}`, row.sale.customer?.name ?? null] as const),
+    ])
     const [sales, purchases, expenses, returns, payments] = await Promise.all([
-      tx.sale.findMany({ where: { accountId: actor.accountId, id: { in: ids("sale") } }, select: { id: true, invoiceCode: true, totalCents: true, cancelledAt: true, createdAt: true } }),
+      tx.sale.findMany({ where: { accountId: actor.accountId, id: { in: ids("sale") } }, select: { id: true, invoiceCode: true, totalCents: true, cancelledAt: true, createdAt: true, customer: { select: { name: true } } } }),
       tx.purchase.findMany({ where: { accountId: actor.accountId, id: { in: ids("purchase") } }, select: { id: true, totalCents: true, cancelledAt: true, createdAt: true } }),
       tx.operatingExpense.findMany({ where: { accountId: actor.accountId, id: { in: ids("operatingExpense") } }, select: { id: true, description: true, amountCents: true, cancelledAt: true, createdAt: true } }),
-      tx.return.findMany({ where: { accountId: actor.accountId, id: { in: ids("return") } }, select: { id: true, returnCode: true, totalCents: true, cancelledAt: true, createdAt: true } }),
-      tx.payment.findMany({ where: { id: { in: ids("payment") }, ar: { sale: { accountId: actor.accountId } } }, select: { id: true, receiptCode: true, amountCents: true, cancelledAt: true, createdAt: true } }),
+      tx.return.findMany({ where: { accountId: actor.accountId, id: { in: ids("return") } }, select: { id: true, returnCode: true, totalCents: true, cancelledAt: true, createdAt: true, sale: { select: { customer: { select: { name: true } } } } } }),
+      tx.payment.findMany({ where: { id: { in: ids("payment") }, ar: { sale: { accountId: actor.accountId } } }, select: { id: true, receiptCode: true, amountCents: true, cancelledAt: true, createdAt: true, ar: { select: { customer: { select: { name: true } } } } } }),
     ])
     const documents = [
-      ...sales.map(row => ({ sourceType: "sale", id: row.id, reference: row.invoiceCode, amountCents: row.totalCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
+      ...sales.map(row => ({ sourceType: "sale", id: row.id, reference: row.invoiceCode, amountCents: row.totalCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt, customerName: row.customer?.name ?? null })),
       ...purchases.map(row => ({ sourceType: "purchase", id: row.id, reference: row.id, amountCents: row.totalCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
       ...expenses.map(row => ({ sourceType: "operatingExpense", id: row.id, reference: row.description, amountCents: row.amountCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
-      ...returns.map(row => ({ sourceType: "return", id: row.id, reference: row.returnCode, amountCents: row.totalCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
-      ...payments.map(row => ({ sourceType: "payment", id: row.id, reference: row.receiptCode, amountCents: row.amountCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt })),
+      ...returns.map(row => ({ sourceType: "return", id: row.id, reference: row.returnCode, amountCents: row.totalCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt, customerName: row.sale.customer?.name ?? null })),
+      ...payments.map(row => ({ sourceType: "payment", id: row.id, reference: row.receiptCode, amountCents: row.amountCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt, customerName: row.ar.customer.name })),
     ]
     // El corte y los identificadores deben proceder de la misma vista para no duplicar respuestas perdidas.
-    return { accountId: actor.accountId, userId: actor.id, shiftId: shift.id, cashierName: shift.cashierName, openedAt: shift.openedAt, generatedAt, companyName: company?.name ?? "Mi Negocio", format: company?.shiftReportPrintFormat === "80mm" ? "80mm" as const : "CARTA" as const, openingCents: shift.openingCountedCents, expectedCashCents: await expectedForShift(tx, shift), lastSequence: shift.lastSequence, finalSequence: shift.finalSequence, status: shift.status, confirmedOperationIds: operations.map(operation => operation.clientOperationId), movements, documents }
+    return { accountId: actor.accountId, userId: actor.id, shiftId: shift.id, cashierName: shift.cashierName, openedAt: shift.openedAt, generatedAt, companyName: company?.name ?? "Mi Negocio", format: company?.shiftReportPrintFormat === "80mm" ? "80mm" as const : "CARTA" as const, openingCents: shift.openingCountedCents, expectedCashCents: await expectedForShift(tx, shift), lastSequence: shift.lastSequence, finalSequence: shift.finalSequence, status: shift.status, confirmedOperationIds: operations.map(operation => operation.clientOperationId), movements: movements.map(row => ({ ...row, customerName: customerNames.get(`${row.sourceType}:${row.sourceId}`) ?? null })), documents }
   }, { isolationLevel: "RepeatableRead", timeout: 20000, maxWait: 5000 })
 }
 export async function openCashShift(actor: Actor, deviceHash: string, countedCents: number, note?: string) {
