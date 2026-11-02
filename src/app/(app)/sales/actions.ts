@@ -26,6 +26,7 @@ import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { ensureGenericCustomer } from "@/lib/customer-helpers"
+import { normalizeSaleNotes } from "@/lib/sale-notes"
 import { isGenericCustomerQuery } from "@/lib/customer-display"
 import {
   ensureDefaultTreasuryAccount,
@@ -973,6 +974,7 @@ async function createSaleInternal(input: {
   applyLegalTip?: boolean
   items: CartItemInput[]
   shippingCents?: number
+  notes?: string | null
   discountMode?: DiscountModeInput
   manualDiscountPercentBp?: number
   salePricesIncludeItbis?: boolean
@@ -992,6 +994,7 @@ async function createSaleInternal(input: {
     user = authResult.user
   }
   const soldAt = parseOptionalDateInput(input.soldAt)
+  const notes = normalizeSaleNotes(input.notes)
   const requestedCustomerId = normalizeRequestedCustomerId(input.customerId)
 
   try {
@@ -1263,6 +1266,7 @@ async function createSaleInternal(input: {
           subtotalCents,
           itbisCents,
           shippingCents,
+          notes,
           legalTipApplied,
           legalTipPercentBp,
           legalTipBaseCents,
@@ -1311,6 +1315,8 @@ async function createSaleInternal(input: {
         select: {
           id: true,
           invoiceCode: true,
+          // La API y los reintentos de caja necesitan devolver también la nota guardada.
+          notes: true,
           type: true,
           soldAt: true,
           treasuryAccountId: true,

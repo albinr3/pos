@@ -317,11 +317,13 @@ async function browserSuite() {
   await test("El comprobante del historial usa los mismos métodos y distingue la diferencia de efectivo", async () => {
     const f = await fixture()
     f.history = [{ id: "closed-summary", cashierName: "Histórico", status: "CLOSED", openedAt: new Date().toISOString(), closedAt: new Date().toISOString(), openingCountedCents: 11100, openingDifferenceCents: 0, expectedClosingCents: 33300, countedClosingCents: 33300, closingDifferenceCents: 0, closingSnapshot: { emergency: false, documents: [], movements: f.context.collectionsByMethod.map((item, index) => ({ id: String(index), sourceType: "sale", reference: "Venta", method: item.method, amountCents: item.totalCents })) } }]
-    mountWorkspace(f); await until(() => [...document.querySelectorAll("button")].some(b => b.textContent.includes("Histórico")), "Debe cargar historial")
+    mountWorkspace(f); await until(() => button("Historial de turnos"), "Debe cargar historial")
+    button("Historial de turnos").click()
+    await until(() => [...document.querySelectorAll("button")].some(b => b.textContent.includes("Histórico")), "Debe abrir historial")
     ;[...document.querySelectorAll("button")].find(b => b.textContent.includes("Histórico")).click()
     await until(() => document.querySelectorAll('[aria-label="Cobros del turno"]').length === 2, "Debe mostrar el resumen guardado")
     assert([...document.querySelectorAll('[aria-label="Cobros del turno"]')].every(s => s.textContent.includes("485.00")), "Mismo total en turno y comprobante")
-    assert(screenText().includes("Efectivo contado") && screenText().includes("Diferencia de efectivo del turno"), "Etiquetar el conteo y la diferencia como efectivo")
+    assert(screenText().includes("Efectivo contado") && screenText().includes("Resultado del efectivo") && screenText().includes("Diferencia"), "Etiquetar el conteo y la diferencia como efectivo")
   })
   await test("Cerrar guía el conteo, exige introducirlo y guarda el comprobante al coincidir", async () => {
     const f = await fixture(); mountWorkspace(f); await until(() => button("Cerrar mi turno"), "Debe cargar")
@@ -358,7 +360,7 @@ async function browserSuite() {
       assert(screenText().includes("Detalle provisional sin conexión") && button("Confirmar cierre y entregar caja").disabled && f.context.activeShift.status === "OPEN", "No debe cerrar ni bloquear ventas")
       button("Ver detalle del turno").click(); await until(() => printed === 1, "Debe imprimir sin conexión")
       assert(popup.document.body.textContent.includes("REPORTE PROVISIONAL O INCOMPLETO") && popup.document.body.textContent.includes("No hay una copia previa"), "Debe aclarar la falta de datos confirmados")
-      assert(popup.document.head.textContent.includes("size: A4"), "A4 debe ser el formato inicial")
+      assert(popup.document.head.textContent.includes("size: letter"), "Carta debe ser el formato inicial")
       assert(!f.actions.some(action => action.action === "prepare" || action.action === "close"), "No debe registrar un cierre provisional en el servidor")
     } finally { online = true; window.open = originalOpen; frame.remove() }
   })

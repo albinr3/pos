@@ -2,7 +2,7 @@
 
 ## Estado y alcance
 
-La función se activa por negocio desde **Cuadre diario**. La migración no activa ningún negocio ni crea turnos históricos. Esta versión usa una caja y un dispositivo web por turno; las aplicaciones móviles deben incorporar el nuevo contrato antes de operar negocios con turnos activos.
+La función se activa por negocio desde **Cuadre diario**. La migración no activa ningún negocio ni crea turnos históricos. Cada turno pertenece a un empleado y un dispositivo web o móvil. La app móvil debe actualizarse y sincronizar sus pendientes antes de activar el control.
 
 ## Uso
 
@@ -85,6 +85,10 @@ La última revisión reprodujo y corrigió el bloqueo de reversos de traspasos, 
 4. Comparar saldos de tesorería, movimientos del turno y conteos. Probar impresión, reconexión, relevo y permisos del cajero real antes de ampliar la activación.
 
 Los endpoints nuevos son `GET/POST /api/cash-shifts` y `POST /api/cash-shifts/operations`. El segundo acepta `kind`, `payload` y `cashOperation` (`accountId`, `userId`, `cashShiftId`, `clientOperationId`, `clientSequence`). El servidor verifica la sesión; esos identificadores no sustituyen la autenticación.
+
+La app móvil autenticada con Clerk y subusuario obtiene una sola vez el secreto del dispositivo con `GET /api/cash-shifts?view=device` y lo guarda en almacenamiento seguro. Envía `X-Cash-Device-Token` en cada operación de caja; la web conserva su cookie. `GET /api/cash-shifts?view=receipt&shiftId=...` devuelve el comprobante JSON de un turno cerrado según los permisos del solicitante, incluido el turno propio. La app imprime ese comprobante o genera un PDF sin cambiar el estado del turno.
+
+Si un movimiento manual queda sin respuesta, el móvil conserva su identificador. `cancelMovement` comprueba bajo el candado del negocio si ya se confirmó: en ese caso informa que el dinero fue registrado; si no, reserva el identificador y audita el motivo de anulación para impedir que una petición tardía lo cree.
 
 `kind` admite `sale`, `payment`, `batchPayment`, `purchase`, `ocrPurchase`, `expense`, `return` y `transfer`. Las operaciones sin efectivo realizadas fuera de un turno usan `cashShiftId: null` y `clientSequence: null`, conservando la idempotencia por negocio e identificador. El efectivo siempre requiere el turno y dispositivo de su responsable. Un reintento ya confirmado conserva su respuesta incluso después de desactivar turnos.
 

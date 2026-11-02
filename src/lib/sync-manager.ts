@@ -124,6 +124,8 @@ export async function syncPendingData() {
           paymentSplits: sale.paymentSplits,
           items: normalizedItems,
           shippingCents: sale.shippingCents || 0,
+          // La nota debe viajar con la venta pendiente hasta su factura definitiva.
+          notes: sale.notes,
           discountMode: sale.discountMode === "MANUAL" ? "MANUAL" : sale.discountMode === "AUTO" ? "AUTO" : undefined,
           manualDiscountPercentBp:
             typeof sale.manualDiscountPercentBp === "number" ? sale.manualDiscountPercentBp : undefined,

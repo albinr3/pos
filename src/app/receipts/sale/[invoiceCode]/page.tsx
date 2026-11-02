@@ -261,6 +261,14 @@ export default async function SaleReceiptPage({
         </div>
       )}
 
+      {sale.notes?.trim() && (
+        <div className="mt-3 border-t border-dashed pt-2" data-sale-notes>
+          <div className="font-semibold">Nota</div>
+          {/* html2canvas admite break-word: evitar que una palabra larga se corte en el PDF térmico. */}
+          <div className="whitespace-pre-wrap break-words">{sale.notes}</div>
+        </div>
+      )}
+
       <div className="mt-3 text-center">
         <div className="font-semibold">Gracias por su compra</div>
       </div>

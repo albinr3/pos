@@ -19,6 +19,8 @@ import { PriceInput } from "@/components/app/price-input"
 import { OnboardingGuide, type OnboardingGuideStep } from "@/components/app/onboarding-guide"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { normalizeSaleNotes, SALE_NOTES_MAX_LENGTH } from "@/lib/sale-notes"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
@@ -238,6 +240,7 @@ export function PosClient({
   const [liveInventory, setLiveInventory] = useState<StockEntry[]>([])
   const stockLoadVersion = useRef(0)
   const [shippingInput, setShippingInput] = useState("")
+  const [notesInput, setNotesInput] = useState("")
   const [applyLegalTip, setApplyLegalTip] = useState(legalTipEnabled)
   const [discountMode, setDiscountMode] = useState<DiscountMode>("AUTO")
   const [manualDiscountInput, setManualDiscountInput] = useState("")
@@ -446,6 +449,7 @@ export function PosClient({
     setCustomerId("generic")
     setSaleType(SaleType.CONTADO)
     setShippingInput("")
+    setNotesInput("")
     setApplyLegalTip(legalTipEnabled)
     setDiscountMode("AUTO")
     setManualDiscountInput("")
@@ -691,6 +695,7 @@ export function PosClient({
             )
             setTreasuryAccountId(validTreasuryAccountId)
             setShippingInput(state.shippingInput || "")
+            setNotesInput(typeof state.notesInput === "string" ? state.notesInput : "")
             setApplyLegalTip(legalTipEnabled ? state.applyLegalTip !== false : false)
             setDiscountMode(state.discountMode === "MANUAL" ? "MANUAL" : "AUTO")
             setManualDiscountInput(typeof state.manualDiscountInput === "string" ? state.manualDiscountInput : "")
@@ -882,6 +887,7 @@ export function PosClient({
           transferBankName,
           paymentSplits,
           shippingInput,
+          notesInput,
           applyLegalTip,
           discountMode,
           manualDiscountInput,
@@ -906,6 +912,7 @@ export function PosClient({
     transferBankName,
     paymentSplits,
     shippingInput,
+    notesInput,
     applyLegalTip,
     discountMode,
     manualDiscountInput,
@@ -953,6 +960,7 @@ export function PosClient({
             transferBankName,
             paymentSplits,
             shippingInput,
+            notesInput,
             applyLegalTip,
             discountMode,
             manualDiscountInput,
@@ -983,6 +991,7 @@ export function PosClient({
     transferBankName,
     paymentSplits,
     shippingInput,
+    notesInput,
     applyLegalTip,
     discountMode,
     manualDiscountInput,
@@ -1432,6 +1441,14 @@ export function PosClient({
   async function doSave() {
     if (isSaving) return
     if (!flushEditingQuantities()) return
+    let notes: string | null
+    try {
+      // Validar también el carrito restaurado antes de encolar una venta sin conexión.
+      notes = normalizeSaleNotes(notesInput)
+    } catch (error) {
+      toast({ title: "Nota inválida", description: error instanceof Error ? error.message : "Revisa la nota de la venta.", variant: "destructive" })
+      return
+    }
     if (!user) {
       toast({ title: "Error", description: "Usuario no disponible. Por favor, recarga la p gina.", variant: "destructive" })
       return
@@ -1510,6 +1527,7 @@ export function PosClient({
         paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
         items: normalizedSaleItems,
         shippingCents: shippingCents > 0 ? shippingCents : undefined,
+        notes,
         applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
         discountMode: discountModeForSave,
         manualDiscountPercentBp:
@@ -1570,6 +1588,7 @@ export function PosClient({
                 paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
                 items: normalizedSaleItems,
                 shippingCents: shippingCents > 0 ? shippingCents : undefined,
+                notes,
                 applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
                 discountMode: discountModeForSave,
                 manualDiscountPercentBp:
@@ -1611,6 +1630,7 @@ export function PosClient({
                 paymentSplits: normalizedPaymentSplits.length > 0 ? normalizedPaymentSplits : undefined,
                 items: normalizedSaleItems,
                 shippingCents: shippingCents > 0 ? shippingCents : undefined,
+                notes,
                 applyLegalTip: legalTipEnabled ? applyLegalTip : undefined,
                 discountMode: discountModeForSave,
                 manualDiscountPercentBp:
@@ -2423,7 +2443,7 @@ export function PosClient({
               {cart.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => { cartRef.current = []; setCart([]) }}
+                  onClick={() => { cartRef.current = []; setCart([]); setNotesInput("") }}
                   disabled={isSaving}
                   className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
@@ -2644,6 +2664,20 @@ export function PosClient({
                   inputMode="decimal"
                   placeholder="0.00"
                 />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="sale-notes">Nota (opcional)</Label>
+                <Textarea
+                  id="sale-notes"
+                  value={notesInput}
+                  onChange={(e) => setNotesInput(e.target.value)}
+                  maxLength={SALE_NOTES_MAX_LENGTH}
+                  rows={3}
+                  aria-describedby="sale-notes-help"
+                />
+                <p id="sale-notes-help" className="text-xs text-muted-foreground">
+                  Esta nota aparecerá en la factura.
+                </p>
               </div>
             </div>
             <div className="space-y-1.5 text-sm">
@@ -3197,6 +3231,7 @@ export function PosClient({
                       transferBankName,
                       paymentSplits,
                       shippingInput,
+                      notesInput,
                       applyLegalTip,
                       discountMode,
                       manualDiscountInput,

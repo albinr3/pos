@@ -3,7 +3,7 @@ import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { createSale } from "@/app/(app)/sales/actions"
 import { addPayment, addBatchPayment } from "@/app/(app)/ar/actions"
 import { cashErrorResponse } from "@/lib/cash-http"
-import { cashRequest, cashHash } from "@/lib/cash-context"
+import { cashRequest, cashDeviceHashFromRequest } from "@/lib/cash-context"
 import { withCashOperation } from "@/lib/cash-context"
 import { runCashTransaction } from "@/lib/cash-financial-db"
 import { getRawPrismaClient } from "@/lib/db"
@@ -25,8 +25,7 @@ export async function POST(request: NextRequest) {
     if (!cashOperation || !payload || !["sale", "payment", "batchPayment", "purchase", "ocrPurchase", "supplierPayment", "expense", "return", "transfer", "discard"].includes(kind)) return NextResponse.json({ error: "Operación inválida" }, { status: 400 })
     const allowed: Record<string, boolean> = { sale: actor.canAccessSales, payment: actor.canAccessAccountsReceivable, batchPayment: actor.canAccessAccountsReceivable, supplierPayment: actor.canRegisterSupplierPayments, purchase: actor.canManagePurchases, ocrPurchase: actor.canManagePurchases, expense: actor.canManageExpenses, return: actor.canAccessReturns, transfer: actor.canCreateTreasuryTransfers, discard: true }
     if (!actor.isOwner && !allowed[kind]) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
-    const token = request.cookies.get("movopos-cash-device")?.value
-    const result = await cashRequest.run({ trustedActor: actor, deviceHash: token ? cashHash(token) : "" }, async () => {
+    const result = await cashRequest.run({ trustedActor: actor, deviceHash: cashDeviceHashFromRequest(request) }, async () => {
       if (kind === "discard") {
         if (typeof payload.reason !== "string" || !payload.reason.trim()) throw new Error("Explica por qué anulas el pendiente")
         return withCashOperation(cashOperation, { kind, ...payload }, () => runCashTransaction(getRawPrismaClient(), async tx => {

@@ -13,6 +13,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/blog",
     "/contact",
     "/app-ventas-inventario",
+    "/sistema-facturacion-tiendas-celulares",
     "/privacy",
     "/terms",
   ]

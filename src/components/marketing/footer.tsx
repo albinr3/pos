@@ -2,6 +2,7 @@ import Link from "next/link"
 
 const footerLinks = {
   producto: [
+    { href: "/sistema-facturacion-tiendas-celulares", label: "Tiendas de Celulares" },
     { href: "/como-usar-la-plataforma", label: "Tutoriales" },
     { href: "/blog", label: "Blog" },
     { href: "/app-ventas-inventario", label: "App Movil" },

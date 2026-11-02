@@ -132,6 +132,12 @@ export async function getCashContext(actor: Actor, deviceHash: string) {
     enabled: config?.enabled ?? false, ledgerStartedAt: config?.ledgerStartedAt ?? null,
     canTransfer: hasPermission(actor, "canCreateTreasuryTransfers"),
     canRecordMovements: hasPermission(actor, "canRecordCashMovements"),
+    canCorrect: {
+      sale: hasPermission(actor, "canCancelSales"), payment: hasPermission(actor, "canCancelPayments"),
+      purchase: hasPermission(actor, "canCancelPurchases"), supplierPayment: hasPermission(actor, "canCancelSupplierPayments"),
+      operatingExpense: hasPermission(actor, "canCancelExpenses"), return: hasPermission(actor, "canCancelReturns"),
+      treasuryTransfer: hasPermission(actor, "canReverseTreasuryTransfers"),
+    },
     breakdown: groups.map(g => ({ accountName: namesById.get(g.treasuryAccountId) ?? "Cuenta", method: g.method, totalCents: g._sum.amountCents ?? 0 })),
     collectionsByMethod: active && mayRead ? shiftCollectionsByMethod(collections.map(g => ({ sourceType: g.sourceType, method: g.method, amountCents: g._sum.amountCents ?? 0 }))) : null,
     treasuryAccountId: config?.treasuryAccountId ?? null,
@@ -298,6 +304,23 @@ export async function manualCashMovement(actor: Actor, deviceHash: string, input
     }
     await tx.cashOperation.create({ data: { accountId: actor.accountId, cashShiftId: shift.id, clientOperationId: input.operationId, userId: actor.id, payloadHash: hash, response: {} } })
     await audit(tx, actor, "CASH_MOVEMENT", shift.id, input)
+  })
+}
+export async function cancelPendingManualCashMovement(actor: Actor, deviceHash: string, input: { shiftId: string; operationId: string; reason: string }) {
+  if (!input.operationId?.trim() || !input.reason?.trim()) throw new CashControlError("CASH_MOVEMENT_INVALID", "Identifica el movimiento y explica la anulación", 400)
+  return transaction(actor, async tx => {
+    const shift = await ownedShift(tx, actor, deviceHash, input.shiftId)
+    const previous = await tx.cashOperation.findUnique({ where: { accountId_clientOperationId: { accountId: actor.accountId, clientOperationId: input.operationId } } })
+    if (previous) {
+      if (previous.userId !== actor.id || previous.cashShiftId !== shift.id) throw new CashControlError("CASH_OPERATION_CONFLICT", "Movimiento de otro turno")
+      // El candado del negocio serializa esto con el movimiento original: si ya se confirmó,
+      // avisamos al dispositivo; si no, el marcador impide que una respuesta tardía lo cree.
+      const cancelled = Boolean(previous.response && typeof previous.response === "object" && !Array.isArray(previous.response) && (previous.response as { cancelled?: boolean }).cancelled)
+      return { cancelled, committed: !cancelled }
+    }
+    await tx.cashOperation.create({ data: { accountId: actor.accountId, cashShiftId: shift.id, clientOperationId: input.operationId, userId: actor.id, payloadHash: cashHash(JSON.stringify({ kind: "manual-discard", reason: input.reason.trim() })), response: { cancelled: true } } })
+    await audit(tx, actor, "CASH_MOVEMENT_DISCARDED", shift.id, { operationId: input.operationId, reason: input.reason.trim() })
+    return { cancelled: true, committed: false }
   })
 }
 export async function correctClosedCashDocument(actor: Actor, deviceHash: string, input: { sourceType: string; sourceId: string; moneyMoved: boolean; reason: string }) {

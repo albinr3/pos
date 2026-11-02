@@ -234,9 +234,16 @@ export default async function InvoicePrintPage({
       </table>
 
       <div className="mt-6 grid grid-cols-2 gap-6">
-        <div className="text-sm text-neutral-700">
+        <div className="min-w-0 text-sm text-neutral-700">
           <div className="font-semibold">Nota</div>
           <div>{sale.salePricesIncludeItbis ? "Precios con ITBIS incluido." : "Precios con ITBIS no incluido."}</div>
+          {sale.notes?.trim() && (
+            <div className="mt-3 min-w-0" data-sale-notes>
+              <div className="font-semibold">Nota de la venta</div>
+              {/* break-words conserva el ajuste de palabras también en el PDF generado por html2canvas. */}
+              <div className="whitespace-pre-wrap break-words">{sale.notes}</div>
+            </div>
+          )}
           <div className="mt-4 font-semibold">Gracias por su compra</div>
         </div>
 

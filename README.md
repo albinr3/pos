@@ -149,6 +149,7 @@ Notas de autorización:
   - Se evita la pérdida artificial cuando existían ventas a crédito con costo de ventas reconocido.
 
 ### API móvil (autenticación por request)
+- Notas opcionales al crear ventas e imprimir facturas: [contrato para web y móvil](docs/api-notas-venta.md).
 - Se corrigió el uso mixto de autenticación en endpoints API que usaban `getCurrentUserFromRequest(...)` pero luego llamaban actions que internamente volvían a usar `getCurrentUser()` (cookies web), causando `No autenticado` en móvil.
 - Patrón aplicado:
   - La route API valida usuario con `getCurrentUserFromRequest(request)`.

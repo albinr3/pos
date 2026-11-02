@@ -201,6 +201,7 @@ export async function GET(
       subtotalCents: sale.subtotalCents,
       itbisCents: sale.itbisCents,
       shippingCents: sale.shippingCents,
+      notes: sale.notes ?? null,
       discountSource: sale.discountSource,
       discountPercentBp: sale.discountPercentBp,
       discountSubtotalCents: sale.discountSubtotalCents,

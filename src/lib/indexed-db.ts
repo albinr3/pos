@@ -210,6 +210,7 @@ export async function savePendingSale(sale: {
     }>
   }>
   shippingCents?: number
+  notes?: string | null
   applyLegalTip?: boolean
   discountMode?: "AUTO" | "MANUAL"
   manualDiscountPercentBp?: number

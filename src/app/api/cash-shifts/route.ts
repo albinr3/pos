@@ -2,9 +2,9 @@ import { randomUUID } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
-import { cashHash } from "@/lib/cash-context"
+import { cashDeviceHashFromRequest, cashHash } from "@/lib/cash-context"
 import { cashErrorResponse } from "@/lib/cash-http"
-import { activateCashControl, cancelCashClose, correctClosedCashDocument, disableCashControl, finishCashClose, getCashContext, getCashShiftReport, listCashHistory, manualCashMovement, openCashShift, prepareCashClose, previewCashActivation } from "@/lib/cash-shifts"
+import { activateCashControl, cancelCashClose, cancelPendingManualCashMovement, correctClosedCashDocument, disableCashControl, finishCashClose, getCashContext, getCashReceipt, getCashShiftReport, listCashHistory, manualCashMovement, openCashShift, prepareCashClose, previewCashActivation } from "@/lib/cash-shifts"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -15,12 +15,21 @@ export async function GET(request: NextRequest) {
   try {
     const actor = await getCurrentUserFromRequest(request)
     if (!actor) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
-    const token = request.cookies.get("movopos-cash-device")?.value ?? randomUUID()
     const action = request.nextUrl.searchParams.get("view")
-    const data = action === "preview" ? await previewCashActivation(actor) : action === "history" ? await listCashHistory(actor, request.nextUrl.searchParams.get("before") ?? undefined, Number(request.nextUrl.searchParams.get("limit")) || undefined) : action === "report" ? await getCashShiftReport(actor, cashHash(token), request.nextUrl.searchParams.get("shiftId") ?? "") : await getCashContext(actor, cashHash(token))
+    if (action === "device") {
+      // Solo el cliente móvil autenticado recibe el secreto una vez; la web sigue usando cookie httpOnly.
+      if (!request.headers.has("x-subuser-token") || !(request.headers.has("x-clerk-authorization") || request.headers.has("authorization"))) return NextResponse.json({ error: "Cliente móvil no autenticado" }, { status: 403 })
+      return NextResponse.json({ token: randomUUID(), deviceId: randomUUID() }, { headers: { "Cache-Control": "no-store" } })
+    }
+    const mobile = request.headers.has("x-subuser-token") && (request.headers.has("x-clerk-authorization") || request.headers.has("authorization"))
+    const token = request.cookies.get("movopos-cash-device")?.value ?? randomUUID()
+    // Un móvil sin su secreto no puede hacerse pasar por el dispositivo de una cookie web.
+    const deviceHash = mobile ? cashDeviceHashFromRequest(request) : cashHash(token)
+    const data = action === "preview" ? await previewCashActivation(actor) : action === "history" ? await listCashHistory(actor, request.nextUrl.searchParams.get("before") ?? undefined, Number(request.nextUrl.searchParams.get("limit")) || undefined) : action === "report" ? await getCashShiftReport(actor, deviceHash, request.nextUrl.searchParams.get("shiftId") ?? "") : action === "receipt" ? await getCashReceipt(actor, request.nextUrl.searchParams.get("shiftId") ?? "") : await getCashContext(actor, deviceHash)
+    if (action === "receipt" && !data) return NextResponse.json({ error: "Comprobante no encontrado" }, { status: 404 })
     const response = NextResponse.json(data)
     response.headers.set("Cache-Control", "no-store")
-    if (!request.cookies.has("movopos-cash-device")) response.cookies.set("movopos-cash-device", token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 365 })
+    if (!mobile && !request.cookies.has("movopos-cash-device")) response.cookies.set("movopos-cash-device", token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 365 })
     return response
   } catch (error) { return failed(error) }
 }
@@ -31,8 +40,7 @@ export async function POST(request: NextRequest) {
     if (origin && origin !== request.nextUrl.origin) return NextResponse.json({ error: "Origen no permitido" }, { status: 403 })
     const actor = await getCurrentUserFromRequest(request)
     if (!actor) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
-    const token = request.cookies.get("movopos-cash-device")?.value
-    const deviceHash = token ? cashHash(token) : ""
+    const deviceHash = cashDeviceHashFromRequest(request)
     const body = await request.json()
     let data: unknown = null
     switch (body.action) {
@@ -44,6 +52,7 @@ export async function POST(request: NextRequest) {
       case "close": data = await finishCashClose(actor, deviceHash, body.shiftId, { ...body, emergency: false }); break
       case "emergency": data = await finishCashClose(actor, deviceHash, body.shiftId, { ...body, emergency: true }); break
       case "movement": data = await manualCashMovement(actor, deviceHash, body); break
+      case "cancelMovement": data = await cancelPendingManualCashMovement(actor, deviceHash, body); break
       case "correct": data = await correctClosedCashDocument(actor, deviceHash, body); break
       default: return NextResponse.json({ error: "Acción inválida" }, { status: 400 })
     }

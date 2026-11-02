@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks"
 import { createHash } from "node:crypto"
 import type { CashControl, CashShift, Prisma, User } from "@prisma/client"
+import type { NextRequest } from "next/server"
 
 type CashOperationIdentity = { clientOperationId: string; accountId: string; userId: string }
 export type CashOperationInput = CashOperationIdentity & ({ cashShiftId: string; clientSequence: number } | { cashShiftId: null; clientSequence: null })
@@ -18,6 +19,12 @@ export type CashRequestScope = {
 }
 export const cashRequest = new AsyncLocalStorage<CashRequestScope>()
 export const cashHash = (value: string) => createHash("sha256").update(value).digest("hex")
+export function cashDeviceHashFromRequest(request: NextRequest): string {
+  // El token móvil solo se acepta junto a las dos credenciales verificadas por la API.
+  const mobile = request.headers.has("x-subuser-token") && (request.headers.has("x-clerk-authorization") || request.headers.has("authorization"))
+  const token = mobile ? request.headers.get("x-cash-device-token") : request.cookies.get("movopos-cash-device")?.value
+  return token ? cashHash(token) : ""
+}
 export class CashControlError extends Error {
   constructor(public code: string, message: string, public status = 409) {
     super(message)
@@ -38,6 +45,7 @@ export async function resolveCashIdentity(): Promise<{ actor: CashActor; deviceH
   const requestHeaders = await headers()
   const actor = await getCurrentUserFromRequest(new NextRequest("http://localhost/api/cash-shifts", { headers: requestHeaders }))
   if (!actor) throw new CashControlError("AUTH_REQUIRED", "Inicia sesión para operar la caja", 401)
-  const token = (await cookies()).get("movopos-cash-device")?.value
+  const mobile = requestHeaders.has("x-subuser-token") && (requestHeaders.has("x-clerk-authorization") || requestHeaders.has("authorization"))
+  const token = mobile ? requestHeaders.get("x-cash-device-token") : (await cookies()).get("movopos-cash-device")?.value
   return { actor, deviceHash: token ? cashHash(token) : "" }
 }

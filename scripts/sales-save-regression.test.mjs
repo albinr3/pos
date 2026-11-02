@@ -28,7 +28,7 @@ function fixture({ customer = named, stock = 3 } = {}) {
       assert.equal(where.accountId, "A")
       return customers.find(c => c.id === where.id && c.accountId === where.accountId) ?? null
     } },
-    sale: { create: async ({ data }) => { state.sales.push(data); return { id: "sale", ...data } } },
+    sale: { create: async ({ data, select }) => { assert.equal(select.notes, true); state.sales.push(data); return { id: "sale", ...data } } },
     accountReceivable: { create: async ({ data }) => { state.receivables.push(data); return data } },
   }
   const mocks = {
@@ -48,7 +48,7 @@ function fixture({ customer = named, stock = 3 } = {}) {
   function load(name) {
     if (name in mocks) return mocks[name]
     if (cache.has(name)) return cache.get(name)
-    assert.ok(["@/lib/pos-stock", "@/lib/money", "@/lib/transactions", "@/app/(app)/sales/actions"].includes(name), `Importación sin simular: ${name}`)
+    assert.ok(["@/lib/pos-stock", "@/lib/money", "@/lib/transactions", "@/lib/sale-notes", "@/app/(app)/sales/actions"].includes(name), `Importación sin simular: ${name}`)
     const source = fs.readFileSync(new URL(`../src/${name.slice(2)}.ts`, import.meta.url), "utf8")
     const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
     const exports = {}
@@ -111,4 +111,37 @@ test("El guardado final sigue rechazando stock insuficiente aunque el preflight 
   await assert.rejects(f.save(), /existencia|disponible/i)
   assert.equal(f.state.sales.length, 0)
   assert.equal(f.state.decrements.length, 0)
+})
+
+test("Ventas al contado y a crédito guardan la nota normalizada sin cambiar los importes", async () => {
+  for (const type of ["CONTADO", "CREDITO"]) {
+    const f = fixture()
+    const sale = await f.save({ type, notes: "  Entregar mañana.\nLlamar a José.  " })
+    assert.equal(f.state.sales[0].notes, "Entregar mañana.\nLlamar a José.")
+    assert.equal(sale.notes, f.state.sales[0].notes)
+    assert.equal(sale.totalCents, 900)
+    assert.equal(f.state.receivables.length, type === "CREDITO" ? 1 : 0)
+  }
+})
+
+test("Clientes anteriores, notas vacías y null guardan la venta sin nota", async () => {
+  for (const notes of [undefined, null, "", " \n\t "]) {
+    const f = fixture()
+    const sale = await f.save({ notes })
+    assert.equal(sale.notes, null)
+    assert.equal(f.state.sales.length, 1)
+  }
+  const f = fixture()
+  assert.equal((await f.save({ notes: "á".repeat(1000) })).notes.length, 1000)
+})
+
+test("Notas inválidas se rechazan antes de crear la factura, descontar stock o auditar", async () => {
+  for (const notes of [1, false, {}, [], "x".repeat(1001)]) {
+    const f = fixture()
+    await assert.rejects(f.save({ notes }), /nota de la venta/)
+    assert.equal(f.state.sales.length, 0)
+    assert.equal(f.state.receivables.length, 0)
+    assert.equal(f.state.decrements.length, 0)
+    assert.equal(f.state.audits.length, 0)
+  }
 })

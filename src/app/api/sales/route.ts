@@ -6,6 +6,7 @@ import { createSale } from "@/app/(app)/sales/actions"
 import { SaleType, PaymentMethod } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { isGenericCustomerQuery } from "@/lib/customer-display"
+import { SaleNotesValidationError } from "@/lib/sale-notes"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -34,6 +35,7 @@ type SalePaymentSplitBody = {
 
 type SaleCreateBody = {
   items?: SaleBodyItem[]
+  notes?: string | null
   shippingCents?: number
   shipping?: number
   type?: string
@@ -219,6 +221,7 @@ export async function GET(request: NextRequest) {
         subtotalCents: sale.subtotalCents,
         itbisCents: sale.itbisCents,
         shippingCents: sale.shippingCents,
+        notes: sale.notes ?? null,
         discountSource: sale.discountSource,
         discountPercentBp: sale.discountPercentBp,
         discountSubtotalCents: sale.discountSubtotalCents,
@@ -345,6 +348,7 @@ export async function POST(request: NextRequest) {
       paymentSplits: paymentSplits && paymentSplits.length > 0 ? paymentSplits : undefined,
       items,
       shippingCents,
+      notes: body.notes,
       applyLegalTip,
       discountMode,
       manualDiscountPercentBp,
@@ -358,6 +362,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       id: sale.id,
       invoiceCode: sale.invoiceCode,
+      notes: sale.notes ?? null,
       type: sale.type,
       soldAt: sale.soldAt.toISOString(),
       createdAt: sale.soldAt.toISOString(),
@@ -376,6 +381,9 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof SaleNotesValidationError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     console.error("Error en POST /api/sales:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al crear venta") },

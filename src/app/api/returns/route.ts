@@ -3,6 +3,7 @@ import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { createReturn, listReturns } from "@/app/(app)/returns/actions"
+import { PaymentMethod } from "@prisma/client"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -111,6 +112,12 @@ async function postCashDocument(request: NextRequest) {
     const body = await request.json()
     const saleId = String(body.saleId || "").trim()
     const notes = typeof body.notes === "string" ? body.notes : null
+    // Un campo vacío equivale a omitir la preferencia; nunca enviar "" como enum Prisma.
+    const refundMethod = String(body.refundMethod ?? "").trim().toUpperCase() || null
+    const refundTreasuryAccountId = String(body.refundTreasuryAccountId ?? "").trim() || null
+    if (refundMethod && !(new Set<string>([PaymentMethod.EFECTIVO, PaymentMethod.TRANSFERENCIA, PaymentMethod.TARJETA, PaymentMethod.OTRO])).has(refundMethod)) {
+      return NextResponse.json({ error: "Método de devolución inválido" }, { status: 400 })
+    }
 
     const items = (body.items || []).map((item: any) => ({
       saleItemId: String(item.saleItemId || "").trim(),
@@ -134,6 +141,8 @@ async function postCashDocument(request: NextRequest) {
         saleId,
         items,
         notes,
+        refundMethod: refundMethod as PaymentMethod | null,
+        refundTreasuryAccountId,
       },
       user
     )

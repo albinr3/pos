@@ -18,7 +18,8 @@ async function browserSuite() {
   const button = name => [...document.querySelectorAll("button")].find(element => element.textContent.trim() === name)
   async function input(element, value) {
     assert(element, "Falta el campo")
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(element, value)
+    const prototype = element.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype
+    Object.getOwnPropertyDescriptor(prototype, "value").set.call(element, value)
     element.dispatchEvent(new Event("input", { bubbles: true }))
     await sleep(20)
   }
@@ -28,7 +29,7 @@ async function browserSuite() {
     online = true
     localStorage.clear(); sessionStorage.clear()
     const accountId = `pos-test-${++serial}`
-    const f = window.__fixture = { accountId, products, toasts: [], preflights: 0, saves: 0, printed: 0, transactions: new Map(), user: { id: accountId, accountId, username: "ana", name: "Ana", isOwner: owner, canSellWithoutStock: permitted } }
+    const f = window.__fixture = { accountId, products, toasts: [], preflights: 0, saves: 0, savedNotes: [], printed: 0, transactions: new Map(), user: { id: accountId, accountId, username: "ana", name: "Ana", isOwner: owner, canSellWithoutStock: permitted } }
     f.snapshot = () => f.products.map(product => ({ ...product, accountId, stockSnapshotAt: Date.now(), recipeItems: product.recipeItems.map(item => ({ ...item, ingredientStock: f.products.find(p => p.id === item.ingredientId)?.stock ?? 0, ingredientIsActive: true })) }))
     f.check = items => {
       f.preflights++
@@ -39,12 +40,13 @@ async function browserSuite() {
       const issue = owner || permitted ? null : consumed.issue ?? validateStockConsumptions(consumed.consumptions, inventory)
       return { ok: !issue, issue, inventory: [...inventory.values()], consumptions: consumed.consumptions, accountId, userId: f.user.id, allowNegativeStock: owner || permitted, canSellWithoutStock: permitted, isOwner: owner }
     }
-    f.save = items => {
+    f.save = (items, notes) => {
       const result = f.check(items)
       if (!result.ok) throw new Error(result.issue.message)
       for (const consumption of result.consumptions) f.products.find(product => product.id === consumption.ingredientId).stock -= consumption.qty
       f.saves++
-      return { id: `sale-${f.saves}`, invoiceCode: `A-${f.saves}`, stockDecrements: result.consumptions }
+      f.savedNotes.push(notes ?? null)
+      return { id: `sale-${f.saves}`, invoiceCode: `A-${f.saves}`, notes: notes ?? null, stockDecrements: result.consumptions }
     }
     const context = { enabled: cashEnabled, accountId, userId: f.user.id, canOperate: true, treasuryAccountId: "cash", activeShift: { id: accountId, isMine: true, isDevice: true, status: "OPEN", lastSequence: 0 } }
     window.fetch = async (url, options = {}) => {
@@ -55,7 +57,8 @@ async function browserSuite() {
       const body = JSON.parse(options.body)
       try {
         const id = body.cashOperation.clientOperationId
-        if (!f.transactions.has(id)) { f.transactions.set(id, f.save(body.payload.items)); context.activeShift.lastSequence++ }
+        if (!f.transactions.has(id)) { f.transactions.set(id, f.save(body.payload.items, body.payload.notes)); context.activeShift.lastSequence++ }
+        if (f.dropNextResponse) { f.dropNextResponse = false; return Promise.reject(new TypeError("Failed to fetch")) }
         return Response.json({ result: f.transactions.get(id) })
       } catch (error) { return Response.json({ error: error.message }, { status: 400 }) }
     }
@@ -144,20 +147,27 @@ async function browserSuite() {
   })
   await test("Stock cambiado al confirmar efectivo no crea pendientes ni imprime", async () => {
     const f = await setup([basic("pan", 2)])
-    card("pan").click(); await sleep(20); target("sales-save-button").click()
+    card("pan").click(); await sleep(20)
+    await input(document.getElementById("sale-notes"), "Conservar si falla")
+    target("sales-save-button").click()
     await until(() => target("sales-change-amount"), "No abrió cobro")
     await input(target("sales-change-amount").querySelector("input"), "100")
     f.products[0].stock = 0
     target("sales-change-confirm").click(); await sleep(150)
     assert(f.saves === 0 && f.printed === 0 && qty("pan"), "Debe conservar carrito sin factura")
+    assert(document.getElementById("sale-notes").value === "Conservar si falla", "Un error no debe borrar la nota")
     assert((await cashPending()).filter(p => p.cashOperation.accountId === f.accountId).length === 0, "El preflight debe preceder al outbox")
   })
   await test("Pendientes offline reservan stock y la sincronización reconcilia sin duplicar", async () => {
     const f = await setup([basic("pan", 1)])
     online = false; window.dispatchEvent(new Event("offline")); await sleep(100)
-    card("pan").click(); await sleep(20); await checkout()
+    card("pan").click(); await sleep(20)
+    await input(document.getElementById("sale-notes"), "Entregar mañana.\nLlamar a José.")
+    await checkout()
     const pending = (await cashPending()).filter(p => p.cashOperation.accountId === f.accountId)
     assert(pending.length === 1 && pending[0].stockConsumptions[0].qty === 1, "Debe persistir la reserva con la venta")
+    assert(pending[0].payload.notes === "Entregar mañana.\nLlamar a José.", "El outbox debe conservar la nota completa")
+    assert(document.getElementById("sale-notes").value === "", "La nota no debe pasar a otra venta")
     assert(card("pan").disabled && !qty("pan"), "Una segunda venta no puede reutilizar la existencia")
     rootView.unmount(); await sleep(20)
     rootView = createRoot(document.getElementById("test-root"))
@@ -166,12 +176,95 @@ async function browserSuite() {
     online = true
     await syncCashOutbox(); await syncCacheData({ force: true }); await sleep(80)
     assert(f.saves === 1 && (await cashPending()).filter(p => p.cashOperation.accountId === f.accountId).length === 0, "Debe confirmar una sola factura")
+    assert(f.savedNotes[0] === "Entregar mañana.\nLlamar a José.", "La sincronización debe entregar la nota original")
     assert(card("pan").disabled && f.products[0].stock === 0, "No debe liberar stock al confirmar")
   })
   await test("El flujo sin control de caja también valida y actualiza existencias", async () => {
     const f = await setup([basic("pan", 1)], { cashEnabled: false })
     card("pan").click(); await sleep(20); await checkout()
     assert(f.saves === 1 && f.printed === 1 && card("pan").disabled, "La venta normal debe agotar el producto")
+  })
+  await test("Nota debajo de Flete se restaura con el carrito y se limpia al facturar", async () => {
+    for (const cashEnabled of [true, false]) {
+      const f = await setup([basic("pan", 2)], { cashEnabled })
+      card("pan").click(); await sleep(20)
+      const field = document.getElementById("sale-notes")
+      assert(field.maxLength === 1000 && field.tagName === "TEXTAREA", "Debe permitir texto multilínea con límite")
+      const labels = [...document.querySelectorAll("label")].map(label => label.textContent)
+      assert(labels.indexOf("Nota (opcional)") === labels.indexOf("Flete (opcional)") + 1, "La nota debe ir debajo de Flete")
+      await input(field, "  Entregar mañana.\nLlamar a José.  ")
+      assert(JSON.parse(localStorage.getItem("posCartState")).notesInput === field.value, "Editar la nota debe guardar el carrito")
+      rootView.unmount(); await sleep(20)
+      rootView = createRoot(document.getElementById("test-root"))
+      rootView.render(React.createElement(PosClient, { defaultViewMode: "grid" }))
+      await until(() => document.getElementById("sale-notes")?.value.includes("José"), "Debe restaurar la nota")
+      await checkout()
+      assert(f.saves === 1 && f.savedNotes[0] === "Entregar mañana.\nLlamar a José.", "Debe enviar la nota normalizada")
+      assert(document.getElementById("sale-notes").value === "" && !localStorage.getItem("posCartState"), "Debe limpiar nota y carrito tras guardar")
+    }
+  })
+  await test("Venta offline sin control de caja conserva su nota al sincronizar", async () => {
+    const f = await setup([basic("pan", 2)], { cashEnabled: false })
+    online = false; window.dispatchEvent(new Event("offline")); await sleep(100)
+    card("pan").click(); await sleep(20)
+    await input(document.getElementById("sale-notes"), "Retirar por el almacén.")
+    await checkout()
+    const pending = (await getPendingSales()).filter(sale => sale.accountId === f.accountId)
+    assert(pending.length === 1 && pending[0].notes === "Retirar por el almacén.", "Debe persistir la nota en la cola sin turnos")
+    assert(document.getElementById("sale-notes").value === "", "Debe limpiar la nota tras guardarla offline")
+    online = true
+    await syncPendingData()
+    assert(f.saves === 1 && f.savedNotes[0] === "Retirar por el almacén.", "La sincronización legacy debe enviar la nota")
+    assert(!(await getPendingSales()).some(sale => sale.accountId === f.accountId), "Debe retirar la venta confirmada de la cola")
+  })
+  await test("Guardar al navegar conserva la nota y descartar o vaciar canasta la limpia", async () => {
+    await setup([basic("pan", 2)])
+    card("pan").click(); await sleep(20)
+    await input(document.getElementById("sale-notes"), "Pedido para José")
+    const link = document.createElement("a")
+    link.href = "/reports"; link.textContent = "Salir del POS"; document.body.append(link)
+    try {
+      link.click(); await until(() => button("Sí, guardar"), "No abrió el diálogo de navegación")
+      button("Sí, guardar").click(); await sleep(30)
+      assert(JSON.parse(localStorage.getItem("posCartState")).notesInput === "Pedido para José", "Navegar con guardar debe conservar la nota")
+      link.click(); await until(() => button("No, salir sin guardar"), "No abrió el diálogo para descartar")
+      button("No, salir sin guardar").click(); await sleep(30)
+      assert(document.getElementById("sale-notes").value === "" && !localStorage.getItem("posCartState"), "Descartar debe limpiar nota y carrito")
+      card("pan").click(); await sleep(20)
+      await input(document.getElementById("sale-notes"), "Otra nota")
+      button("Vaciar canasta").click(); await sleep(30)
+      assert(document.getElementById("sale-notes").value === "", "Vaciar canasta no debe dejar la nota anterior")
+    } finally { link.remove() }
+  })
+  await test("Reintentar una venta confirmada sin respuesta conserva la nota y no duplica la factura", async () => {
+    const f = await setup([basic("pan", 2)])
+    card("pan").click(); await sleep(20)
+    await input(document.getElementById("sale-notes"), "Nota del reintento.\nJosé")
+    f.dropNextResponse = true
+    await checkout()
+    const pending = (await cashPending()).filter(row => row.cashOperation.accountId === f.accountId)
+    assert(pending.length === 1 && f.saves === 1, "Debe conservar una operación por confirmar")
+    assert(pending[0].payload.notes === "Nota del reintento.\nJosé", "El reintento debe conservar la nota original")
+    await syncCashOutbox()
+    assert(f.saves === 1 && f.savedNotes[0] === "Nota del reintento.\nJosé", "Debe confirmar la misma factura con su nota")
+    assert(!(await cashPending()).some(row => row.cashOperation.accountId === f.accountId), "Debe retirar el pendiente confirmado")
+  })
+  await test("Una nota restaurada que excede el límite no se factura ni se encola", async () => {
+    const f = await setup([basic("pan", 2)])
+    card("pan").click(); await sleep(20)
+    const state = JSON.parse(localStorage.getItem("posCartState"))
+    state.notesInput = "x".repeat(1001)
+    rootView.unmount(); await sleep(20)
+    localStorage.setItem("posCartState", JSON.stringify(state))
+    rootView = createRoot(document.getElementById("test-root"))
+    rootView.render(React.createElement(PosClient, { defaultViewMode: "grid" }))
+    await until(() => document.getElementById("sale-notes")?.value.length === 1001, "No restauró el carrito")
+    target("sales-save-button").click(); await until(() => target("sales-change-amount"), "No abrió el cobro")
+    await input(target("sales-change-amount").querySelector("input"), "100")
+    target("sales-change-confirm").click(); await sleep(80)
+    assert(f.saves === 0 && f.toasts.some(toast => toast.title === "Nota inválida"), "Debe rechazar la nota sin guardar")
+    assert((await cashPending()).filter(p => p.cashOperation.accountId === f.accountId).length === 0, "No debe crear un pendiente inválido")
+    assert(document.getElementById("sale-notes").value.length === 1001, "El error debe permitir corregir la nota")
   })
   await test("Imprime y termina el cobro aunque la precarga siga pendiente, con y sin turnos", async () => {
     for (const cashEnabled of [true, false]) {
@@ -223,7 +316,8 @@ async function browserSuite() {
 }
 
 const mocks = {
-  "sales-actions": `export async function listCustomers(){return [{id:'generic',name:'Consumidor final',isGeneric:true}]} export async function listAllProductsForSale(){return window.__fixture.snapshot()} export async function searchProducts(q){return window.__fixture.snapshot().filter(p=>p.name.includes(q)||p.sku===q)} export async function findProductByBarcode(q){return window.__fixture.snapshot().find(p=>p.sku===q)} export async function checkSaleStock(items){return window.__fixture.check(items)} export async function createSale(input){return window.__fixture.save(input.items)}`,
+  "sales-actions": `export async function listCustomers(){return [{id:'generic',name:'Consumidor final',isGeneric:true}]} export async function listAllProductsForSale(){return window.__fixture.snapshot()} export async function searchProducts(q){return window.__fixture.snapshot().filter(p=>p.name.includes(q)||p.sku===q)} export async function findProductByBarcode(q){return window.__fixture.snapshot().find(p=>p.sku===q)} export async function checkSaleStock(items){return window.__fixture.check(items)} export async function createSale(input){return window.__fixture.save(input.items,input.notes)}`,
+  "payments-actions": `export async function addPayment(){} export async function addBatchPayment(){}`,
   "sync-actions": `export async function syncProductsToIndexedDB(){const f=window.__fixture;return f.syncProducts?f.syncProducts():f.snapshot()} export async function syncCustomersToIndexedDB(){return [{id:'generic',name:'Consumidor final',isGeneric:true}]} export async function syncARToIndexedDB(){return [{id:'ar'}]}`,
   "treasury-actions": `export async function listTreasuryAccounts(){return [{id:'cash',name:'Caja efectivo',type:'CAJA',bankName:null}]}`,
   "onboarding-actions": `export async function completeDemoCheckout(){}`,
@@ -235,9 +329,9 @@ const mocks = {
   "toast": `export const toast=value=>window.__fixture.toasts.push(value)`,
   "prisma": `export const SaleType={CONTADO:'CONTADO',CREDITO:'CREDITO'}; export const PaymentMethod={EFECTIVO:'EFECTIVO',TRANSFERENCIA:'TRANSFERENCIA',TARJETA:'TARJETA',DIVIDIR_PAGO:'DIVIDIR_PAGO'}; export const UnitType={UNIDAD:'UNIDAD',KG:'KG'}`,
 }
-const aliases = { "@/app/(app)/sync/actions": "sync-actions", "next/navigation": "navigation", "next/link": "link", "@/components/app/cash-shift-gate": "gate", "@/components/app/cash-shift-banner": "banner", "@/components/app/onboarding-guide": "guide", "@/hooks/use-toast": "toast", "@prisma/client": "prisma" }
+const aliases = { "@/app/(app)/sync/actions": "sync-actions", "@/app/(app)/sales/actions": "sales-actions", "@/app/(app)/ar/actions": "payments-actions", "next/navigation": "navigation", "next/link": "link", "@/components/app/cash-shift-gate": "gate", "@/components/app/cash-shift-banner": "banner", "@/components/app/onboarding-guide": "guide", "@/hooks/use-toast": "toast", "@prisma/client": "prisma" }
 const compiled = await build({
-  stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {PosClient} from './src/app/(app)/sales/pos-client'; import {getStockConsumptions,buildStockInventory,validateStockConsumptions} from './src/lib/pos-stock'; import {cashPending,syncCashOutbox,refreshCashContext} from './src/lib/cash-offline'; import {syncCacheData} from './src/lib/auto-sync'; (${browserSuite.toString()})().catch(e=>document.getElementById('result').textContent=JSON.stringify([{ok:false,error:e.stack}]));`, resolveDir: root },
+  stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {PosClient} from './src/app/(app)/sales/pos-client'; import {getStockConsumptions,buildStockInventory,validateStockConsumptions} from './src/lib/pos-stock'; import {cashPending,syncCashOutbox,refreshCashContext} from './src/lib/cash-offline'; import {syncCacheData} from './src/lib/auto-sync'; import {getPendingSales} from './src/lib/indexed-db'; import {syncPendingData} from './src/lib/sync-manager'; (${browserSuite.toString()})().catch(e=>document.getElementById('result').textContent=JSON.stringify([{ok:false,error:e.stack}]));`, resolveDir: root },
   bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
   plugins: [{ name: "stock-test-server", setup(build) {
     build.onResolve({ filter: /.*/ }, args => {
