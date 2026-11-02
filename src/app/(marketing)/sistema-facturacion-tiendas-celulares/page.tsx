@@ -310,15 +310,13 @@ export default function SistemaFacturacionTiendasCelularesPage() {
                 cuadra tu caja diaria sin errores.
               </p>
 
-              <div className="flex flex-col gap-3.5 sm:flex-row sm:items-center">
+              {/* Botones principales de llamado a la acción (Hero): tamaño h-16 para alta visibilidad y conversión */}
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center pt-2">
                 <Button
                   size="lg"
-                  className="h-13 bg-violet-600 px-8 text-base font-semibold text-white shadow-lg hover:bg-violet-700 hover:shadow-violet-600/25"
                   className="h-16 w-full sm:w-auto bg-violet-600 px-8 sm:px-10 text-lg sm:text-xl font-bold text-white shadow-2xl shadow-violet-600/40 hover:bg-violet-700 hover:scale-[1.02] active:scale-[0.98] transition-all"
                   asChild
                 >
-                  <Link href="/login">Crear cuenta gratis</Link>
                   <Link href="/login" className="flex items-center justify-center gap-2.5">
                     <span>Crear cuenta gratis</span>
                     <ArrowRight className="h-5 w-5" />
@@ -328,7 +326,6 @@ export default function SistemaFacturacionTiendasCelularesPage() {
                 <Button
                   size="lg"
                   variant="outline"
-                  className="h-13 border-slate-700 bg-slate-800/80 px-6 text-base font-medium text-white hover:bg-slate-800 hover:text-white"
                   className="h-16 w-full sm:w-auto border-2 border-slate-700 bg-slate-800/90 px-7 sm:px-9 text-base sm:text-lg font-semibold text-white hover:bg-slate-700 hover:border-slate-500 hover:text-white transition-all"
                   asChild
                 >
@@ -338,7 +335,6 @@ export default function SistemaFacturacionTiendasCelularesPage() {
                     rel="noopener noreferrer"
                     className="flex items-center justify-center gap-2.5"
                   >
-                    Hablar con un asesor
                     <MessageCircle className="h-5 w-5 text-emerald-400" />
                     <span>Hablar con un asesor</span>
                   </a>
@@ -640,30 +636,24 @@ export default function SistemaFacturacionTiendasCelularesPage() {
         </div>
       </section>
 
-      {/* CTA FINAL */}
-      <section className="py-16 sm:py-20 bg-gradient-to-br from-violet-600 via-violet-700 to-indigo-800 text-white">
-      <section className="py-20 sm:py-24 bg-gradient-to-br from-violet-600 via-violet-700 to-indigo-800 text-white mb-16 md:mb-0">
+      {/* CTA FINAL: diseño de alta conversión con botones amplios h-16 y margen inferior para no tapar contenido en móvil */}
+      <section className="py-20 sm:py-24 bg-gradient-to-br from-violet-600 via-violet-700 to-indigo-800 text-white mb-20 md:mb-0">
         <div className="container px-4 md:px-6 text-center">
           <div className="mx-auto max-w-2xl space-y-6">
-            <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl">
             <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl md:text-5xl">
               Lleva el control total de tu tienda de celulares hoy
             </h2>
-            <p className="text-lg text-violet-100 leading-relaxed">
             <p className="text-lg sm:text-xl text-violet-100 leading-relaxed">
               Empieza a facturar en minutos, organiza tus teléfonos por IMEI y cuida el dinero de tu caja.
               Sin contratos forzosos ni complicaciones técnicas.
             </p>
 
-            <div className="flex flex-col sm:flex-row justify-center gap-4 pt-2">
             <div className="flex flex-col sm:flex-row justify-center gap-4 pt-4">
               <Button
                 size="lg"
-                className="h-13 bg-white text-violet-900 font-bold hover:bg-slate-100 shadow-xl"
                 className="h-16 px-10 text-lg sm:text-xl bg-white text-violet-950 font-extrabold hover:bg-slate-100 shadow-2xl hover:scale-[1.02] active:scale-[0.98] transition-all"
                 asChild
               >
-                <Link href="/login">Crear cuenta gratis</Link>
                 <Link href="/login" className="flex items-center justify-center gap-2.5">
                   <span>Crear cuenta gratis</span>
                   <ArrowRight className="h-5 w-5 text-violet-900" />
@@ -672,7 +662,6 @@ export default function SistemaFacturacionTiendasCelularesPage() {
               <Button
                 size="lg"
                 variant="outline"
-                className="h-13 border-white/40 bg-transparent text-white font-semibold hover:bg-white/10"
                 className="h-16 px-9 text-base sm:text-lg border-2 border-white/60 bg-white/10 text-white font-bold hover:bg-white/20 backdrop-blur-sm transition-all"
                 asChild
               >
@@ -682,7 +671,6 @@ export default function SistemaFacturacionTiendasCelularesPage() {
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2.5"
                 >
-                  Consultar por WhatsApp
                   <MessageCircle className="h-5 w-5 text-emerald-300" />
                   <span>Consultar por WhatsApp</span>
                 </a>
