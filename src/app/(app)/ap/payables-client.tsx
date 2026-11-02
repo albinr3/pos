@@ -1,5 +1,6 @@
 "use client"
 import Link from "next/link"
+import { CheckCircle2 } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,6 +28,7 @@ export function AccountsPayableClient({ canPay, canCancel, canEdit, canReport = 
   const [skip, setSkip] = useState(0), [filters, setFilters] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false)
   const [options, setOptions] = useState<Options>({ accounts: [], methods: [] }), [method, setMethod] = useState("EFECTIVO"), [account, setAccount] = useState("")
   const [amount, setAmount] = useState(""), [note, setNote] = useState(""), [dueDate, setDueDate] = useState(""), [notes, setNotes] = useState("")
+  const [paymentRegistered, setPaymentRegistered] = useState<string | null>(null)
   const operation = useRef({ signature: "", id: "" })
   const listVersion = useRef(0)
   const selection = useRef({ id: null as string | null, version: 0 })
@@ -37,10 +39,11 @@ export function AccountsPayableClient({ canPay, canCancel, canEdit, canReport = 
   // Respetar el ID de la caja controlada, no solo el tipo CAJA ni el orden alfabético.
   const accounts = filterTreasuryAccountsByPaymentMethod(options.accounts, method as PaymentMethod).filter(a => method === "EFECTIVO" || a.type === "BANCO")
   const selectedAccountId = accounts.some(a => a.id === account) ? account : accounts[0]?.id ?? ""
-  async function open(id: string) { const version = ++selection.current.version; selection.current.id = id; try { const d = await json<Detail>(`/api/accounts-payable/${id}`); if (selection.current.version !== version || selection.current.id !== id) return; setDetail(d); setAmount(""); setNote(""); setDueDate(d.dueDate); setNotes(d.purchase.notes ?? ""); setError("") } catch (e) { if (selection.current.version === version) setError((e as Error).message) } }
+  async function open(id: string) { if (selection.current.id !== id) setPaymentRegistered(null); const version = ++selection.current.version; selection.current.id = id; try { const d = await json<Detail>(`/api/accounts-payable/${id}`); if (selection.current.version !== version || selection.current.id !== id) return; setDetail(d); setAmount(""); setNote(""); setDueDate(d.dueDate); setNotes(d.purchase.notes ?? ""); setError("") } catch (e) { if (selection.current.version === version) setError((e as Error).message) } }
   async function act(run: () => Promise<unknown>) { setBusy(true); setError(""); try { await run(); await load(); if (detail && selection.current.id === detail.id) await open(detail.id) } catch (e) { setError((e as Error).message) } finally { setBusy(false) } }
   async function pay() {
     if (!detail) return
+    setPaymentRegistered(null)
     if (!navigator.onLine) throw new Error("Conéctate para registrar el pago")
     const payload = { apId: detail.id, amountCents: Math.round(Number(amount) * 100), method, treasuryAccountId: selectedAccountId, note }
     if (!payload.amountCents || payload.amountCents > detail.balanceCents) throw new Error("Introduce un pago mayor que cero y menor o igual al saldo")
@@ -51,9 +54,13 @@ export function AccountsPayableClient({ canPay, canCancel, canEdit, canReport = 
     if (controlled?.pending) { selection.current = { id: null, version: selection.current.version + 1 }; setDetail(null); throw new Error("Pago pendiente de confirmación. Revísalo en Cuadre diario antes de volver a registrar otro pago.") }
     if (!controlled) await json("/api/supplier-payments", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) })
     operation.current = { signature: "", id: "" }
+    // Solo confirmar el pago después de recibir éxito; uno pendiente aún no está aplicado.
+    setPaymentRegistered(detail.id)
   }
+  const paymentConfirmation = <div role="status" className="flex items-center gap-3 rounded-md border border-green-300 bg-green-50 p-4 text-green-800 motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 dark:border-green-800 dark:bg-green-950 dark:text-green-200"><CheckCircle2 className="h-6 w-6 shrink-0 motion-safe:animate-in motion-safe:zoom-in-50 motion-safe:duration-500" aria-hidden="true" /><span className="font-semibold">Pago registrado</span></div>
   return <div className="grid gap-5">
     {error && <p role="alert" className="rounded-md border border-destructive p-3 text-sm text-destructive">{error}</p>}
+    {paymentRegistered && !detail && paymentConfirmation}
     {data && <div className="grid gap-3 sm:grid-cols-3">{[["Pendiente actual", data.summary.balanceCents], ["Vencido actual", data.summary.overdueCents], ["Total original", data.summary.totalCents]].map(([label, value]) => <Card key={label}><CardContent className="pt-5"><p className="text-sm text-muted-foreground">{label}</p><p className="text-2xl font-semibold">{formatRD(Number(value))}</p></CardContent></Card>)}</div>}
     <form className="flex flex-wrap items-end gap-3" onSubmit={e => { e.preventDefault(); setSkip(0); setFilters(new URLSearchParams({ query, supplierId, status, ...(overdue ? { overdue: "true" } : {}) }).toString()) }}>
       <div><Label htmlFor="ap-search">Proveedor o compra</Label><Input id="ap-search" value={query} onChange={e => setQuery(e.target.value)} /></div>
@@ -65,8 +72,9 @@ export function AccountsPayableClient({ canPay, canCancel, canEdit, canReport = 
       <div className="overflow-x-auto rounded-lg border"><table className="w-full text-sm"><thead className="bg-muted"><tr>{["Proveedor", "Compra", "Vencimiento", "Total", "Abonado", "Pendiente", "Estado", ""].map((h, i) => <th className="p-3 text-left" key={i}>{h}</th>)}</tr></thead><tbody>{data.data.map(ap => <tr className="border-t" key={ap.id}><td className="p-3">{ap.purchase.supplierName || ap.supplier.name}{!ap.supplier.isActive && <span className="block text-xs text-muted-foreground">Inactivo</span>}</td><td className="p-3"><Link href={`/receipts/purchase/${ap.purchaseId}`} target="_blank" className="underline">{ap.purchaseId.slice(-8)}</Link></td><td className="p-3">{ap.dueDate}{ap.overdue && <span className="block text-xs text-destructive">{ap.overdueDays} días de atraso</span>}</td><td className="p-3">{formatRD(ap.totalCents)}</td><td className="p-3">{formatRD(ap.totalCents - ap.balanceCents)}</td><td className="p-3 font-semibold">{formatRD(ap.balanceCents)}</td><td className="p-3">{ap.status}</td><td className="p-3"><Button variant="outline" onClick={() => void open(ap.id)}>Ver cuenta</Button></td></tr>)}{data.data.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-muted-foreground">No hay cuentas por pagar para estos filtros.</td></tr>}</tbody></table></div>
       <div className="flex items-center justify-end gap-3 text-sm"><span>{data.summary.count} cuentas</span><Button variant="outline" disabled={skip === 0} onClick={() => setSkip(Math.max(0, skip - 50))}>Anterior</Button><Button variant="outline" disabled={data.nextSkip === null} onClick={() => setSkip(data.nextSkip!)}>Siguiente</Button></div>
     </>}
-    <Dialog open={!!detail} onOpenChange={value => { if (!value) { selection.current = { id: null, version: selection.current.version + 1 }; setDetail(null) } }}><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>Cuenta de {detail?.purchase.supplierName || detail?.supplier.name}</DialogTitle></DialogHeader>{detail && <div className="grid gap-5">
+    <Dialog open={!!detail} onOpenChange={value => { if (!value) { selection.current = { id: null, version: selection.current.version + 1 }; setDetail(null); setPaymentRegistered(null) } }}><DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto"><DialogHeader><DialogTitle>Cuenta de {detail?.purchase.supplierName || detail?.supplier.name}</DialogTitle></DialogHeader>{detail && <div className="grid gap-5">
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+      {paymentRegistered === detail.id && paymentConfirmation}
       <p>Total {formatRD(detail.totalCents)} · Abonado {formatRD(detail.paidCents)} · <strong>Pendiente {formatRD(detail.balanceCents)}</strong>{detail.purchase.cancelledAt && " · Compra anulada"}</p>
       {canEdit && !detail.purchase.cancelledAt && <form className="grid gap-2 rounded border p-3" onSubmit={e => { e.preventDefault(); void act(() => json(`/api/purchases/${detail.purchaseId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dueDate, notes }) })) }}><Label>Vencimiento</Label><Input type="date" required value={dueDate} onChange={e => setDueDate(e.target.value)} /><Label>Notas de la compra</Label><Input value={notes} onChange={e => setNotes(e.target.value)} /><Button variant="outline" disabled={busy}>Guardar notas y vencimiento</Button></form>}
       {canPay && detail.balanceCents > 0 && !detail.purchase.cancelledAt && <form className="grid gap-3 rounded border p-4" onSubmit={e => { e.preventDefault(); void act(pay) }}><h3 className="font-medium">Registrar pago</h3><div className="flex gap-2"><Input aria-label="Monto del pago" type="number" min="0.01" max={detail.balanceCents / 100} step="0.01" required value={amount} onChange={e => setAmount(e.target.value)} placeholder="Monto RD$" /><Button type="button" variant="outline" onClick={() => setAmount(String(detail.balanceCents / 100))}>Liquidar</Button></div><select aria-label="Método de pago" className="h-10 rounded border bg-background px-3" value={method} onChange={e => { setMethod(e.target.value); setAccount("") }}>{options.methods.map(m => <option key={m}>{m}</option>)}</select><select aria-label="Cuenta de pago" className="h-10 rounded border bg-background px-3" value={selectedAccountId} onChange={e => setAccount(e.target.value)}>{accounts.length === 0 && <option value="">No hay cuentas disponibles</option>}{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select><Input aria-label="Nota del pago" value={note} onChange={e => setNote(e.target.value)} placeholder="Nota (opcional)" /><Button disabled={busy || accounts.length === 0}>{busy ? "Procesando…" : "Registrar pago"}</Button></form>}

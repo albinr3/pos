@@ -4,7 +4,7 @@ import { PurchaseCreditFields, purchaseCreditError, proposePurchaseDueDate, type
 import { submitControlledDocument } from "@/lib/cash-offline"
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
-import { Search, ShoppingBag, Trash2 } from "lucide-react"
+import { Plus, Search, ShoppingBag, Trash2 } from "lucide-react"
 import { PaymentMethod } from "@prisma/client"
 import { useRouter } from "next/navigation"
 
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
@@ -50,6 +51,8 @@ type CartItem = {
 }
 
 type Supplier = Awaited<ReturnType<typeof getAllSuppliers>>[number] & { chargesItbis?: boolean }
+const NO_SUPPLIER_OPTION = "__no_supplier__"
+const CREATE_SUPPLIER_OPTION = "__create_supplier__"
 type TreasuryAccountOption = Awaited<ReturnType<typeof listTreasuryAccounts>>[number]
 
 function toInt(v: string) {
@@ -419,20 +422,29 @@ export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRe
           <CardContent className="grid gap-4">
             <div className="grid gap-2">
               <Label>Proveedor (opcional)</Label>
-              <select
-                className="h-10 rounded-md border bg-background px-3 text-sm"
-                value={supplierId}
-                onChange={(e) => {
-                  applySupplierSelection(e.target.value)
+              <Select
+                value={supplierId || NO_SUPPLIER_OPTION}
+                onValueChange={(value) => {
+                  if (value === CREATE_SUPPLIER_OPTION) {
+                    router.push("/suppliers?create=1")
+                    return
+                  }
+                  applySupplierSelection(value === NO_SUPPLIER_OPTION ? "" : value)
                 }}
               >
-                <option value="">Sin proveedor</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} {s.discountPercentBp > 0 ? `(${(s.discountPercentBp / 100).toFixed(2)}% desc.)` : ""}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger><SelectValue placeholder="Sin proveedor" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_SUPPLIER_OPTION}>Sin proveedor</SelectItem>
+                  {suppliers.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name} {s.discountPercentBp > 0 ? `(${(s.discountPercentBp / 100).toFixed(2)}% desc.)` : ""}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={CREATE_SUPPLIER_OPTION}>
+                    <span className="flex items-center gap-2"><Plus className="h-4 w-4" /> Crear nuevo proveedor</span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
               {supplierId && (
                 <div className="text-xs text-muted-foreground">
                   {(() => {

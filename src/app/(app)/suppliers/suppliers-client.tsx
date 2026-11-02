@@ -16,12 +16,12 @@ import { deactivateSupplier, listSuppliers, upsertSupplier } from "./actions"
 
 type Supplier = Awaited<ReturnType<typeof listSuppliers>>[number]
 
-export function SuppliersClient() {
+export function SuppliersClient({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Supplier[]>([])
   const [isLoading, startLoading] = useTransition()
 
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initiallyOpen)
   const [editing, setEditing] = useState<Supplier | null>(null)
 
   const [name, setName] = useState("")
@@ -49,6 +49,14 @@ export function SuppliersClient() {
 
   useEffect(() => {
     refresh("")
+  }, [])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (url.searchParams.get("create") !== "1") return
+    // Consume la indicación para que recargar la página no vuelva a abrir el modal.
+    url.searchParams.delete("create")
+    window.history.replaceState(window.history.state, "", url.toString())
   }, [])
 
   useEffect(() => {
