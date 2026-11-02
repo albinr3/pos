@@ -21,6 +21,17 @@ enum SaleType {
   CREDITO
 }
 
+enum PurchaseType {
+  CONTADO
+  CREDITO
+}
+
+enum APOpenStatus {
+  PENDIENTE
+  PARCIAL
+  PAGADA
+}
+
 enum DocumentDiscountSource {
   NONE
   CUSTOMER
@@ -84,6 +95,8 @@ enum AuditAction {
   SUPPLIER_EDITED
   SUPPLIER_DELETED
   PURCHASE_CREATED
+  SUPPLIER_PAYMENT_CREATED
+  SUPPLIER_PAYMENT_CANCELLED
   PURCHASE_EDITED
   PURCHASE_CANCELLED
   RETURN_CREATED
@@ -232,6 +245,9 @@ model Account {
   products             Product[]
   sales                Sale[]
   purchases            Purchase[]
+  accountsPayable      AccountPayable[]
+  supplierPayments     SupplierPayment[]
+  purchaseOperations   PurchaseOperation[]
   operatingExpenses    OperatingExpense[]
   returns              Return[]
   quotes               Quote[]
@@ -353,6 +369,9 @@ model User {
   canAdjustInventory  Boolean @default(false)
   canManageCategories Boolean @default(false)
   canManagePurchases  Boolean @default(false)
+  canAccessAccountsPayable Boolean @default(false)
+  canRegisterSupplierPayments Boolean @default(false)
+  canCancelSupplierPayments Boolean @default(false)
   canCancelPurchases  Boolean @default(false)
   canManageSuppliers  Boolean @default(false)
   canManageCustomers  Boolean @default(false)
@@ -382,6 +401,8 @@ model User {
   cancelledPayments    Payment[]             @relation("CancelledPayments")
   purchases            Purchase[]
   cancelledPurchases   Purchase[]            @relation("CancelledPurchases")
+  supplierPayments SupplierPayment[] @relation("SupplierPaymentUser")
+  cancelledSupplierPayments SupplierPayment[] @relation("CancelledSupplierPayments")
   operatingExpenses    OperatingExpense[]
   cancelledSales       Sale[]                @relation("CancelledSales")
   returns              Return[]
@@ -426,6 +447,7 @@ model TreasuryAccount {
   salePayments      SalePayment[]      @relation("SalePaymentTreasuryAccount")
   payments          Payment[]          @relation("PaymentTreasuryAccount")
   purchases         Purchase[]         @relation("PurchaseTreasuryAccount")
+  supplierPayments SupplierPayment[]
   operatingExpenses OperatingExpense[] @relation("OperatingExpenseTreasuryAccount")
   returnRefunds     Return[]           @relation("ReturnRefundTreasuryAccount")
   openingBalances   TreasuryOpeningBalance[]
@@ -789,6 +811,10 @@ model Supplier {
   notes       String?
 
   discountPercentBp Int     @default(0)
+  creditDays Int @default(0)
+  purchases Purchase[]
+  accountsPayable AccountPayable[]
+  supplierPayments SupplierPayment[]
   chargesItbis      Boolean @default(false)
   itbisRateBp       Int?
 
@@ -1291,6 +1317,10 @@ model Purchase {
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   purchasedAt  DateTime @default(now())
+  type PurchaseType @default(CONTADO)
+  supplierId String?
+  supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  payable AccountPayable?
   supplierName String?
   paymentMethod PaymentMethod?
   treasuryAccountId String?
@@ -1310,6 +1340,7 @@ model Purchase {
 
   @@index([accountId])
   @@index([accountId, purchasedAt])
+  @@index([accountId, supplierId, type])
   @@index([cancelledAt])
   @@index([treasuryAccountId])
 }
@@ -2005,4 +2036,68 @@ model WhatsappOtp {
   @@index([phoneNumber, createdAt])
   @@index([phoneNumber, expiresAt])
   @@index([expiresAt])
+}
+
+// El saldo, el pago y el asiento se modifican bajo el mismo bloqueo de Account.
+model AccountPayable {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  purchaseId String @unique
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  supplierId String
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  totalCents Int
+  balanceCents Int
+  dueDate DateTime @db.Date
+  status APOpenStatus @default(PENDIENTE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  payments SupplierPayment[]
+  @@index([accountId, status, dueDate])
+  @@index([accountId, supplierId])
+}
+
+model SupplierPayment {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  apId String
+  ap AccountPayable @relation(fields: [apId], references: [id], onDelete: Restrict)
+  // Snapshot: cambiar el proveedor de la compra no debe reasignar pagos históricos.
+  supplierId String
+  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  supplierName String
+  userId String
+  user User @relation("SupplierPaymentUser", fields: [userId], references: [id])
+  amountCents Int
+  method PaymentMethod
+  treasuryAccountId String
+  treasuryAccount TreasuryAccount @relation(fields: [treasuryAccountId], references: [id], onDelete: Restrict)
+  paidAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  reference String
+  note String?
+  cancelledAt DateTime?
+  cancelledBy String?
+  cancelledUser User? @relation("CancelledSupplierPayments", fields: [cancelledBy], references: [id])
+  cancellationReason String?
+  @@index([accountId, paidAt, id])
+  @@index([accountId, supplierId, paidAt])
+  @@index([apId, cancelledAt])
+  @@index([treasuryAccountId])
+}
+
+// Idempotencia independiente de CashControl para negocios que no usan turnos.
+model PurchaseOperation {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  operationId String
+  userId String
+  kind String
+  payloadHash String
+  response Json
+  createdAt DateTime @default(now())
+  @@unique([accountId, operationId])
 }

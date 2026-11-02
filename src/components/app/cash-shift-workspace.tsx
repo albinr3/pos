@@ -14,7 +14,7 @@ import { formatRD } from "@/lib/money"
 import { formatDateTimeDO } from "@/lib/date-time"
 import { getPaymentMethodLabel } from "@/lib/payment-methods"
 
-type Actions = Record<"open" | "prepare" | "sync" | "close" | "resume" | "emergency" | "refresh" | "disable", () => void>
+type Actions = Record<"open" | "prepare" | "sync" | "close" | "resume" | "emergency" | "refresh", () => void>
 type CountProps = { counted: number; note: string; onCountChange: (value: number) => void; onNoteChange: (value: string) => void }
 type Props = CountProps & { context: CashContext; provisionalClose: boolean; revealClosingRef: RefObject<string | null>; busy: boolean; pendingCount: number; manualPending: boolean; actions: Actions }
 
@@ -111,9 +111,8 @@ export function CashShiftWorkspace({ context, provisionalClose, revealClosingRef
 
     {context.breakdown.length > 0 && <details className="group rounded-xl border"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 text-sm font-medium">Ver detalle por cuenta y forma de pago<ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" aria-hidden="true" /></summary><div className="grid gap-2 border-t px-4 py-3 text-sm">{closing && opening != null && <p className="rounded-lg bg-muted/40 p-3">Recibiste {formatRD(opening)} al abrir. El movimiento de efectivo del turno fue de {formatRD(net)}.</p>}<p className="mb-1 text-xs text-muted-foreground">Entradas menos salidas de este turno. Las tarjetas y transferencias no forman parte del efectivo que debes contar.</p>{context.breakdown.map((item, index) => <div key={index} className="flex flex-wrap justify-between gap-2 rounded-lg bg-muted/40 px-3 py-2"><span>{item.accountName} · {item.method ? getPaymentMethodLabel(item.method) : "Entradas y salidas de dinero"}</span><strong className="tabular-nums">{formatRD(item.totalCents)}</strong></div>)}</div></details>}
 
-    {(context.canManage && !shift || context.isOwner && shift && !owns) && <details className="rounded-xl border p-4"><summary className="cursor-pointer text-sm font-medium">Opciones del dueño</summary><div className="mt-4 grid gap-3">
-      {!shift && context.canManage && <><p className="text-sm text-muted-foreground">Desactivar el control permite volver a trabajar sin abrir turnos. Los cierres anteriores se conservan.</p><Button className="w-fit" variant="outline" disabled={busy} onClick={actions.disable}>Desactivar control por turnos</Button></>}
-      {shift && context.isOwner && !owns && <><p className="text-sm text-muted-foreground">Usa el cierre excepcional solo si el responsable no puede cerrar su turno. Debes contar el efectivo y explicar el motivo.</p><CashCount {...count} expected={expected ?? 0} busy={busy} mode="emergency" onSubmit={actions.emergency} /></>}
+    {context.isOwner && shift && !owns && <details className="rounded-xl border p-4"><summary className="cursor-pointer text-sm font-medium">Opciones del dueño</summary><div className="mt-4 grid gap-3">
+      <p className="text-sm text-muted-foreground">Usa el cierre excepcional solo si el responsable no puede cerrar su turno. Debes contar el efectivo y explicar el motivo.</p><CashCount {...count} expected={expected ?? 0} busy={busy} mode="emergency" onSubmit={actions.emergency} />
     </div></details>}
   </div>
 }

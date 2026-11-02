@@ -36,6 +36,7 @@ import { UsersTab } from "./users-tab"
 import { AuditLogPanel } from "./audit-log-panel"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { InventoryRecoveryCard } from "./inventory-recovery-card"
+import { CashModeSettings } from "./cash-mode-settings"
 import { clientStorageKeys, getMigratedLocalStorageItem, legacyStorageKey } from "@/lib/client-storage"
 
 const CACHE_SYNC_KEY = clientStorageKeys.cacheSync
@@ -678,6 +679,8 @@ export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, c
           </div>
         </CardContent>
       </Card>
+
+      <CashModeSettings />
 
       <Card>
         <CardHeader>

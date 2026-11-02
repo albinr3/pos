@@ -26,6 +26,7 @@ export default async function ReportsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {hasPermission(user, "canAccessAccountsPayable") && [{ path: "purchases", label: "Compras" }, { path: "accounts-payable", label: "Cuentas por pagar" }, { path: "supplier-payments", label: "Pagos a proveedores" }].map(r => <Card key={r.path}><CardHeader><CardTitle>{r.label}</CardTitle></CardHeader><CardContent><Button asChild><Link href={`/reports/${r.path}`}>Ver reporte</Link></Button></CardContent></Card>)}
         <Card>
           <CardHeader>
             <CardTitle>Ventas</CardTitle>

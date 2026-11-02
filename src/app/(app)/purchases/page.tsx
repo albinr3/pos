@@ -36,7 +36,7 @@ export default async function PurchasesPage() {
           </div>
         </div>
       </div>
-      <PurchasesClient />
+      <PurchasesClient canRegisterSupplierPayments={hasPermission(user, "canRegisterSupplierPayments")} />
     </div>
   )
 }

@@ -83,6 +83,7 @@ const MOVEMENT_SOURCE_LABELS: Record<string, string> = {
   SALE_CASH: "Venta contado",
   AR_PAYMENT: "Cobro CxC",
   PURCHASE: "Compra",
+  SUPPLIER_PAYMENT: "Pago a proveedor",
   OPERATING_EXPENSE: "Gasto operativo",
   CASH_RETURN: "Devolución",
   TREASURY_TRANSFER: "Transferencia interna",

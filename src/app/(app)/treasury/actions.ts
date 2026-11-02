@@ -31,6 +31,7 @@ type Movement = {
     | "OPENING_BALANCE"
     | "SALE_CASH"
     | "AR_PAYMENT"
+    | "SUPPLIER_PAYMENT"
     | "PURCHASE"
     | "OPERATING_EXPENSE"
     | "CASH_RETURN"
@@ -275,6 +276,7 @@ async function getTreasuryAccountBalanceUntil(
     saleSplitSum,
     legacySaleSum,
     arPaymentSum,
+    supplierPaymentSum,
     purchaseSum,
     expenseSum,
     returnSum,
@@ -325,11 +327,13 @@ async function getTreasuryAccountBalanceUntil(
       },
       _sum: { amountCents: true },
     }),
+    db.supplierPayment.aggregate({ where: { accountId: input.accountId, treasuryAccountId: input.treasuryAccountId, OR: [{ cancelledAt: null }, { cancelledAt: { gt: input.at } }], paidAt: { lte: input.at } }, _sum: { amountCents: true } }),
     db.purchase.aggregate({
       where: {
         accountId: input.accountId,
         cancelledAt: null,
         purchasedAt: { lte: input.at },
+        type: "CONTADO",
         treasuryAccountId: input.treasuryAccountId,
       },
       _sum: { totalCents: true },
@@ -387,6 +391,7 @@ async function getTreasuryAccountBalanceUntil(
     arPaymentCents +
     transferInCents -
     purchaseCents -
+    (supplierPaymentSum._sum.amountCents ?? 0) -
     expenseCents -
     returnCents -
     transferOutCents
@@ -707,6 +712,7 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
     sales,
     arPayments,
     purchases,
+    supplierPayments,
     expenses,
     returns,
     transfers,
@@ -776,6 +782,7 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
         accountId: user.accountId,
         cancelledAt: null,
         purchasedAt: { lte: to },
+        type: "CONTADO",
         treasuryAccountId: { not: null },
       },
       select: {
@@ -787,6 +794,7 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
         supplierName: true,
       },
     }),
+    prisma.supplierPayment.findMany({ where: { accountId: user.accountId, paidAt: { lte: to } }, include: { ap: { include: { purchase: true } } } }),
     prisma.operatingExpense.findMany({
       where: {
         accountId: user.accountId,
@@ -954,6 +962,13 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
       reference: "Compra",
       note: purchase.supplierName || null,
     })
+  }
+
+  for (const payment of supplierPayments) {
+    const account = accountById.get(payment.treasuryAccountId)
+    if (!account) continue
+    if (payment.cancelledAt && payment.cancelledAt <= to) movements.push({ id: `supplierPayment:reversal:${payment.id}`, source: "SUPPLIER_PAYMENT", direction: "IN", amountCents: payment.amountCents, occurredAt: payment.cancelledAt, method: payment.method, treasuryAccountId: account.id, treasuryAccountName: account.name, reference: payment.reference, note: payment.cancellationReason })
+    movements.push({ id: `supplierPayment:${payment.id}`, source: "SUPPLIER_PAYMENT", direction: "OUT", amountCents: payment.amountCents, occurredAt: payment.paidAt, method: payment.method, treasuryAccountId: account.id, treasuryAccountName: account.name, reference: payment.reference, note: payment.supplierName })
   }
 
   for (const expense of expenses) {

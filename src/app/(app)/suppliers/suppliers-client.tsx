@@ -29,6 +29,7 @@ export function SuppliersClient() {
   const [phone, setPhone] = useState("")
   const [email, setEmail] = useState("")
   const [address, setAddress] = useState("")
+  const [days, setDays] = useState("0")
   const [notes, setNotes] = useState("")
   const [discountPercent, setDiscountPercent] = useState("")
   const [chargesItbis, setChargesItbis] = useState(false)
@@ -64,6 +65,7 @@ export function SuppliersClient() {
     setPhone(x?.phone ?? "")
     setEmail(x?.email ?? "")
     setAddress(x?.address ?? "")
+    setDays(String(x?.creditDays ?? 0))
     setNotes(x?.notes ?? "")
     setDiscountPercent(x?.discountPercentBp ? (x.discountPercentBp / 100).toFixed(2) : "")
     setChargesItbis(x?.chargesItbis ?? false)
@@ -98,6 +100,7 @@ export function SuppliersClient() {
           email: email || null,
           address: address || null,
           notes: notes || null,
+          creditDays: Number(days),
           discountPercentBp: discountBp,
           chargesItbis,
           itbisRateBp: chargesItbis ? Math.round(parsedItbisPercent * 100) : null,
@@ -159,6 +162,10 @@ export function SuppliersClient() {
                   </div>
                 </div>
 
+                <div className="grid gap-2">
+                  <Label>Días de crédito</Label>
+                  <Input type="number" min="0" max="3650" step="1" value={days} onChange={e => setDays(e.target.value)} />
+                </div>
                 <div className="grid gap-2">
                   <Label>Email</Label>
                   <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="proveedor@ejemplo.com" />

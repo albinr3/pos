@@ -28,7 +28,10 @@
     "sync:main-to-dev": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch main -TargetBranch dev",
     "sync:dev-to-main": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch dev -TargetBranch main",
     "sync:main-to-dev:dry": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch main -TargetBranch dev -DryRun",
-    "sync:dev-to-main:dry": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch dev -TargetBranch main -DryRun"
+    "sync:dev-to-main:dry": "pwsh -ExecutionPolicy Bypass -File scripts/sync-branches.ps1 -SourceBranch dev -TargetBranch main -DryRun",
+    "test:purchase-credit:setup": "node scripts/setup-purchase-credit-test-db.mjs",
+    "test:purchase-credit": "node --test --experimental-test-isolation=none scripts/purchase-credit.integration.test.mjs",
+    "test:purchase-credit:browser": "node scripts/purchase-credit.browser.test.mjs"
   },
   "dependencies": {
     "@clerk/localizations": "^3.35.1",

@@ -20,7 +20,7 @@ export default async function ScanInvoicePage() {
           Captura o sube una imagen de la factura del proveedor para extraer los datos automáticamente.
         </p>
       </div>
-      <ScanInvoiceClient />
+      <ScanInvoiceClient canRegisterSupplierPayments={hasPermission(user, "canRegisterSupplierPayments")} />
     </div>
   )
 }

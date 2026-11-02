@@ -53,6 +53,7 @@ export default async function PurchaseReceiptPage({
         accountId: user.accountId,
       },
       include: {
+        payable: true,
         items: { include: { product: true } },
         user: { select: { name: true, username: true } },
         cancelledUser: { select: { name: true, username: true } },
@@ -129,6 +130,8 @@ export default async function PurchaseReceiptPage({
         <div className="mt-2">
           <span className="font-semibold">Proveedor:</span> {purchase.supplierName || "Sin proveedor"}
         </div>
+        <div><span className="font-semibold">Condición:</span> {purchase.type === "CREDITO" ? "Crédito" : "Contado"}</div>
+        {purchase.type === "CREDITO" && purchase.payable && <div><div>Abonado actual: {formatRD(purchase.cancelledAt ? 0 : purchase.totalCents - purchase.payable.balanceCents)}</div><div>Pendiente actual: {formatRD(purchase.cancelledAt ? 0 : purchase.payable.balanceCents)}</div><div>Vencimiento: {purchase.payable.dueDate.toISOString().slice(0, 10)}</div></div>}
         {purchase.paymentMethod && (
           <div className="mt-1">
             <span className="font-semibold">Pago:</span> {formatPaymentWithBank(purchase.paymentMethod)}

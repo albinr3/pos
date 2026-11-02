@@ -64,6 +64,7 @@ const nav = [
   { href: "/categories", label: "Categorías", icon: Tag },
   { href: "/suppliers", label: "Proveedores", icon: Building2 },
   { href: "/purchases", label: "Compras", icon: ShoppingBag },
+  { href: "/ap", label: "Cuentas por pagar", icon: CreditCard },
   { href: "/ar", label: "Cuentas por cobrar", icon: CreditCard },
   { href: "/payments/list", label: "Recibos de pago", icon: Receipt },
   { href: "/daily-close", label: "Cuadre diario", icon: ClipboardList },
@@ -94,6 +95,8 @@ function canAccessNavItem(user: CurrentUser, href: string) {
       return user.canAccessReturns ?? true
     case "/products":
       return user.canAccessProducts ?? true
+    case "/ap":
+      return user.canAccessAccountsPayable ?? false
     case "/ar":
       return user.canAccessAccountsReceivable ?? true
     case "/payments/list":

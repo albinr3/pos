@@ -1,17 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { UTApi } from "uploadthing/server"
 import { getCurrentUserFromRequest } from "../../../_helpers/auth"
+import { getPaymentProofValidationError } from "@/lib/billing-proof-upload"
+import { logError, ErrorCodes } from "@/lib/error-logger"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
 
 const utapi = new UTApi()
-
-function isAllowedProofMimeType(value: string): boolean {
-  if (!value) return false
-  if (value === "application/pdf") return true
-  return value.startsWith("image/")
-}
 
 async function uploadAndGetUrl(file: File): Promise<string> {
   const uploaded = await utapi.uploadFiles(file)
@@ -32,14 +28,15 @@ async function uploadAndGetUrl(file: File): Promise<string> {
 
 // POST /api/billing/proofs/upload - Subir comprobante y retornar URL pública
 export async function POST(request: NextRequest) {
+  let user: Awaited<ReturnType<typeof getCurrentUserFromRequest>> = null
+  let file: File | null = null
   try {
-    const user = await getCurrentUserFromRequest(request)
+    user = await getCurrentUserFromRequest(request)
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
 
     const contentType = request.headers.get("content-type") || ""
-    let file: File | null = null
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData()
@@ -71,17 +68,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Archivo requerido" }, { status: 400 })
     }
 
-    if (!isAllowedProofMimeType(String(file.type || ""))) {
-      return NextResponse.json({ error: "Solo se permiten imágenes o PDF" }, { status: 400 })
+    // UTApi no pasa por paymentProofUploader: conservar aquí el mismo límite
+    // de 4 MB para que la vía de respaldo no omita las reglas del router.
+    const validationError = getPaymentProofValidationError(file)
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 })
     }
 
     const url = await uploadAndGetUrl(file)
     return NextResponse.json({ url })
-  } catch (error: any) {
-    console.error("Error en POST /api/billing/proofs/upload:", error)
+  } catch (error: unknown) {
+    const errorId = await logError(error instanceof Error ? error : new Error(String(error)), {
+      code: ErrorCodes.EXTERNAL_UPLOAD_ERROR,
+      severity: "MEDIUM",
+      userId: user?.id,
+      accountId: user?.accountId,
+      endpoint: "/api/billing/proofs/upload",
+      method: "POST",
+      // Registrar solo metadatos; nunca guardar la imagen, base64 o URL firmada.
+      metadata: { uploaderType: "paymentProof", fileSize: file?.size, fileType: file?.type },
+    })
     return NextResponse.json(
-      { error: error?.message || "Error subiendo comprobante" },
-      { status: 500 }
+      {
+        error: `No se pudo subir el comprobante. Inténtalo de nuevo.${errorId ? ` Referencia: ${errorId}` : ""}`,
+      },
+      { status: 502 }
     )
   }
 }

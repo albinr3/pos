@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
+import { creditDays, PurchaseError } from "@/lib/purchase-credit"
 import { sanitizePhone, sanitizeString } from "@/lib/sanitize"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
 
@@ -43,6 +44,7 @@ export async function GET(
       email: supplier.email,
       address: supplier.address,
       notes: supplier.notes,
+      creditDays: supplier.creditDays,
       discountPercentBp: supplier.discountPercentBp,
       chargesItbis: supplier.chargesItbis,
       itbisRateBp: supplier.itbisRateBp,
@@ -50,6 +52,7 @@ export async function GET(
       updatedAt: supplier.updatedAt.toISOString(),
     })
   } catch (error: unknown) {
+    if (error instanceof PurchaseError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
     console.error("Error en GET /api/suppliers/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al obtener proveedor" },
@@ -102,6 +105,7 @@ export async function PUT(
     const discountPercentBp = Number.isFinite(Number(body?.discountPercentBp))
       ? Number(body.discountPercentBp)
       : 0
+    const days = body.creditDays === undefined ? undefined : creditDays(body.creditDays)
     const chargesItbis = Boolean(body?.chargesItbis)
     const itbisRateBp = chargesItbis
       ? Math.min(10000, Math.max(0, Math.round(Number(body?.itbisRateBp ?? 1800))))
@@ -144,6 +148,7 @@ export async function PUT(
         email,
         address,
         notes,
+        creditDays: days,
         discountPercentBp,
         chargesItbis,
         itbisRateBp,
@@ -158,6 +163,7 @@ export async function PUT(
       email: updated.email,
       address: updated.address,
       notes: updated.notes,
+      creditDays: updated.creditDays,
       discountPercentBp: updated.discountPercentBp,
       chargesItbis: updated.chargesItbis,
       itbisRateBp: updated.itbisRateBp,
@@ -165,6 +171,7 @@ export async function PUT(
       updatedAt: updated.updatedAt.toISOString(),
     })
   } catch (error: unknown) {
+    if (error instanceof PurchaseError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
     console.error("Error en PUT /api/suppliers/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al editar proveedor" },

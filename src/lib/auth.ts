@@ -115,6 +115,9 @@ export type CurrentUser = {
   canViewProfitReport: boolean
   canAdjustInventory: boolean
   canManageCategories: boolean
+  canAccessAccountsPayable: boolean
+  canRegisterSupplierPayments: boolean
+  canCancelSupplierPayments: boolean
   canManagePurchases: boolean
   canCancelPurchases: boolean
   canManageSuppliers: boolean
@@ -687,6 +690,9 @@ export async function authenticateSubUser(
         canViewProfitReport: user.canViewProfitReport,
         canAdjustInventory: user.canAdjustInventory,
         canManageCategories: user.canManageCategories,
+        canAccessAccountsPayable: user.canAccessAccountsPayable,
+        canRegisterSupplierPayments: user.canRegisterSupplierPayments,
+        canCancelSupplierPayments: user.canCancelSupplierPayments,
         canManagePurchases: user.canManagePurchases,
         canCancelPurchases: user.canCancelPurchases,
         canManageSuppliers: user.canManageSuppliers,
@@ -758,6 +764,9 @@ export async function createSubUser(
       canViewProfitReport: boolean
       canAdjustInventory: boolean
       canManageCategories: boolean
+      canAccessAccountsPayable: boolean
+      canRegisterSupplierPayments: boolean
+      canCancelSupplierPayments: boolean
       canManagePurchases: boolean
       canCancelPurchases: boolean
       canManageSuppliers: boolean
@@ -1111,6 +1120,9 @@ export async function getCurrentUserWithDiagnostics(options: {
     canViewProfitReport: user.canViewProfitReport,
     canAdjustInventory: user.canAdjustInventory,
     canManageCategories: user.canManageCategories,
+    canAccessAccountsPayable: user.canAccessAccountsPayable,
+    canRegisterSupplierPayments: user.canRegisterSupplierPayments,
+    canCancelSupplierPayments: user.canCancelSupplierPayments,
     canManagePurchases: user.canManagePurchases,
     canCancelPurchases: user.canCancelPurchases,
     canManageSuppliers: user.canManageSuppliers,

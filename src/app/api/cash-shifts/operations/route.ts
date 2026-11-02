@@ -7,6 +7,7 @@ import { cashRequest, cashHash } from "@/lib/cash-context"
 import { withCashOperation } from "@/lib/cash-context"
 import { runCashTransaction } from "@/lib/cash-financial-db"
 import { getRawPrismaClient } from "@/lib/db"
+import { addSupplierPayment } from "@/lib/accounts-payable"
 import { createPurchase } from "@/app/(app)/purchases/actions"
 import { createPurchaseFromOCR } from "@/app/(app)/purchases/ocr-actions"
 import { createOperatingExpense } from "@/app/(app)/operating-expenses/actions"
@@ -21,8 +22,8 @@ export async function POST(request: NextRequest) {
     const actor = await getCurrentUserFromRequest(request)
     if (!actor) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     const { kind, payload, cashOperation } = await request.json()
-    if (!cashOperation || !payload || !["sale", "payment", "batchPayment", "purchase", "ocrPurchase", "expense", "return", "transfer", "discard"].includes(kind)) return NextResponse.json({ error: "Operación inválida" }, { status: 400 })
-    const allowed: Record<string, boolean> = { sale: actor.canAccessSales, payment: actor.canAccessAccountsReceivable, batchPayment: actor.canAccessAccountsReceivable, purchase: actor.canManagePurchases, ocrPurchase: actor.canManagePurchases, expense: actor.canManageExpenses, return: actor.canAccessReturns, transfer: actor.canCreateTreasuryTransfers, discard: true }
+    if (!cashOperation || !payload || !["sale", "payment", "batchPayment", "purchase", "ocrPurchase", "supplierPayment", "expense", "return", "transfer", "discard"].includes(kind)) return NextResponse.json({ error: "Operación inválida" }, { status: 400 })
+    const allowed: Record<string, boolean> = { sale: actor.canAccessSales, payment: actor.canAccessAccountsReceivable, batchPayment: actor.canAccessAccountsReceivable, supplierPayment: actor.canRegisterSupplierPayments, purchase: actor.canManagePurchases, ocrPurchase: actor.canManagePurchases, expense: actor.canManageExpenses, return: actor.canAccessReturns, transfer: actor.canCreateTreasuryTransfers, discard: true }
     if (!actor.isOwner && !allowed[kind]) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
     const token = request.cookies.get("movopos-cash-device")?.value
     const result = await cashRequest.run({ trustedActor: actor, deviceHash: token ? cashHash(token) : "" }, async () => {
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
       }
       if (kind === "sale") return createSale({ ...payload, username: actor.username, user: actor, cashOperation })
       if (kind === "payment") return addPayment({ ...payload, cashOperation }, actor)
+      if (kind === "supplierPayment") return addSupplierPayment(actor, { ...payload, cashOperation })
       if (kind === "purchase") return createPurchase({ ...payload, cashOperation })
       if (kind === "ocrPurchase") return createPurchaseFromOCR({ ...payload, cashOperation })
       if (kind === "expense") return createOperatingExpense({ ...payload, cashOperation })

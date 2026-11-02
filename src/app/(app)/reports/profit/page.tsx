@@ -188,7 +188,7 @@ export default async function ProfitReportPage({
                 <div className="text-sm text-muted-foreground">ITBIS neto (ventas - compras)</div>
                 <div className="text-xs text-muted-foreground">
                   ITBIS en ventas: {formatRD(data.grossSalesItbisCents)} · Devoluciones del período: -
-                  {formatRD(data.returnsItbisCents)} · ITBIS en compras: {formatRD(data.purchasesItbisCents)}
+                  {formatRD(data.returnsItbisCents)} · ITBIS en compras (fecha de compra): {formatRD(data.purchasesItbisCents)}
                 </div>
               </div>
               <div className="text-base font-medium">{formatRD(data.taxesCents)}</div>
@@ -210,6 +210,7 @@ export default async function ProfitReportPage({
 
           <Separator />
 
+          {data.accountsPayableTotalCents !== null && <div className="rounded-lg border p-4"><div className="flex items-center justify-between"><div><div className="text-sm font-medium">Cuentas por pagar actuales</div><div className="text-xs text-muted-foreground">{data.accountsPayableCount} cuentas pendientes · Información fuera del cálculo de utilidad</div></div><div className="text-lg font-semibold">{formatRD(data.accountsPayableTotalCents)}</div></div></div>}
           {/* CUENTAS POR COBRAR */}
           <div className="grid gap-4">
             <div className="rounded-lg border p-4">

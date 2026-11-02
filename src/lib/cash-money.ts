@@ -74,7 +74,9 @@ export function documentLegs(model: string, row: MoneyDocument | undefined | nul
         ? row.payments.flatMap(p => leg(p.treasuryAccountId, p.method, p.amountCents))
         : leg(row.treasuryAccountId, row.paymentMethod, row.totalCents)
     case "payment": return leg(row.treasuryAccountId, row.method, row.amountCents)
-    case "purchase": return leg(row.treasuryAccountId, row.paymentMethod, -cents(row.totalCents))
+    // El crédito no mueve dinero: cada abono se registra una sola vez como supplierPayment.
+    case "purchase": return row.type === "CREDITO" ? [] : leg(row.treasuryAccountId, row.paymentMethod, -cents(row.totalCents))
+    case "supplierPayment": return leg(row.treasuryAccountId, row.method, -cents(row.amountCents))
     case "operatingExpense": return leg(row.treasuryAccountId, row.paymentMethod, -cents(row.amountCents))
     case "return": return row.sale?.type === "CONTADO" ? leg(row.refundTreasuryAccountId, row.refundMethod, -cents(row.totalCents)) : []
     // REVERSED conserva el asiento original: el reverso es otra transferencia.

@@ -27,6 +27,9 @@ export type CurrentUser = {
   canViewProfitReport: boolean
   canAdjustInventory: boolean
   canManageCategories: boolean
+  canAccessAccountsPayable: boolean
+  canRegisterSupplierPayments: boolean
+  canCancelSupplierPayments: boolean
   canManagePurchases: boolean
   canCancelPurchases: boolean
   canManageSuppliers: boolean
@@ -78,6 +81,9 @@ export function getCurrentUserStub(): CurrentUser {
     canViewProfitReport: true,
     canAdjustInventory: true,
     canManageCategories: true,
+    canAccessAccountsPayable: true,
+    canRegisterSupplierPayments: true,
+    canCancelSupplierPayments: true,
     canManagePurchases: true,
     canCancelPurchases: true,
     canManageSuppliers: true,

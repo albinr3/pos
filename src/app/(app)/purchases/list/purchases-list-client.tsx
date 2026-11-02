@@ -195,7 +195,7 @@ export function PurchasesListClient() {
       }
 
       const matchedSupplier = suppliers.find(
-        (s) => (s.name || "").trim().toLowerCase() === (purchase.supplierName || "").trim().toLowerCase()
+        (s) => purchase.supplierId ? s.id === purchase.supplierId : (s.name || "").trim().toLowerCase() === (purchase.supplierName || "").trim().toLowerCase()
       )
 
       const mappedCart: CartItem[] = purchase.items.map((item) => {
@@ -344,7 +344,8 @@ export function PurchasesListClient() {
     )
   })
 
-  const totalCents = useMemo(() => cart.reduce((s, i) => s + i.qty * i.netCostCents, 0), [cart])
+  // Redondear cada línea como el servidor evita diferencias al financiar cantidades fraccionarias.
+  const totalCents = useMemo(() => cart.reduce((s, i) => s + Math.round(i.qty * i.netCostCents), 0), [cart])
 
   return (
     <div className="grid gap-6">
@@ -366,6 +367,7 @@ export function PurchasesListClient() {
                 <TableRow>
                   <TableHead>Fecha</TableHead>
                   <TableHead>Suplidor</TableHead>
+                  <TableHead>Condición / saldo actual</TableHead>
                   <TableHead>Items</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
@@ -379,6 +381,7 @@ export function PurchasesListClient() {
                       {p.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADA</div>}
                     </TableCell>
                     <TableCell>{p.supplierName ?? "-"}</TableCell>
+                    <TableCell>{p.type === "CREDITO" ? <div className="grid gap-1"><strong>Crédito</strong><span>Abonado: {formatRD(p.cancelledAt ? 0 : p.totalCents - (p.payable?.balanceCents ?? 0))}</span><span>Pendiente: {formatRD(p.cancelledAt ? 0 : p.payable?.balanceCents ?? 0)}</span><span>Vence: {p.payable?.dueDate ? new Date(p.payable.dueDate).toISOString().slice(0,10) : "—"}</span><Link href="/ap" className="underline text-xs">Ver cuenta y pagos</Link></div> : "Contado"}</TableCell>
                     <TableCell>{p.items.length} productos</TableCell>
                     <TableCell className="text-right font-medium">{formatRD(p.totalCents)}</TableCell>
                     <TableCell className="text-right">
@@ -400,7 +403,8 @@ export function PurchasesListClient() {
                               size="icon"
                               onClick={() => loadPurchaseForEdit(p.id)}
                               aria-label="Editar"
-                              title="Editar"
+                              title="Editar productos (revierte primero los abonos activos)"
+                              disabled={p.type === "CREDITO" && (p.payable?.balanceCents ?? 0) < p.totalCents}
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
@@ -425,7 +429,7 @@ export function PurchasesListClient() {
 
                 {!isLoading && filteredPurchases.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-12">
+                    <TableCell colSpan={6} className="py-12">
                       <div className="flex flex-col items-center justify-center text-center">
                         <img
                           src="/lupa.webp"

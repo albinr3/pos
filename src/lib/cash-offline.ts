@@ -30,7 +30,7 @@ export function assertCashShiftAccess(context: CashContext, actor?: CashActorIde
   const reason = cashShiftBlockReason(context, actor)
   if (reason) throw new CashShiftAccessError(context, reason)
 }
-export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "expense" | "return" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; reportAmountCents?: number; reportCreatedAt?: string; cashOperation: CashOperationInput; error?: string }
+export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "supplierPayment" | "expense" | "return" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; reportAmountCents?: number; reportCreatedAt?: string; cashOperation: CashOperationInput; error?: string }
 type DocumentResult = { id?: string; reference?: string; invoiceCode?: string; returnCode?: string; stockDecrements?: Array<{ ingredientId: string; qty: number }>; paymentId?: string; paymentIds?: string[] }
 type SubmitResult = { pending: true; result: null } | { pending: false; result: DocumentResult }
 type ManualInput = { shiftId: string; kind: string; amountCents: number; otherAccountId?: string; note: string }
@@ -252,7 +252,8 @@ export async function submitControlledDocument(kind: CashQueuedOperation["kind"]
   if (!context?.enabled) return undefined
   if (!posOperation && !connected) throw new Error("Necesitas conexión para registrar esta operación")
   const shift = context.activeShift
-  const cashAccount = payload.treasuryAccountId === context.treasuryAccountId || payload.refundTreasuryAccountId === context.treasuryAccountId || payload.paymentMethod === "EFECTIVO" || payload.refundMethod === "EFECTIVO" || payload.fromTreasuryAccountId === context.treasuryAccountId || payload.toTreasuryAccountId === context.treasuryAccountId
+  // SupplierPayment usa method: también debe exigir turno antes de encolar un pago en efectivo.
+  const cashAccount = payload.treasuryAccountId === context.treasuryAccountId || payload.refundTreasuryAccountId === context.treasuryAccountId || payload.paymentMethod === "EFECTIVO" || payload.method === "EFECTIVO" || payload.refundMethod === "EFECTIVO" || payload.fromTreasuryAccountId === context.treasuryAccountId || payload.toTreasuryAccountId === context.treasuryAccountId
   const holder = Boolean(shift?.isMine && shift.isDevice && shift.status === "OPEN")
   if (cashAccount && (!context.canOperate || !holder)) throw new CashShiftAccessError(context, "Abre tu turno en Cuadre diario desde este dispositivo antes de usar la caja")
   if (shift?.isMine && shift.isDevice && shift.status !== "OPEN") throw new CashShiftAccessError(context, "Termina o reanuda el cierre antes de registrar operaciones")

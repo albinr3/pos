@@ -20,7 +20,7 @@ async function audit(tx: Prisma.TransactionClient, actor: Actor, event: string, 
   await tx.auditLog.create({ data: { accountId: actor.accountId, userId: actor.id, userUsername: actor.username, userEmail: actor.email, action: "SETTINGS_CHANGED", resourceType: "CashShift", resourceId, details: { event, ...details } } })
 }
 async function legacySnapshot(tx: Prisma.TransactionClient, accountId: string) {
-  const [accounts, sales, payments, purchases, expenses, returns, transfers, openings] = await Promise.all([
+  const [accounts, sales, payments, purchases, expenses, returns, transfers, openings, supplierPayments] = await Promise.all([
     tx.treasuryAccount.findMany({ where: { accountId }, orderBy: { id: "asc" } }),
     tx.sale.findMany({ where: { accountId, cancelledAt: null }, include: { payments: true } }),
     tx.payment.findMany({ where: { ar: { sale: { accountId } }, cancelledAt: null } }),
@@ -29,12 +29,14 @@ async function legacySnapshot(tx: Prisma.TransactionClient, accountId: string) {
     tx.return.findMany({ where: { accountId, cancelledAt: null }, include: { sale: { select: { type: true } } } }),
     tx.treasuryTransfer.findMany({ where: { accountId } }),
     tx.treasuryOpeningBalance.findMany({ where: { accountId } }),
+    tx.supplierPayment.findMany({ where: { accountId, cancelledAt: null } }),
   ])
   function collect<T extends MoneyDocument>(model: string, rows: T[], dateOf: (row: T) => Date, ignore: (row: T) => boolean = () => false) {
     return rows.map(row => ({ date: dateOf(row), legs: documentLegs(model, row), ignore: ignore(row) }))
   }
   const records = [
     ...collect("sale", sales, r => r.soldAt, r => r.type === "CREDITO"),
+    ...collect("supplierPayment", supplierPayments, r => r.paidAt),
     ...collect("payment", payments, r => r.paidAt), ...collect("purchase", purchases, r => r.purchasedAt),
     ...collect("operatingExpense", expenses, r => r.expenseDate),
     ...collect("return", returns, r => r.returnedAt, r => r.sale.type === "CREDITO"),
@@ -102,10 +104,11 @@ export async function activateCashControl(actor: Actor, input: { treasuryAccount
 export async function disableCashControl(actor: Actor) {
   permit(canManage(actor))
   return transaction(actor, async tx => {
-    if (await tx.cashShift.count({ where: { accountId: actor.accountId, status: { in: ["OPEN", "CLOSING"] } } })) throw new CashControlError("CASH_SHIFT_ACTIVE", "Cierra el turno antes de desactivar el control")
-    // No eliminar corte ni asientos: los cierres siguen protegidos incluso con turnos desactivados.
-    await tx.cashControl.update({ where: { accountId: actor.accountId }, data: { enabled: false } })
-    await audit(tx, actor, "CONTROL_DISABLED", actor.accountId)
+    const control = await tx.cashControl.findUnique({ where: { accountId: actor.accountId } })
+    // Activar múltiples turnos es permanente, incluso para el dueño y sin turnos abiertos.
+    // Mantener esta protección en el servidor para clientes antiguos y peticiones directas.
+    if (control?.enabled) throw new CashControlError("CASH_CONTROL_IRREVERSIBLE", "Múltiples turnos está activado de forma permanente. No puedes volver al modo Turno único", 409)
+    // Los registros antiguos desactivados conservan su estado hasta que el negocio los reactive.
   })
 }
 export async function drawerBalance(tx: Prisma.TransactionClient, accountId: string, treasuryAccountId: string) {
@@ -147,12 +150,14 @@ const historySelect = { id: true, cashierName: true, openedAt: true, closedAt: t
 function historyWhere(actor: Actor) {
   return { accountId: actor.accountId, ...(canViewAll(actor) || canManage(actor) ? {} : { cashierUserId: actor.id }) }
 }
-export async function listCashHistory(actor: Actor, before?: string) {
-  permit(hasPermission(actor, "canOperateCashShifts") || canViewAll(actor) || canManage(actor))
+export async function listCashHistory(actor: Actor, before?: string, limit = 100) {
+  // El historial requiere su permiso explícito; operar o administrar caja no debe habilitarlo indirectamente.
+  permit(canViewAll(actor))
   const visible = historyWhere(actor)
   const cursor = before ? await raw().cashShift.findFirst({ where: { ...visible, id: before }, select: { id: true, openedAt: true } }) : null
   if (before && !cursor) throw new CashControlError("CASH_SHIFT_NOT_FOUND", "Turno no encontrado", 404)
-  return raw().cashShift.findMany({ where: { ...visible, ...(cursor ? { OR: [{ openedAt: { lt: cursor.openedAt } }, { openedAt: cursor.openedAt, id: { lt: cursor.id } }] } : {}) }, orderBy: [{ openedAt: "desc" }, { id: "desc" }], take: 100, select: historySelect })
+  // El límite se restringe en el servidor para evitar consultas de historial demasiado grandes.
+  return raw().cashShift.findMany({ where: { ...visible, ...(cursor ? { OR: [{ openedAt: { lt: cursor.openedAt } }, { openedAt: cursor.openedAt, id: { lt: cursor.id } }] } : {}) }, orderBy: [{ openedAt: "desc" }, { id: "desc" }], take: Math.max(1, Math.min(100, Math.trunc(limit) || 100)), select: historySelect })
 }
 export async function getCashReceipt(actor: Actor, id: string) {
   permit(hasPermission(actor, "canOperateCashShifts") || canViewAll(actor) || canManage(actor))
@@ -170,6 +175,7 @@ export async function getCashShiftReport(actor: Actor, deviceHash: string, id: s
       tx.cashSourceLink.findMany({ where: { accountId: actor.accountId, cashShiftId: shift.id } }),
       tx.cashOperation.findMany({ where: { accountId: actor.accountId, cashShiftId: shift.id }, select: { clientOperationId: true } }),
     ])
+    const paidSuppliers = await tx.supplierPayment.findMany({ where: { accountId: actor.accountId, id: { in: movements.filter(m => m.sourceType === "supplierPayment").map(m => m.sourceId) } }, select: { id: true, supplierName: true } })
     const movementSources = new Set(movements.map(movement => `${movement.sourceType}:${movement.sourceId}`))
     const withoutMovement = sources.filter(source => !movementSources.has(`${source.sourceType}:${source.sourceId}`))
     const ids = (type: string) => withoutMovement.filter(source => source.sourceType === type).map(source => source.sourceId)
@@ -200,7 +206,7 @@ export async function getCashShiftReport(actor: Actor, deviceHash: string, id: s
       ...payments.map(row => ({ sourceType: "payment", id: row.id, reference: row.receiptCode, amountCents: row.amountCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt, customerName: row.ar.customer.name })),
     ]
     // El corte y los identificadores deben proceder de la misma vista para no duplicar respuestas perdidas.
-    return { accountId: actor.accountId, userId: actor.id, shiftId: shift.id, cashierName: shift.cashierName, openedAt: shift.openedAt, generatedAt, companyName: company?.name ?? "Mi Negocio", format: company?.shiftReportPrintFormat === "80mm" ? "80mm" as const : "CARTA" as const, openingCents: shift.openingCountedCents, expectedCashCents: await expectedForShift(tx, shift), lastSequence: shift.lastSequence, finalSequence: shift.finalSequence, status: shift.status, confirmedOperationIds: operations.map(operation => operation.clientOperationId), movements: movements.map(row => ({ ...row, customerName: customerNames.get(`${row.sourceType}:${row.sourceId}`) ?? null })), documents }
+    return { accountId: actor.accountId, userId: actor.id, shiftId: shift.id, cashierName: shift.cashierName, openedAt: shift.openedAt, generatedAt, companyName: company?.name ?? "Mi Negocio", format: company?.shiftReportPrintFormat === "80mm" ? "80mm" as const : "CARTA" as const, openingCents: shift.openingCountedCents, expectedCashCents: await expectedForShift(tx, shift), lastSequence: shift.lastSequence, finalSequence: shift.finalSequence, status: shift.status, confirmedOperationIds: operations.map(operation => operation.clientOperationId), movements: movements.map(row => ({ ...row, customerName: row.sourceType === "supplierPayment" ? paidSuppliers.find(p => p.id === row.sourceId)?.supplierName ?? null : customerNames.get(`${row.sourceType}:${row.sourceId}`) ?? null })), documents }
   }, { isolationLevel: "RepeatableRead", timeout: 20000, maxWait: 5000 })
 }
 export async function openCashShift(actor: Actor, deviceHash: string, countedCents: number, note?: string) {
@@ -257,10 +263,10 @@ export async function finishCashClose(actor: Actor, deviceHash: string, id: stri
     const sources = await tx.cashSourceLink.findMany({ where: { accountId: actor.accountId, cashShiftId: id } })
     const documents = []
     for (const source of sources) {
-      type SnapshotRow = { id: string; invoiceCode?: string; receiptCode?: string; returnCode?: string; description?: string; totalCents?: number; amountCents?: number; type?: string; cancelledAt?: Date | null }
+      type SnapshotRow = { id: string; invoiceCode?: string; receiptCode?: string; reference?: string; returnCode?: string; description?: string; totalCents?: number; amountCents?: number; type?: string; cancelledAt?: Date | null }
       const delegates = tx as unknown as Record<string, { findFirst(args: { where: { id: string } }): Promise<SnapshotRow | null> }>
       const row = await delegates[source.sourceType].findFirst({ where: { id: source.sourceId } })
-      if (row) documents.push({ sourceType: source.sourceType, id: row.id, reference: row.invoiceCode ?? row.receiptCode ?? row.returnCode ?? row.description ?? row.id, totalCents: row.totalCents ?? row.amountCents ?? 0, type: row.type ?? null, cancelled: Boolean(row.cancelledAt) })
+      if (row) documents.push({ sourceType: source.sourceType, id: row.id, reference: row.invoiceCode ?? row.receiptCode ?? row.reference ?? row.returnCode ?? row.description ?? row.id, totalCents: row.totalCents ?? row.amountCents ?? 0, type: row.type ?? null, cancelled: Boolean(row.cancelledAt) })
     }
     const snapshot = JSON.parse(JSON.stringify({ movements, documents, emergency: Boolean(input.emergency) }))
     if (delta) await tx.cashMovement.create({ data: { recordedAt: new Date(), accountId: actor.accountId, treasuryAccountId: shift.treasuryAccountId, cashShiftId: id, sourceType: "CLOSING_DIFFERENCE", sourceId: id, reference: "Diferencia de cierre", amountCents: delta, userId: actor.id, note: input.note } })
@@ -295,7 +301,7 @@ export async function manualCashMovement(actor: Actor, deviceHash: string, input
   })
 }
 export async function correctClosedCashDocument(actor: Actor, deviceHash: string, input: { sourceType: string; sourceId: string; moneyMoved: boolean; reason: string }) {
-  const permissions: Record<string, PermissionKey> = { sale: "canCancelSales", payment: "canCancelPayments", purchase: "canCancelPurchases", operatingExpense: "canCancelExpenses", return: "canCancelReturns", treasuryTransfer: "canReverseTreasuryTransfers" }
+  const permissions: Record<string, PermissionKey> = { sale: "canCancelSales", payment: "canCancelPayments", purchase: "canCancelPurchases", supplierPayment: "canCancelSupplierPayments", operatingExpense: "canCancelExpenses", return: "canCancelReturns", treasuryTransfer: "canReverseTreasuryTransfers" }
   permit(Boolean(permissions[input.sourceType]) && hasPermission(actor, permissions[input.sourceType]))
   if (typeof input.moneyMoved !== "boolean" || !input.reason?.trim()) throw new Error("Indica el motivo y si hubo devolución o recuperación real de dinero")
   const source = await raw().cashSourceLink.findUnique({ where: { accountId_sourceType_sourceId: { accountId: actor.accountId, sourceType: input.sourceType, sourceId: input.sourceId } }, include: { cashShift: true } })
@@ -303,6 +309,7 @@ export async function correctClosedCashDocument(actor: Actor, deviceHash: string
   return cashRequest.run({ correction: input, trustedActor: actor, deviceHash }, () => prisma.$transaction(async tx => {
     if (input.sourceType === "sale") { const result = await (await import("@/app/(app)/sales/actions")).cancelSale(input.sourceId, actor.username ?? actor.name, input.reason); if (!result.success) throw new Error(result.error) }
     if (input.sourceType === "payment") await (await import("@/app/(app)/ar/actions")).cancelPayment(input.sourceId, input.reason)
+    if (input.sourceType === "supplierPayment") await (await import("@/lib/accounts-payable")).cancelSupplierPayment(actor, input.sourceId, input.reason)
     if (input.sourceType === "purchase") await (await import("@/app/(app)/purchases/actions")).cancelPurchase(input.sourceId)
     if (input.sourceType === "return") await (await import("@/app/(app)/returns/actions")).cancelReturn(input.sourceId)
     if (input.sourceType === "operatingExpense") await (await import("@/app/(app)/operating-expenses/actions")).deleteOperatingExpense(input.sourceId)

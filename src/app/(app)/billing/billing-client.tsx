@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
   CreditCard,
@@ -29,6 +29,7 @@ import {
 import { useToast } from "@/hooks/use-toast"
 import { UploadButton } from "@uploadthing/react"
 import type { OurFileRouter } from "@/app/api/uploadthing/core"
+import { recoverPaymentProofUpload, type UploadedPaymentProof } from "@/lib/billing-proof-upload"
 import { createMetaEventId, trackMetaEvent } from "@/lib/meta/browser"
 import {
   getBillingData,
@@ -70,12 +71,57 @@ export function BillingClient({ initialData }: BillingClientProps) {
   const [uploadedProofUrl, setUploadedProofUrl] = useState<string | null>(null)
   const [uploadedProofName, setUploadedProofName] = useState<string | null>(null)
   const [uploadedProofType, setUploadedProofType] = useState<string | null>(null)
+  const [uploadingProof, setUploadingProof] = useState(false)
+  const proofFileRef = useRef<File | null>(null)
   const [selectedBankAccountId, setSelectedBankAccountId] = useState<string>(
     data.bankAccounts?.[0]?.id || ""
   )
 
   const [isBankModalOpen, setIsBankModalOpen] = useState(false)
   const pendingProofKey = "billing-proof-pending"
+
+  const rememberUploadedProof = (file: UploadedPaymentProof) => {
+    setUploadedProofUrl(file.url)
+    setUploadedProofName(file.name)
+    // Al reemplazar un PDF por una imagen también hay que actualizar el MIME
+    // para que la vista previa no conserve el tipo del comprobante anterior.
+    setUploadedProofType(file.type)
+    try {
+      localStorage.setItem(pendingProofKey, "1")
+    } catch { }
+  }
+
+  const beforeProofUpload = (files: File[]) => {
+    proofFileRef.current = files[0] ?? null
+    setUploadingProof(true)
+    return files
+  }
+
+  const finishProofUpload = () => {
+    proofFileRef.current = null
+    setUploadingProof(false)
+  }
+
+  const completeProofUpload = (files: { ufsUrl: string; name: string; type: string }[]) => {
+    const file = files[0]
+    if (file) rememberUploadedProof({ url: file.ufsUrl, name: file.name, type: file.type })
+    finishProofUpload()
+  }
+
+  const handleProofUploadError = async (error: { code?: string; message: string }) => {
+    try {
+      const file = await recoverPaymentProofUpload(proofFileRef.current, error)
+      rememberUploadedProof(file)
+    } catch (failure) {
+      toast({
+        title: "Error al subir",
+        description: failure instanceof Error ? failure.message : "No se pudo subir el comprobante.",
+        variant: "destructive",
+      })
+    } finally {
+      finishProofUpload()
+    }
+  }
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return
@@ -135,17 +181,6 @@ export function BillingClient({ initialData }: BillingClientProps) {
       }
     } else if (process.env.NODE_ENV === "development") {
       console.log("[BillingClient] refreshData returned null")
-    }
-  }
-
-  const getFileNameFromUrl = (url: string) => {
-    try {
-      const parsed = new URL(url)
-      const name = parsed.pathname.split("/").pop()
-      return name ? decodeURIComponent(name) : "comprobante.pdf"
-    } catch {
-      const fallback = url.split("/").pop()
-      return fallback ? decodeURIComponent(fallback) : "comprobante.pdf"
     }
   }
 
@@ -239,6 +274,29 @@ export function BillingClient({ initialData }: BillingClientProps) {
     }
   }
 
+  // Mantener estos hooks antes del retorno de error: si los datos se recuperan,
+  // React debe ejecutar el mismo número de hooks que en el render anterior.
+  useEffect(() => {
+    if (uploadedProofUrl) return
+    try {
+      localStorage.removeItem(pendingProofKey)
+    } catch { }
+  }, [uploadedProofUrl, pendingProofKey])
+
+  useEffect(() => {
+    if (!uploadedProofUrl) return
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ""
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload)
+    }
+  }, [uploadedProofUrl])
+
   if (!data?.state) {
     return (
       <div className="container mx-auto py-6 px-4 max-w-4xl">
@@ -308,27 +366,6 @@ export function BillingClient({ initialData }: BillingClientProps) {
     state.provider === "MANUAL" &&
     state.daysRemaining !== null &&
     state.daysRemaining <= 2
-
-  useEffect(() => {
-    if (uploadedProofUrl) return
-    try {
-      localStorage.removeItem(pendingProofKey)
-    } catch { }
-  }, [uploadedProofUrl, pendingProofKey])
-
-  useEffect(() => {
-    if (!uploadedProofUrl) return
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-      event.returnValue = ""
-    }
-
-    window.addEventListener("beforeunload", handleBeforeUnload)
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload)
-    }
-  }, [uploadedProofUrl, paymentNeedingProof])
 
   return (
     <div className="container mx-auto py-6 px-4 max-w-4xl">
@@ -561,37 +598,11 @@ export function BillingClient({ initialData }: BillingClientProps) {
                   <div className="relative border-2 border-dashed border-primary/50 rounded-lg p-6">
                     <UploadButton<OurFileRouter, "paymentProofUploader">
                       endpoint="paymentProofUploader"
-                      onClientUploadComplete={(res) => {
-                        if (res?.[0]?.url) {
-                          const file = res[0] as {
-                            url: string
-                            name?: string
-                            fileName?: string
-                            originalName?: string
-                            type?: string
-                            fileType?: string
-                            mime?: string
-                            contentType?: string
-                          }
-                          setUploadedProofUrl(file.url)
-                          setUploadedProofName(
-                            file.name || file.fileName || file.originalName || getFileNameFromUrl(file.url)
-                          )
-                          setUploadedProofType(
-                            file.type || file.fileType || file.mime || file.contentType || null
-                          )
-                          try {
-                            localStorage.setItem(pendingProofKey, "1")
-                          } catch { }
-                        }
-                      }}
-                      onUploadError={(error) => {
-                        toast({
-                          title: "Error al subir",
-                          description: error.message,
-                          variant: "destructive",
-                        })
-                      }}
+                      disabled={loading || uploadingProof}
+                      onBeforeUploadBegin={beforeProofUpload}
+                      onClientUploadComplete={completeProofUpload}
+                      onUploadError={handleProofUploadError}
+                      onUploadAborted={finishProofUpload}
                       className="absolute inset-0 z-10"
                       appearance={{
                         container: "h-full w-full",
@@ -613,7 +624,7 @@ export function BillingClient({ initialData }: BillingClientProps) {
                           </div>
                           <h3 className="font-medium mb-2 text-center">Sube tu comprobante</h3>
                           <p className="text-sm text-muted-foreground text-center mb-4">
-                            Sube la imagen o PDF y luego presiona Enviar comprobante.
+                            {uploadingProof ? "Subiendo comprobante…" : "Sube una imagen o PDF de hasta 4 MB y luego presiona Enviar comprobante."}
                           </p>
                         </>
                       )}
@@ -647,33 +658,11 @@ export function BillingClient({ initialData }: BillingClientProps) {
                             <div className="flex w-full md:w-56 items-center justify-center rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/20 py-4 text-center">
                               <UploadButton<OurFileRouter, "paymentProofUploader">
                                 endpoint="paymentProofUploader"
-                                onClientUploadComplete={(res) => {
-                                  if (res?.[0]?.url) {
-                                    const file = res[0] as {
-                                      url: string
-                                      name?: string
-                                      fileName?: string
-                                      originalName?: string
-                                    }
-                                    setUploadedProofUrl(file.url)
-                                    setUploadedProofName(
-                                      file.name ||
-                                      file.fileName ||
-                                      file.originalName ||
-                                      getFileNameFromUrl(file.url)
-                                    )
-                                    try {
-                                      localStorage.setItem(pendingProofKey, "1")
-                                    } catch { }
-                                  }
-                                }}
-                                onUploadError={(error) => {
-                                  toast({
-                                    title: "Error al subir",
-                                    description: error.message,
-                                    variant: "destructive",
-                                  })
-                                }}
+                                disabled={loading || uploadingProof}
+                                onBeforeUploadBegin={beforeProofUpload}
+                                onClientUploadComplete={completeProofUpload}
+                                onUploadError={handleProofUploadError}
+                                onUploadAborted={finishProofUpload}
                                 appearance={{
                                   container: "w-full",
                                   button:
@@ -686,10 +675,10 @@ export function BillingClient({ initialData }: BillingClientProps) {
                                       <div className="flex flex-col items-center gap-2">
                                         <Upload className="h-5 w-5 text-purple-primary" />
                                         <span className="text-xs font-semibold text-purple-primary">
-                                          Subir otro comprobante
+                                          {uploadingProof ? "Subiendo comprobante…" : "Subir otro comprobante"}
                                         </span>
                                         <span className="text-[11px] text-muted-foreground">
-                                          JPG, PNG o PDF
+                                          Imagen o PDF · Máximo 4 MB
                                         </span>
                                       </div>
                                     )
@@ -713,7 +702,7 @@ export function BillingClient({ initialData }: BillingClientProps) {
                               })
                             }
                           }}
-                          disabled={loading || !uploadedProofUrl}
+                          disabled={loading || uploadingProof || !uploadedProofUrl}
                         >
                           {loading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                           Enviar comprobante

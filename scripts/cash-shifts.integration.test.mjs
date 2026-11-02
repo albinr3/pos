@@ -24,6 +24,7 @@ function load(name) {
   if (name === "next/headers") return { headers: async () => new Headers() }
   if (name === "next/cache") return { revalidatePath() {} }
   if (name === "@/lib/auth") return { getCurrentUser: async () => load("@/lib/cash-context").cashRequest.getStore()?.trustedActor ?? null, getCurrentUserWithDiagnostics: async () => ({ user: load("@/lib/cash-context").cashRequest.getStore()?.trustedActor ?? null }), AuthenticationRequiredError: Error }
+  if (name === "../_helpers/auth") return { getCurrentUserFromRequest: async () => load("@/lib/cash-context").cashRequest.getStore()?.trustedActor ?? null }
   if (name === "@/lib/error-logger") return { logError: async () => {}, ErrorCodes: {} }
   if (name === "@/lib/openai") return { openai: {} }
   if (!name.startsWith("@/")) return require(name)
@@ -369,12 +370,36 @@ test("Fondo manual, desactivación de responsable y cuenta controlada están pro
   await assert.rejects(transact(f, tx => tx.treasuryOpeningBalance.create({ data: { accountId: f.account.id, treasuryAccountId: f.box.id, effectiveAt: new Date(), amountCents: 200000 } })), /fondo de caja/)
   await assert.rejects(transact(f, tx => tx.user.update({ where: { id: f.actor.id }, data: { isActive: false } })), /Cierra el turno/)
   await assert.rejects(transact(f, tx => tx.treasuryAccount.update({ where: { id: f.box.id }, data: { type: "BANCO" } })), /permanecer activa/)
-  await assert.rejects(service.disableCashControl(f.actor), /Cierra el turno/)
+  await assert.rejects(service.disableCashControl(f.actor), error => error.code === "CASH_CONTROL_IRREVERSIBLE" && error.status === 409)
 })
-test("Desactivar nuevos turnos conserva el registro y los cierres protegidos", async () => {
+test("La API prohíbe volver a Turno único con turnos abiertos, cerrándose y cerrados, incluso al dueño", async () => {
+  const f = await fixture()
+  const route = load("@/app/api/cash-shifts/route")
+  const { NextRequest } = require("next/server")
+  for (const status of ["OPEN", "CLOSING", "CLOSED"]) {
+    if (status === "CLOSING") await service.prepareCashClose(f.actor, device, f.shift.id, 0)
+    if (status === "CLOSED") await close(f, 0, 100000)
+    assert.equal((await db.cashShift.findUnique({ where: { id: f.shift.id } })).status, status)
+    const before = await db.cashControl.findUnique({ where: { accountId: f.account.id } })
+    const shift = await db.cashShift.findUnique({ where: { id: f.shift.id } })
+    const movements = await db.cashMovement.findMany({ where: { accountId: f.account.id }, orderBy: { id: "asc" } })
+    const response = await cashRequest.run({ trustedActor: f.actor }, () => route.POST(new NextRequest("http://localhost/api/cash-shifts", { method: "POST", headers: { "Content-Type": "application/json", origin: "http://localhost" }, body: JSON.stringify({ action: "disable" }) })))
+    assert.equal(response.status, 409)
+    assert.equal((await response.json()).code, "CASH_CONTROL_IRREVERSIBLE")
+    assert.deepEqual(await db.cashControl.findUnique({ where: { accountId: f.account.id } }), before)
+    assert.deepEqual(await db.cashShift.findUnique({ where: { id: f.shift.id } }), shift)
+    assert.deepEqual(await db.cashMovement.findMany({ where: { accountId: f.account.id }, orderBy: { id: "asc" } }), movements)
+    assert.equal(await db.auditLog.count({ where: { accountId: f.account.id, details: { path: ["event"], equals: "CONTROL_DISABLED" } } }), 0)
+  }
+})
+test("Las cuentas antiguas desactivadas conservan su registro y sus cierres protegidos", async () => {
   const f = await fixture()
   const sale = await operation(f, 1, tx => tx.sale.create({ data: saleData(f) }))
-  await close(f, 1, 110000); await service.disableCashControl(f.actor)
+  await close(f, 1, 110000)
+  // Simular datos anteriores a la regla permanente; la API ya no permite generar este estado.
+  await db.cashControl.update({ where: { accountId: f.account.id }, data: { enabled: false } })
+  await service.disableCashControl(f.actor)
+  assert.equal((await service.getCashContext(f.actor, device)).enabled, false)
   await transact(f, tx => tx.sale.create({ data: saleData(f) }))
   assert.equal(await service.drawerBalance(db, f.account.id, f.box.id), 120000)
   await assert.rejects(transact(f, tx => tx.sale.delete({ where: { id: sale.id } })), /pertenece a un cierre/)
@@ -457,11 +482,14 @@ test("Operaciones mixtas toman primero el bloqueo de negocio y evitan orden inve
 test("Reactivar usa el registro existente y confirma el conteo sin duplicar la base", async () => {
   const f = await fixture()
   const sale = await operation(f, 1, tx => tx.sale.create({ data: saleData(f) }))
-  await close(f, 1, 110000); await service.disableCashControl(f.actor)
+  await close(f, 1, 110000)
+  // Registro antiguo desactivado: solo la preparación de pruebas puede recrearlo.
+  await db.cashControl.update({ where: { accountId: f.account.id }, data: { enabled: false } })
   await transact(f, tx => tx.sale.update({ where: { id: sale.id }, data: { cancelledAt: new Date() } }), { correction: { sourceType: "sale", sourceId: sale.id, moneyMoved: false, reason: "Corrección documental" } })
   const preview = await service.previewCashActivation(f.actor)
   assert.equal(preview.accounts.find(a => a.id === f.box.id).balanceCents, 110000)
   await service.activateCashControl(f.actor, { treasuryAccountId: f.box.id, countedCents: 109000, note: "Revisión física al reactivar", previewToken: preview.previewToken })
+  await assert.rejects(service.disableCashControl(f.actor), error => error.code === "CASH_CONTROL_IRREVERSIBLE" && error.status === 409)
   f.shift = await service.openCashShift(f.actor, device, 109000)
   assert.equal(await expected(f), 109000)
   assert.equal(await db.cashMovement.count({ where: { accountId: f.account.id, sourceType: "BASELINE" } }), 2)
@@ -478,7 +506,8 @@ test("Comprobantes e historial respetan usuario, negocio y paginación estable",
   assert.equal(await service.getCashReceipt(other.actor, first[0].id), null)
   const restricted = { ...f.actor, id: other.actor.id, isOwner: false, canViewAllCashShifts: false, canManageCashShifts: false, canOperateCashShifts: true }
   assert.equal(await service.getCashReceipt(restricted, first[0].id), null)
-  await assert.rejects(service.listCashHistory(restricted, first[0].id), /Turno no encontrado/)
+  await assert.rejects(service.listCashHistory(restricted, first[0].id), /permiso/)
+  await assert.rejects(service.listCashHistory({ ...restricted, canManageCashShifts: true }), /permiso/)
 })
 test("Una venta retroactiva nueva aparece una vez en el registro de tesorería", async () => {
   const f = await fixture()
@@ -492,12 +521,14 @@ test("Una venta retroactiva nueva aparece una vez en el registro de tesorería",
   const earlier = await treasury.cashLedgerDashboard(f.account.id, new Date(0), new Date(1), legacy, true)
   assert.equal(earlier, legacy)
 })
-test("Una respuesta pendiente conserva idempotencia después de desactivar turnos", async () => {
+test("Una respuesta pendiente conserva idempotencia con datos antiguos de turnos desactivados", async () => {
   const f = await fixture(), id = randomUUID()
   let calls = 0
   const create = tx => { calls++; return tx.sale.create({ data: saleData(f) }) }
   const original = await operation(f, 1, create, id)
-  await close(f, 1, 110000); await service.disableCashControl(f.actor)
+  await close(f, 1, 110000)
+  // Compatibilidad con negocios que desactivaron turnos antes de introducir el bloqueo permanente.
+  await db.cashControl.update({ where: { accountId: f.account.id }, data: { enabled: false } })
   const repeated = await operation(f, 1, create, id)
   assert.equal(repeated.id, original.id); assert.equal(calls, 1)
   assert.equal(await service.drawerBalance(db, f.account.id, f.box.id), 110000)

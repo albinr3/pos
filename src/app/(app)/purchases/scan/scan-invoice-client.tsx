@@ -1,9 +1,10 @@
 "use client"
 
+import { PurchaseCreditFields, purchaseCreditError, proposePurchaseDueDate, type PurchaseCreditValue } from "@/components/app/purchase-credit-fields"
 import { submitControlledDocument } from "@/lib/cash-offline"
 
 import { PaymentMethod } from "@prisma/client"
-import { listTreasuryAccounts } from "../../treasury/actions"
+import { getPurchasePaymentAccounts as listTreasuryAccounts } from "../actions"
 import { filterTreasuryAccountsByPaymentMethod } from "@/lib/treasury-account-selection"
 
 import { useRef, useState, useTransition, useEffect } from "react"
@@ -19,6 +20,7 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { toast } from "@/hooks/use-toast"
 import { formatRD, toCents } from "@/lib/money"
+import { summarizePurchaseReview } from "@/lib/purchase-review"
 import { resolvePurchaseSalePricing } from "@/lib/purchase-pricing"
 
 import { processInvoiceImage, createPurchaseFromOCR, ExtractedInvoiceData, ExtractedProduct } from "../ocr-actions"
@@ -32,8 +34,10 @@ type ReviewProduct = ExtractedProduct & {
   saleMarginBp: number
 }
 
-export function ScanInvoiceClient() {
+export function ScanInvoiceClient({ canRegisterSupplierPayments = false }: { canRegisterSupplierPayments?: boolean }) {
   const router = useRouter()
+  const [credit, setCredit] = useState<PurchaseCreditValue>({ type: "CONTADO", dueDate: "", initialPaymentCents: 0 })
+  const operation = useRef({ signature: "", id: "" })
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
   const [paymentAccount, setPaymentAccount] = useState("")
   const [paymentAccounts, setPaymentAccounts] = useState<Awaited<ReturnType<typeof listTreasuryAccounts>>>([])
@@ -136,6 +140,7 @@ export function ScanInvoiceClient() {
       return
     }
 
+    setCredit(current => ({ ...current, dueDate: proposePurchaseDueDate(supplier.creditDays) }))
     setSupplierName(supplier.name)
     const supplierDiscount = supplier.discountPercentBp
     const discounts: Record<number, number> = {}
@@ -147,37 +152,7 @@ export function ScanInvoiceClient() {
   }
 
   // Calcular totales con descuento e ITBIS
-  const totals = (() => {
-    const includedProducts = reviewProducts.filter((p) => p.included)
-    
-    // Subtotal sin descuento ni ITBIS
-    const subtotalCents = includedProducts.reduce((sum, p) => sum + p.unitPrice * p.quantity, 0)
-    
-    // Calcular descuentos y costos netos
-    let totalDiscountCents = 0
-    let totalNetCents = 0
-    let totalPurchaseNoItbisCents = 0
-    
-    includedProducts.forEach((product, index) => {
-      const discountBp = productDiscounts[index] ?? 0
-      const pricing = resolveLinePricing(product, discountBp)
-      const lineDiscount = (pricing.unitCostCents - pricing.discountedCostCents) * product.quantity
-      const lineNetCost = pricing.netCostCents * product.quantity
-
-      totalDiscountCents += lineDiscount
-      totalNetCents += lineNetCost
-      totalPurchaseNoItbisCents += pricing.purchaseNoItbisCents * product.quantity
-    })
-    
-    const itbisCents = totalNetCents - totalPurchaseNoItbisCents
-    
-    return {
-      subtotalCents,
-      discountCents: totalDiscountCents,
-      itbisCents,
-      totalCents: totalNetCents,
-    }
-  })()
+  const totals = summarizePurchaseReview(reviewProducts, productDiscounts, resolveLinePricing)
 
   // Abrir cámara
   async function openCamera() {
@@ -372,9 +347,14 @@ export function ScanInvoiceClient() {
 
     startSaving(async () => {
       try {
+        if (!navigator.onLine) throw new Error("Conéctate para registrar la compra")
+        const creditError = purchaseCreditError(credit, totals.totalCents, canRegisterSupplierPayments)
+        if (creditError) throw new Error(creditError)
+        if (credit.type === "CREDITO" && credit.initialPaymentCents > 0 && !filterTreasuryAccountsByPaymentMethod(paymentAccounts, paymentMethod).some(a => a.id === paymentAccount && (paymentMethod === "EFECTIVO" || a.type === "BANCO"))) throw new Error("Selecciona la cuenta del abono inicial")
         const input = {
-          treasuryAccountId: paymentAccount || null,
-          paymentMethod: paymentAccount ? paymentMethod : null,
+          ...credit,
+          treasuryAccountId: credit.type === "CONTADO" || credit.initialPaymentCents > 0 ? paymentAccount || null : null,
+          paymentMethod: credit.type === "CONTADO" || credit.initialPaymentCents > 0 ? paymentMethod : null,
           supplierId: supplierId || null,
           supplierName: supplierName || null,
           products: includedProducts.map((p) => {
@@ -401,13 +381,16 @@ export function ScanInvoiceClient() {
           updateProductCost: updateCost,
           updateProductPrice: updatePrice,
         }
-        const controlled = await submitControlledDocument("ocrPurchase", input)
+        const signature = JSON.stringify(input)
+        if (operation.current.signature !== signature) operation.current = { signature, id: crypto.randomUUID() }
+        const command = { ...input, operationId: operation.current.id }
+        const controlled = await submitControlledDocument("ocrPurchase", command)
         if (controlled?.pending) {
           toast({ title: "Guardado pendiente de sincronización", description: "La operación queda pendiente. Revísala en Cuadre diario antes de cerrar." })
           setStep("capture")
           return
         }
-        const purchase = controlled ? controlled.result : await createPurchaseFromOCR(input)
+        const purchase = controlled ? controlled.result : await createPurchaseFromOCR(command)
         if (!purchase?.id) throw new Error("No se pudo obtener el comprobante; revisa el historial antes de registrar de nuevo")
 
         const printUrl = `/receipts/purchase/${purchase.id}`
@@ -436,6 +419,7 @@ export function ScanInvoiceClient() {
             <CardTitle>Capturar Factura</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-6">
+
             {/* Cámara activa */}
             {cameraActive && (
               <div className="relative">
@@ -526,9 +510,12 @@ export function ScanInvoiceClient() {
 
       {/* Paso 2: Revisión de datos */}
       {step === "review" && <Card><CardHeader><CardTitle>Pago de la compra</CardTitle></CardHeader><CardContent className="grid gap-3">
+        <PurchaseCreditFields canPay={canRegisterSupplierPayments} value={credit} onChange={setCredit} days={selectedSupplier?.creditDays ?? 0} totalCents={totals.totalCents} />
+        <div className={credit.type === "CREDITO" && credit.initialPaymentCents === 0 ? "hidden" : "grid gap-3"}>
         <p className="text-sm">Si pagaste esta compra, selecciona el método y la cuenta. Sin cuenta se registra únicamente la entrada de mercancía.</p>
         <Label htmlFor="ocr-payment-method">Método de pago</Label><select id="ocr-payment-method" className="rounded-md border bg-background p-2" value={paymentMethod} onChange={e => { setPaymentMethod(e.target.value as PaymentMethod); setPaymentAccount("") }}><option value="EFECTIVO">Efectivo</option><option value="TRANSFERENCIA">Transferencia</option><option value="TARJETA">Tarjeta</option><option value="OTRO">Otro</option></select>
-        <Label htmlFor="ocr-payment-account">Cuenta del pago</Label><select id="ocr-payment-account" className="rounded-md border bg-background p-2" value={paymentAccount} onChange={e => setPaymentAccount(e.target.value)}><option value="">Sin pago registrado</option>{filterTreasuryAccountsByPaymentMethod(paymentAccounts, paymentMethod).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+        <Label htmlFor="ocr-payment-account">Cuenta del pago</Label><select id="ocr-payment-account" className="rounded-md border bg-background p-2" value={paymentAccount} onChange={e => setPaymentAccount(e.target.value)}><option value="">Sin pago registrado</option>{filterTreasuryAccountsByPaymentMethod(paymentAccounts, paymentMethod).filter(a => credit.type !== "CREDITO" || paymentMethod === "EFECTIVO" || a.type === "BANCO").map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+        </div>
       </CardContent></Card>}
 
       {step === "review" && extractedData && (

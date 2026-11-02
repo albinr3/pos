@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
+import { creditDays } from "@/lib/purchase-credit"
 import { sanitizeString, sanitizePhone } from "@/lib/sanitize"
 import { logAuditEvent } from "@/lib/audit-log"
 import { ensurePermission } from "@/lib/permission-guard"
@@ -49,6 +50,7 @@ export async function upsertSupplier(input: {
   email?: string | null
   address?: string | null
   notes?: string | null
+  creditDays?: number
   discountPercentBp?: number
   chargesItbis?: boolean
   itbisRateBp?: number | null
@@ -68,6 +70,7 @@ export async function upsertSupplier(input: {
   const email = input.email ? sanitizeString(input.email) : null
   const address = input.address ? sanitizeString(input.address) : null
   const notes = input.notes ? sanitizeString(input.notes) : null
+  const days = input.creditDays === undefined && input.id ? undefined : creditDays(input.creditDays ?? 0)
   const chargesItbis = Boolean(input.chargesItbis)
   const normalizedItbisRateBp = chargesItbis
     ? Math.min(10000, Math.max(0, Math.round(input.itbisRateBp ?? 1800)))
@@ -88,6 +91,7 @@ export async function upsertSupplier(input: {
         email,
         address,
         notes,
+        creditDays: days,
         discountPercentBp: input.discountPercentBp ?? 0,
         chargesItbis,
         itbisRateBp: normalizedItbisRateBp,
@@ -109,6 +113,7 @@ export async function upsertSupplier(input: {
         phone,
         email,
         address,
+        creditDays: days,
         discountPercentBp: input.discountPercentBp ?? 0,
         chargesItbis,
         itbisRateBp: normalizedItbisRateBp,
@@ -124,6 +129,7 @@ export async function upsertSupplier(input: {
         email,
         address,
         notes,
+        creditDays: days,
         discountPercentBp: input.discountPercentBp ?? 0,
         chargesItbis,
         itbisRateBp: normalizedItbisRateBp,
@@ -144,6 +150,7 @@ export async function upsertSupplier(input: {
         phone,
         email,
         address,
+        creditDays: days,
         discountPercentBp: input.discountPercentBp ?? 0,
         chargesItbis,
         itbisRateBp: normalizedItbisRateBp,

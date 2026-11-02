@@ -1,8 +1,9 @@
 "use client"
 
+import { PurchaseCreditFields, purchaseCreditError, proposePurchaseDueDate, type PurchaseCreditValue } from "@/components/app/purchase-credit-fields"
 import { submitControlledDocument } from "@/lib/cash-offline"
 
-import { useEffect, useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { Search, ShoppingBag, Trash2 } from "lucide-react"
 import { PaymentMethod } from "@prisma/client"
 import { useRouter } from "next/navigation"
@@ -26,7 +27,7 @@ import {
 import { createPurchase, listPurchases, searchProductsForPurchase } from "./actions"
 import { getAllSuppliers } from "../suppliers/actions"
 import { getSettings } from "../settings/actions"
-import { listTreasuryAccounts } from "../treasury/actions"
+import { getPurchasePaymentAccounts as listTreasuryAccounts } from "./actions"
 
 type Purchase = Awaited<ReturnType<typeof listPurchases>>[number]
 
@@ -80,8 +81,10 @@ function calculatePricing(input: {
   })
 }
 
-export function PurchasesClient() {
+export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRegisterSupplierPayments?: boolean }) {
   const router = useRouter()
+  const [credit, setCredit] = useState<PurchaseCreditValue>({ type: "CONTADO", dueDate: "", initialPaymentCents: 0 })
+  const operation = useRef({ signature: "", id: "" })
   const [supplierId, setSupplierId] = useState<string>("")
   const [supplierName, setSupplierName] = useState("")
   const [notes, setNotes] = useState("")
@@ -90,8 +93,8 @@ export function PurchasesClient() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.EFECTIVO)
   const [treasuryAccountId, setTreasuryAccountId] = useState("")
   const availableTreasuryAccounts = useMemo(
-    () => filterTreasuryAccountsByPaymentMethod(treasuryAccounts, paymentMethod),
-    [treasuryAccounts, paymentMethod]
+    () => filterTreasuryAccountsByPaymentMethod(treasuryAccounts, paymentMethod).filter(a => credit.type !== "CREDITO" || paymentMethod === "EFECTIVO" || a.type === "BANCO"),
+    [treasuryAccounts, paymentMethod, credit.type]
   )
   const [defaultProfitMarginBp, setDefaultProfitMarginBp] = useState(3000)
   const [itbisRateBp, setItbisRateBp] = useState(1800)
@@ -182,14 +185,14 @@ export function PurchasesClient() {
 
   useEffect(() => {
     const nextTreasuryAccountId = pickTreasuryAccountIdForPaymentMethod(
-      treasuryAccounts,
+      availableTreasuryAccounts,
       paymentMethod,
       treasuryAccountId
     )
     if (nextTreasuryAccountId !== treasuryAccountId) {
       setTreasuryAccountId(nextTreasuryAccountId)
     }
-  }, [treasuryAccounts, paymentMethod, treasuryAccountId])
+  }, [availableTreasuryAccounts, paymentMethod, treasuryAccountId])
 
   function applySupplierSelection(nextSupplierId: string) {
     setSupplierId(nextSupplierId)
@@ -211,6 +214,7 @@ export function PurchasesClient() {
     const supplier = suppliers.find((s) => s.id === nextSupplierId)
     if (!supplier) return
 
+    setCredit(current => ({ ...current, dueDate: proposePurchaseDueDate(supplier.creditDays) }))
     setSupplierName(supplier.name)
     const purchaseItbisForSupplier = getPurchaseItbisRateBp(supplier)
     setCart((prev) =>
@@ -241,7 +245,8 @@ export function PurchasesClient() {
     return () => clearTimeout(t)
   }, [query])
 
-  const totalCents = useMemo(() => cart.reduce((s, i) => s + i.qty * i.netCostCents, 0), [cart])
+  // Redondear cada línea como el servidor evita diferencias al financiar cantidades fraccionarias.
+  const totalCents = useMemo(() => cart.reduce((s, i) => s + Math.round(i.qty * i.netCostCents), 0), [cart])
 
   function add(p: ProductResult) {
     setCart((prev) => {
@@ -332,23 +337,28 @@ export function PurchasesClient() {
   }
 
   async function save() {
+    // Rechazar datos inválidos antes de crear un pendiente durable que no pueda sincronizarse.
+    const creditError = purchaseCreditError(credit, totalCents, canRegisterSupplierPayments)
+    if (creditError) { toast({ title: "Revisa el crédito", description: creditError }); return }
     if (!supplierId) {
       toast({ title: "Proveedor requerido", description: "Debes seleccionar un proveedor para guardar la compra." })
       return
     }
-    if (!availableTreasuryAccounts.some((account) => account.id === treasuryAccountId)) {
+    if ((credit.type === "CONTADO" || credit.initialPaymentCents > 0) && !availableTreasuryAccounts.some((account) => account.id === treasuryAccountId)) {
       toast({ title: "Cuenta requerida", description: "Debes seleccionar una cuenta de tesorería." })
       return
     }
 
     startSaving(async () => {
       try {
+        if (!navigator.onLine && credit.type === "CREDITO") throw new Error("Conéctate para registrar una compra a crédito")
         const input = {
+          ...credit,
           supplierId: supplierId || null,
           supplierName: supplierName || null,
           notes: notes || null,
-          paymentMethod,
-          treasuryAccountId,
+          paymentMethod: credit.type === "CONTADO" || credit.initialPaymentCents > 0 ? paymentMethod : null,
+          treasuryAccountId: credit.type === "CONTADO" || credit.initialPaymentCents > 0 ? treasuryAccountId : null,
           items: cart.map((c) => ({
             productId: c.productId,
             qty: c.qty,
@@ -360,13 +370,16 @@ export function PurchasesClient() {
           updateProductCost: updateCost,
           updateProductPrice: updatePrice,
         }
-        const controlled = await submitControlledDocument("purchase", input)
+        const signature = JSON.stringify(input)
+        if (operation.current.signature !== signature) operation.current = { signature, id: crypto.randomUUID() }
+        const command = { ...input, operationId: operation.current.id }
+        const controlled = await submitControlledDocument("purchase", command)
         if (controlled?.pending) {
           toast({ title: "Guardado pendiente de sincronización", description: "La operación queda pendiente. Revísala en Cuadre diario antes de cerrar." })
           setCart([])
           return
         }
-        const purchase = controlled ? controlled.result : await createPurchase(input)
+        const purchase = controlled ? controlled.result : await createPurchase(command)
         if (!purchase?.id) throw new Error("No se pudo obtener el comprobante; revisa el historial antes de registrar de nuevo")
 
         const printUrl = `/receipts/purchase/${purchase.id}`
@@ -376,6 +389,8 @@ export function PurchasesClient() {
         }
 
         toast({ title: "Compra registrada" })
+        setCredit({ type: "CONTADO", dueDate: "", initialPaymentCents: 0 })
+        operation.current = { signature: "", id: "" }
         setSupplierId("")
         setSupplierName("")
         setNotes("")
@@ -433,7 +448,8 @@ export function PurchasesClient() {
               <Label>Nota (opcional)</Label>
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
-            <div className="grid gap-2 md:grid-cols-2">
+            <PurchaseCreditFields canPay={canRegisterSupplierPayments} value={credit} onChange={setCredit} days={selectedSupplier?.creditDays ?? 0} totalCents={Math.round(totalCents)} />
+            <div className={credit.type === "CREDITO" && credit.initialPaymentCents === 0 ? "hidden" : "grid gap-2 md:grid-cols-2"}>
               <div className="grid gap-2">
                 <Label>Método de pago</Label>
                 <select
@@ -876,7 +892,7 @@ export function PurchasesClient() {
                     <div className="flex items-center gap-2 font-semibold">
                       <ShoppingBag className="h-4 w-4" /> Compra
                     </div>
-                    <div className="font-semibold">{formatRD(p.totalCents)}</div>
+                    <div className="font-semibold">{formatRD(p.totalCents)}</div><div className="text-xs">{p.type === "CREDITO" ? `Crédito · Pendiente ${formatRD(p.cancelledAt ? 0 : p.payable?.balanceCents ?? 0)}` : "Contado"}</div>
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
                     {p.supplierName ? `Suplidor: ${p.supplierName} · ` : ""}

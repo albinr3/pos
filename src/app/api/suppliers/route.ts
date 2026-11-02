@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
+import { hasPermission } from "@/lib/permissions"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
+import { creditDays, PurchaseError } from "@/lib/purchase-credit"
 import { sanitizePhone, sanitizeString } from "@/lib/sanitize"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
 
@@ -29,12 +31,14 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const query = (searchParams.get("query") || "").trim()
     const cursor = searchParams.get("cursor")
+    const includeInactive = searchParams.get("includeInactive") === "true"
+    if (includeInactive && !hasPermission(user, "canAccessAccountsPayable") && !hasPermission(user, "canManageSuppliers")) return NextResponse.json({ error: "Sin permiso", code: "FORBIDDEN" }, { status: 403 })
     const take = parseTake(searchParams.get("take"), 200, 500)
 
     const suppliers = await prisma.supplier.findMany({
       where: {
         accountId: user.accountId,
-        isActive: true,
+        ...(includeInactive ? {} : { isActive: true }),
         ...(query
           ? {
               OR: [
@@ -59,8 +63,10 @@ export async function GET(request: NextRequest) {
       data: pageItems.map((s) => ({
         id: s.id,
         name: s.name,
+        isActive: s.isActive,
         contactName: s.contactName,
         phone: s.phone,
+        creditDays: s.creditDays,
         discountPercentBp: s.discountPercentBp,
         chargesItbis: s.chargesItbis,
         itbisRateBp: s.itbisRateBp,
@@ -70,6 +76,7 @@ export async function GET(request: NextRequest) {
       nextCursor,
     })
   } catch (error: unknown) {
+    if (error instanceof PurchaseError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
     console.error("Error en GET /api/suppliers:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al obtener proveedores" },
@@ -118,6 +125,7 @@ export async function POST(request: NextRequest) {
     const discountPercentBp = Number.isFinite(Number(body?.discountPercentBp))
       ? Number(body.discountPercentBp)
       : 0
+    const days = body.creditDays === undefined ? undefined : creditDays(body.creditDays)
     const chargesItbis = Boolean(body?.chargesItbis)
     const itbisRateBp = chargesItbis
       ? Math.min(10000, Math.max(0, Math.round(Number(body?.itbisRateBp ?? 1800))))
@@ -155,6 +163,7 @@ export async function POST(request: NextRequest) {
         email,
         address,
         notes,
+        creditDays: days,
         discountPercentBp,
         chargesItbis,
         itbisRateBp,
@@ -170,6 +179,7 @@ export async function POST(request: NextRequest) {
         email: created.email,
         address: created.address,
         notes: created.notes,
+        creditDays: created.creditDays,
         discountPercentBp: created.discountPercentBp,
         chargesItbis: created.chargesItbis,
         itbisRateBp: created.itbisRateBp,
@@ -179,6 +189,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error: unknown) {
+    if (error instanceof PurchaseError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
     console.error("Error en POST /api/suppliers:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al crear proveedor" },

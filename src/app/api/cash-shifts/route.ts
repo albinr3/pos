@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     if (!actor) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     const token = request.cookies.get("movopos-cash-device")?.value ?? randomUUID()
     const action = request.nextUrl.searchParams.get("view")
-    const data = action === "preview" ? await previewCashActivation(actor) : action === "history" ? await listCashHistory(actor, request.nextUrl.searchParams.get("before") ?? undefined) : action === "report" ? await getCashShiftReport(actor, cashHash(token), request.nextUrl.searchParams.get("shiftId") ?? "") : await getCashContext(actor, cashHash(token))
+    const data = action === "preview" ? await previewCashActivation(actor) : action === "history" ? await listCashHistory(actor, request.nextUrl.searchParams.get("before") ?? undefined, Number(request.nextUrl.searchParams.get("limit")) || undefined) : action === "report" ? await getCashShiftReport(actor, cashHash(token), request.nextUrl.searchParams.get("shiftId") ?? "") : await getCashContext(actor, cashHash(token))
     const response = NextResponse.json(data)
     response.headers.set("Cache-Control", "no-store")
     if (!request.cookies.has("movopos-cash-device")) response.cookies.set("movopos-cash-device", token, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 365 })
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       default: return NextResponse.json({ error: "Acción inválida" }, { status: 400 })
     }
     // El dinero ya está confirmado: una falla de caché no debe responder como si el movimiento hubiera fallado.
-    try { revalidatePath("/daily-close"); revalidatePath("/treasury") }
+    try { revalidatePath("/daily-close"); revalidatePath("/treasury"); revalidatePath("/settings") }
     catch (error) { console.error("[cash-shifts] No se pudo actualizar la caché después del commit", error) }
     return NextResponse.json({ ok: true, data })
   } catch (error) { return failed(error) }

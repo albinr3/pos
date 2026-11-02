@@ -4,11 +4,11 @@ import type { CashShift } from "@prisma/client"
 import { hasPermission, type PermissionKey } from "@/lib/permissions"
 import { documentLegs, legDelta, encodeCashResult, decodeCashResult } from "@/lib/cash-money"
 
-const financialModels = new Set(["sale", "salePayment", "payment", "purchase", "operatingExpense", "return", "treasuryTransfer", "treasuryOpeningBalance"])
+const financialModels = new Set(["sale", "salePayment", "payment", "supplierPayment", "purchase", "operatingExpense", "return", "treasuryTransfer", "treasuryOpeningBalance"])
 const mutationNames = new Set(["create", "createMany", "update", "updateMany", "delete", "deleteMany", "upsert"])
 const includes: Record<string, object> = { sale: { payments: true }, payment: { ar: { include: { sale: true } } }, return: { sale: true } }
 const accountOf = (row: any) => row.accountId ?? row.ar?.sale?.accountId
-const referenceOf = (row: any) => row.invoiceCode ?? row.receiptCode ?? row.returnCode ?? row.description ?? row.note ?? row.id
+const referenceOf = (row: any) => row.invoiceCode ?? row.receiptCode ?? row.reference ?? row.returnCode ?? row.description ?? row.note ?? row.id
 
 async function lockAccount(tx: any, accountId: string) {
   // El mismo candado serializa activar, registrar y cerrar; evita ventas que entren después del conteo.
@@ -82,14 +82,17 @@ async function mutate(tx: any, model: string, action: string, args: any) {
     transferReversal = true
   }
   if (control.enabled && action === "create") {
-    const permissions: Record<string, PermissionKey> = { sale: "canAccessSales", payment: "canAccessAccountsReceivable", purchase: "canManagePurchases", operatingExpense: "canManageExpenses", return: "canAccessReturns", treasuryTransfer: transferReversal ? "canReverseTreasuryTransfers" : "canCreateTreasuryTransfers" }
+    const permissions: Record<string, PermissionKey> = { sale: "canAccessSales", payment: "canAccessAccountsReceivable", purchase: "canManagePurchases", supplierPayment: "canRegisterSupplierPayments", operatingExpense: "canManageExpenses", return: "canAccessReturns", treasuryTransfer: transferReversal ? "canReverseTreasuryTransfers" : "canCreateTreasuryTransfers" }
     if (permissions[model] && !hasPermission(actor, permissions[model])) throw new CashControlError("CASH_FORBIDDEN", "No tienes permiso para registrar esta operación", 403)
   }
   const correction = scope.correction
+  // Notas de compra no cambian dinero ni los campos congelados del cierre.
+  // Limitar la excepción a esta lista impide usar PATCH para modificar importes cerrados.
+  const purchaseNotesOnly = model === "purchase" && ["update", "updateMany"].includes(action) && Object.keys(args.data ?? {}).length > 0 && Object.keys(args.data).every(key => key === "notes")
   for (const row of before) {
     if (accountOf(row) !== actor.accountId) throw new CashControlError("ACCOUNT_MISMATCH", "Operación de otro negocio", 403)
     const link = await tx.cashSourceLink.findUnique({ where: { accountId_sourceType_sourceId: { accountId, sourceType: sourceModel, sourceId: row.id } }, include: { cashShift: true } })
-    if (link?.cashShift.status === "CLOSED" && !(correction?.sourceType === sourceModel && correction.sourceId === row.id)) {
+    if (link?.cashShift.status === "CLOSED" && !purchaseNotesOnly && !(correction?.sourceType === sourceModel && correction.sourceId === row.id)) {
       throw new CashControlError("CASH_DOCUMENT_CLOSED", "Esta operación pertenece a un cierre. Usa Corregir operación en Cuadre diario")
     }
   }
