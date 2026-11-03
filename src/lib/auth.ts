@@ -1027,19 +1027,9 @@ export async function getCurrentUserWithDiagnostics(options: {
   /** Desactiva el log estructurado para wrappers de compatibilidad. */
   report?: boolean
 }): Promise<CurrentUserDiagnosticResult> {
-  // Verificar sesión de Clerk
-  const clerkUserId = await getClerkUserId()
-  if (!clerkUserId) {
-    const result: CurrentUserDiagnosticResult = {
-      user: null,
-      reason: "CLERK_SESSION_MISSING",
-      subUserTokenSource: "none",
-    }
-    if (options.report !== false) await writeAuthenticationDiagnostic(options.source, result)
-    return result
-  }
-
-  // Verificar sesión de subusuario (puede leer de header o cookies)
+  // 1. Verificar sesión de subusuario (puede leer de header o cookies).
+  // En MOVOPos, la sesión de trabajo activa del empleado o administrador se almacena en la cookie
+  // 'movopos-session' (JWT de 7 días firmado con JWT_SECRET).
   const subUserLookup = await getSubUserSessionLookup(options.authHeader)
   if (!subUserLookup.session) {
     const result: CurrentUserDiagnosticResult = {
@@ -1052,28 +1042,14 @@ export async function getCurrentUserWithDiagnostics(options: {
   }
   const subUserSession = subUserLookup.session
 
-  // Verificar que el Account corresponde al clerkUserId
+  // 2. Obtener el subusuario y su cuenta asociada en la base de datos
   const prisma = await getPrisma()
-  const account = await prisma.account.findUnique({
-    where: { clerkUserId },
-  })
-
-  if (!account || account.id !== subUserSession.accountId) {
-    const result: CurrentUserDiagnosticResult = {
-      user: null,
-      reason: !account ? "ACCOUNT_NOT_FOUND_FOR_CLERK" : "ACCOUNT_SESSION_MISMATCH",
-      subUserTokenSource: subUserLookup.tokenSource,
-    }
-    if (options.report !== false) await writeAuthenticationDiagnostic(options.source, result)
-    return result
-  }
-
-  // Obtener el subusuario
   const user = await prisma.user.findUnique({
     where: { id: subUserSession.userId },
+    include: { account: true },
   })
 
-  if (!user || !user.isActive || user.accountId !== account.id) {
+  if (!user || !user.isActive || user.accountId !== subUserSession.accountId) {
     const result: CurrentUserDiagnosticResult = {
       user: null,
       reason: !user
@@ -1081,6 +1057,40 @@ export async function getCurrentUserWithDiagnostics(options: {
         : !user.isActive
           ? "SUBUSER_INACTIVE"
           : "SUBUSER_ACCOUNT_MISMATCH",
+      subUserTokenSource: subUserLookup.tokenSource,
+    }
+    if (options.report !== false) await writeAuthenticationDiagnostic(options.source, result)
+    return result
+  }
+
+  const account = user.account
+  if (!account) {
+    const result: CurrentUserDiagnosticResult = {
+      user: null,
+      reason: "ACCOUNT_NOT_FOUND_FOR_CLERK",
+      subUserTokenSource: subUserLookup.tokenSource,
+    }
+    if (options.report !== false) await writeAuthenticationDiagnostic(options.source, result)
+    return result
+  }
+
+  // 3. Verificar sesión de Clerk si está disponible
+  // En flujos web de SPA/POS o Server Actions, el token __session de Clerk expira a los 60 segundos
+  // si el cliente no ha realizado una navegación completa o refresco de token en segundo plano.
+  // - Si hay token de Clerk activo y válido, verificamos estrictamente que pertenezca al mismo negocio
+  //   (evita colisiones de seguridad si el usuario cambia de cuenta en Clerk en la misma pestaña).
+  // - Si el token de Clerk expiró temporalmente en la petición pero la cookie 'movopos-session'
+  //   es legítima, está firmada por el servidor con JWT_SECRET y el usuario está activo en la BD,
+  //   permitimos que continúe operando para no bloquear ventas ni provocar "No autenticado" a mitad de cobro.
+  let clerkUserId = await getClerkUserId()
+  if (!clerkUserId && options.authHeader) {
+    clerkUserId = await getClerkUserIdFromToken(options.authHeader)
+  }
+
+  if (clerkUserId && account.clerkUserId && account.clerkUserId !== clerkUserId) {
+    const result: CurrentUserDiagnosticResult = {
+      user: null,
+      reason: "ACCOUNT_SESSION_MISMATCH",
       subUserTokenSource: subUserLookup.tokenSource,
     }
     if (options.report !== false) await writeAuthenticationDiagnostic(options.source, result)
@@ -1158,7 +1168,7 @@ export async function getCurrentUser(
   const result = await getCurrentUserWithDiagnostics({
     source: "auth/getCurrentUser",
     authHeader,
-    report: false,
+    report: true,
   })
   return result.user
 }

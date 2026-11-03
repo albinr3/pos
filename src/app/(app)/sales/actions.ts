@@ -1023,7 +1023,7 @@ async function createSaleInternal(input: {
   const legalTipEnabled = settings?.legalTipEnabled ?? false
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // Validar que el Account existe
       const account = await tx.account.findUnique({
         where: { id: user.accountId },
@@ -1415,15 +1415,20 @@ async function createSaleInternal(input: {
         })
       }
 
-      revalidatePath("/", "layout")
-      revalidatePath("/sales")
-      revalidatePath("/dashboard")
-      revalidatePath("/reports/profit")
-
       // Devolver los consumos reales evita que el POS conserve existencias obsoletas
       // hasta que el usuario recargue la pestaña (especialmente en productos tipo receta).
       return { ...sale, stockDecrements }
     }, TRANSACTION_OPTIONS)
+
+    // Revalidar fuera de la transacción para no retener el commit en base de datos.
+    // Solo revalidamos las rutas específicas afectadas por la venta. Evitar revalidatePath("/", "layout")
+    // porque forzaba el re-render de todo el árbol de layouts en la respuesta de la acción.
+    revalidatePath("/sales")
+    revalidatePath("/sales/list")
+    revalidatePath("/dashboard")
+    revalidatePath("/reports/profit")
+
+    return result
   } catch (error) {
     if (error instanceof CashControlError) throw error
     await logError(error as Error, {
@@ -1528,7 +1533,7 @@ export async function cancelSale(id: string, username: string, reason: string, c
   if (!normalizedReason) return { success: false, error: "Debes indicar un motivo de cancelación" }
 
   try {
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const sale = await tx.sale.findFirst({
         where: { id, accountId: user.accountId },
         include: {
@@ -1605,11 +1610,15 @@ export async function cancelSale(id: string, username: string, reason: string, c
         },
       }, tx)
 
-      revalidatePath("/", "layout")
-      revalidatePath("/reports/profit")
-
       return { success: true }
     }, TRANSACTION_OPTIONS)
+
+    revalidatePath("/sales")
+    revalidatePath("/sales/list")
+    revalidatePath("/dashboard")
+    revalidatePath("/reports/profit")
+
+    return result
   } catch (error) {
     if (error instanceof CashControlError) return { success: false, error: error.message }
     await logError(error as Error, {
@@ -2102,7 +2111,10 @@ export async function updateSale(input: {
       if (deleted.count === 0) throw new Error("Cuenta por cobrar no encontrada")
     }
 
-    revalidatePath("/", "layout")
-    revalidatePath("/reports/profit")
   }, TRANSACTION_OPTIONS)
+
+  revalidatePath("/sales")
+  revalidatePath("/sales/list")
+  revalidatePath("/dashboard")
+  revalidatePath("/reports/profit")
 }

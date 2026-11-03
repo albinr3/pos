@@ -14,22 +14,25 @@ export const dynamic = "force-dynamic"
 const BILLING_ALLOWED_PATHS = ["/billing", "/select-user"]
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  // Verificar sesión de Clerk (cuenta principal)
-  const isClerkAuth = await hasClerkSession()
-  if (!isClerkAuth) {
-    redirect("/login")
-  }
-
-  // Verificar sesión de subusuario
+  // 1. Verificar sesión de subusuario (caja/empleado en movopos-session)
   const hasSubUser = await hasSubUserSession()
   if (!hasSubUser) {
+    // Si no hay subusuario seleccionado, verificar si hay sesión de Clerk
+    const isClerkAuth = await hasClerkSession()
+    if (!isClerkAuth) {
+      redirect("/login")
+    }
     redirect("/select-user")
   }
 
-  // Obtener usuario completo (verifica que ambas sesiones sean válidas)
+  // 2. Obtener usuario completo (verifica firma de cookie, usuario activo en BD y cuenta)
   const user = await getCurrentUser()
   if (!user) {
-    // Si getCurrentUser falla, las sesiones no coinciden
+    // Si la sesión del subusuario no es válida, redirigir a select-user o login
+    const isClerkAuth = await hasClerkSession()
+    if (!isClerkAuth) {
+      redirect("/login")
+    }
     redirect("/select-user")
   }
 
