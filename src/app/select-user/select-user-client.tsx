@@ -284,6 +284,11 @@ export function SelectUserClient({ account, users, shouldClearSession, needsInit
       setError("El nombre del negocio es requerido")
       return
     }
+    // required no rechaza espacios: validar el valor recortado antes de enviar el registro.
+    if (!whatsappPhone.trim()) {
+      setError("El número con WhatsApp es requerido")
+      return
+    }
     setError("")
     const formData = new FormData()
     formData.set("businessName", businessName.trim())
@@ -328,8 +333,8 @@ export function SelectUserClient({ account, users, shouldClearSession, needsInit
                 <Input id="business-name" value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="Ej: La Esquina Market" disabled={isPending} autoFocus />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="whatsapp-phone">WhatsApp (opcional)</Label>
-                <Input id="whatsapp-phone" value={whatsappPhone} onChange={(e) => setWhatsappPhone(e.target.value)} placeholder="Ej: +1 809 000 0000" disabled={isPending} />
+                <Label htmlFor="whatsapp-phone">Número con WhatsApp (obligatorio)</Label>
+                <Input id="whatsapp-phone" type="tel" autoComplete="tel" required value={whatsappPhone} onChange={(e) => setWhatsappPhone(e.target.value)} placeholder="Ej: +1 809 000 0000" disabled={isPending} />
               </div>
               {error && <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
               <Button type="submit" className="w-full" disabled={isPending}>

@@ -119,6 +119,8 @@ export async function createInitialOwner(formData: FormData) {
   const businessName = String(formData.get("businessName") || "").trim()
   const whatsappPhone = String(formData.get("whatsappPhone") || "").trim()
   if (!businessName) return { error: "El nombre del negocio es requerido" }
+  // El registro exige WhatsApp también en el servidor para impedir altas sin contacto.
+  if (!whatsappPhone) return { error: "El número con WhatsApp es requerido" }
 
   if (!(await isClerkAuthenticated())) {
     return { error: "Sesión de cuenta principal expirada. Por favor, inicia sesión de nuevo." }
