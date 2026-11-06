@@ -23,9 +23,11 @@ export function useCashShiftAccess() {
   return access
 }
 
-export function CashShiftGate({ actor, bypass = false, children }: { actor: CashActorIdentity; bypass?: boolean; children: ReactNode }) {
-  const [state, setState] = useState<GateState>({ status: "checking" })
-  const [hadAccess, setHadAccess] = useState(false)
+export function CashShiftGate({ actor, cashControlEnabled = true, bypass = false, children }: { actor: CashActorIdentity; cashControlEnabled?: boolean; bypass?: boolean; children: ReactNode }) {
+  // El servidor ya confirmó Turno único: no requiere comprobar una apertura al entrar.
+  // Este estado inicial no sustituye las revalidaciones por eventos ni antes de guardar.
+  const [state, setState] = useState<GateState>({ status: cashControlEnabled ? "checking" : "ready" })
+  const [hadAccess, setHadAccess] = useState(!cashControlEnabled)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [counted, setCounted] = useState(0)
   const [note, setNote] = useState("")
@@ -64,7 +66,7 @@ export function CashShiftGate({ actor, bypass = false, children }: { actor: Cash
   }, [bypass, identity])
 
   useEffect(() => {
-    void check()
+    if (cashControlEnabled) void check()
     const refresh = () => { setOnline(navigator.onLine); void check() }
     window.addEventListener("focus", refresh)
     window.addEventListener("online", refresh)
@@ -77,7 +79,7 @@ export function CashShiftGate({ actor, bypass = false, children }: { actor: Cash
       window.removeEventListener("offline", refresh)
       window.removeEventListener("cash-shift-changed", refresh)
     }
-  }, [check, invalidateRequests])
+  }, [cashControlEnabled, check, invalidateRequests])
 
   async function openShift() {
     if (busy) return
@@ -102,7 +104,7 @@ export function CashShiftGate({ actor, bypass = false, children }: { actor: Cash
   const access = useMemo(() => ({ allowed, ensureAccess: check, handleError }), [allowed, check, handleError])
 
   return <CashAccess.Provider value={access}>
-    {/* No montar el formulario antes de verificar el turno. Después, ocultarlo conserva el carrito y los abonos preparados. */}
+    {/* Con múltiples turnos, verificar antes de montar. Después, ocultarlo conserva el carrito y los abonos preparados. */}
     {(allowed || hadAccess) && <div hidden={!allowed} inert={!allowed}>{children}</div>}
     {!allowed && <div className="grid gap-3 rounded-md border p-4" role="status">
       {state.status === "checking" ? <p>Comprobando tu turno de caja…</p> : <>

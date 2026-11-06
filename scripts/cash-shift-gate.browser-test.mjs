@@ -42,9 +42,10 @@ async function browserSuite() {
     const actor = { id: "ana", accountId: `gate-${++serial}` }
     const context = { protocolVersion: 1, accountId: actor.accountId, userId: actor.id, userName: "Ana", isOwner: true, enabled: true, ledgerStartedAt: new Date().toISOString(), canOperate: true, canViewAll: true, canManage: true, canTransfer: true, canRecordMovements: true, treasuryAccountId: "box", expectedOpeningCents: 11100, breakdown: [], activeShift: null }
     context.collectionsByMethod = [{ method: "EFECTIVO", totalCents: 22200 }, { method: "TARJETA", totalCents: 7500 }, { method: "TRANSFERENCIA", totalCents: 18800 }]
-    const f = { actor, context, history: [], report: null, openRequests: 0, createdShifts: 0, documents: [], actions: [], getStatus: 200, networkError: false, delay: 0, dropOpen: false, failOperations: false }
+    const f = { actor, context, history: [], report: null, contextRequests: 0, openRequests: 0, createdShifts: 0, documents: [], actions: [], getStatus: 200, networkError: false, delay: 0, dropOpen: false, failOperations: false }
     f.shift = () => ({ id: `shift-${actor.accountId}`, status: "OPEN", cashierName: "Ana", isMine: true, isDevice: true, openedAt: new Date().toISOString(), lastSequence: 0, finalSequence: null, openingCountedCents: 11100, expectedCashCents: 11100 })
     window.fetch = async (url, options = {}) => {
+      if (url === "/api/cash-shifts" && !options.method) f.contextRequests++
       if (!online || f.networkError) throw new TypeError("Network offline")
       if (!options.method) {
         if (f.delay) await sleep(f.delay)
@@ -90,9 +91,9 @@ async function browserSuite() {
       React.createElement("button", { id: "show-detail", onClick: () => setDetailOpen(true) }, "Preparar abono"),
       React.createElement(Dialog, { open: detailOpen && access.allowed, onOpenChange: setDetailOpen }, React.createElement(DialogContent, null, React.createElement(DialogTitle, null, "Abono preparado"), React.createElement(DialogDescription, null, "Datos del cobro"), React.createElement("input", { id: "detail", value: detail, onChange: event => setDetail(event.target.value) }))))
   }
-  function mount(f, bypass = false) {
+  function mount(f, bypass = false, cashControlEnabled) {
     currentRoot = createRoot(document.getElementById("test-root"))
-    currentRoot.render(React.createElement(CashShiftGate, { actor: f.actor, bypass }, React.createElement(Editor, { actor: f.actor })))
+    currentRoot.render(React.createElement(CashShiftGate, { actor: f.actor, bypass, cashControlEnabled }, React.createElement(Editor, { actor: f.actor })))
   }
   function mountWorkspace(f) {
     f.context.activeShift = { ...f.shift(), openingCountedCents: 11100, expectedCashCents: 33300 }
@@ -111,6 +112,13 @@ async function browserSuite() {
     assert(childMounts === mounts, "El editor no debe montarse sin turno")
     assert(dialog().textContent.includes("Abre tu turno para comenzar"), "Debe indicar cómo comenzar")
   })
+  await test("Múltiples turnos activados explícitamente comprueban antes de montar el formulario", async () => {
+    const f = await fixture(); f.delay = 80
+    flushSync(() => mount(f, false, true))
+    assert(screenText().includes("Comprobando tu turno de caja") && !document.getElementById("prepared"), "Debe comprobar desde el primer render")
+    await until(dialog, "Debe pedir la apertura")
+    assert(f.contextRequests === 1 && !document.getElementById("prepared"), "Debe consultar el turno y mantener el bloqueo")
+  })
   await test("Cerrar la ventana mantiene el bloqueo y permite volver a abrirla", async () => {
     const f = await fixture(); mount(f); await until(dialog, "Debe abrir")
     button("Ahora no").click(); await until(() => !dialog(), "Debe cerrar el diálogo")
@@ -123,6 +131,66 @@ async function browserSuite() {
     await until(() => document.getElementById("prepared"), "Debe habilitar el editor")
     assert(!dialog() && f.openRequests === 0, "No debe abrir turno")
   })
+  await test("Turno único monta desde el primer render sin aviso ni consulta inicial, incluso con red lenta", async () => {
+    const f = await fixture(); f.context.enabled = false; f.delay = 80
+    flushSync(() => mount(f, false, false))
+    assert(document.getElementById("prepared") && !screenText().includes("Comprobando tu turno de caja") && !dialog(), "Debe mostrar directamente el editor")
+    await sleep(100)
+    assert(f.contextRequests === 0 && f.openRequests === 0, "Turno único no debe consultar ni abrir turnos al entrar")
+  })
+  await test("Turno único no depende de una consulta inicial ni de una copia local para mostrar el formulario", async () => {
+    const f = await fixture(); f.context.enabled = false; online = false
+    flushSync(() => mount(f, false, false))
+    assert(document.getElementById("prepared") && !dialog(), "Debe mostrar el editor sin conexión")
+    await sleep(20)
+    assert(f.contextRequests === 0 && !screenText().includes("Comprobando tu turno de caja"), "No debe iniciar una comprobación offline")
+  })
+  await test("Turno único revalida al guardar aunque se omita la consulta inicial", async () => {
+    const f = await fixture(); f.context.enabled = false
+    flushSync(() => mount(f, false, false))
+    document.getElementById("save").click()
+    await until(() => f.contextRequests >= 2, "Debe comprobar el acceso y el contexto de guardado")
+    await sleep(20)
+    assert(!dialog() && !document.getElementById("prepared").closest("[hidden]"), "El modo desactivado debe conservar el acceso")
+    assert(f.openRequests === 0 && (await cashPending()).length === 0, "Debe dejar el guardado en el flujo habitual sin encolar operaciones de turno")
+  })
+  await test("Activar múltiples turnos se detecta por eventos y conserva el carrito al bloquear y recuperar", async () => {
+    for (const event of ["focus", "online", "cash-shift-changed"]) {
+      const f = await fixture(); f.context.enabled = false; const mounts = childMounts
+      flushSync(() => mount(f, false, false))
+      await input("prepared", `Carrito conservado: ${event}`)
+      f.context.enabled = true; window.dispatchEvent(new Event(event))
+      await until(dialog, `Debe detectar la activación mediante ${event}`)
+      assert(document.getElementById("prepared").closest("[hidden]"), "Debe ocultar el editor sin desmontarlo")
+      assert(document.getElementById("prepared").value === `Carrito conservado: ${event}`, "Debe conservar el carrito preparado")
+      assert(f.contextRequests > 0 && f.documents.length === 0 && (await cashPending()).length === 0, "La revalidación no registra ni encola documentos")
+      f.context.activeShift = f.shift(); window.dispatchEvent(new Event(event))
+      await until(() => !dialog() && !document.getElementById("prepared").closest("[hidden]"), "Debe recuperar el acceso al abrir turno")
+      assert(childMounts === mounts + 1 && document.getElementById("prepared").value === `Carrito conservado: ${event}`, "La recuperación no debe remontar ni limpiar el editor")
+    }
+  })
+  await test("Activar múltiples turnos se detecta antes de guardar aunque no haya eventos", async () => {
+    const f = await fixture(); f.context.enabled = false
+    flushSync(() => mount(f, false, false))
+    await input("prepared", "Preparado en Turno único")
+    f.context.enabled = true; document.getElementById("save").click()
+    await until(dialog, "Debe pedir la apertura antes de guardar")
+    assert(dialog().textContent.includes("Abre tu turno para comenzar") && document.getElementById("prepared").closest("[hidden]"), "El indicador inicial no debe saltarse el bloqueo actual")
+    assert(document.getElementById("prepared").value === "Preparado en Turno único" && f.documents.length === 0 && (await cashPending()).length === 0, "Debe conservar sin guardar ni encolar")
+  })
+  await test("Turno único sigue rechazando otra identidad o una sesión vencida al guardar", async () => {
+    for (const mode of ["user", "account", "session"]) {
+      const f = await fixture(); f.context.enabled = false
+      flushSync(() => mount(f, false, false))
+      if (mode === "user") f.context.userId = "otro-empleado"
+      if (mode === "account") f.context.accountId = "otra-cuenta"
+      if (mode === "session") f.getStatus = 401
+      document.getElementById("save").click()
+      await until(dialog, "Debe bloquear la identidad inválida")
+      assert(document.getElementById("prepared").closest("[hidden]") && !button("Abrir mi turno y comenzar"), "No debe permitir trabajar con otra sesión")
+      assert(f.documents.length === 0 && (await cashPending()).length === 0, "No debe guardar ni encolar con la sesión inválida")
+    }
+  })
   await test("Turno propio abierto permite trabajar directamente", async () => {
     const f = await fixture(); f.context.activeShift = f.shift(); mount(f)
     await until(() => document.getElementById("prepared"), "Debe habilitar el editor")
@@ -131,7 +199,7 @@ async function browserSuite() {
   await test("La práctica sin documentos reales queda excluida de la apertura", async () => {
     const f = await fixture(); mount(f, true)
     await until(() => document.getElementById("prepared"), "La práctica debe estar disponible")
-    assert(!dialog() && f.openRequests === 0, "No debe abrir un turno para practicar")
+    assert(!dialog() && f.openRequests === 0 && f.contextRequests === 0, "No debe consultar ni abrir un turno para practicar")
   })
   await test("Abrir desde la ventana muestra el esperado y habilita sin registrar documentos", async () => {
     const f = await fixture(); mount(f); await until(dialog, "Debe abrir")
@@ -487,7 +555,7 @@ async function browserSuite() {
   document.getElementById("result").textContent = JSON.stringify(results)
 }
 
-const compiled = await build({ stdin: { contents: `import React from "react"; import { createRoot } from "react-dom/client"; import { CashShiftGate, useCashShiftAccess } from "./src/components/app/cash-shift-gate"; import { CashShiftBanner } from "./src/components/app/cash-shift-banner"; import { CashShiftsClient } from "./src/app/(app)/daily-close/cash-shifts-client"; import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./src/components/ui/dialog"; import { cashPending, refreshCashContext, submitControlledDocument } from "./src/lib/cash-offline"; import { openCashShiftFromClient } from "./src/lib/cash-shift-opening"; import { isBeforeCurrentBusinessDay } from "./src/lib/dates"; import { getPendingCounts } from "./src/lib/indexed-db"; (${browserSuite.toString()})().catch(error => document.getElementById("result").textContent = JSON.stringify([{ok:false,error:error.message}]));`, resolveDir: rootDir }, bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "test-navigation", setup(build) { build.onResolve({ filter: /^next\/link$/ }, () => ({ path: "next-link", namespace: "test" })); build.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'import React from "react"; export default function Link(props) { return React.createElement("a", props); }', resolveDir: rootDir })) } }] })
+const compiled = await build({ stdin: { contents: `import React from "react"; import { flushSync } from "react-dom"; import { createRoot } from "react-dom/client"; import { CashShiftGate, useCashShiftAccess } from "./src/components/app/cash-shift-gate"; import { CashShiftBanner } from "./src/components/app/cash-shift-banner"; import { CashShiftsClient } from "./src/app/(app)/daily-close/cash-shifts-client"; import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./src/components/ui/dialog"; import { cashPending, refreshCashContext, submitControlledDocument } from "./src/lib/cash-offline"; import { openCashShiftFromClient } from "./src/lib/cash-shift-opening"; import { isBeforeCurrentBusinessDay } from "./src/lib/dates"; import { getPendingCounts } from "./src/lib/indexed-db"; (${browserSuite.toString()})().catch(error => document.getElementById("result").textContent = JSON.stringify([{ok:false,error:error.message}]));`, resolveDir: rootDir }, bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' }, plugins: [{ name: "test-navigation", setup(build) { build.onResolve({ filter: /^next\/link$/ }, () => ({ path: "next-link", namespace: "test" })); build.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'import React from "react"; export default function Link(props) { return React.createElement("a", props); }', resolveDir: rootDir })) } }] })
 const target = path.join(rootDir, "tmp", "cash-gate-browser.html")
 fs.mkdirSync(path.dirname(target), { recursive: true })
 fs.writeFileSync(target, `<!doctype html><meta charset="utf-8"><div id="test-root"></div><pre id="result">RUNNING</pre><script>${compiled.outputFiles[0].text.replace(/<\/script/gi, "<\\/script")}</script>`)

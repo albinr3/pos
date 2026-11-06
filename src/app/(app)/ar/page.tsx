@@ -6,10 +6,14 @@ import { requireModuleAccess } from "@/lib/module-access"
 import { listTreasuryAccounts } from "../treasury/actions"
 import { ARClient } from "./ar-client"
 import { CashShiftGate } from "@/components/app/cash-shift-gate"
+import { prisma } from "@/lib/db"
 
 export default async function AccountsReceivablePage() {
   const actor = await requireModuleAccess("canAccessAccountsReceivable")
-  const treasuryAccounts = await listTreasuryAccounts()
+  const [treasuryAccounts, cashControl] = await Promise.all([
+    listTreasuryAccounts(),
+    prisma.cashControl.findUnique({ where: { accountId: actor.accountId }, select: { enabled: true } }),
+  ])
 
   return (
     <div className="grid gap-6">
@@ -26,7 +30,7 @@ export default async function AccountsReceivablePage() {
           </Button>
         </div>
       </div>
-      <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }}>
+      <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }} cashControlEnabled={cashControl?.enabled ?? false}>
         <ARClient initialTreasuryAccounts={treasuryAccounts} actor={{ id: actor.id, accountId: actor.accountId, username: actor.username }} />
       </CashShiftGate>
     </div>

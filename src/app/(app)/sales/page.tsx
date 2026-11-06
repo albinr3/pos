@@ -5,6 +5,7 @@ import { getSettings } from "../settings/actions"
 import { getAccountOnboardingState } from "../onboarding/actions"
 import { requireModuleAccess } from "@/lib/module-access"
 import { CashShiftGate } from "@/components/app/cash-shift-gate"
+import { prisma } from "@/lib/db"
 
 export default async function SalesPage({
   searchParams,
@@ -12,7 +13,10 @@ export default async function SalesPage({
   searchParams: Promise<{ onboarding?: string | string[]; onboardingProductId?: string | string[] }>
 }) {
   const actor = await requireModuleAccess("canAccessSales")
-  const settings = await getSettings()
+  const [settings, cashControl] = await Promise.all([
+    getSettings(),
+    prisma.cashControl.findUnique({ where: { accountId: actor.accountId }, select: { enabled: true } }),
+  ])
   const params = await searchParams
   const onboardingRaw = params.onboarding
   const onboarding = Array.isArray(onboardingRaw) ? onboardingRaw[0] : onboardingRaw
@@ -39,7 +43,7 @@ export default async function SalesPage({
           </Button>
         </div>
       </div>
-      <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }} bypass={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}>
+      <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }} cashControlEnabled={cashControl?.enabled ?? false} bypass={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}>
         <PosClient
           defaultViewMode={settings.defaultViewMode}
           showItbisOnReceipts={settings.showItbisOnReceipts}
