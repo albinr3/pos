@@ -18,6 +18,7 @@ const isPublicRoute = createRouteMatcher([
   "/precios",
   "/pricing",
   "/privacy",
+  "/cuenta-eliminada",
   "/terms",
   "/invoices(.*)",
   "/quotes(.*)",

@@ -37,7 +37,7 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
     const user = await prisma.user.findFirst({
       where: {
         // La cuenta de Clerk y el empleado activo deben pertenecer al mismo negocio.
-        account: { clerkUserId },
+        account: { clerkUserId, deletionRequestedAt: null },
         isActive: true,
         id: session.userId,
         accountId: session.accountId,

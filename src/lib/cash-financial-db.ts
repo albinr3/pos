@@ -14,7 +14,9 @@ async function lockAccount(tx: any, accountId: string) {
   // El mismo candado serializa activar, registrar y cerrar; evita ventas que entren después del conteo.
   // NO KEY UPDATE serializa estas operaciones y permite KEY SHARE de las claves foráneas
   // (por ejemplo, auditoría en otra conexión). FOR UPDATE bloquearía esas inserciones.
-  await tx.$queryRaw`SELECT id FROM "Account" WHERE id = ${accountId} FOR NO KEY UPDATE`
+  const accounts = await tx.$queryRaw`SELECT id, "deletionRequestedAt" FROM "Account" WHERE id = ${accountId} FOR NO KEY UPDATE`
+  // Una operación que esperaba el candado no puede entrar después de confirmar la baja.
+  if (!accounts.length || accounts[0].deletionRequestedAt) throw new CashControlError("ACCOUNT_DELETING", "Esta cuenta está en proceso de eliminación", 403)
 }
 async function rowsFor(tx: any, model: string, args: any): Promise<any[]> {
   return tx[model].findMany({ where: args.where ?? { id: { in: [] } }, ...(includes[model] ? { include: includes[model] } : {}) })

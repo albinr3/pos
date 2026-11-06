@@ -43,7 +43,7 @@ export async function sendCustomerInactivityNotifications(): Promise<{
   let errors = 0
 
   const accounts = await prisma.account.findMany({
-    where: { engagementEmailsEnabled: true },
+    where: { engagementEmailsEnabled: true, deletionRequestedAt: null },
     include: {
       billingProfile: true,
       companySettings: true,

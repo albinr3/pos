@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/account-deletions",
+      "schedule": "15 * * * *"
+    },
+    {
       "path": "/api/cron/billing",
       "schedule": "0 4 * * *"
     },

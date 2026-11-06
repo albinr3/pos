@@ -230,6 +230,10 @@ model Account {
   name        String // Nombre del negocio
   clerkUserId String @unique // ID del usuario Clerk que es dueño
   ownerEmail  String? // Correo principal de Clerk, disponible antes del onboarding local
+  // Bloqueo irreversible desde que el dueño confirma la baja, incluso si un proveedor tarda.
+  deletionRequestedAt DateTime?
+  deletionPinAttempts Int @default(0)
+  deletionPinWindowStartedAt DateTime?
   // Baja para comunicaciones de seguimiento; no afecta correos transaccionales.
   engagementEmailsEnabled Boolean @default(true)
   registeredFromDevice RegistrationDeviceType @default(UNKNOWN)
@@ -282,6 +286,35 @@ model Account {
 
   @@index([clerkUserId])
   @@index([ownerEmail])
+}
+
+enum AccountDeletionStage {
+  CANCEL_SUBSCRIPTION
+  PURGE_DATA
+  DELETE_IDENTITY
+  DELETE_FILES
+  COMPLETED
+}
+
+// Sin FK a Account: la tarea y la huella sobreviven al borrado del negocio.
+model AccountDeletion {
+  id String @id @default(cuid())
+  accountId String @unique
+  clerkUserHash String @unique
+  clerkUserId String?
+  lemonSubscriptionId String?
+  fileKeys String[] @default([])
+  stage AccountDeletionStage @default(CANCEL_SUBSCRIPTION)
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  leaseToken String?
+  leaseExpiresAt DateTime?
+  lastError String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  completedAt DateTime?
+
+  @@index([stage, nextAttemptAt])
 }
 
 model AccountOnboarding {

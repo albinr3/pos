@@ -10,6 +10,7 @@ import {
   notifyCustomerCardChargeEmail,
 } from "@/lib/billing-card-payment-alert"
 import { getAccountOwnerEmail } from "@/lib/account-owner-email"
+import { cancelLemonSubscription } from "@/lib/account-deletion"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -153,6 +154,14 @@ export async function POST(request: NextRequest) {
     const payload: LemonWebhookPayload = JSON.parse(rawBody)
     const eventName = payload.meta.event_name
     const accountId = payload.meta.custom_data?.account_id
+
+    // Un checkout abierto antes de la baja puede terminar después. Cancelarlo sin restaurar el negocio.
+    if (accountId && await prisma.accountDeletion.findUnique({ where: { accountId }, select: { id: true } })) {
+      if (payload.data.type === "subscriptions" && !payload.data.attributes.cancelled && payload.data.attributes.status !== "expired") {
+        await cancelLemonSubscription(payload.data.id)
+      }
+      return NextResponse.json({ received: true })
+    }
 
     console.log(`Lemon Squeezy webhook received: ${eventName}`, {
       accountId,

@@ -41,7 +41,9 @@ export function purchaseType(value: unknown) {
 }
 export async function lockPurchaseAccount(tx: Prisma.TransactionClient, accountId: string) {
   // El candado de negocio se toma ANTES de inventario o saldo para evitar sobrepagos e interbloqueos.
-  await tx.$queryRaw`SELECT id FROM "Account" WHERE id = ${accountId} FOR NO KEY UPDATE`
+  const accounts = await tx.$queryRaw<{ id: string; deletionRequestedAt: Date | null }[]>`SELECT id, "deletionRequestedAt" FROM "Account" WHERE id = ${accountId} FOR NO KEY UPDATE`
+  // Revalidar después de esperar: no admitir compras o pagos tras confirmar la eliminación.
+  if (!accounts.length || accounts[0].deletionRequestedAt) throw new PurchaseError("ACCOUNT_DELETING", "Esta cuenta está en proceso de eliminación", 403)
 }
 function canonical(value: unknown): unknown {
   if (value instanceof Date) return value.toISOString()

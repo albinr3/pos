@@ -2,8 +2,13 @@ import { redirect } from "next/navigation"
 import { getAccountAndUsers } from "./actions"
 import { SelectUserClient } from "./select-user-client"
 import { hasCompleteSession, hasSubUserSession } from "@/lib/auth"
+import { auth } from "@clerk/nextjs/server"
+import { isAccountIdentityDeleted } from "@/lib/account-deletion-guard"
 
 export default async function SelectUserPage() {
+  const { userId } = await auth()
+  // Las otras sesiones del dueño también deben salir del selector, sin intentar crear otra cuenta.
+  if (userId && await isAccountIdentityDeleted(userId)) redirect("/cuenta-eliminada?estado=procesando")
   // Si ya tiene sesión completa, ir al dashboard
   const hasSession = await hasCompleteSession()
   if (hasSession) {

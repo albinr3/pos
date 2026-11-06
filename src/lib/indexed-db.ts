@@ -30,6 +30,13 @@ const DATA_STORES = [
 const LEGACY_MIGRATION_KEY = "legacy-brand-storage-v1"
 
 let dbPromise: Promise<IDBDatabase> | null = null
+let accountDeletionStarted = false
+
+export function blockOfflineWritesForDeletion() { accountDeletionStarted = true }
+function assertOfflineWritesAllowed() {
+  // Una sincronización que terminó tarde no puede repoblar los datos recién eliminados.
+  if (accountDeletionStarted) throw new Error("La cuenta está en proceso de eliminación")
+}
 
 function waitForTransaction(tx: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -220,6 +227,7 @@ export async function savePendingSale(sale: {
 }) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_SALES, "readwrite")
+  assertOfflineWritesAllowed()
   tx.objectStore(STORES.PENDING_SALES).put(sale)
   await waitForTransaction(tx)
   notifyStockAvailability()
@@ -261,6 +269,7 @@ export async function savePendingPayment(payment: {
 }) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_PAYMENTS, "readwrite")
+  assertOfflineWritesAllowed()
   tx.objectStore(STORES.PENDING_PAYMENTS).put(payment)
   await waitForTransaction(tx)
 }
@@ -321,6 +330,7 @@ export async function savePendingBatchPayment(payment: {
 }) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_BATCH_PAYMENTS, "readwrite")
+  assertOfflineWritesAllowed()
   tx.objectStore(STORES.PENDING_BATCH_PAYMENTS).put(payment)
   await waitForTransaction(tx)
 }
@@ -374,6 +384,7 @@ export async function deletePendingBatchPaymentsByArId(arId: string) {
 // Products Cache
 export async function saveProductsCache(products: any[]) {
   const db = await openDB()
+  assertOfflineWritesAllowed()
   const tx = db.transaction(STORES.PRODUCTS_CACHE, "readwrite")
   const store = tx.objectStore(STORES.PRODUCTS_CACHE)
   store.clear()
@@ -432,6 +443,7 @@ export async function findProductByBarcodeCache(code: string): Promise<any | nul
 // Customers Cache
 export async function saveCustomersCache(customers: any[]) {
   const db = await openDB()
+  assertOfflineWritesAllowed()
   const tx = db.transaction(STORES.CUSTOMERS_CACHE, "readwrite")
   const store = tx.objectStore(STORES.CUSTOMERS_CACHE)
   
@@ -479,6 +491,7 @@ export async function searchCustomersCache(query: string): Promise<any[]> {
 // AR Cache
 export async function saveARCache(arItems: any[]) {
   const db = await openDB()
+  assertOfflineWritesAllowed()
   const tx = db.transaction(STORES.AR_CACHE, "readwrite")
   const store = tx.objectStore(STORES.AR_CACHE)
   
@@ -548,6 +561,37 @@ export async function clearAllCache() {
   // También limpiar el timestamp de última sincronización
   if (typeof window !== "undefined") {
     localStorage.removeItem("movopos-cache-sync")
+  }
+}
+
+export async function clearAllOfflineDataForDeletion() {
+  blockOfflineWritesForDeletion()
+  const db = await openDB()
+  const tx = db.transaction([...DATA_STORES, STORES.MIGRATION_META], "readwrite")
+  const completed = waitForTransaction(tx)
+  for (const store of DATA_STORES) tx.objectStore(store).clear()
+  // Conservar la marca evita volver a importar datos de una base legacy aún abierta en otra pestaña.
+  tx.objectStore(STORES.MIGRATION_META).put({ key: LEGACY_MIGRATION_KEY, completedAt: Date.now() })
+  await completed
+
+  // Abrir sin versión también funciona en navegadores sin indexedDB.databases().
+  const legacy = await new Promise<IDBDatabase | null>((resolve, reject) => {
+    const request = indexedDB.open(LEGACY_DB_NAME)
+    let absent = false
+    request.onupgradeneeded = () => { absent = true; request.transaction?.abort() }
+    request.onerror = () => absent ? resolve(null) : reject(request.error)
+    request.onsuccess = () => resolve(request.result)
+  })
+  if (legacy) {
+    try {
+      const stores = Array.from(legacy.objectStoreNames)
+      if (stores.length) {
+        const legacyTx = legacy.transaction(stores, "readwrite")
+        const finished = waitForTransaction(legacyTx)
+        for (const store of stores) legacyTx.objectStore(store).clear()
+        await finished
+      }
+    } finally { legacy.close() }
   }
 }
 

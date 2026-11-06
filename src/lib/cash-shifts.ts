@@ -12,7 +12,9 @@ const canViewAll = (actor: Actor) => hasPermission(actor, "canViewAllCashShifts"
 function permit(value: boolean) { if (!value) throw new CashControlError("CASH_FORBIDDEN", "No tienes permiso para esta acción de caja", 403) }
 async function transaction<T>(actor: Actor, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
   return raw().$transaction(async tx => {
-    await tx.$queryRaw`SELECT id FROM "Account" WHERE id = ${actor.accountId} FOR NO KEY UPDATE`
+    const accounts = await tx.$queryRaw<{ id: string; deletionRequestedAt: Date | null }[]>`SELECT id, "deletionRequestedAt" FROM "Account" WHERE id = ${actor.accountId} FOR NO KEY UPDATE`
+    // También bloquear operaciones de caja que ya estaban esperando al confirmar la baja.
+    if (!accounts.length || accounts[0].deletionRequestedAt) throw new CashControlError("ACCOUNT_DELETING", "Esta cuenta está en proceso de eliminación", 403)
     return fn(tx)
   }, { timeout: 20000, maxWait: 5000 })
 }

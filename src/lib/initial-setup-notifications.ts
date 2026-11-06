@@ -49,7 +49,7 @@ export async function sendInitialSetupReminderNotifications(): Promise<{
   let errors = 0
 
   const accounts = await prisma.account.findMany({
-    where: { createdAt: { lte: firstReminderCutoff }, engagementEmailsEnabled: true },
+    where: { createdAt: { lte: firstReminderCutoff }, engagementEmailsEnabled: true, deletionRequestedAt: null },
     select: {
       id: true,
       clerkUserId: true,

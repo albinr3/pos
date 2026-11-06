@@ -115,6 +115,7 @@ export async function sendBillingNotifications(): Promise<{
   const subscriptions = await prisma.billingSubscription.findMany({
     where: {
       status: { in: ["TRIALING", "ACTIVE", "GRACE", "BLOCKED"] },
+      account: { deletionRequestedAt: null },
     },
     include: {
       account: {

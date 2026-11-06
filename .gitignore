@@ -15,6 +15,7 @@
 /tmp/cash-*
 # Perfiles de navegador y resultados temporales de las pruebas de existencia.
 /tmp/pos-stock-*
+/tmp/account-deletion-*
 
 # next.js
 /.next/

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { Webhook } from "svix"
 import { headers } from "next/headers"
 import { getClerkPrimaryEmail } from "@/lib/clerk-email"
+import { accountIdentityHash, withAccountIdentityLock } from "@/lib/account-deletion-guard"
 
 // Marcar como dinámica para evitar ejecución durante el build
 export const dynamic = "force-dynamic"
@@ -64,8 +65,6 @@ function isUniqueConstraintError(error: unknown) {
 }
 
 export async function POST(request: NextRequest) {
-  // Lazy import de Prisma para evitar inicialización durante el build
-  const { prisma } = await import("@/lib/db")
   const { sendResendEmail } = await import("@/lib/resend")
   const { renderWelcomeOwnerEmail, renderNewUserSignupNotification } = await import("@/lib/resend/templates")
   const { logError, ErrorCodes } = await import("@/lib/error-logger")
@@ -140,43 +139,52 @@ export async function POST(request: NextRequest) {
           ? evt.data.unsafe_metadata.registration_user_agent
           : null
 
-      let account = await prisma.account.findUnique({
-        where: { clerkUserId: id },
-      })
-      let accountWasCreated = false
+      const resolved = await withAccountIdentityLock(id, async tx => {
+        // Incluso user.updated puede llegar después de borrar Clerk. La huella impide recrear la cuenta.
+        if (await tx.accountDeletion.findUnique({ where: { clerkUserHash: accountIdentityHash(id) } })) return null
+        let account = await tx.account.findUnique({
+          where: { clerkUserId: id },
+        })
+        if (account?.deletionRequestedAt) return null
+        let accountWasCreated = false
 
-      console.log("[Clerk Webhook] Existing account:", account ? account.id : "none")
+        console.log("[Clerk Webhook] Existing account:", account ? account.id : "none")
 
-      if (!account) {
-        try {
-          account = await prisma.account.create({
-            data: {
-              name,
-              clerkUserId: id,
-              ownerEmail: primaryEmail,
-              registeredFromDevice: registrationDevice,
-              registeredWithMethod: registrationMethod,
-              registeredUserAgent: registrationUserAgent,
-            },
-          })
-          accountWasCreated = true
-          console.log("[Clerk Webhook] Created new account:", account.id)
-        } catch (createError: unknown) {
-          if (!isUniqueConstraintError(createError)) throw createError
+        if (!account) {
+          try {
+            account = await tx.account.create({
+              data: {
+                name,
+                clerkUserId: id,
+                ownerEmail: primaryEmail,
+                registeredFromDevice: registrationDevice,
+                registeredWithMethod: registrationMethod,
+                registeredUserAgent: registrationUserAgent,
+              },
+            })
+            accountWasCreated = true
+            console.log("[Clerk Webhook] Created new account:", account.id)
+          } catch (createError: unknown) {
+            if (!isUniqueConstraintError(createError)) throw createError
 
-          // Un reintento o dos webhooks simultáneos no deben crear ni notificar dos veces.
-          account = await prisma.account.update({
-            where: { clerkUserId: id },
+            // Un reintento o dos webhooks simultáneos no deben crear ni notificar dos veces.
+            account = await tx.account.update({
+              where: { clerkUserId: id },
+              data: { ownerEmail: primaryEmail },
+            })
+          }
+        } else {
+          // user.updated también puede eliminar el email; persistimos null para reflejar Clerk.
+          account = await tx.account.update({
+            where: { id: account.id },
             data: { ownerEmail: primaryEmail },
           })
         }
-      } else {
-        // user.updated también puede eliminar el email; persistimos null para reflejar Clerk.
-        account = await prisma.account.update({
-          where: { id: account.id },
-          data: { ownerEmail: primaryEmail },
-        })
-      }
+
+        return { account, accountWasCreated }
+      })
+      if (!resolved) return NextResponse.json({ received: true })
+      const { account, accountWasCreated } = resolved
 
       // Solo una creación real puede enviar la bienvenida; user.updated nunca la reenvía.
       if (eventType === "user.created" && accountWasCreated) {

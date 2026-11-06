@@ -87,6 +87,13 @@ export async function sendResendEmail({ to, subject, html, text, from, accountId
     try {
       await waitForThrottle()
 
+      if (accountId) {
+        const { prisma } = await import("@/lib/db")
+        // Un cron pudo cargar destinatarios antes de la baja. Comprobar justo antes del envío.
+        const account = await prisma.account.findUnique({ where: { id: accountId }, select: { deletionRequestedAt: true } })
+        if (!account || account.deletionRequestedAt) return false
+      }
+
       const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {

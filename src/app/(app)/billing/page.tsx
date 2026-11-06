@@ -3,6 +3,8 @@ import { BillingClient } from "./billing-client"
 import { redirect } from "next/navigation"
 import { headers } from "next/headers"
 import { requireModuleAccess } from "@/lib/module-access"
+import { getCurrentUser } from "@/lib/auth"
+import { DeleteAccountCard } from "@/components/app/delete-account-card"
 
 export const dynamic = "force-dynamic"
 
@@ -29,5 +31,6 @@ export default async function BillingPage() {
     redirect("/login")
   }
 
-  return <BillingClient initialData={data} />
+  const user = await getCurrentUser()
+  return <div className="space-y-6"><BillingClient initialData={data} />{user?.isOwner && <DeleteAccountCard />}</div>
 }

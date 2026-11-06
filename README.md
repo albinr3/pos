@@ -943,7 +943,7 @@ Las cuentas bancarias se almacenan en la base de datos. Para agregarlas:
 3. **Opción C - SQL directo:**
    ```sql
    INSERT INTO "BankAccount" (id, "createdAt", "updatedAt", "bankName", "accountType", "accountNumber", "accountName", currency, "isActive", "displayOrder")
-   VALUES 
+   VALUES
      (gen_random_uuid(), NOW(), NOW(), 'Banco Popular', 'Cuenta de Ahorros', '123-456789-0', 'TU EMPRESA SRL', 'DOP', true, 1);
    ```
 
@@ -1254,3 +1254,6 @@ Ruta: `/super-admin/errors`
 ## Licencia
 
 Proyecto privado. Todos los derechos reservados.
+# Eliminación de cuentas
+
+El dueño puede eliminar su negocio desde Ajustes o Facturación, confirmando su PIN y escribiendo `ELIMINAR`. Incluye API móvil, bloqueo inmediato y reintentos persistentes. Antes de desplegar, aplicar la migración y configurar `LEMON_API_KEY` si se usa Lemon Squeezy; ver [operación, contrato y pruebas](docs/account-deletion.md).

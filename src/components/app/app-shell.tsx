@@ -7,6 +7,7 @@ import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 import type { BillingState, CurrentUser } from "@/lib/auth"
 import { UserButton, useClerk } from "@clerk/nextjs"
+import { ACCOUNT_DELETION_EVENT, clearAccountLocalData, isAccountCleanupPending } from "@/lib/account-deletion-client"
 import {
   BarChart3,
   CreditCard,
@@ -153,6 +154,21 @@ export function AppShell({ children, billingState }: AppShellProps) {
   const [user, setUser] = useState<CurrentUser | null>(null)
   const pendingProofKey = "billing-proof-pending"
   const isBillingRestricted = !!billingState && !billingState.canAccessApp
+
+  useEffect(() => {
+    let leaving = false
+    const leave = () => {
+      if (leaving) return
+      leaving = true
+      void clearAccountLocalData().catch(() => {}).finally(() => window.location.replace("/cuenta-eliminada?estado=procesando"))
+    }
+    const onStorage = (event: StorageEvent) => { if (event.key === ACCOUNT_DELETION_EVENT && event.newValue) leave() }
+    const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(ACCOUNT_DELETION_EVENT) : null
+    if (channel) channel.onmessage = leave
+    window.addEventListener("storage", onStorage)
+    if (isAccountCleanupPending()) leave()
+    return () => { window.removeEventListener("storage", onStorage); channel?.close() }
+  }, [])
 
   const handleChangeUser = async () => {
     // Limpiar sesión de subusuario y redirigir a selección

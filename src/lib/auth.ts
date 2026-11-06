@@ -18,6 +18,7 @@ import { createBillingSubscription, getBillingState, type BillingState } from "@
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { ensureGenericCustomer } from "@/lib/customer-helpers"
 import { getClerkPrimaryEmail } from "@/lib/clerk-email"
+import { accountIdentityHash, withAccountIdentityLock } from "@/lib/account-deletion-guard"
 
 // Función helper para obtener prisma de forma segura
 async function getPrisma() {
@@ -393,120 +394,123 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
       }
     }
 
-    // Buscar Account existente
-    const prisma = await getPrisma()
-    let account = await prisma.account.findUnique({
-      where: { clerkUserId: userId },
-    })
+    // Creación y baja serializadas: ni una sesión antigua ni un webhook pueden resucitar el negocio.
+    return await withAccountIdentityLock(userId, async prisma => {
+      if (await prisma.accountDeletion.findUnique({ where: { clerkUserHash: accountIdentityHash(userId) } })) return null
+      let account = await prisma.account.findUnique({
+        where: { clerkUserId: userId },
+      })
+      if (account?.deletionRequestedAt) return null
 
-    // Si no existe, crear nuevo Account con usuario owner
-    let accountWasJustCreated = false
-    if (!account) {
-      // Si no tenemos información del usuario de Clerk, usar valores por defecto
-      const email = getClerkPrimaryEmail(clerkUser)
-      const name = clerkUser 
-        ? `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || "Mi Negocio"
-        : "Mi Negocio"
-      const registrationDevice = normalizeRegistrationDevice(
-        clerkUser?.unsafeMetadata?.registration_device ??
-          clerkUser?.unsafeMetadata?.device_type ??
-          clerkUser?.unsafeMetadata?.device
-      )
-      const registrationMethod = inferRegistrationMethodFromClerkUser(clerkUser)
-      const registrationUserAgent =
-        typeof clerkUser?.unsafeMetadata?.registration_user_agent === "string"
-          ? clerkUser.unsafeMetadata.registration_user_agent
-          : null
+      // Si no existe, crear nuevo Account con usuario owner
+      let accountWasJustCreated = false
+      if (!account) {
+        // Si no tenemos información del usuario de Clerk, usar valores por defecto
+        const email = getClerkPrimaryEmail(clerkUser)
+        const name = clerkUser
+          ? `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || "Mi Negocio"
+          : "Mi Negocio"
+        const registrationDevice = normalizeRegistrationDevice(
+          clerkUser?.unsafeMetadata?.registration_device ??
+            clerkUser?.unsafeMetadata?.device_type ??
+            clerkUser?.unsafeMetadata?.device
+        )
+        const registrationMethod = inferRegistrationMethodFromClerkUser(clerkUser)
+        const registrationUserAgent =
+          typeof clerkUser?.unsafeMetadata?.registration_user_agent === "string"
+            ? clerkUser.unsafeMetadata.registration_user_agent
+            : null
 
-      try {
-        account = await prisma.account.create({
-          data: {
-            name: name,
-            clerkUserId: userId,
-            ownerEmail: email,
-            registeredFromDevice: registrationDevice,
-            registeredWithMethod: registrationMethod,
-            registeredUserAgent: registrationUserAgent,
-          },
-        })
-        accountWasJustCreated = true
-      } catch (createError: unknown) {
-        // Si hay una violación de restricción única (otra solicitud ya creó el Account),
-        // buscar nuevamente el Account existente
-        if (isUniqueConstraintError(createError)) {
-          account = await prisma.account.findUnique({
-            where: { clerkUserId: userId },
+        try {
+          account = await prisma.account.create({
+            data: {
+              name: name,
+              clerkUserId: userId,
+              ownerEmail: email,
+              registeredFromDevice: registrationDevice,
+              registeredWithMethod: registrationMethod,
+              registeredUserAgent: registrationUserAgent,
+            },
           })
-          if (!account) {
-            // Si aún no existe, lanzar el error original
+          accountWasJustCreated = true
+        } catch (createError: unknown) {
+          // Si hay una violación de restricción única (otra solicitud ya creó el Account),
+          // buscar nuevamente el Account existente
+          if (isUniqueConstraintError(createError)) {
+            account = await prisma.account.findUnique({
+              where: { clerkUserId: userId },
+            })
+            if (!account) {
+              // Si aún no existe, lanzar el error original
+              throw createError
+            }
+            // Account ya existe, no fue creado en esta ejecución
+            accountWasJustCreated = false
+          } else {
             throw createError
           }
-          // Account ya existe, no fue creado en esta ejecución
-          accountWasJustCreated = false
-        } else {
-          throw createError
+        }
+
+        // Solo crear configuraciones iniciales si acabamos de crear el Account
+        // NOTA: No creamos usuario automáticamente, el usuario debe crear su contraseña
+        if (accountWasJustCreated) {
+          // Crear configuraciones iniciales
+          await prisma.companySettings.create({
+            data: {
+              accountId: account.id,
+              name: name,
+              phone: "",
+              address: "",
+              salePricesIncludeItbis: true,
+              legalTipEnabled: false,
+            },
+          })
+
+          await prisma.invoiceSequence.create({
+            data: {
+              accountId: account.id,
+              series: "A",
+              lastNumber: 0,
+            },
+          })
+
+          await prisma.returnSequence.create({
+            data: {
+              accountId: account.id,
+              lastNumber: 0,
+            },
+          })
+
+          await prisma.quoteSequence.create({
+            data: {
+              accountId: account.id,
+              lastNumber: 0,
+            },
+          })
+
+          await ensureGenericCustomer(prisma, account.id)
         }
       }
 
-      // Solo crear configuraciones iniciales si acabamos de crear el Account
-      // NOTA: No creamos usuario automáticamente, el usuario debe crear su contraseña
-      if (accountWasJustCreated) {
-        // Crear configuraciones iniciales
-        await prisma.companySettings.create({
-          data: {
-            accountId: account.id,
-            name: name,
-            phone: "",
-            address: "",
-            salePricesIncludeItbis: true,
-            legalTipEnabled: false,
-          },
+      // Cuando Clerk está disponible en la sesión, refrescamos su contacto aunque
+      // el webhook haya llegado tarde o no se haya podido entregar.
+      if (account && clerkUser) {
+        const ownerEmail = getClerkPrimaryEmail(clerkUser)
+        await prisma.account.update({
+          where: { id: account.id },
+          data: { ownerEmail },
         })
-
-        await prisma.invoiceSequence.create({
-          data: {
-            accountId: account.id,
-            series: "A",
-            lastNumber: 0,
-          },
-        })
-
-        await prisma.returnSequence.create({
-          data: {
-            accountId: account.id,
-            lastNumber: 0,
-          },
-        })
-
-        await prisma.quoteSequence.create({
-          data: {
-            accountId: account.id,
-            lastNumber: 0,
-          },
-        })
-
-        await ensureGenericCustomer(prisma, account.id)
       }
-    }
 
-    // Cuando Clerk está disponible en la sesión, refrescamos su contacto aunque
-    // el webhook haya llegado tarde o no se haya podido entregar.
-    if (account && clerkUser) {
-      const ownerEmail = getClerkPrimaryEmail(clerkUser)
-      await prisma.account.update({
-        where: { id: account.id },
-        data: { ownerEmail },
-      })
-    }
+      // Verificación final idempotente para asegurar invariantes del cliente genérico.
+      await ensureGenericCustomer(prisma, account.id)
 
-    // Verificación final idempotente para asegurar invariantes del cliente genérico.
-    await ensureGenericCustomer(prisma, account.id)
-
-    return {
-      id: account.id,
-      name: account.name,
-      clerkUserId: account.clerkUserId,
-    }
+      return {
+        id: account.id,
+        name: account.name,
+        clerkUserId: account.clerkUserId,
+      }
+    })
   } catch (error) {
     console.error("Error getting/creating account:", error)
     return null
@@ -545,8 +549,9 @@ export async function listSubUsers(accountId: string): Promise<SubUser[]> {
   // Verificar el account
   const account = await prisma.account.findUnique({
     where: { id: accountId },
-    select: { id: true, name: true, clerkUserId: true },
+    select: { id: true, name: true, clerkUserId: true, deletionRequestedAt: true },
   })
+  if (!account || account.deletionRequestedAt) return []
   console.log("🔍 [listSubUsers] Account verificado:", account)
   
   // Primero verificar cuántos usuarios hay en total (sin filtro de isActive)
@@ -792,6 +797,9 @@ export async function createSubUser(
 ): Promise<{ success: boolean; user?: SubUser; error?: string }> {
   try {
     const prisma = await getPrisma()
+    if (!(await prisma.account.findFirst({ where: { id: accountId, deletionRequestedAt: null }, select: { id: true } }))) {
+      return { success: false, error: "La cuenta no está disponible." }
+    }
     // Verificar que el username no exista en el account
     const existing = await prisma.user.findUnique({
       where: {
@@ -1049,7 +1057,7 @@ export async function getCurrentUserWithDiagnostics(options: {
     include: { account: true },
   })
 
-  if (!user || !user.isActive || user.accountId !== subUserSession.accountId) {
+  if (!user || !user.isActive || user.account.deletionRequestedAt || user.accountId !== subUserSession.accountId) {
     const result: CurrentUserDiagnosticResult = {
       user: null,
       reason: !user

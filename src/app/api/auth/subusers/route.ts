@@ -78,6 +78,10 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    const { isAccountIdentityDeleted } = await import("@/lib/account-deletion-guard")
+    if (await isAccountIdentityDeleted(clerkUserId)) {
+      return NextResponse.json({ code: "ACCOUNT_DELETING", error: "Esta cuenta fue eliminada o está en proceso de eliminación." }, { status: 410, headers: corsHeaders })
+    }
     // Obtener o crear Account usando el clerkUserId obtenido
     let account = await getOrCreateAccount(clerkUserId)
     

@@ -1,6 +1,7 @@
 "use server"
 
 import { cashRequest } from "@/lib/cash-context"
+import { purgeAccountData } from "@/lib/account-purge"
 
 import { prisma } from "@/lib/db"
 import { Decimal } from "@prisma/client/runtime/library"
@@ -464,43 +465,8 @@ export async function deleteAccount(accountId: string): Promise<{ success: boole
     await cashRequest.run({ maintenance: true }, () => prisma.$transaction(async (tx) => {
       // La baja completa espera a cualquier operación de caja en curso antes de quitar sus datos.
       await tx.$queryRaw`SELECT id FROM "Account" WHERE id = ${accountId} FOR UPDATE`
-      // Solo esta baja administrativa autorizada elimina el registro financiero del negocio completo.
-      await tx.cashSourceLink.deleteMany({ where: { accountId } })
-      await tx.cashOperation.deleteMany({ where: { accountId } })
-      await tx.cashMovement.deleteMany({ where: { accountId } })
-      await tx.cashShift.deleteMany({ where: { accountId } })
-      await tx.cashControl.deleteMany({ where: { accountId } })
-      await tx.treasuryTransfer.deleteMany({ where: { accountId } })
-      // 1) Eliminar entidades dependientes de usuarios (sin onDelete cascade)
-      await tx.return.deleteMany({ where: { accountId } })
-      await tx.payment.deleteMany({
-        where: {
-          ar: {
-            sale: {
-              accountId,
-            },
-          },
-        },
-      })
-      await tx.purchase.deleteMany({ where: { accountId } })
-      await tx.operatingExpense.deleteMany({ where: { accountId } })
-      await tx.quote.deleteMany({ where: { accountId } })
-      await tx.sale.deleteMany({ where: { accountId } })
-      await tx.productRecipeItem.deleteMany({
-        where: {
-          OR: [
-            { product: { accountId } },
-            { ingredient: { accountId } },
-          ],
-        },
-      })
-
-      // 2) Eliminar usuarios del account
-      await tx.user.deleteMany({ where: { accountId } })
-
-      // 3) Eliminar el account (cascade eliminará lo restante)
-      await tx.account.delete({ where: { id: accountId } })
-    }))
+      await purgeAccountData(tx, accountId)
+    }, { timeout: 60000, maxWait: 5000 }))
 
     await logSuperAdminAction(admin.id, "deleted_account", {
       targetAccountId: accountId,
