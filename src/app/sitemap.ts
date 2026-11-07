@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next"
 
 import { blogPosts } from "@/lib/blog"
 import { siteUrl } from "@/lib/site-url"
+import { appDemoVideo } from "@/content/marketing/app-demo"
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const pages = [
@@ -23,6 +24,19 @@ export default function sitemap(): MetadataRoute.Sitemap {
     lastModified: new Date(),
     changeFrequency: "weekly" as const,
     priority: path === "/" ? 1 : 0.7,
+    // Anunciar el archivo y la miniatura reales facilita descubrir la demo de Android.
+    ...(path === appDemoVideo.pagePath
+      ? {
+          videos: [{
+            title: appDemoVideo.name,
+            description: appDemoVideo.description,
+            thumbnail_loc: `${siteUrl}${appDemoVideo.posterPath}`,
+            content_loc: `${siteUrl}${appDemoVideo.videoPath}`,
+            duration: appDemoVideo.durationSeconds,
+            publication_date: appDemoVideo.uploadDate,
+          }],
+        }
+      : {}),
   }))
 
   // Los posts salen del registro tipado para no olvidar artículos publicados fuera del sitemap.

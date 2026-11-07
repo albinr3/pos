@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { appDemoVideo, appDemoVideoJsonLd } from "@/content/marketing/app-demo"
 import {
   BarChart3,
   Boxes,
@@ -21,9 +22,10 @@ const appDownloadUrl = "https://pub-db000bf677ef4b89aebfffa3aea14be3.r2.dev/apk_
 // SEO: Título y metadatos alineados con las consultas reales de mayor volumen e impresiones en Google Search Console
 // (app punto de venta, punto de venta para celular, control de ventas para celular, registrar ventas).
 export const metadata: Metadata = {
-  title: "App Punto de Venta para Celular: Control de Ventas e Inventario | MOVOPos",
+  // El layout ya añade MOVOPos: incluirlo aquí duplicaría la marca en el título SEO.
+  title: "App Punto de Venta para Celular: Ventas e Inventario",
   description:
-    "App punto de venta para celular y tablet Android. Registra ventas diarias, controla inventario y administra tu negocio sin complicaciones. Descarga gratis el APK.",
+    "App punto de venta para celular y tablet Android. Mira cómo registrar una venta, controla inventario y factura en RD$. Descarga el APK de MOVOPos.",
   keywords: [
     "app punto de venta",
     "punto de venta para celular",
@@ -206,6 +208,10 @@ export default function AppMovilPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(appDemoVideoJsonLd) }}
+      />
 
       <section className="relative overflow-hidden bg-white py-16 sm:py-24 lg:py-28">
         <div className="absolute inset-0 -z-10 bg-violet-50/60" />
@@ -260,18 +266,45 @@ export default function AppMovilPage() {
               </div>
             </div>
 
-            <div className="relative flex items-center justify-center lg:justify-end">
+            <div className="relative flex items-center justify-center">
               <div className="absolute inset-0 -z-10 rotate-3 scale-105 rounded-lg bg-gradient-to-tr from-violet-100 to-transparent" />
-              <div className="relative w-full max-w-sm drop-shadow-2xl">
-                <Image
-                  src="/pos_en_app_android.png"
-                  alt="App para ventas, facturación e inventario MOVOPos en Android"
-                  width={600}
-                  height={800}
-                  className="rounded-lg object-contain object-center"
-                  priority
-                />
-              </div>
+              <figure id="demo-video" className="relative w-full max-w-[320px]">
+                <h2 id="demo-video-title" className="mb-4 text-center text-lg font-semibold text-slate-950">
+                  Así se registra una venta en MOVOPos
+                </h2>
+                {/* Mantener src y poster en el HTML permite descubrir el video sin JavaScript.
+                    preload="none" evita descargarlo antes de reproducir; las dimensiones evitan saltos. */}
+                <video
+                  controls
+                  playsInline
+                  preload="none"
+                  poster={appDemoVideo.posterPath}
+                  width={appDemoVideo.width}
+                  height={appDemoVideo.height}
+                  aria-labelledby="demo-video-title"
+                  aria-describedby="demo-video-description"
+                  className="aspect-[720/1544] h-auto w-full rounded-2xl border border-slate-200 bg-slate-950 shadow-2xl"
+                >
+                  <source src={appDemoVideo.videoPath} type="video/mp4" />
+                  Tu navegador no puede reproducir este video.{" "}
+                  <a href={appDemoVideo.videoPath}>Ver o descargar la demostración de MOVOPos</a>.
+                </video>
+                <figcaption id="demo-video-description" className="mt-4 text-center text-sm leading-6 text-slate-600">
+                  Demostración de 15 segundos: selecciona productos, completa una venta en efectivo
+                  y consulta la factura desde tu celular Android.
+                </figcaption>
+                <details className="mt-3 text-sm leading-6 text-slate-600">
+                  <summary className="cursor-pointer text-center font-medium text-violet-700">
+                    Qué muestra el video
+                  </summary>
+                  <p className="mt-2">
+                    Desde el panel de MOVOPos se abre una nueva venta y se seleccionan tres productos
+                    del catálogo. Se revisa el total de RD$7,750.00 y se completa el cobro en efectivo.
+                    La pantalla final muestra la factura y los botones para compartirla, imprimirla
+                    o iniciar otra venta.
+                  </p>
+                </details>
+              </figure>
             </div>
           </div>
         </div>
@@ -304,7 +337,7 @@ export default function AppMovilPage() {
                 {
                   title: "Abre MOVOPos",
                   description:
-                    "Instala la app, inicia sesión con tu cuenta y usa la aplicación para punto de venta, facturación e inventario.",
+                    "Instala la app, inicia sesión con tu cuenta y usa la aplicación para punto de venta, facturación e inventario. Si aún no tienes cuenta, primero regístrate desde la web.",
                 },
               ].map((step, index) => (
                 <article key={step.title} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:grid-cols-[3rem_1fr]">
@@ -324,6 +357,17 @@ export default function AppMovilPage() {
                         </a>{" "}
                         y espera que el archivo APK de MOVOPos termine de bajar en tu celular.
                       </p>
+                    ) : index === 2 ? (
+                      <p className="mt-2 text-sm leading-7 text-slate-600">
+                        Instala la app e inicia sesión con tu cuenta para gestionar ventas,
+                        facturación e inventario. Si aún no tienes cuenta, primero{" "}
+                        <Link
+                          href="/login?signup=true"
+                          className="font-semibold text-violet-700 underline underline-offset-2 hover:text-violet-800"
+                        >
+                          regístrate desde la web
+                        </Link>.
+                      </p>
                     ) : (
                       <p className="mt-2 text-sm leading-7 text-slate-600">{step.description}</p>
                     )}
@@ -337,14 +381,24 @@ export default function AppMovilPage() {
 
       <section className="bg-slate-50 py-16 sm:py-24">
         <div className="container px-4 md:px-6">
-          <div className="mx-auto mb-12 max-w-3xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
-              Control de ventas para celular y gestión de inventario
-            </h2>
-            <p className="mt-4 text-lg leading-8 text-slate-600">
-              MOVOPos centraliza las tareas diarias de una app para registrar ventas y administrar tu
-              negocio: vender rápido, controlar existencias de stock y revisar resultados desde Android.
-            </p>
+          <div className="mx-auto mb-12 grid max-w-6xl items-center gap-8 md:grid-cols-2 md:gap-12">
+            <div className="text-center md:text-left">
+              <h2 className="text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+                Control de ventas para celular y gestión de inventario
+              </h2>
+              <p className="mt-4 text-lg leading-8 text-slate-600">
+                MOVOPos centraliza las tareas diarias de una app para registrar ventas y administrar tu
+                negocio: vender rápido, controlar existencias de stock y revisar resultados desde Android.
+              </p>
+            </div>
+            <Image
+              src="/pos_en_app_android.png"
+              alt="App para ventas, facturación e inventario MOVOPos en Android"
+              width={800}
+              height={800}
+              sizes="(max-width: 768px) 80vw, 384px"
+              className="mx-auto h-auto w-full max-w-sm rounded-lg object-contain drop-shadow-2xl"
+            />
           </div>
 
           <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
