@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
-  getClerkUserId,
-  getClerkUserIdFromToken,
   getOrCreateAccount,
   authenticateSubUser,
   createSubUserSession,
 } from "@/lib/auth"
+
+import { corsHeaders, requestClerkUserId } from "@/lib/mobile-clerk-auth"
+import { isAccountIdentityDeleted } from "@/lib/account-deletion-guard"
+
+export async function OPTIONS() { return new NextResponse(null, { status: 204, headers: corsHeaders }) }
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -13,40 +16,16 @@ export const runtime = "nodejs"
 // POST /api/auth/subuser/login - Autenticar subusuario y obtener token JWT
 export async function POST(request: NextRequest) {
   try {
-    // Intentar obtener token de Clerk desde header personalizado (evita interceptación de Vercel)
-    let authHeader: string | null = null
-    authHeader = 
-      request.headers.get("X-Clerk-Authorization") || 
-      request.headers.get("x-clerk-authorization") ||
-      request.headers.get("X-CLERK-AUTHORIZATION")
-    
-    // Si no está, intentar leer directamente
-    if (!authHeader) {
-      authHeader = 
-        request.headers.get("Authorization") || 
-        request.headers.get("authorization") ||
-        request.headers.get("AUTHORIZATION")
-    }
-    
-    let clerkUserId: string | null = null
-    
-    if (authHeader) {
-      clerkUserId = await getClerkUserIdFromToken(authHeader)
-    }
-    
-    // Si no se obtuvo del header, intentar desde la sesión (para web)
-    if (!clerkUserId) {
-      clerkUserId = await getClerkUserId()
-    }
-    
-    if (!clerkUserId) {
-      return NextResponse.json({ error: "No autenticado con Clerk" }, { status: 401 })
-    }
+    const clerkUserId = await requestClerkUserId(request)
+    if (!clerkUserId) return NextResponse.json({ error: "No autenticado con Clerk" }, { status: 401, headers: corsHeaders })
+    if (await isAccountIdentityDeleted(clerkUserId)) return NextResponse.json({ error: "Esta cuenta fue eliminada." }, { status: 410, headers: corsHeaders })
 
     // Obtener o crear Account usando el clerkUserId obtenido
     const account = await getOrCreateAccount(clerkUserId)
     if (!account) {
-      return NextResponse.json({ error: "Error al obtener cuenta" }, { status: 500 })
+      // La baja puede confirmarse entre la comprobación inicial y la lectura de la cuenta.
+      const deleted = await isAccountIdentityDeleted(clerkUserId)
+      return NextResponse.json({ error: deleted ? "Esta cuenta fue eliminada." : "Error al obtener cuenta" }, { status: deleted ? 410 : 500, headers: corsHeaders })
     }
 
     const body = await request.json()
@@ -55,7 +34,7 @@ export async function POST(request: NextRequest) {
     if (!username || !password) {
       return NextResponse.json(
         { error: "Username y password son requeridos" },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       )
     }
 
@@ -65,7 +44,7 @@ export async function POST(request: NextRequest) {
     if (!result.success || !result.user) {
       return NextResponse.json(
         { error: result.error || "Error de autenticación" },
-        { status: 401 }
+        { status: 401, headers: corsHeaders }
       )
     }
 
@@ -131,12 +110,12 @@ export async function POST(request: NextRequest) {
         canManageCashShifts: result.user.canManageCashShifts,
         canRecordCashMovements: result.user.canRecordCashMovements,
       },
-    })
+    }, { headers: corsHeaders })
   } catch (error: any) {
     console.error("Error en POST /api/auth/subuser/login:", error)
     return NextResponse.json(
       { error: error.message || "Error al autenticar subusuario" },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     )
   }
 }

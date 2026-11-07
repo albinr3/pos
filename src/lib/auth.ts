@@ -382,8 +382,11 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
     try {
       clerkUser = await currentUser()
     } catch {
-      // Si no se puede obtener currentUser (por ejemplo, desde app móvil),
-      // intentar obtenerlo usando clerkClient
+      clerkUser = null
+    }
+    // En móvil currentUser puede devolver null o una sesión distinta: siempre
+    // resolver explícitamente la identidad verificada de la petición.
+    if (!clerkUser || clerkUser.id !== userId) {
       try {
         const { clerkClient } = await import("@clerk/nextjs/server")
         const client = await clerkClient()
