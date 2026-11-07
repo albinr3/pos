@@ -254,6 +254,7 @@ export function AccountsClient({ initialAccounts }: { initialAccounts: AccountLi
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1 text-sm">
+                            <div><span className="text-muted-foreground">Origen: </span><span>{account.registrationSource === "APP" ? "App" : account.registrationSource === "WEB" ? "Web" : "Desconocido"}</span></div>
                             <div>
                               <span className="text-muted-foreground">Método: </span>
                               <span>{getRegistrationMethodLabel(account.registeredWithMethod)}</span>

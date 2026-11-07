@@ -25,13 +25,14 @@ function LoginContent() {
   const [isRequestingOtp, setIsRequestingOtp] = useState(false)
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false)
   const [isSignupMode, setIsSignupMode] = useState(false)
-  const [signupUnsafeMetadata, setSignupUnsafeMetadata] = useState<Record<string, string>>({})
+  const [signupUnsafeMetadata, setSignupUnsafeMetadata] = useState<Record<string, string>>({ registration_source: "web" })
 
   useEffect(() => {
     if (typeof window === "undefined") return
     const userAgent = window.navigator.userAgent || ""
     const isMobileDevice = /android|iphone|ipad|ipod|mobile/i.test(userAgent)
     setSignupUnsafeMetadata({
+      registration_source: "web",
       registration_device: isMobileDevice ? "mobile" : "desktop",
       registration_user_agent: userAgent,
     })

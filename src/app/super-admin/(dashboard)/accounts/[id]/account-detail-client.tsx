@@ -730,6 +730,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span>Registrado {formatDateDO(account.createdAt, { day: "2-digit", month: "2-digit", year: "numeric" })}</span>
                 </div>
+                <div><p className="text-sm text-muted-foreground">Origen del registro</p><p className="font-medium">{account.registrationSource === "APP" ? "App" : account.registrationSource === "WEB" ? "Web" : "Desconocido"}</p></div>
                 <div>
                   <p className="text-sm text-muted-foreground">Registro con</p>
                   <p className="font-medium">{getRegistrationMethodLabel(account.registeredWithMethod)}</p>

@@ -15,6 +15,7 @@ import type {
   BillingStatus,
   BillingCurrency,
   BillingProvider,
+  RegistrationSource,
   RegistrationDeviceType,
   RegistrationMethod,
 } from "@prisma/client"
@@ -126,6 +127,7 @@ export type AccountListItem = {
   name: string
   createdAt: Date
   clerkUserId: string
+  registrationSource: RegistrationSource
   registeredFromDevice: RegistrationDeviceType
   registeredWithMethod: RegistrationMethod
 
@@ -262,6 +264,7 @@ export async function getAccounts(): Promise<AccountListItem[]> {
       name: account.name,
       createdAt: account.createdAt,
       clerkUserId: account.clerkUserId,
+      registrationSource: account.registrationSource,
       registeredFromDevice: account.registeredFromDevice,
       registeredWithMethod: account.registeredWithMethod,
 
@@ -350,7 +353,8 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
     name: account.name,
     createdAt: account.createdAt,
     clerkUserId: account.clerkUserId,
-    registeredFromDevice: account.registeredFromDevice,
+    registrationSource: account.registrationSource,
+      registeredFromDevice: account.registeredFromDevice,
     registeredWithMethod: account.registeredWithMethod,
 
     // Billing

@@ -153,6 +153,12 @@ enum BillingPaymentStatus {
   REJECTED // Rechazado (comprobante inválido)
 }
 
+enum RegistrationSource {
+  APP
+  WEB
+  UNKNOWN
+}
+
 enum RegistrationDeviceType {
   DESKTOP
   MOBILE
@@ -236,6 +242,7 @@ model Account {
   deletionPinWindowStartedAt DateTime?
   // Baja para comunicaciones de seguimiento; no afecta correos transaccionales.
   engagementEmailsEnabled Boolean @default(true)
+  registrationSource   RegistrationSource     @default(UNKNOWN)
   registeredFromDevice RegistrationDeviceType @default(UNKNOWN)
   registeredWithMethod RegistrationMethod     @default(UNKNOWN)
   registeredUserAgent  String?

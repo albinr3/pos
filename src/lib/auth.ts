@@ -18,6 +18,7 @@ import { createBillingSubscription, getBillingState, type BillingState } from "@
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import { ensureGenericCustomer } from "@/lib/customer-helpers"
 import { getClerkPrimaryEmail } from "@/lib/clerk-email"
+import { normalizeRegistrationSource } from "@/lib/registration-source"
 import { accountIdentityHash, withAccountIdentityLock } from "@/lib/account-deletion-guard"
 
 // Función helper para obtener prisma de forma segura
@@ -430,6 +431,7 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
               name: name,
               clerkUserId: userId,
               ownerEmail: email,
+              registrationSource: normalizeRegistrationSource(clerkUser?.unsafeMetadata?.registration_source),
               registeredFromDevice: registrationDevice,
               registeredWithMethod: registrationMethod,
               registeredUserAgent: registrationUserAgent,

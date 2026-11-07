@@ -204,6 +204,7 @@ export async function POST(request: NextRequest) {
             id: "default_account",
             name: "Mi Negocio",
             clerkUserId: "whatsapp_users",
+            registrationSource: "WEB",
             registeredFromDevice: inferDeviceFromUserAgent(userAgent),
             registeredWithMethod: "WHATSAPP",
             registeredUserAgent: userAgent,

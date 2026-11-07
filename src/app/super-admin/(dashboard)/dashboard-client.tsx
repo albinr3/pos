@@ -94,7 +94,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
   const [kapsoTemplateName, setKapsoTemplateName] = useState("hello_world")
   const [kapsoLanguageCode, setKapsoLanguageCode] = useState("en_US")
   const [sendingKapso, setSendingKapso] = useState(false)
-  const { kpis, mobileInstallations, activation, recentAccounts, pendingPayments } = data
+  const { kpis, registrationSources, mobileInstallations, activation, recentAccounts, pendingPayments } = data
 
   const handleApprove = async (paymentId: string) => {
     setLoadingPayment(paymentId)
@@ -243,6 +243,18 @@ export function DashboardClient({ data }: { data: DashboardData }) {
         </Card>
       </div>
 
+      <div>
+        <h2 className="text-lg font-semibold">Cuentas por origen de registro</h2>
+        <p className="text-sm text-muted-foreground">Las cuentas anteriores o sin origen informado aparecen como desconocidas.</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-3">
+        {registrationSources.map(({ source, total, thisMonth }) => (
+          <Card key={source}>
+            <CardHeader><CardTitle className="text-sm font-medium">{source === "APP" ? "App" : source === "WEB" ? "Web" : "Desconocido"}</CardTitle></CardHeader>
+            <CardContent><div className="text-2xl font-bold">{total}</div><p className="text-xs text-muted-foreground">{thisMonth} nuevas este mes</p></CardContent>
+          </Card>
+        ))}
+      </div>
       <div>
         <h2 className="text-lg font-semibold">Instalaciones móviles</h2>
         <p className="text-sm text-muted-foreground">Actividad medida desde el despliegue de esta funcionalidad.</p>

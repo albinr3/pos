@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { Webhook } from "svix"
 import { headers } from "next/headers"
 import { getClerkPrimaryEmail } from "@/lib/clerk-email"
+import { normalizeRegistrationSource } from "@/lib/registration-source"
 import { accountIdentityHash, withAccountIdentityLock } from "@/lib/account-deletion-guard"
 
 // Marcar como dinámica para evitar ejecución durante el build
@@ -157,6 +158,7 @@ export async function POST(request: NextRequest) {
                 name,
                 clerkUserId: id,
                 ownerEmail: primaryEmail,
+                registrationSource: normalizeRegistrationSource(evt.data?.unsafe_metadata?.registration_source),
                 registeredFromDevice: registrationDevice,
                 registeredWithMethod: registrationMethod,
                 registeredUserAgent: registrationUserAgent,

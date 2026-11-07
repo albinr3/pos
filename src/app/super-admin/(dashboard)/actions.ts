@@ -57,6 +57,7 @@ export type PendingPayment = {
 
 export type DashboardData = {
   kpis: DashboardKPIs
+  registrationSources: { source: "APP" | "WEB" | "UNKNOWN"; total: number; thisMonth: number }[]
   mobileInstallations: {
     historicalTotal: number
     activeLast30Days: number
@@ -163,6 +164,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     select: {
       id: true,
       createdAt: true,
+      registrationSource: true,
       products: {
         where: { isActive: true },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -286,6 +288,11 @@ export async function getDashboardData(): Promise<DashboardData> {
       newAccountsThisWeek,
       newAccountsThisMonth,
     },
+    registrationSources: (["APP", "WEB", "UNKNOWN"] as const).map((source) => ({
+      source,
+      total: allAccounts.filter((account) => account.registrationSource === source).length,
+      thisMonth: allAccounts.filter((account) => account.registrationSource === source && account.createdAt >= startOfMonth).length,
+    })),
     mobileInstallations: {
       historicalTotal,
       activeLast30Days,
