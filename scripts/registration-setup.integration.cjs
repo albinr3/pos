@@ -80,8 +80,11 @@ async function main() {
   const request = token => ({ headers: new Headers(token ? { 'X-Clerk-Authorization': `Bearer ${token}` } : {}) });
   const token = jwt.sign({ sub: 'clerk-user', sid: 'session' }, privateKey, { algorithm: 'RS256', expiresIn: '1m' });
   assert.equal(await requestClerkUserId(request(token)), 'clerk-user');
+  // Compatibilidad con versiones móviles que envían el JWT sin el prefijo Bearer.
+  assert.equal(await requestClerkUserId({ headers: new Headers({ 'X-Clerk-Authorization': token }) }), 'clerk-user');
   const invalid = jwt.sign({ sub: 'victim', sid: 'session' }, 'incorrect-key', { algorithm: 'HS256', expiresIn: '1m' });
   assert.equal(await requestClerkUserId(request(invalid)), null);
+  assert.equal(await requestClerkUserId({ headers: new Headers({ Authorization: invalid }) }), null);
   const expired = jwt.sign({ sub: 'clerk-user', sid: 'session' }, privateKey, { algorithm: 'RS256', expiresIn: '-1s' });
   assert.equal(await requestClerkUserId(request(expired)), null);
   const noSession = jwt.sign({ sub: 'clerk-user' }, privateKey, { algorithm: 'RS256', expiresIn: '1m' });

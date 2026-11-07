@@ -13,9 +13,14 @@ export async function requestClerkUserId(request: NextRequest): Promise<string |
   const bearer = request.headers.has("X-Clerk-Authorization")
     ? request.headers.get("X-Clerk-Authorization") : request.headers.get("Authorization")
   if (bearer === null) return getClerkUserId()
-  if (!/^Bearer\s+\S+$/i.test(bearer)) return null
+  // Las versiones móviles anteriores también envían el JWT sin «Bearer»;
+  // aceptar ambos formatos sin omitir nunca la verificación criptográfica.
+  const token = /^Bearer\s+\S+$/i.test(bearer)
+    ? bearer.replace(/^Bearer\s+/i, "")
+    : /^[^\s.]+\.[^\s.]+\.[^\s.]+$/.test(bearer) ? bearer : null
+  if (!token) return null
   try {
-    const payload = await verifyToken(bearer.replace(/^Bearer\s+/i, ""), {
+    const payload = await verifyToken(token, {
       secretKey: process.env.CLERK_SECRET_KEY,
       jwtKey: process.env.CLERK_JWT_KEY,
       authorizedParties: process.env.CLERK_AUTHORIZED_PARTIES?.split(",").map(value => value.trim()).filter(Boolean),
