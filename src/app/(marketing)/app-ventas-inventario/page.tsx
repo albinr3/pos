@@ -317,7 +317,7 @@ export default function AppMovilPage() {
 
       <section className="bg-slate-50 py-16 sm:py-24">
         <div className="container px-4 md:px-6">
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-5xl">
             <div className="mb-12 text-center">
               <h2 className="text-3xl font-bold text-slate-950">
                 Cómo instalar la app de MOVOPos en Android
@@ -327,78 +327,80 @@ export default function AppMovilPage() {
                 empezar a vender, facturar y controlar inventario.
               </p>
             </div>
-            <figure id="instalacion-video" className="mx-auto mb-10 w-full max-w-[320px]">
-              <video
-                controls
-                playsInline
-                preload="none"
-                poster={appInstallVideo.posterPath}
-                width={appInstallVideo.width}
-                height={appInstallVideo.height}
-                aria-label={appInstallVideo.name}
-                aria-describedby="instalacion-video-description"
-                className="aspect-[368/624] h-auto w-full rounded-2xl border border-slate-200 bg-slate-950 shadow-xl"
-              >
-                <source src={appInstallVideo.videoPath} type="video/mp4" />
-                Tu navegador no puede reproducir este video. {" "}
-                <a href={appInstallVideo.videoPath}>Ver o descargar el tutorial de instalación</a>.
-              </video>
-              <figcaption id="instalacion-video-description" className="mt-4 text-center text-sm leading-6 text-slate-600">
-                Mira cómo descargar e instalar MOVOPos en tu celular Android.
-              </figcaption>
-            </figure>
-            <div className="space-y-6">
-              {[
-                {
-                  title: "Descarga el APK",
-                  description:
-                    "Toca el botón de descarga y espera que el archivo APK de MOVOPos termine de bajar en tu celular.",
-                },
-                {
-                  title: "Permite la instalación",
-                  description:
-                    "Android puede pedir permiso para instalar apps desde el navegador o gestor de archivos. Activa el permiso solo para completar la instalación.",
-                },
-                {
-                  title: "Abre MOVOPos",
-                  description:
-                    "Instala la app, inicia sesión con tu cuenta y usa la aplicación para punto de venta, facturación e inventario. Si aún no tienes cuenta, primero regístrate desde la web.",
-                },
-              ].map((step, index) => (
-                <article key={step.title} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:grid-cols-[3rem_1fr]">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600 font-semibold text-white">
-                    {index + 1}
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-950">{step.title}</h3>
-                    {index === 0 ? (
-                      <p className="mt-2 text-sm leading-7 text-slate-600">
-                        Toca el botón de{" "}
-                        <a
-                          href={appDownloadUrl}
-                          className="font-semibold text-violet-700 underline underline-offset-2 hover:text-violet-800"
-                        >
-                          descarga
-                        </a>{" "}
-                        y espera que el archivo APK de MOVOPos termine de bajar en tu celular.
-                      </p>
-                    ) : index === 2 ? (
-                      <p className="mt-2 text-sm leading-7 text-slate-600">
-                        Instala la app e inicia sesión con tu cuenta para gestionar ventas,
-                        facturación e inventario. Si aún no tienes cuenta, primero{" "}
-                        <Link
-                          href="/login?signup=true"
-                          className="font-semibold text-violet-700 underline underline-offset-2 hover:text-violet-800"
-                        >
-                          regístrate desde la web
-                        </Link>.
-                      </p>
-                    ) : (
-                      <p className="mt-2 text-sm leading-7 text-slate-600">{step.description}</p>
-                    )}
-                  </div>
-                </article>
-              ))}
+            <div className="grid items-start gap-10 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)] md:gap-12">
+              <figure id="instalacion-video" className="mx-auto w-full max-w-[320px]">
+                <video
+                  controls
+                  playsInline
+                  preload="none"
+                  poster={appInstallVideo.posterPath}
+                  width={appInstallVideo.width}
+                  height={appInstallVideo.height}
+                  aria-label={appInstallVideo.name}
+                  aria-describedby="instalacion-video-description"
+                  className="aspect-[368/624] h-auto w-full rounded-2xl border border-slate-200 bg-slate-950 shadow-xl"
+                >
+                  <source src={appInstallVideo.videoPath} type="video/mp4" />
+                  Tu navegador no puede reproducir este video. {" "}
+                  <a href={appInstallVideo.videoPath}>Ver o descargar el tutorial de instalación</a>.
+                </video>
+                <figcaption id="instalacion-video-description" className="mt-4 text-center text-sm leading-6 text-slate-600">
+                  Mira cómo descargar e instalar MOVOPos en tu celular Android.
+                </figcaption>
+              </figure>
+              <div className="space-y-6">
+                {[
+                  {
+                    title: "Descarga el APK",
+                    description:
+                      "Toca el botón de descarga y espera que el archivo APK de MOVOPos termine de bajar en tu celular.",
+                  },
+                  {
+                    title: "Permite la instalación",
+                    description:
+                      "Android puede pedir permiso para instalar apps desde el navegador o gestor de archivos. Activa el permiso solo para completar la instalación.",
+                  },
+                  {
+                    title: "Abre MOVOPos",
+                    description:
+                      "Instala la app, inicia sesión con tu cuenta y usa la aplicación para punto de venta, facturación e inventario. Si aún no tienes cuenta, primero regístrate desde la web.",
+                  },
+                ].map((step, index) => (
+                  <article key={step.title} className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:grid-cols-[3rem_1fr]">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-600 font-semibold text-white">
+                      {index + 1}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-950">{step.title}</h3>
+                      {index === 0 ? (
+                        <p className="mt-2 text-sm leading-7 text-slate-600">
+                          Toca el botón de{" "}
+                          <a
+                            href={appDownloadUrl}
+                            className="font-semibold text-violet-700 underline underline-offset-2 hover:text-violet-800"
+                          >
+                            descarga
+                          </a>{" "}
+                          y espera que el archivo APK de MOVOPos termine de bajar en tu celular.
+                        </p>
+                      ) : index === 2 ? (
+                        <p className="mt-2 text-sm leading-7 text-slate-600">
+                          Instala la app e inicia sesión con tu cuenta para gestionar ventas,
+                          facturación e inventario. Si aún no tienes cuenta, primero{" "}
+                          <Link
+                            href="/login?signup=true"
+                            className="font-semibold text-violet-700 underline underline-offset-2 hover:text-violet-800"
+                          >
+                            regístrate desde la web
+                          </Link>.
+                        </p>
+                      ) : (
+                        <p className="mt-2 text-sm leading-7 text-slate-600">{step.description}</p>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
             </div>
           </div>
         </div>
