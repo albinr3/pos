@@ -3,6 +3,7 @@ import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { appDemoVideo, appDemoVideoJsonLd } from "@/content/marketing/app-demo"
+import { appInstallVideo, appInstallVideoJsonLd } from "@/content/marketing/app-install"
 import {
   BarChart3,
   Boxes,
@@ -212,6 +213,10 @@ export default function AppMovilPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(appDemoVideoJsonLd) }}
       />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(appInstallVideoJsonLd) }}
+      />
 
       <section className="relative overflow-hidden bg-white py-16 sm:py-24 lg:py-28">
         <div className="absolute inset-0 -z-10 bg-violet-50/60" />
@@ -322,6 +327,26 @@ export default function AppMovilPage() {
                 empezar a vender, facturar y controlar inventario.
               </p>
             </div>
+            <figure id="instalacion-video" className="mx-auto mb-10 w-full max-w-[320px]">
+              <video
+                controls
+                playsInline
+                preload="none"
+                poster={appInstallVideo.posterPath}
+                width={appInstallVideo.width}
+                height={appInstallVideo.height}
+                aria-label={appInstallVideo.name}
+                aria-describedby="instalacion-video-description"
+                className="aspect-[368/624] h-auto w-full rounded-2xl border border-slate-200 bg-slate-950 shadow-xl"
+              >
+                <source src={appInstallVideo.videoPath} type="video/mp4" />
+                Tu navegador no puede reproducir este video. {" "}
+                <a href={appInstallVideo.videoPath}>Ver o descargar el tutorial de instalación</a>.
+              </video>
+              <figcaption id="instalacion-video-description" className="mt-4 text-center text-sm leading-6 text-slate-600">
+                Mira cómo descargar e instalar MOVOPos en tu celular Android.
+              </figcaption>
+            </figure>
             <div className="space-y-6">
               {[
                 {
