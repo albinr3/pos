@@ -1689,6 +1689,15 @@ export function PosClient({
     return cart.reduce((sum, item) => (item.productId === productId ? sum + item.qty : sum), 0)
   }
 
+  function getProductDisplayImage(product: ProductResult) {
+    const demoImages: Record<string, string> = {
+      "Café Americano": "/tutorial/coffee.jpg",
+      "Botella de Agua": "/tutorial/water.jpg",
+      "Snack": "/tutorial/snack.jpg",
+    }
+    return product.imageUrls?.[0] || (onboardingDemoGuide ? demoImages[product.name] : undefined)
+  }
+
   function getProductOnboardingTarget(product: ProductResult, fallback: string) {
     // Preventivo: el listado se ordena alfabéticamente; no usar un selector genérico
     // porque podría resaltar otro producto distinto al indicado por la guía.
@@ -2139,9 +2148,9 @@ export function PosClient({
                           className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
-                            {p.imageUrls && p.imageUrls.length > 0 ? (
+                            {getProductDisplayImage(p) ? (
                               <img
-                                src={p.imageUrls[0]}
+                                src={getProductDisplayImage(p)}
                                 alt={p.name}
                                 loading="lazy"
                                 decoding="async"
@@ -2208,9 +2217,9 @@ export function PosClient({
                             className="group relative flex flex-col rounded-lg border-2 border-border hover:border-purple-primary transition-colors bg-card shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             <div className="relative aspect-square bg-muted flex items-center justify-center overflow-hidden rounded-t-lg">
-                              {p.imageUrls && p.imageUrls.length > 0 ? (
+                              {getProductDisplayImage(p) ? (
                                 <img
-                                  src={p.imageUrls[0]}
+                                  src={getProductDisplayImage(p)}
                                   alt={p.name}
                                   loading="lazy"
                                   decoding="async"
@@ -2467,10 +2476,10 @@ export function PosClient({
                           <div className="relative w-12 h-12 rounded-md overflow-hidden bg-muted flex-shrink-0">
                             {(() => {
                               const product = allProducts.find((p) => p.id === c.productId) || results.find((p) => p.id === c.productId)
-                              if (product?.imageUrls && product.imageUrls.length > 0) {
+                              if (product && getProductDisplayImage(product)) {
                                 return (
                                   <img
-                                    src={product.imageUrls[0]}
+                                    src={getProductDisplayImage(product)}
                                     alt={c.name}
                                     loading="lazy"
                                     decoding="async"
