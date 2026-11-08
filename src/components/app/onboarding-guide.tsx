@@ -1,5 +1,7 @@
 "use client"
 
+import { useOnboardingCompleted } from "@/hooks/use-onboarding-completed"
+
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { Check, Loader2, X } from "lucide-react"
 
@@ -64,6 +66,7 @@ export function OnboardingGuide({
   stepKey,
   resumePath,
 }: OnboardingGuideProps) {
+  const globallyCompleted = useOnboardingCompleted(accountId)
   const [isVisible, setIsVisible] = useState(true)
   const [rect, setRect] = useState<TargetRect | null>(null)
   const [isSkipping, startSkipping] = useTransition()
@@ -133,7 +136,7 @@ export function OnboardingGuide({
     } as const
   }, [rect])
 
-  if (!step || !isVisible) return null
+  if (!step || !isVisible || globallyCompleted) return null
 
   const closeGuide = () => {
     setIsVisible(false)

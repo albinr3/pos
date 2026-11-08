@@ -1,5 +1,7 @@
 "use server"
 
+import { finalizeAccountOnboardingTx, withOnboardingTransaction } from "@/lib/account-onboarding"
+
 import { randomUUID } from "crypto"
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
@@ -354,7 +356,7 @@ export async function upsertProduct(input: {
       throw new Error("Existencia mínima no puede ser negativa")
     }
 
-    await prisma.$transaction(async (tx) => {
+    await withOnboardingTransaction(user.accountId, async (tx) => {
       if (sku) {
         const conflictingSkuProduct = await tx.product.findFirst({
           where: {
@@ -538,29 +540,8 @@ export async function upsertProduct(input: {
           },
         })
         if (onboarding?.demoProductsSeededAt && onboarding.demoCheckoutCompletedAt && !onboarding.firstRealProductId) {
-          // Preventivo: los demos no generan ventas ni movimientos. Si una versión futura les
-          // añade historial, este filtro los conserva para no borrar evidencia operativa.
-          await tx.product.deleteMany({
-            where: {
-              accountId: user.accountId,
-              isOnboardingDemo: true,
-              saleItems: { none: {} },
-              inventoryAdjustments: { none: {} },
-            },
-          })
-          const remainingDemos = await tx.product.count({
-            where: { accountId: user.accountId, isOnboardingDemo: true },
-          })
-          const completedAt = new Date()
-          await tx.accountOnboarding.update({
-            where: { accountId: user.accountId },
-            data: {
-              firstRealProductId: created.id,
-              firstRealProductCreatedAt: completedAt,
-              completedAt,
-              ...(remainingDemos === 0 ? { demoProductsRemovedAt: completedAt } : {}),
-            },
-          })
+          // Compartir finalización y bloqueo evita invertir el orden de escrituras con el móvil.
+          if (created.isAvailableForSale) await finalizeAccountOnboardingTx(tx, user.accountId, created.id)
         }
       }
     })

@@ -331,6 +331,7 @@ model AccountOnboarding {
   firstSeenAt             DateTime?
   lastSkippedAt           DateTime?
   completedAt             DateTime?
+  mobileAutoStartEligible Boolean @default(false)
   firstProductId          String?
   firstSaleId             String?
   productExpressCreatedAt DateTime?
@@ -929,7 +930,7 @@ model Product {
 
   isActive Boolean @default(true)
   isAvailableForSale Boolean @default(true)
-  // Los productos de práctica se eliminan al crear el primer producto propio.
+  // Los productos de práctica se desactivan al completar el tutorial; se conserva su historial.
   isOnboardingDemo Boolean @default(false)
 
   imageUrls String[] @default([])

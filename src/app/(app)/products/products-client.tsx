@@ -1,4 +1,5 @@
 "use client"
+import { useOnboardingCompleted } from "@/hooks/use-onboarding-completed"
 
 import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent, type DragEvent, type FocusEvent } from "react"
 import { Edit, History, Loader2, Plus, Printer, Search, Trash2, Upload } from "lucide-react"
@@ -573,6 +574,7 @@ export function ProductsClient({
   const [recipeItems, setRecipeItems] = useState<RecipeItemFormRow[]>([createRecipeItemRow()])
   const [ingredientPickerOpen, setIngredientPickerOpen] = useState(false)
   const [ingredientPickerSearch, setIngredientPickerSearch] = useState("")
+  const globallyCompleted = useOnboardingCompleted(onboardingAccountId)
   const [isOnboardingGuideClosed, setIsOnboardingGuideClosed] = useState(false)
   const [resumeProductStepIndex, setResumeProductStepIndex] = useState(0)
   const [hasSkippedProgress, setHasSkippedProgress] = useState(false)
@@ -800,7 +802,7 @@ export function ProductsClient({
     const trimmedName = name.trim()
     const priceCents = toCents(price)
     const costCents = toCents(cost)
-    const shouldContinueOnboarding = onboardingProductGuide && !editing
+    const shouldContinueOnboarding = onboardingProductGuide && !editing && !globallyCompleted
     if (!trimmedName || priceCents <= 0 || costCents <= 0) {
       toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
       return

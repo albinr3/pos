@@ -102,8 +102,9 @@ export async function setupInitialAccount({ clerkUserId, account, businessName, 
           initialSetupStartedAt: new Date(),
           initialSetupCompletedAt: new Date(),
           demoProductsSeededAt: new Date(),
+          mobileAutoStartEligible: true,
         },
-        update: { initialSetupCompletedAt: new Date(), demoProductsSeededAt: new Date() },
+        update: { initialSetupCompletedAt: new Date(), demoProductsSeededAt: new Date(), mobileAutoStartEligible: true },
       })
       return { owner, subscription, created: true }
   })

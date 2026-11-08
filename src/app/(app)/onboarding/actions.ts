@@ -7,180 +7,14 @@ import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { upsertProduct } from "../products/actions"
 
-// SALE queda únicamente para no cambiar el onboarding de cuentas creadas antes de los demos.
-export type AccountOnboardingPhase = "DEMO_SALE" | "PRODUCT" | "SALE" | "COMPLETED"
-
-export type AccountOnboardingState = {
-  accountId: string
-  phase: AccountOnboardingPhase
-  activeProductCount: number
-  saleCount: number
-  firstSeenAt: string | null
-  lastSkippedAt: string | null
-  completedAt: string | null
-  firstProductId: string | null
-  firstSaleId: string | null
-  usesDemoActivation: boolean
-  demoCheckoutCompletedAt: string | null
-  firstRealProductId: string | null
-  saleProductId: string | null
-  saleProductName: string | null
-}
-
-function toIso(value: Date | null | undefined) {
-  return value ? value.toISOString() : null
-}
+export type { AccountOnboardingPhase, AccountOnboardingState } from "@/lib/account-onboarding"
+import { getAccountOnboardingStateForAccount, finalizeAccountOnboardingTx, withOnboardingTransaction } from "@/lib/account-onboarding"
+import type { AccountOnboardingState } from "@/lib/account-onboarding"
 
 export async function getAccountOnboardingState(): Promise<AccountOnboardingState> {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
-
-  const [
-    onboarding,
-    activeProductCount,
-    saleCount,
-    activeRealProductCount,
-    firstActiveProduct,
-    firstRealActiveProduct,
-    firstSellableProduct,
-    firstSale,
-  ] = await Promise.all([
-    prisma.accountOnboarding.findUnique({
-      where: { accountId: user.accountId },
-    }),
-    prisma.product.count({
-      where: {
-        accountId: user.accountId,
-        isActive: true,
-      },
-    }),
-    prisma.sale.count({
-      where: {
-        accountId: user.accountId,
-        cancelledAt: null,
-      },
-    }),
-    prisma.product.count({
-      where: {
-        accountId: user.accountId,
-        isActive: true,
-        isOnboardingDemo: false,
-      },
-    }),
-    prisma.product.findFirst({
-      where: {
-        accountId: user.accountId,
-        isActive: true,
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { id: true, name: true },
-    }),
-    prisma.product.findFirst({
-      where: {
-        accountId: user.accountId,
-        isActive: true,
-        isOnboardingDemo: false,
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { id: true, name: true },
-    }),
-    prisma.product.findFirst({
-      where: {
-        accountId: user.accountId,
-        isActive: true,
-        isAvailableForSale: true,
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-      select: { id: true, name: true },
-    }),
-    prisma.sale.findFirst({
-      where: {
-        accountId: user.accountId,
-        cancelledAt: null,
-      },
-      orderBy: [{ soldAt: "asc" }, { id: "asc" }],
-      select: {
-        id: true,
-        soldAt: true,
-        items: {
-          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          take: 1,
-          select: { productId: true },
-        },
-      },
-    }),
-  ])
-
-  const now = new Date()
-  const isDemoAccount = Boolean(onboarding?.demoProductsSeededAt)
-  const firstProductId = isDemoAccount
-    ? onboarding?.firstRealProductId ?? firstRealActiveProduct?.id ?? null
-    : onboarding?.firstProductId ?? firstSellableProduct?.id ?? firstActiveProduct?.id ?? null
-  let savedOnboarding = onboarding
-
-  if (saleCount > 0 && firstSale) {
-    savedOnboarding = await prisma.accountOnboarding.upsert({
-      where: { accountId: user.accountId },
-      create: {
-        accountId: user.accountId,
-        firstSeenAt: onboarding?.firstSeenAt ?? now,
-        completedAt: onboarding?.completedAt ?? now,
-        firstProductId: firstProductId ?? firstSale.items[0]?.productId ?? null,
-        firstSaleId: onboarding?.firstSaleId ?? firstSale.id,
-        firstSaleCreatedAt: onboarding?.firstSaleCreatedAt ?? firstSale.soldAt,
-      },
-      update: {
-        firstSeenAt: onboarding?.firstSeenAt ?? now,
-        completedAt: onboarding?.completedAt ?? now,
-        firstProductId: firstProductId ?? firstSale.items[0]?.productId ?? null,
-        firstSaleId: onboarding?.firstSaleId ?? firstSale.id,
-        firstSaleCreatedAt: onboarding?.firstSaleCreatedAt ?? firstSale.soldAt,
-      },
-    })
-  } else {
-    savedOnboarding = await prisma.accountOnboarding.upsert({
-      where: { accountId: user.accountId },
-      create: {
-        accountId: user.accountId,
-        firstSeenAt: now,
-        firstProductId,
-      },
-      update: {
-        firstSeenAt: onboarding?.firstSeenAt ?? now,
-        firstProductId,
-      },
-    })
-  }
-
-  const usesDemoActivation = Boolean(savedOnboarding?.demoProductsSeededAt)
-  const phase: AccountOnboardingPhase = usesDemoActivation
-    ? !savedOnboarding?.demoCheckoutCompletedAt
-      ? "DEMO_SALE"
-      : savedOnboarding?.firstRealProductId || activeRealProductCount > 0
-        ? "COMPLETED"
-        : "PRODUCT"
-    : saleCount > 0
-      ? "COMPLETED"
-      : activeProductCount === 0
-        ? "PRODUCT"
-        : "SALE"
-
-  return {
-    accountId: user.accountId,
-    phase,
-    activeProductCount,
-    saleCount,
-    firstSeenAt: toIso(savedOnboarding?.firstSeenAt),
-    lastSkippedAt: toIso(savedOnboarding?.lastSkippedAt),
-    completedAt: toIso(savedOnboarding?.completedAt),
-    firstProductId: savedOnboarding?.firstProductId ?? null,
-    firstSaleId: savedOnboarding?.firstSaleId ?? null,
-    usesDemoActivation,
-    demoCheckoutCompletedAt: toIso(savedOnboarding?.demoCheckoutCompletedAt),
-    firstRealProductId: savedOnboarding?.firstRealProductId ?? null,
-    saleProductId: firstSellableProduct?.id ?? null,
-    saleProductName: firstSellableProduct?.name ?? null,
-  }
+  return getAccountOnboardingStateForAccount(user.accountId)
 }
 
 export async function skipAccountOnboarding() {
@@ -214,11 +48,12 @@ export async function completeDemoCheckout() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
-  const result = await prisma.$transaction(async (tx) => {
+  const result = await withOnboardingTransaction(user.accountId, async (tx) => {
     const onboarding = await tx.accountOnboarding.findUnique({
       where: { accountId: user.accountId },
-      select: { demoProductsSeededAt: true, demoCheckoutCompletedAt: true },
+      select: { demoProductsSeededAt: true, demoCheckoutCompletedAt: true, completedAt: true },
     })
+    if (onboarding?.completedAt) return { next: "COMPLETED" as const }
     if (!onboarding?.demoProductsSeededAt) throw new Error("La venta de práctica no está disponible para esta cuenta.")
     if (onboarding.demoCheckoutCompletedAt) return { next: "PRODUCT" as const }
 
@@ -228,22 +63,11 @@ export async function completeDemoCheckout() {
     if (demoCount !== 3) throw new Error("No se pudieron preparar los productos de práctica.")
 
     const firstRealProduct = await tx.product.findFirst({
-      where: { accountId: user.accountId, isActive: true, isOnboardingDemo: false },
+      where: { accountId: user.accountId, isActive: true, isOnboardingDemo: false, isAvailableForSale: true, priceCents: { gt: 0 }, costCents: { gt: 0 } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: { id: true },
     })
     const completedAt = new Date()
-    if (firstRealProduct) {
-      // Preventivo: si se abrió Productos fuera de orden, no dejamos demos junto al catálogo real.
-      await tx.product.deleteMany({
-        where: {
-          accountId: user.accountId,
-          isOnboardingDemo: true,
-          saleItems: { none: {} },
-          inventoryAdjustments: { none: {} },
-        },
-      })
-    }
 
     await tx.accountOnboarding.update({
       where: { accountId: user.accountId },
@@ -254,11 +78,11 @@ export async function completeDemoCheckout() {
               firstRealProductId: firstRealProduct.id,
               firstRealProductCreatedAt: completedAt,
               demoProductsRemovedAt: completedAt,
-              completedAt,
             }
           : {}),
       },
     })
+    if (firstRealProduct) await finalizeAccountOnboardingTx(tx, user.accountId, firstRealProduct.id)
     return { next: firstRealProduct ? "COMPLETED" as const : "PRODUCT" as const }
   })
 

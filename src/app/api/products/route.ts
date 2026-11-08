@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
       itbisRateBp: p.itbisRateBp,
       isAvailableForSale: p.isAvailableForSale,
       isActive: p.isActive,
+      isOnboardingDemo: p.isOnboardingDemo === true,
       imageUrls: p.imageUrls,
       productKind: p.productKind,
       unit: p.unit,

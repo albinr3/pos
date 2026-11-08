@@ -1,5 +1,6 @@
 "use client"
 
+import { OnboardingCompletionSync } from "@/components/app/onboarding-completion-sync"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { PropsWithChildren, useMemo, type ComponentPropsWithoutRef } from "react"
@@ -685,7 +686,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
             </div>
           ) : null}
           </div>
-          <main className="flex-1 p-4 md:p-6">{children}</main>
+          <main className="flex-1 p-4 md:p-6"><OnboardingCompletionSync accountId={user?.accountId} />{children}</main>
         </div>
       </div>
     </div>

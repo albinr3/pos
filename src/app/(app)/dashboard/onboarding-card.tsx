@@ -1,5 +1,7 @@
 "use client"
 
+import { useOnboardingCompleted } from "@/hooks/use-onboarding-completed"
+
 import Link from "next/link"
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { CheckCircle2, Circle, PackagePlus, ShoppingCart, X } from "lucide-react"
@@ -33,6 +35,7 @@ export function OnboardingCard({
   showProductNavGuide?: boolean
   showSaleNavGuide?: boolean
 }) {
+  const globallyCompleted = useOnboardingCompleted(state.accountId)
   const skipKey = `${SKIP_KEY_PREFIX}:${state.accountId}`
   const progressKey = `${ONBOARDING_PROGRESS_KEY_PREFIX}:${state.accountId}`
   const [isHidden, setIsHidden] = useState(state.phase === "COMPLETED")
@@ -110,7 +113,7 @@ export function OnboardingCard({
     }
   }, [resumePath, state.phase, state.saleProductId, state.usesDemoActivation])
 
-  if (isHidden) return null
+  if (isHidden || globallyCompleted || state.phase === "COMPLETED") return null
   if (hasSkippedProgress && state.activeProductCount > 0) return null
 
   const PrimaryIcon = primaryAction.Icon

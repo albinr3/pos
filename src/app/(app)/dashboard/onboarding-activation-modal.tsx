@@ -1,5 +1,7 @@
 "use client"
 
+import { useOnboardingCompleted } from "@/hooks/use-onboarding-completed"
+
 import { useTransition } from "react"
 import { CheckCircle2, PartyPopper, PlayCircle, X } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -13,6 +15,7 @@ type ActivationStage = "SALE" | "PRODUCT"
 const confettiColors = ["bg-emerald-400", "bg-violet-500", "bg-amber-400", "bg-sky-400", "bg-rose-400"]
 
 export function OnboardingActivationModal({ stage, accountId }: { stage: ActivationStage; accountId: string }) {
+  const globallyCompleted = useOnboardingCompleted(accountId)
   const router = useRouter()
   const [isSkipping, startTransition] = useTransition()
   const isSale = stage === "SALE"
@@ -29,6 +32,7 @@ export function OnboardingActivationModal({ stage, accountId }: { stage: Activat
     })
   }
 
+  if (globallyCompleted) return null
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/55 p-4" role="dialog" aria-modal="true">
       <div className="relative w-full max-w-md overflow-hidden rounded-2xl border bg-background p-6 text-center shadow-2xl sm:p-8">
