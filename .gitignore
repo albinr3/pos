@@ -12,10 +12,8 @@
 
 # testing
 /coverage
-/tmp/cash-*
-# Perfiles de navegador y resultados temporales de las pruebas de existencia.
-/tmp/pos-stock-*
-/tmp/account-deletion-*
+# Los archivos temporales de pruebas y código móvil no deben añadirse a la web.
+/tmp/
 
 # next.js
 /.next/
