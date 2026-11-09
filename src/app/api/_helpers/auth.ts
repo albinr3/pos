@@ -103,6 +103,10 @@ export async function getCurrentUserFromRequest(request: NextRequest) {
       canViewAllCashShifts: user.canViewAllCashShifts,
       canManageCashShifts: user.canManageCashShifts,
       canRecordCashMovements: user.canRecordCashMovements,
+      canManageFiscalSettings: user.canManageFiscalSettings,
+      canManageFiscalSequences: user.canManageFiscalSequences,
+      canPrepareFiscalDocuments: user.canPrepareFiscalDocuments,
+      canViewFiscalDocuments: user.canViewFiscalDocuments,
     }
   }
   // Si no hay headers de Clerk, usar el método normal (para web)

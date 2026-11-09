@@ -46,6 +46,10 @@ export const PERMISSION_LABELS = {
   canViewAllCashShifts: "Ver todos los cierres de caja",
   canManageCashShifts: "Gestionar control e incidencias de caja",
   canRecordCashMovements: "Registrar aportes y retiros de caja",
+  canManageFiscalSettings: "Configurar módulo fiscal",
+  canManageFiscalSequences: "Gestionar numeración fiscal",
+  canPrepareFiscalDocuments: "Preparar documentos fiscales",
+  canViewFiscalDocuments: "Consultar documentos fiscales",
 } as const
 
 export type PermissionKey = keyof typeof PERMISSION_LABELS
@@ -73,6 +77,8 @@ export const CRITICAL_PERMISSION_KEYS = [
   "canManageCashShifts",
   "canManageUsers",
   "canManageSettings",
+  "canManageFiscalSettings",
+  "canManageFiscalSequences",
   "canViewAuditLogs",
 ] as const
 
@@ -177,6 +183,11 @@ export const PERMISSION_MODULES: PermissionModule[] = [
       "canManageUsers",
       "canManageSettings",
     ],
+  },
+  {
+    id: "fiscal",
+    label: "Fiscal",
+    permissions: ["canManageFiscalSettings", "canManageFiscalSequences", "canPrepareFiscalDocuments", "canViewFiscalDocuments"],
   },
   {
     id: "backups",

@@ -1,3 +1,4 @@
+import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
 import { randomUUID } from "node:crypto"
 import { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/db"
@@ -70,6 +71,8 @@ export async function createSupplierPaymentInTransaction(tx: Prisma.TransactionC
   return { ...payment, paidAt: payment.paidAt.toISOString(), createdAt: payment.createdAt.toISOString(), newBalanceCents: balanceCents }
 }
 export async function addSupplierPayment(actor: PurchaseActor, input: SupplierPaymentInput) {
+  // No confirmar efectos ordinarios cuando el cliente solicita una operación fiscal no admitida.
+  assertNoFiscalInput(input)
   purchasePermit(actor, "canRegisterSupplierPayments")
   return withCashOperation(input.cashOperation, { kind: "supplierPayment", ...input }, () => prisma.$transaction(async tx => {
     await lockPurchaseAccount(tx, actor.accountId)

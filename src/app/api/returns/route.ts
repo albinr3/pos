@@ -1,3 +1,4 @@
+import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 import { withCashOperation } from "@/lib/cash-context"
 import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
@@ -87,6 +88,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     console.error("Error en GET /api/returns:", error)
     return NextResponse.json(
       { error: error.message || "Error al listar devoluciones" },
@@ -110,6 +112,7 @@ async function postCashDocument(request: NextRequest) {
     }
 
     const body = await request.json()
+    assertNoFiscalInput(body)
     const saleId = String(body.saleId || "").trim()
     const notes = typeof body.notes === "string" ? body.notes : null
     // Un campo vacío equivale a omitir la preferencia; nunca enviar "" como enum Prisma.
@@ -157,6 +160,7 @@ async function postCashDocument(request: NextRequest) {
   } catch (error: any) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     console.error("Error en POST /api/returns:", error)
     return NextResponse.json(
       { error: error.message || "Error al crear devolución" },

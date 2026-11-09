@@ -5,6 +5,7 @@ import { hasPermission, type PermissionKey } from "@/lib/permissions"
 import { documentLegs, legDelta, encodeCashResult, decodeCashResult } from "@/lib/cash-money"
 
 const financialModels = new Set(["sale", "salePayment", "payment", "supplierPayment", "purchase", "operatingExpense", "return", "treasuryTransfer", "treasuryOpeningBalance"])
+const fiscalAffectedModels = new Set(["sale", "salePayment", "payment", "supplierPayment", "purchase", "operatingExpense", "return"])
 const mutationNames = new Set(["create", "createMany", "update", "updateMany", "delete", "deleteMany", "upsert"])
 const includes: Record<string, object> = { sale: { payments: true }, payment: { ar: { include: { sale: true } } }, return: { sale: true } }
 const accountOf = (row: any) => row.accountId ?? row.ar?.sale?.accountId
@@ -67,6 +68,14 @@ async function mutate(tx: any, model: string, action: string, args: any) {
   if (!accountId && action === "createMany") accountId = args.data?.[0]?.accountId
   if (!accountId) return tx[model][action](args)
   const scope = await currentScope(tx, accountId)
+  if (fiscalAffectedModels.has(model) && cashRequest.getStore()?.fiscalCheckedAccountId !== accountId) {
+    // El perfil activo no puede eludirse omitiendo el bloque fiscal, ni cuando caja está desactivada.
+    // La preparación todavía no existe: conservar las operaciones sin crear efectos hasta implementarla.
+    const fiscal = await tx.fiscalSettings.findUnique({ where: { accountId }, select: { enabled: true } })
+    if (fiscal?.enabled) throw new CashControlError("FISCAL_NOT_AVAILABLE", "La preparación de documentos fiscales todavía no está disponible", 409)
+    const current = cashRequest.getStore()
+    if (current) current.fiscalCheckedAccountId = accountId
+  }
   if (!scope.control) return tx[model][action](args)
   if (before.length) before = await rowsFor(tx, sourceModel, { where: { id: { in: before.map(r => r.id) } } })
   const control = scope.control
@@ -212,6 +221,7 @@ export async function runCashTransaction(client: any, callback: (tx: any) => Pro
   return client.$transaction(async (tx: any) => cashRequest.run({ ...requestScope, tx }, async () => {
     const scope = cashRequest.getStore()!
     const operation = scope.operation
+    let fiscalPolicyVersion: number | undefined
     if (!operation && !scope.maintenance) {
       if (identity) {
         // Adquirir Account ANTES de inventario/secuencias también en compras y anulaciones.
@@ -222,7 +232,7 @@ export async function runCashTransaction(client: any, callback: (tx: any) => Pro
     if (operation) {
       const { actor, deviceHash } = await resolveCashIdentity()
       const controlScope = await currentScope(tx, actor.accountId)
-      if (controlScope.control) {
+      {
         if (operation.accountId !== actor.accountId || operation.userId !== actor.id) throw new CashControlError("CASH_ACTOR_MISMATCH", "Vuelve a iniciar sesión con el empleado que registró los pendientes", 403)
         const boundToShift = operation.cashShiftId !== null
         if ((boundToShift && (typeof operation.cashShiftId !== "string" || !operation.cashShiftId || !Number.isSafeInteger(operation.clientSequence) || operation.clientSequence === null || operation.clientSequence < 1)) || (!boundToShift && operation.clientSequence !== null) || typeof operation.clientOperationId !== "string" || !operation.clientOperationId || !scope.payloadHash) throw new CashControlError("CASH_OPERATION_INVALID", "Operación de caja inválida", 400)
@@ -232,19 +242,30 @@ export async function runCashTransaction(client: any, callback: (tx: any) => Pro
           if (previous.userId !== actor.id || previous.payloadHash !== scope.payloadHash || previous.cashShiftId !== operation.cashShiftId || previous.clientSequence !== operation.clientSequence) throw new CashControlError("CASH_OPERATION_CONFLICT", "Este identificador ya corresponde a otra operación")
           return decodeCashResult(previous.response)
         }
+        // Primero recuperar un commit anterior; un cambio posterior no debe convertir un reintento en una segunda operación.
+        // El candado de Account también lo usa el cambio de política, por lo que la comparación y el commit son atómicos.
+        const fiscal = await tx.fiscalSettings.findUnique({ where: { accountId: actor.accountId }, select: { enabled: true, version: true } })
+        fiscalPolicyVersion = fiscal?.version ?? 0
+        if (!scope.fiscalDiscard) {
+          const supplied = operation.fiscalPolicyVersion
+          if (supplied !== undefined && (!Number.isSafeInteger(supplied) || supplied < 0)) throw new CashControlError("FISCAL_POLICY_INVALID", "Versión de política fiscal inválida", 400)
+          if (fiscal?.enabled || (supplied !== undefined && supplied !== fiscalPolicyVersion)) throw new CashControlError("FISCAL_POLICY_CHANGED", "La política fiscal cambió; conserva este pendiente para revisión")
+          scope.fiscalCheckedAccountId = actor.accountId
+        }
         Object.assign(scope, { trustedActor: actor, deviceHash })
         if (boundToShift) {
-          if (!controlScope.control.enabled) throw new CashControlError("CASH_CONTROL_DISABLED", "El control de turnos fue desactivado. Conserva este pendiente para revisión")
+          if (!controlScope.control?.enabled) throw new CashControlError("CASH_CONTROL_DISABLED", "El control de turnos fue desactivado. Conserva este pendiente para revisión")
           requireActiveCashier(scope)
           if (scope.shift.id !== operation.cashShiftId || operation.clientSequence !== scope.shift.lastSequence + 1) throw new CashControlError("CASH_SEQUENCE_GAP", "Sincroniza los pendientes anteriores de este turno antes de continuar")
         }
-      } else throw new CashControlError("CASH_CONTROL_DISABLED", "El registro de esta operación no está disponible. Conserva el pendiente para revisión")
+      }
     }
     const result = await callback(wrapCashTransaction(tx))
-    if (operation && scope.control) {
+    // Los pendientes sin turno también necesitan un recibo idempotente, aunque nunca se haya activado caja.
+    if (operation) {
       const actor = scope.trustedActor
       if (!actor) throw new CashControlError("AUTH_REQUIRED", "Falta la identidad del responsable", 401)
-      await tx.cashOperation.create({ data: { accountId: actor.accountId, clientOperationId: operation.clientOperationId, payloadHash: scope.payloadHash!, cashShiftId: operation.cashShiftId, clientSequence: operation.clientSequence, userId: actor.id, response: encodeCashResult(result) } })
+      await tx.cashOperation.create({ data: { accountId: actor.accountId, clientOperationId: operation.clientOperationId, payloadHash: scope.payloadHash!, cashShiftId: operation.cashShiftId, clientSequence: operation.clientSequence, userId: actor.id, fiscalPolicyVersion, response: encodeCashResult(result) } })
       if (operation.cashShiftId !== null) await tx.cashShift.update({ where: { id: operation.cashShiftId }, data: { lastSequence: operation.clientSequence } })
     }
     return result

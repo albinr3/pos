@@ -3,6 +3,7 @@ import { getCurrentUserFromRequest } from "@/app/api/_helpers/auth"
 import { cashDeviceHashFromRequest, cashRequest } from "@/lib/cash-context"
 import { cashErrorResponse } from "@/lib/cash-http"
 import { PurchaseError, type PurchaseActor } from "@/lib/purchase-credit"
+import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 
 export async function purchaseAPI(request: NextRequest, run: (actor: PurchaseActor) => Promise<unknown>) {
   try {
@@ -22,6 +23,7 @@ export async function purchaseAPI(request: NextRequest, run: (actor: PurchaseAct
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
     if (error instanceof PurchaseError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     if (error instanceof SyntaxError) return NextResponse.json({ error: "JSON inválido", code: "INVALID_JSON" }, { status: 400 })
     if (error instanceof Error && error.message.includes("No tienes permiso")) return NextResponse.json({ error: error.message, code: "FORBIDDEN" }, { status: 403 })
     console.error("[purchase-api]", error)
@@ -31,6 +33,7 @@ export async function purchaseAPI(request: NextRequest, run: (actor: PurchaseAct
 export async function purchaseBody<T>(request: NextRequest): Promise<T> {
   const data = await request.json()
   if (!data || typeof data !== "object" || Array.isArray(data)) throw new PurchaseError("INVALID_BODY", "Envía un objeto JSON")
+  assertNoFiscalInput(data)
   return data as T
 }
 export function purchaseFilters(request: NextRequest) {

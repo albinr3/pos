@@ -1,3 +1,4 @@
+import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 import { withCashOperation } from "@/lib/cash-context"
 import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
@@ -114,6 +115,7 @@ export async function GET(request: NextRequest) {
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     console.error("Error en GET /api/operating-expenses:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al obtener gastos operativos" },
@@ -144,6 +146,7 @@ async function postCashDocument(request: NextRequest) {
     }
 
     const body = await request.json()
+    assertNoFiscalInput(body)
     const description = String(body?.description || "").trim()
     const amountCents = Number(body?.amountCents || 0)
     const expenseDate = normalizeDateInput(body?.expenseDate) ?? new Date()
@@ -226,6 +229,7 @@ async function postCashDocument(request: NextRequest) {
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     if (error instanceof TreasuryAccountValidationError) {
       // Comentario preventivo: si el móvil manda una cuenta eliminada o inactiva desde caché,
       // debe tratarse como validación recuperable y no como 500 reportable por Gmail.

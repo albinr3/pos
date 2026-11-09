@@ -12,6 +12,7 @@ import { CashShiftWorkspace } from "@/components/app/cash-shift-workspace"
 import { CashControlActivation } from "@/components/app/cash-control-activation"
 import { ShiftCollectionsSummary } from "@/components/app/shift-collections-summary"
 import { clearCashShiftReport, discardCashPending, manualCashPending, sendManualCashMovement, cashPending, freezeCashShift, refreshCashContext, syncCashOutbox, unfreezeCashShift, type CashContext, type CashQueuedOperation } from "@/lib/cash-offline"
+import { getPendingCounts, getReviewableLegacyPending, retireReviewedLegacyPending, type LegacyReviewItem } from "@/lib/indexed-db"
 import { openCashShiftFromClient } from "@/lib/cash-shift-opening"
 import { formatRD } from "@/lib/money"
 import { formatDateTimeDO } from "@/lib/date-time"
@@ -47,6 +48,10 @@ export function CashShiftsClient() {
   const [discardReason, setDiscardReason] = useState("")
   const [manualPending, setManualPending] = useState<Awaited<ReturnType<typeof manualCashPending>>>(null)
   const [pending, setPending] = useState<CashQueuedOperation[]>([])
+  const [legacyPending, setLegacyPending] = useState(0)
+  const [legacyItems, setLegacyItems] = useState<LegacyReviewItem[]>([])
+  const [legacyReview, setLegacyReview] = useState<LegacyReviewItem>()
+  const [legacyReason, setLegacyReason] = useState("")
   const [counted, setCounted] = useState(0)
   const [note, setNote] = useState("")
   const [error, setError] = useState("")
@@ -72,6 +77,9 @@ export function CashShiftsClient() {
     if (!state.canTransfer && state.canRecordMovements) setKind("OWNER_OUT")
     if (state.activeShift) setManualPending(await manualCashPending(state.activeShift.id)); else setManualPending(null)
     setPending((await cashPending()).filter(r => r.cashOperation.accountId === state.accountId))
+    const old = await getPendingCounts()
+    setLegacyPending(old.sales + old.payments)
+    setLegacyItems(await getReviewableLegacyPending({ id: state.userId, accountId: state.accountId, isOwner: state.isOwner }))
     // El permiso de operar caja no autoriza a mostrar el historial de cierres.
     if (state.canViewAll) { const rows: History = await read(`history&limit=${HISTORY_PAGE_SIZE + 1}`); setHistory(rows.slice(0, HISTORY_PAGE_SIZE)); setHasMoreHistory(rows.length > HISTORY_PAGE_SIZE) }
     else { setHistory([]); setHasMoreHistory(false) }
@@ -148,6 +156,8 @@ export function CashShiftsClient() {
         </div></details>}
       </>}
       {manualPending && <div className="rounded-md border border-amber-400 p-3"><p>Hay un movimiento de caja sin confirmación. Reinténtalo para verificar si fue registrado.</p>{manualPending.userId === context?.userId ? <Button disabled={busy} onClick={() => run(() => sendManualCashMovement(manualPending.input))}>Reintentar movimiento pendiente</Button> : <p>Vuelve al empleado que registró este movimiento para confirmarlo.</p>}</div>}
+      {legacyPending > 0 && <div className="grid gap-2 rounded-md border border-amber-400 p-3 text-sm"><p role="status">Este dispositivo conserva {legacyPending} operación(es) antigua(s). Las que no tienen autoría y política verificables no se sincronizan automáticamente.</p>{legacyItems.map(item => <div key={`${item.kind}:${item.id}`} className="rounded border p-2"><p>{item.detail}</p><p>{item.createdAt ? new Date(item.createdAt).toLocaleString("es-DO") : "Fecha no disponible"}</p><Button variant="outline" disabled={busy} onClick={() => { setLegacyReview(item); setLegacyReason("") }}>Revisar pendiente</Button></div>)}{legacyPending > legacyItems.length && <p>Algunos pendientes no identifican a esta empresa o no están disponibles para este empleado. Se conservarán en el dispositivo para revisión.</p>}</div>}
+      {legacyReview && context && <div className="grid gap-2 rounded-md border p-3"><p>Compara este pendiente con las ventas o cobros registrados antes de retirarlo. Retirarlo no crea ni modifica ninguna operación comercial; se conserva una copia en la auditoría.</p><p>{legacyReview.detail}</p><Label htmlFor="legacy-review-reason">Resultado de la revisión y motivo</Label><Input id="legacy-review-reason" value={legacyReason} onChange={e => setLegacyReason(e.target.value)} /><div className="flex gap-2"><Button disabled={busy || !legacyReason.trim()} onClick={() => run(async () => { await retireReviewedLegacyPending({ id: context.userId, accountId: context.accountId }, legacyReview.kind, legacyReview.id, legacyReason); setLegacyReview(undefined); setLegacyReason("") })}>Retirar pendiente revisado</Button><Button variant="ghost" disabled={busy} onClick={() => setLegacyReview(undefined)}>Cancelar</Button></div></div>}
       {pending.length > 0 && <div className="rounded-md border border-amber-400 p-3"><p className="font-medium">Operaciones pendientes: {pending.length}</p>{pending.map(p => <div className="text-sm" key={p.id}><p>{pendingLabels[p.kind]} · {p.error ?? "Pendiente de sincronización"}</p>{p.cashOperation.userId === context?.userId && <Button variant="ghost" disabled={busy} onClick={() => setPendingDiscard(p.id)}>Anular pendiente con motivo</Button>}</div>)}</div>}
       {pendingDiscard && <div className="grid gap-2 rounded-md border p-3"><Label htmlFor="cash-discard-reason">Motivo para anular el pendiente</Label><Input id="cash-discard-reason" value={discardReason} onChange={e => setDiscardReason(e.target.value)} /><Button disabled={busy} onClick={() => run(async () => { await discardCashPending(pendingDiscard, discardReason); setPendingDiscard(""); setDiscardReason("") })}>Confirmar anulación del pendiente</Button></div>}
     </CardContent></Card>

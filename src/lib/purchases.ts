@@ -1,3 +1,4 @@
+import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
 
 
 import { withCashOperation, type CashOperationInput } from "@/lib/cash-context"
@@ -164,6 +165,8 @@ export async function listAllPurchases(actor: PurchaseActor) {
 }
 
 export async function createPurchase(actor: PurchaseActor, input: Parameters<typeof createPurchaseInternal>[1]) {
+  // No confirmar efectos ordinarios cuando el cliente solicita una operación fiscal no admitida.
+  assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
   return withCashOperation(cashOperation, { kind: "createPurchase", ...payload }, () => createPurchaseInternal(actor, input))
 }
@@ -458,6 +461,7 @@ export async function updatePurchase(actor: PurchaseActor, input: {
   updateProductCost?: boolean
   updateProductPrice?: boolean
 }) {
+  assertNoFiscalInput(input)
   const currentUser = actor
   if (!currentUser) throw new PurchaseError("INVALID_PURCHASE", "No autenticado")
   await ensurePermission(currentUser, "canManagePurchases", {
@@ -615,6 +619,7 @@ export async function updatePurchase(actor: PurchaseActor, input: {
 }
 
 export async function patchPurchase(actor: PurchaseActor, id: string, input: { notes?: string | null; dueDate?: string }) {
+  assertNoFiscalInput(input)
   await ensurePermission(actor, "canManagePurchases", { resourceType: "Purchase", resourceId: id })
   if (input.notes !== undefined && input.notes !== null && typeof input.notes !== "string") throw new PurchaseError("INVALID_NOTES", "Las notas deben ser texto")
   return prisma.$transaction(async tx => {

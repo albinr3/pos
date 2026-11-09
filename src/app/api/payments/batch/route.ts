@@ -1,4 +1,5 @@
 import { withCashOperation } from "@/lib/cash-context"
+import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { revalidatePath } from "next/cache"
@@ -34,6 +35,8 @@ async function postPaymentBatch(request: NextRequest) {
     }
 
     const body = await request.json()
+    // Evitar que el lote ignore metadatos fiscales y aplique pagos ordinarios.
+    assertNoFiscalInput(body)
 
     const rawArIds = Array.isArray(body?.arIds)
       ? body.arIds
@@ -235,6 +238,7 @@ async function postPaymentBatch(request: NextRequest) {
 
     return NextResponse.json(result, { status: 201 })
   } catch (error: unknown) {
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
     console.error("Error en POST /api/payments/batch:", error)

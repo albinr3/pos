@@ -1,3 +1,4 @@
+import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { PaymentMethod, SaleType } from "@prisma/client"
@@ -234,6 +235,7 @@ export async function GET(
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     console.error("Error en GET /api/sales/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al obtener venta") },
@@ -255,6 +257,7 @@ export async function PUT(
 
     const { id } = await params
     const body = (await request.json()) as UpdateSaleBody
+    assertNoFiscalInput(body)
 
     const shouldCancel =
       String(body?.status || "").toLowerCase() === "cancelled" ||
@@ -416,6 +419,7 @@ export async function PUT(
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     console.error("Error en PUT /api/sales/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al editar venta") },
@@ -447,6 +451,7 @@ export async function DELETE(
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     console.error("Error en DELETE /api/sales/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al cancelar venta") },

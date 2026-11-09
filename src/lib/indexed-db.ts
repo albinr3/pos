@@ -1,5 +1,7 @@
 "use client"
 
+import { hasFiscalInput } from "./fiscal/core/input"
+
 import type { StockConsumption } from "./pos-stock"
 import { notifyStockAvailability } from "./stock-cache-state"
 
@@ -307,7 +309,8 @@ export async function deletePendingPaymentsByArId(arId: string) {
         resolve()
         return
       }
-      cursor.delete()
+      // Una limpieza de pagos ordinarios no debe borrar otro pendiente con datos fiscales.
+      if (!hasFiscalInput(cursor.value)) cursor.delete()
       cursor.continue()
     }
     request.onerror = () => reject(request.error)
@@ -347,6 +350,54 @@ export async function getPendingBatchPayments(): Promise<any[]> {
   })
 }
 
+export type LegacyReviewKind = "sale" | "payment" | "batchPayment"
+export type LegacyReviewItem = { kind: LegacyReviewKind; id: string; createdAt: number | null; detail: string }
+const legacyReviewStores = { sale: STORES.PENDING_SALES, payment: STORES.PENDING_PAYMENTS, batchPayment: STORES.PENDING_BATCH_PAYMENTS } as const
+
+export async function getReviewableLegacyPending(actor: { id: string; accountId: string; isOwner?: boolean }): Promise<LegacyReviewItem[]> {
+  const [sales, payments, batchPayments, products] = await Promise.all([getPendingSales(), getPendingPayments(), getPendingBatchPayments(), getProductsCache()])
+  const groups = [sales, payments, batchPayments]
+  const names = new Map(products.filter(product => product.accountId === actor.accountId).map(product => [product.id, product.name]))
+  const kinds: LegacyReviewKind[] = ["sale", "payment", "batchPayment"]
+  return groups.flatMap((rows, index) => rows.flatMap((row: Record<string, unknown>) => {
+    // Solo el dueño puede revisar otro empleado o autor desconocido de su propia empresa; no se reasigna el documento.
+    if (!row || typeof row !== "object" || row.accountId !== actor.accountId || (row.userId !== actor.id && !actor.isOwner) || typeof row.tempId !== "string" || row.cashOperation) return []
+    // Los registros antiguos pueden estar incompletos: un artículo corrupto no debe ocultar toda la revisión.
+    const items = Array.isArray(row.items) ? row.items.map((value: unknown) => { const item = value && typeof value === "object" ? value as Record<string, unknown> : {}; const name = names.get(item.productId); return `${name ? `${String(name)} (${String(item.productId)})` : String(item.productId ?? "Producto desconocido")}: ${String(item.qty ?? "?")} × ${String(item.unitPriceCents ?? "?")} centavos` }).join(", ") : ""
+    const author = row.userId === actor.id ? "" : ` · Autor original: ${typeof row.userId === "string" ? row.userId : "no registrado"}`
+    const saleOptions = index === 0 ? ` · Pago: ${String(row.paymentMethod ?? "no registrado")} · Cliente: ${String(row.customerId ?? "general")} · Descuento: ${String(row.discountMode ?? "no registrado")}${typeof row.manualDiscountPercentBp === "number" ? ` (${row.manualDiscountPercentBp / 100} %)` : ""} · Propina: ${row.applyLegalTip === true ? "sí" : row.applyLegalTip === false ? "no" : "no registrada"}` : ""
+    const detail = (index === 0 ? `Venta ${String(row.type ?? "")} · ${items || "sin detalle"} · Flete: ${String(row.shippingCents ?? 0)} centavos` : `Cobro de ${String(row.amountCents ?? "?")} centavos · ${index === 1 ? String(row.arId ?? "cuenta desconocida") : (Array.isArray(row.arIds) ? row.arIds.join(", ") : "cuentas desconocidas")}`) + saleOptions + (typeof row.note === "string" && row.note ? ` · Nota: ${row.note}` : typeof row.notes === "string" && row.notes ? ` · Nota: ${row.notes}` : "") + author
+    return [{ kind: kinds[index], id: row.tempId, createdAt: typeof row.createdAt === "number" ? row.createdAt : null, detail }]
+  }))
+}
+
+export async function retireReviewedLegacyPending(actor: { id: string; accountId: string }, kind: LegacyReviewKind, id: string, reason: string) {
+  if (!reason.trim() || !Object.hasOwn(legacyReviewStores, kind)) throw new Error("Indica el motivo de la revisión")
+  const { refreshCashContext } = await import("./cash-offline")
+  const context = await refreshCashContext()
+  if (context.accountId !== actor.accountId || context.userId !== actor.id) throw new Error("La sesión cambió; vuelve a abrir la revisión")
+  const db = await openDB(), storeName = legacyReviewStores[kind]
+  const record = await requestResult(db.transaction(storeName).objectStore(storeName).get(id))
+  // El dueño revisa sin convertirse en autor original; el servidor registra al revisor y la copia anterior.
+  if (!record || record.accountId !== actor.accountId || (record.userId !== actor.id && !context.isOwner) || record.cashOperation) throw new Error("El pendiente no está disponible para este empleado")
+  const original = JSON.stringify(record)
+  // El mismo contenido y motivo producen la misma identidad si se perdió la respuesta de auditoría.
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify([kind, id, reason.trim(), original])))
+  const operationId = `legacy-review-${Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, "0")).join("")}`
+  const response = await fetch("/api/cash-shifts/operations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind: "discard", cashOperation: { accountId: actor.accountId, userId: actor.id, clientOperationId: operationId, cashShiftId: null, clientSequence: null }, payload: { reason: reason.trim(), originalKind: `legacy-${kind}`, originalPayload: record } }) })
+  const data = await response.json()
+  if (!response.ok || !data.result?.discarded) throw new Error(data.error ?? "No se pudo registrar la revisión")
+  assertOfflineWritesAllowed()
+  const tx = db.transaction(storeName, "readwrite"), pending = tx.objectStore(storeName), current = pending.get(id)
+  let removed = false
+  // Una respuesta tardía no debe borrar una operación modificada por otra pestaña.
+  current.onsuccess = () => { if (!accountDeletionStarted && current.result && JSON.stringify(current.result) === original) { pending.delete(id); removed = true } }
+  await waitForTransaction(tx)
+  if (!removed) throw new Error("El pendiente cambió durante la revisión; vuelve a consultarlo")
+  notifyStockAvailability()
+  window.dispatchEvent(new Event("pending-sales-changed"))
+}
+
 export async function deletePendingBatchPayment(tempId: string) {
   const db = await openDB()
   const tx = db.transaction(STORES.PENDING_BATCH_PAYMENTS, "readwrite")
@@ -370,7 +421,7 @@ export async function deletePendingBatchPaymentsByArId(arId: string) {
 
       const value = cursor.value as { arIds?: unknown }
       const arIds = Array.isArray(value?.arIds) ? value.arIds : []
-      if (arIds.some((id) => id === arId)) {
+      if (arIds.some((id) => id === arId) && !hasFiscalInput(value)) {
         cursor.delete()
       }
       cursor.continue()

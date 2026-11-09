@@ -11,8 +11,10 @@ import { PrismaClient } from '@prisma/client'
 const config = dotenv.parse(fs.readFileSync('.env.fiscal-test'))
 // Next puede actualizar su tsconfig al arrancar; nunca usar el del proyecto real.
 fs.copyFileSync('tsconfig.json', 'tsconfig.fiscal-test.json')
-const db = new URL(config.TEST_DATABASE_URL)
-if (!['127.0.0.1', 'localhost'].includes(db.hostname) || db.port !== '55439' || !/^\/movopos_fiscal_test(?:_\d+)?$/.test(db.pathname) || [...db.searchParams.keys()].some(k => k !== 'schema') || (db.searchParams.get('schema') && db.searchParams.get('schema') !== 'public')) throw new Error('Base de prueba no autorizada')
+const isolated = Boolean(process.env.FISCAL_NEXT_ISOLATED_URL)
+const db = new URL(process.env.FISCAL_NEXT_ISOLATED_URL || config.TEST_DATABASE_URL)
+const allowedName = isolated ? /^\/cash_test_fiscal_next_\d+$/ : /^\/movopos_fiscal_test(?:_\d+)?$/
+if (!['127.0.0.1', 'localhost'].includes(db.hostname) || db.port !== '55439' || !allowedName.test(db.pathname) || [...db.searchParams.keys()].some(k => k !== 'schema') || (db.searchParams.get('schema') && db.searchParams.get('schema') !== 'public')) throw new Error('Base de prueba no autorizada')
 // El cliente nativo de Prisma usa exclusivamente esta IP local validada.
 db.hostname = '127.0.0.1'
 const env = {}
@@ -96,6 +98,33 @@ try {
       assert.equal(data.user.accountId, account.id)
       assert.ok(data.token)
       const headers = { 'X-Clerk-Authorization': `Bearer ${token}`, 'X-SubUser-Token': data.token }
+      const capabilities = await fetch('http://localhost:3100/api/fiscal/capabilities', { headers, signal: AbortSignal.timeout(30000) })
+      assert.equal(capabilities.status, 200)
+      const fiscal = await capabilities.json()
+      assert.equal(fiscal.policy.enabled, isolated && index === 1)
+      assert.equal(fiscal.operations.emit, false)
+      const cashContext = await fetch('http://localhost:3100/api/cash-shifts', { headers, signal: AbortSignal.timeout(30000) })
+      assert.equal(cashContext.status, 200)
+      const cashData = await cashContext.json()
+      assert.equal(cashData.accountId, account.id)
+      assert.equal(cashData.fiscalQueuePolicy.enabled, isolated && index === 1)
+      assert.ok(Number.isSafeInteger(cashData.fiscalQueuePolicy.version))
+      for (const endpoint of ['/api/payments', '/api/payments/batch', '/api/purchases', '/api/purchases/ocr', '/api/supplier-payments', '/api/returns', '/api/operating-expenses']) {
+        const rejected = await fetch(`http://localhost:3100${endpoint}`, {
+          method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fiscalDocumentType: 'E34', amountCents: 1, method: 'EFECTIVO' }), signal: AbortSignal.timeout(30000),
+        })
+        assert.equal(rejected.status, 400)
+        assert.equal((await rejected.json()).code, 'FISCAL_NOT_AVAILABLE')
+      }
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const rejectedFiscalSale = await fetch('http://localhost:3100/api/sales', {
+          method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: 'E31', items: [] }), signal: AbortSignal.timeout(30000),
+        })
+        assert.equal(rejectedFiscalSale.status, 400)
+        assert.equal((await rejectedFiscalSale.json()).code, 'FISCAL_NOT_AVAILABLE')
+      }
       const me = await fetch('http://localhost:3100/api/auth/me', { headers, signal: AbortSignal.timeout(15000) })
       assert.equal(me.status, 200)
       const current = await me.json()
@@ -123,6 +152,8 @@ try {
       const cashierData = await cashierLogin.json()
       assert.equal(cashierData.user.id, cashier.id)
       const cashierHeaders = { 'X-Clerk-Authorization': `Bearer ${token}`, 'X-SubUser-Token': cashierData.token }
+      const forbiddenFiscal = await fetch('http://localhost:3100/api/fiscal/capabilities', { headers: cashierHeaders, signal: AbortSignal.timeout(30000) })
+      assert.equal(forbiddenFiscal.status, 403)
       const forbiddenPurchases = await fetch('http://localhost:3100/api/purchases?skip=0&take=1', { headers: cashierHeaders, signal: AbortSignal.timeout(30000) })
       assert.equal(forbiddenPurchases.status, 403, 'El cajero sin permiso pudo consultar compras')
       console.log(`Cuenta ${index + 1}: seis listados móviles y permiso de compras del cajero comprobados`)
@@ -130,7 +161,7 @@ try {
       const forged = `${head}.${payload}.${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`
       const rejected = await fetch('http://localhost:3100/api/auth/me', { headers: { ...headers, 'X-Clerk-Authorization': `Bearer ${forged}` }, signal: AbortSignal.timeout(15000) })
       assert.equal(rejected.status, 401, 'Se aceptó una firma Clerk falsa')
-      sessions.push({ sessionId: session.id, token: data.token })
+      sessions.push({ sessionId: session.id, token: data.token, accountId: account.id, userId: owner.id })
       console.log(`Cuenta ${index + 1}: inicio, sesión móvil y cookie web válidos; PIN y firma incorrectos rechazados`)
     }
     for (let index = 0; index < 2; index++) {
@@ -141,8 +172,55 @@ try {
       assert.equal(own.status, 200, 'La sesión propia no funciona antes del cruce')
       const crossed = await fetch('http://localhost:3100/api/auth/me', { headers: { ...headers, 'X-SubUser-Token': sessions[1-index].token }, signal: AbortSignal.timeout(15000) })
       assert.equal(crossed.status, 401, 'Next permitió cruzar sesiones entre empresas')
+      const crossedFiscal = await fetch('http://localhost:3100/api/fiscal/capabilities', { headers: { ...headers, 'X-SubUser-Token': sessions[1-index].token }, signal: AbortSignal.timeout(15000) })
+      assert.equal(crossedFiscal.status, 401, 'Se aceptó una sesión cruzada al consultar capacidades fiscales')
     }
     console.log('Next real rechazó ambas sesiones cruzadas entre empresas')
+    if (isolated) {
+      const credentials = await Promise.all(sessions.map(async s => ({ 'X-Clerk-Authorization': `Bearer ${(await clerk.sessions.getToken(s.sessionId)).jwt}`, 'X-SubUser-Token': s.token, 'Content-Type': 'application/json' })))
+      const read = new PrismaClient({ datasources: { db: { url: db.toString() } } })
+      try {
+        const [simultaneousA, simultaneousB] = await Promise.all(credentials.map(headers => fetch('http://localhost:3100/api/fiscal/capabilities', { headers, signal: AbortSignal.timeout(30000) })))
+        assert.equal(simultaneousA.status, 200); assert.equal(simultaneousB.status, 200)
+        assert.equal((await simultaneousA.json()).policy.enabled, false)
+        assert.equal((await simultaneousB.json()).policy.enabled, true)
+        const cases = [
+          { product: 'prod-rd-gravado', box: 'treasury-rd-caja', price: 10000 },
+          { product: 'prod-doprep-item', box: 'treasury-doprep-caja', price: 15000 },
+        ]
+        const count = index => read.sale.count({ where: { accountId: sessions[index].accountId } })
+        const before = await Promise.all([count(0), count(1)])
+        const stockBefore = await Promise.all(cases.map(c => read.product.findUniqueOrThrow({ where: { id: c.product }, select: { stock: true } })))
+        const payload = i => ({ customerId: null, type: 'CONTADO', paymentMethod: 'EFECTIVO', treasuryAccountId: cases[i].box, items: [{ productId: cases[i].product, qty: 1, unitPriceCents: cases[i].price, wasPriceOverridden: false }] })
+        const id = `http-fiscal-test-${randomBytes(12).toString('hex')}`
+        const bodyA = { kind: 'sale', payload: payload(0), cashOperation: { accountId: sessions[0].accountId, userId: sessions[0].userId, clientOperationId: id, cashShiftId: null, clientSequence: null, fiscalPolicyVersion: 0 } }
+        const sendA = () => fetch('http://localhost:3100/api/cash-shifts/operations', { method: 'POST', headers: credentials[0], body: JSON.stringify(bodyA), signal: AbortSignal.timeout(30000) })
+        const [first, forbidden] = await Promise.all([sendA(), fetch('http://localhost:3100/api/sales', { method: 'POST', headers: credentials[1], body: JSON.stringify(payload(1)), signal: AbortSignal.timeout(30000) })])
+        assert.equal(first.status, 200, 'La empresa ordinaria no pudo vender')
+        assert.equal(forbidden.status, 409, 'Una empresa con perfil activo no puede omitir las reglas fiscales')
+        assert.equal((await forbidden.json()).code, 'FISCAL_NOT_AVAILABLE')
+        const original = await first.json(), retry = await sendA()
+        assert.equal(retry.status, 200); assert.equal((await retry.json()).result.id, original.result.id)
+        assert.deepEqual(await Promise.all([count(0), count(1)]), [before[0] + 1, before[1]])
+        const stockAfter = await Promise.all(cases.map(c => read.product.findUniqueOrThrow({ where: { id: c.product }, select: { stock: true } })))
+        assert.equal(Number(stockAfter[0].stock), Number(stockBefore[0].stock) - 1)
+        assert.equal(Number(stockAfter[1].stock), Number(stockBefore[1].stock))
+        const staleBody = { ...bodyA, cashOperation: { ...bodyA.cashOperation, clientOperationId: `${id}-stale`, fiscalPolicyVersion: 999 } }
+        const stale = await fetch('http://localhost:3100/api/cash-shifts/operations', { method: 'POST', headers: credentials[0], body: JSON.stringify(staleBody), signal: AbortSignal.timeout(30000) })
+        assert.equal(stale.status, 409); assert.equal((await stale.json()).code, 'FISCAL_POLICY_CHANGED')
+        assert.equal(await count(0), before[0] + 1)
+        const cross = await fetch('http://localhost:3100/api/cash-shifts/operations', { method: 'POST', headers: credentials[1], body: JSON.stringify(bodyA), signal: AbortSignal.timeout(30000) })
+        assert.equal(cross.status, 403, 'Una empresa no puede recuperar el pendiente de otra')
+        const reviewId = `${id}-review`
+        const reviewBody = { kind: 'discard', cashOperation: { ...bodyA.cashOperation, clientOperationId: reviewId }, payload: { reason: 'Conciliado en fixture', originalKind: 'legacy-sale', originalPayload: { accountId: sessions[0].accountId, userId: sessions[0].userId, tempId: 'legacy-fixture' } } }
+        const review = () => fetch('http://localhost:3100/api/cash-shifts/operations', { method: 'POST', headers: credentials[0], body: JSON.stringify(reviewBody), signal: AbortSignal.timeout(30000) })
+        const reviewed = await review(); assert.equal(reviewed.status, 200); assert.equal((await reviewed.json()).result.discarded, true)
+        const reviewedAgain = await review(); assert.equal(reviewedAgain.status, 200); assert.equal((await reviewedAgain.json()).result.discarded, true)
+        assert.equal(await read.auditLog.count({ where: { accountId: sessions[0].accountId, resourceType: 'CashPendingDiscard', resourceId: reviewId } }), 1)
+        assert.equal(await count(0), before[0] + 1)
+        console.log('Políticas distintas: venta ordinaria, bloqueo activo, reintento y aislamiento HTTP comprobados')
+      } finally { await read.$disconnect() }
+    }
   }
 } catch (error) {
   console.error(error.message)

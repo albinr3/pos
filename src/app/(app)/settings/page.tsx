@@ -21,6 +21,12 @@ export default async function SettingsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
         <p className="text-sm text-muted-foreground">Configuraciones del sistema.</p>
       </div>
+      {(user.isOwner || user.canManageFiscalSettings || user.canManageFiscalSequences || user.canPrepareFiscalDocuments || user.canViewFiscalDocuments) && (
+        <div className="rounded-lg border p-6">
+          <h2 className="font-semibold">Configuración fiscal</h2>
+          <p className="text-sm text-muted-foreground">Pendiente de conexión</p>
+        </div>
+      )}
       <SettingsClient
         currentUserId={user.id}
         isOwner={user.isOwner}

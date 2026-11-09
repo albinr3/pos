@@ -122,6 +122,8 @@ async function expectedForShift(tx: Prisma.TransactionClient, shift: Pick<CashSh
 }
 export async function getCashContext(actor: Actor, deviceHash: string) {
   const db = raw()
+  // La cola necesita una versión vinculada a la empresa autenticada, incluso si no existe configuración.
+  const fiscal = await db.fiscalSettings.findUnique({ where: { accountId: actor.accountId }, select: { version: true, enabled: true } })
   const config = await db.cashControl.findUnique({ where: { accountId: actor.accountId } })
   const active = await db.cashShift.findFirst({ where: { accountId: actor.accountId, status: { in: ["OPEN", "CLOSING"] } } })
   const mayRead = canViewAll(actor) || canManage(actor) || active?.cashierUserId === actor.id
@@ -131,6 +133,7 @@ export async function getCashContext(actor: Actor, deviceHash: string) {
   const namesById = new Map(names.map(a => [a.id, a.name]))
   return {
     protocolVersion: 1, accountId: actor.accountId, userId: actor.id, userName: actor.name, isOwner: actor.isOwner,
+    fiscalQueuePolicy: { version: fiscal?.version ?? 0, enabled: fiscal?.enabled ?? false },
     enabled: config?.enabled ?? false, ledgerStartedAt: config?.ledgerStartedAt ?? null,
     canTransfer: hasPermission(actor, "canCreateTreasuryTransfers"),
     canRecordMovements: hasPermission(actor, "canRecordCashMovements"),

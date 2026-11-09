@@ -1,0 +1,258 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "MOVOPos API fiscal interna",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/cash-shifts": {
+      "get": {
+        "summary": "Consultar la versión fiscal usada por la cola de caja",
+        "description": "Este esquema describe los campos fiscales de la respuesta predeterminada, sin view; el contrato de caja contiene otros campos.",
+        "security": [{ "clerk": [], "subuser": [] }],
+        "responses": {
+          "200": { "description": "Contexto de la empresa autenticada", "content": { "application/json": { "schema": { "type": "object", "required": ["accountId", "userId", "fiscalQueuePolicy"], "properties": { "accountId": { "type": "string" }, "userId": { "type": "string" }, "fiscalQueuePolicy": { "type": "object", "required": ["version", "enabled"], "properties": { "version": { "type": "integer", "minimum": 0, "description": "Cero indica ausencia de configuración fiscal." }, "enabled": { "type": "boolean" } } } } }, "example": { "accountId": "empresa-prueba", "userId": "empleado-prueba", "fiscalQueuePolicy": { "version": 0, "enabled": false } } } } },
+          "401": { "description": "Sin sesión autenticada" }
+        }
+      }
+    },
+    "/api/cash-shifts/operations": {
+      "post": {
+        "summary": "Sincronizar una operación con versión fiscal",
+        "description": "Reutilizar el identificador y contenido en cada reintento. La empresa y el empleado se cotejan con la sesión. Sin turno, cashShiftId y clientSequence son null.",
+        "security": [{ "clerk": [], "subuser": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["kind", "payload", "cashOperation"], "properties": { "kind": { "type": "string", "enum": ["sale", "payment", "batchPayment", "purchase", "ocrPurchase", "supplierPayment", "expense", "return", "transfer", "discard"] }, "payload": { "type": "object", "additionalProperties": true }, "cashOperation": { "type": "object", "required": ["accountId", "userId", "clientOperationId", "cashShiftId", "clientSequence"], "properties": { "accountId": { "type": "string" }, "userId": { "type": "string" }, "clientOperationId": { "type": "string" }, "cashShiftId": { "type": "string", "nullable": true }, "clientSequence": { "type": "integer", "nullable": true }, "fiscalPolicyVersion": { "type": "integer", "minimum": 0, "description": "Versión conservada al crear el pendiente; opcional para clientes anteriores." } } } } }, "example": { "kind": "payment", "payload": { "arId": "cuenta-prueba", "amountCents": 100, "method": "EFECTIVO", "treasuryAccountId": "caja-prueba" }, "cashOperation": { "accountId": "empresa-prueba", "userId": "empleado-prueba", "clientOperationId": "operacion-unica", "cashShiftId": null, "clientSequence": null, "fiscalPolicyVersion": 0 } } } } },
+        "responses": {
+          "200": { "description": "Resultado confirmado o recuperado" },
+          "400": { "description": "Entrada inválida o preparación fiscal no disponible" },
+          "401": { "description": "Sin sesión autenticada" },
+          "403": { "description": "Sin permiso o identidad de pendiente distinta" },
+          "409": { "description": "Conflicto de operación o cambio de política; conservar el pendiente", "content": { "application/json": { "example": { "code": "FISCAL_POLICY_CHANGED", "error": "La política fiscal cambió; conserva este pendiente para revisión" } } } }
+        }
+      }
+    },
+    "/api/fiscal/capabilities": {
+      "get": {
+        "summary": "Consultar capacidades fiscales de la empresa autenticada",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Capacidades; las operaciones aún no están disponibles",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Capabilities"
+                },
+                "example": {
+                  "policy": {
+                    "enabled": false,
+                    "jurisdiction": null,
+                    "regime": null,
+                    "environment": null,
+                    "configurationStatus": "INCOMPLETE",
+                    "version": null,
+                    "effectiveFrom": null,
+                    "externalReadiness": "NOT_CONNECTED"
+                  },
+                  "permissions": {
+                    "configure": true,
+                    "manageSequences": true,
+                    "prepare": true,
+                    "view": true
+                  },
+                  "recognizedTypes": [
+                    "E31",
+                    "E32",
+                    "E33",
+                    "E34",
+                    "E41",
+                    "E43",
+                    "E44",
+                    "E45",
+                    "E46",
+                    "E47"
+                  ],
+                  "permittedTypes": [],
+                  "operations": {
+                    "configure": false,
+                    "manageSequences": false,
+                    "prepare": false,
+                    "view": false,
+                    "emit": false
+                  },
+                  "connectionRequired": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "clerk": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Clerk-Authorization"
+      },
+      "subuser": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-SubUser-Token"
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error de autenticación, permiso o servidor",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "error"
+              ],
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message",
+                    "fields",
+                    "retryable",
+                    "correlationId"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "retryable": {
+                      "type": "boolean"
+                    },
+                    "correlationId": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Capabilities": {
+        "type": "object",
+        "required": [
+          "policy",
+          "permissions",
+          "recognizedTypes",
+          "permittedTypes",
+          "operations",
+          "connectionRequired"
+        ],
+        "properties": {
+          "policy": {
+            "type": "object",
+            "required": [
+              "enabled",
+              "jurisdiction",
+              "regime",
+              "environment",
+              "configurationStatus",
+              "version",
+              "effectiveFrom",
+              "externalReadiness"
+            ],
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "jurisdiction": {
+                "type": "string",
+                "nullable": true
+              },
+              "regime": {
+                "type": "string",
+                "nullable": true
+              },
+              "environment": {
+                "type": "string",
+                "nullable": true
+              },
+              "configurationStatus": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer",
+                "nullable": true
+              },
+              "effectiveFrom": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "externalReadiness": {
+                "type": "string",
+                "enum": [
+                  "NOT_CONNECTED"
+                ]
+              }
+            }
+          },
+          "permissions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "recognizedTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "permittedTypes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "operations": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "connectionRequired": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

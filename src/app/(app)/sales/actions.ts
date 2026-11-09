@@ -1,5 +1,7 @@
 "use server"
 
+import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
+
 import { aggregateStockConsumptions, validateStockConsumptions, type StockEntry } from "@/lib/pos-stock"
 import { CashControlError, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
 
@@ -956,6 +958,8 @@ async function applyConsumptions(
 }
 
 export async function createSale(input: Parameters<typeof createSaleInternal>[0]) {
+  // Validar antes de registrar la operación idempotente o ejecutar efectos comerciales.
+  assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
   const hashPayload = { ...payload } as Record<string, unknown>
   delete hashPayload.user
@@ -1649,6 +1653,7 @@ export async function updateSale(input: {
   username?: string
   user?: any
 }) {
+  assertNoFiscalInput(input)
   const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
   const soldAt = parseOptionalDateInput(input.soldAt)

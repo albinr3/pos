@@ -1,5 +1,7 @@
 "use server"
 
+import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
+
 import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
 
 import { revalidatePath } from "next/cache"
@@ -57,6 +59,8 @@ export async function listOperatingExpenseCategories() {
 }
 
 export async function createOperatingExpense(input: Parameters<typeof createOperatingExpenseInternal>[0]) {
+  // No confirmar efectos ordinarios cuando el cliente solicita una operación fiscal no admitida.
+  assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
   return withCashOperation(cashOperation, { kind: "createOperatingExpense", ...payload }, () => createOperatingExpenseInternal(input))
 }
@@ -140,6 +144,7 @@ export async function updateOperatingExpense(input: {
   category?: string | null
   notes?: string | null
 }) {
+  assertNoFiscalInput(input)
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
   await ensurePermission(user, "canManageExpenses", {

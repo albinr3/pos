@@ -48,7 +48,7 @@ async function browserSuite() {
       f.savedNotes.push(notes ?? null)
       return { id: `sale-${f.saves}`, invoiceCode: `A-${f.saves}`, notes: notes ?? null, stockDecrements: result.consumptions }
     }
-    const context = { enabled: cashEnabled, accountId, userId: f.user.id, canOperate: true, treasuryAccountId: "cash", activeShift: { id: accountId, isMine: true, isDevice: true, status: "OPEN", lastSequence: 0 } }
+    const context = { enabled: cashEnabled, fiscalQueuePolicy: { version: 0, enabled: false }, accountId, userId: f.user.id, canOperate: true, treasuryAccountId: "cash", activeShift: { id: accountId, isMine: true, isDevice: true, status: "OPEN", lastSequence: 0 } }
     window.fetch = async (url, options = {}) => {
       if (!online) throw new TypeError("Failed to fetch")
       if (String(url).includes("auth/me")) return Response.json({ user: f.user })
@@ -209,13 +209,13 @@ async function browserSuite() {
     card("pan").click(); await sleep(20)
     await input(document.getElementById("sale-notes"), "Retirar por el almacén.")
     await checkout()
-    const pending = (await getPendingSales()).filter(sale => sale.accountId === f.accountId)
-    assert(pending.length === 1 && pending[0].notes === "Retirar por el almacén.", "Debe persistir la nota en la cola sin turnos")
+    const pending = (await cashPending()).filter(sale => sale.cashOperation.accountId === f.accountId)
+    assert(pending.length === 1 && pending[0].payload.notes === "Retirar por el almacén." && pending[0].cashOperation.fiscalPolicyVersion === 0, "Debe persistir la nota y política en la cola sin turnos")
     assert(document.getElementById("sale-notes").value === "", "Debe limpiar la nota tras guardarla offline")
     online = true
     await syncPendingData()
     assert(f.saves === 1 && f.savedNotes[0] === "Retirar por el almacén.", "La sincronización legacy debe enviar la nota")
-    assert(!(await getPendingSales()).some(sale => sale.accountId === f.accountId), "Debe retirar la venta confirmada de la cola")
+    assert(!(await cashPending()).some(sale => sale.cashOperation.accountId === f.accountId), "Debe retirar la venta confirmada de la cola")
   })
   await test("Guardar al navegar conserva la nota y descartar o vaciar canasta la limpia", async () => {
     await setup([basic("pan", 2)])

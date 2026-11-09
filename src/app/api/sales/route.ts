@@ -7,6 +7,7 @@ import { SaleType, PaymentMethod } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { isGenericCustomerQuery } from "@/lib/customer-display"
 import { SaleNotesValidationError } from "@/lib/sale-notes"
+import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -265,6 +266,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json()) as SaleCreateBody
+    assertNoFiscalInput(body)
     const soldAt = parseOptionalSaleDate(body.soldAt ?? body.createdAt)
     const salePricesIncludeItbis =
       readBoolean(body.salePricesIncludeItbis) ??
@@ -381,6 +383,9 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
+    }
     if (error instanceof SaleNotesValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }

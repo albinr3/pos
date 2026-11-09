@@ -1,6 +1,7 @@
 "use server"
 
 import { withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
@@ -388,6 +389,8 @@ export async function listAllPayments() {
 }
 
 export async function addPayment(input: Parameters<typeof addPaymentInternal>[0], actor?: AuthActor) {
+  // No convertir un cobro con instrucciones fiscales desconocidas en un cobro ordinario.
+  assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
   const hashPayload = { ...payload } as Record<string, unknown>
   delete hashPayload.user
@@ -561,6 +564,8 @@ async function addPaymentInternal(input: {
 }
 
 export async function addBatchPayment(input: Parameters<typeof addBatchPaymentInternal>[0], actor?: AuthActor) {
+  // Conservar la solicitud fiscal para revisión en vez de aplicar el lote parcialmente.
+  assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
   const hashPayload = { ...payload } as Record<string, unknown>
   delete hashPayload.user

@@ -1,4 +1,5 @@
 import { cashErrorResponse } from "@/lib/cash-http"
+import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { addPayment } from "@/app/(app)/ar/actions"
@@ -145,6 +146,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+    // Validar antes de extraer campos: el mapeo no debe descartar una solicitud fiscal.
+    assertNoFiscalInput(body)
 
     // Convertir amount de pesos a centavos si viene como número decimal
     const amountCents = body.amountCents ?? (body.amount ? Math.round(body.amount * 100) : undefined)
@@ -222,6 +225,7 @@ export async function POST(request: NextRequest) {
       newBalanceCents: paymentResult.newBalanceCents,
     }, { status: 201 })
   } catch (error: unknown) {
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
     console.error("Error en POST /api/payments:", error)

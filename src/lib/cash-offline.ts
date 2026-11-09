@@ -169,9 +169,12 @@ export async function clearCashShiftReport(context: CashContext) {
   await completed(tx)
 }
 async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, bindToShift: boolean, stockConsumptions?: StockConsumption[], reportAmountCents?: number) {
+  // Una caché anterior no identifica la política: no inventar una versión para una operación nueva.
+  if (!context.fiscalQueuePolicy || context.fiscalQueuePolicy.enabled || !Number.isSafeInteger(context.fiscalQueuePolicy.version)) throw new Error("Conéctate para comprobar la política fiscal antes de guardar el pendiente")
+  const fiscalPolicyVersion = context.fiscalQueuePolicy.version
   if (!bindToShift) {
     const db = await database(), tx = db.transaction("outbox", "readwrite"), id = crypto.randomUUID()
-    const record: CashQueuedOperation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, reportAmountCents, reportCreatedAt: new Date().toISOString(), cashOperation: { accountId: context.accountId, userId: context.userId, clientOperationId: id, cashShiftId: null, clientSequence: null } }
+    const record: CashQueuedOperation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, reportAmountCents, reportCreatedAt: new Date().toISOString(), cashOperation: { accountId: context.accountId, userId: context.userId, clientOperationId: id, cashShiftId: null, clientSequence: null, fiscalPolicyVersion } }
     tx.objectStore("outbox").put(record)
     await completed(tx)
     if (kind === "sale") notifyStockAvailability()
@@ -193,7 +196,7 @@ async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], 
     const localSequence = Number.isSafeInteger(current.sequence) ? current.sequence : 0
     const sequence = Math.max(localSequence, shift.lastSequence ?? 0) + 1
     const id = crypto.randomUUID()
-    operation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, reportAmountCents, reportCreatedAt: new Date().toISOString(), cashOperation: { accountId: context.accountId, userId: context.userId, cashShiftId: shift.id, clientOperationId: id, clientSequence: sequence } }
+    operation = { id, kind, payload: JSON.parse(JSON.stringify(payload)), stockConsumptions, reportAmountCents, reportCreatedAt: new Date().toISOString(), cashOperation: { accountId: context.accountId, userId: context.userId, cashShiftId: shift.id, clientOperationId: id, clientSequence: sequence, fiscalPolicyVersion } }
     state.put({ key, value: { sequence, frozen: false } })
     outbox.put(operation)
   }
@@ -249,14 +252,15 @@ export async function submitControlledDocument(kind: CashQueuedOperation["kind"]
   const { context, connected } = await resolveCashContext(actor)
   const posOperation = ["sale", "payment", "batchPayment"].includes(kind)
   if (posOperation) assertCashShiftAccess(context, actor)
-  if (!context?.enabled) return undefined
+  // Ventas y cobros sin turnos también usan una cola idempotente con autoría y política verificables.
+  if (!context.enabled && !posOperation) return undefined
   if (!posOperation && !connected) throw new Error("Necesitas conexión para registrar esta operación")
   const shift = context.activeShift
   // SupplierPayment usa method: también debe exigir turno antes de encolar un pago en efectivo.
   const cashAccount = payload.treasuryAccountId === context.treasuryAccountId || payload.refundTreasuryAccountId === context.treasuryAccountId || payload.paymentMethod === "EFECTIVO" || payload.method === "EFECTIVO" || payload.refundMethod === "EFECTIVO" || payload.fromTreasuryAccountId === context.treasuryAccountId || payload.toTreasuryAccountId === context.treasuryAccountId
-  const holder = Boolean(shift?.isMine && shift.isDevice && shift.status === "OPEN")
-  if (cashAccount && (!context.canOperate || !holder)) throw new CashShiftAccessError(context, "Abre tu turno en Cuadre diario desde este dispositivo antes de usar la caja")
-  if (shift?.isMine && shift.isDevice && shift.status !== "OPEN") throw new CashShiftAccessError(context, "Termina o reanuda el cierre antes de registrar operaciones")
+  const holder = Boolean(context.enabled && shift?.isMine && shift.isDevice && shift.status === "OPEN")
+  if (context.enabled && cashAccount && (!context.canOperate || !holder)) throw new CashShiftAccessError(context, "Abre tu turno en Cuadre diario desde este dispositivo antes de usar la caja")
+  if (context.enabled && shift?.isMine && shift.isDevice && shift.status !== "OPEN") throw new CashShiftAccessError(context, "Termina o reanuda el cierre antes de registrar operaciones")
   const record = await enqueue(context, kind, payload, holder, stockConsumptions, reportAmountCents)
   if (navigator.onLine) {
     try { await syncCashOutbox(context) }

@@ -34,6 +34,8 @@ Se preparó una defensa experimental para procesos Node (`scripts/fiscal-test-ne
 
 ## Configuración y arranque
 
+`npm run fiscal-test:next-policies` crea una base local nueva `cash_test_fiscal_next_<timestamp>` con fixtures independientes, vincula solo las dos identidades ficticias ya autorizadas y ejecuta Next local con el guardia de red Node. Verifica dos políticas distintas, una venta y su reintento, inventario, versiones desactualizadas y acceso cruzado. El perfil activo es únicamente un fixture de esa base; no representa habilitación fiscal. No modifica ni borra la base fiscal existente, y no sustituye el bloqueo de red del navegador ni la revisión visual con sesión real. Las bases creadas permanecen para inspección.
+
 1. Instalar PostgreSQL y dependencias del proyecto. Con `.env` local que apunte a PostgreSQL local y claves Clerk de desarrollo, ejecutar `npm run fiscal-test:init` una sola vez. Crea `.env.fiscal-test` sin sobrescribirlo; contiene credenciales y un PIN de prueba. No compartirlo ni subirlo a Git.
 2. Preferir dos identidades ficticias de Clerk de desarrollo, sin datos reales. Colocar sus identificadores distintos `user_...` en `FISCAL_TEST_CLERK_USER_A` y `FISCAL_TEST_CLERK_USER_B`. La consulta con clave de producción exige autorización expresa y la opción indicada arriba. Consultar el PIN en `FISCAL_TEST_PIN` localmente. No enviar claves ni PIN por chat.
 3. La base activa ya está preparada. Los comandos `fiscal-test:create`, `fiscal-test:setup` y `fiscal-test:constraints` crean una base con el esquema Prisma y reglas adicionales, pero **no reproducen por sí solos** el orden de enums, las políticas ni los permisos de la captura de producción; no usarlos como una réplica equivalente sin completar y verificar esos elementos.

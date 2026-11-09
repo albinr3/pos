@@ -47,7 +47,7 @@ function load(name, from = path.join(root, "src/_entry.ts")) {
       },
     }
   }
-  if (name === "../_helpers/auth" || name === "./_helpers/auth") {
+  if (name === "../_helpers/auth" || name === "../../_helpers/auth" || name === "./_helpers/auth") {
     return {
       getCurrentUserFromRequest: async () => currentActor ?? load("@/lib/cash-context").cashRequest.getStore()?.trustedActor ?? null,
     }
@@ -110,7 +110,7 @@ function withActor(actor, fn) {
   return cashRequest.run({ trustedActor: actor, deviceHash: "baseline-device" }, fn)
 }
 
-test("1. Aislamiento y estructura multiempresa inicial sin campos fiscales", async () => {
+test("1. Aislamiento multiempresa y módulo fiscal desactivado por defecto", async () => {
   const accounts = await db.account.findMany({
     where: { id: { in: ["baseline-account-rd", "baseline-account-intl", "baseline-account-doprep"] } },
     include: { users: true, products: true, customers: true, suppliers: true },
@@ -132,11 +132,71 @@ test("1. Aislamiento y estructura multiempresa inicial sin campos fiscales", asy
   })
   assert.equal(crossProduct, 0, "No debe haber cruce de productos entre cuentas")
 
-  // Verificar ausencia de tablas / modelos fiscales oficiales
-  const tables = await db.$queryRaw`
-    SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename ILIKE '%fiscal%'
-  `
-  assert.equal(tables.length, 0, "En la etapa 0 no existen aún tablas ni modelos fiscales e-CF")
+  // La estructura opcional no debe activar el módulo en las empresas preexistentes.
+  assert.equal(await db.fiscalSettings.count({ where: { accountId: { in: accounts.map(a => a.id) } } }), 0)
+})
+
+test("1b. Las capacidades separan políticas simultáneas y permisos por empresa", async () => {
+  const fiscal = load("@/lib/fiscal/core/policy")
+  const [ownerA, ownerB, cashier] = await Promise.all([
+    db.user.findFirstOrThrow({ where: { accountId: "baseline-account-rd", isOwner: true } }),
+    db.user.findFirstOrThrow({ where: { accountId: "baseline-account-doprep", isOwner: true } }),
+    db.user.findFirst({ where: { accountId: "baseline-account-rd", isOwner: false } }),
+  ])
+  await db.fiscalSettings.create({ data: { accountId: ownerB.accountId, enabled: true, jurisdiction: "DO", regime: "DO_ECF" } })
+  const [a, b] = await Promise.all([fiscal.getFiscalCapabilities(ownerA), fiscal.getFiscalCapabilities(ownerB)])
+  assert.equal(a.policy.enabled, false)
+  assert.equal(b.policy.enabled, true)
+  assert.equal(a.permittedTypes.length, 0)
+  assert.equal(b.permittedTypes.length, 10)
+  assert.equal(b.operations.emit, false)
+  if (cashier) assert.equal(await fiscal.getFiscalCapabilities(cashier), null)
+  const { recordFiscalPolicyChange } = load("@/lib/fiscal/core/policy-change")
+  const change = { expectedVersion: 0, enabled: false, jurisdiction: "DO", regime: "DO_ECF", environment: "TEST", configurationStatus: "INCOMPLETE" }
+  if (cashier) await assert.rejects(recordFiscalPolicyChange(cashier, change), /Sin permiso/)
+  await assert.rejects(recordFiscalPolicyChange(ownerA, { ...change, enabled: true }), /activación fiscal/)
+  const results = await Promise.allSettled([recordFiscalPolicyChange(ownerA, change), recordFiscalPolicyChange(ownerA, change)])
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1)
+  assert.equal(await db.fiscalPolicyChange.count({ where: { accountId: ownerA.accountId } }), 1)
+  const saved = await db.fiscalSettings.findUniqueOrThrow({ where: { accountId: ownerA.accountId } })
+  assert.equal(saved.version, 1)
+  assert.equal(saved.enabled, false)
+})
+
+test("1c. Entradas fiscales no admitidas no generan efectos comerciales", async () => {
+  const actor = await db.user.findFirstOrThrow({ where: { accountId: "baseline-account-rd", isOwner: true } })
+  const models = [db.sale, db.purchase, db.return, db.operatingExpense, db.supplierPayment]
+  const counts = () => Promise.all(models.map(model => model.count({ where: { accountId: actor.accountId } })))
+  const before = await counts()
+  for (const run of [
+    () => sales.createSale({ type: "E31", fiscal: {}, items: [] }),
+    () => purchases.createPurchase(actor, { type: "E41", items: [] }),
+    () => returns.createReturn({ fiscal: {}, items: [] }, actor),
+    () => expenses.createOperatingExpense({ fiscal: {} }),
+    () => payables.addSupplierPayment(actor, { fiscal: {} }),
+    () => ar.addPayment({ fiscal: {} }, actor),
+    () => ar.addBatchPayment({ fiscalDocumentType: "E34" }, actor),
+  ]) await assert.rejects(run(), /todavía no está disponible/)
+  assert.deepEqual(await counts(), before)
+})
+
+test("1d. Cobros móviles rechazan datos fiscales para ambas políticas sin aplicar pagos", async () => {
+  const { NextRequest } = require("next/server")
+  const endpoints = ["@/app/api/payments/route", "@/app/api/payments/batch/route"]
+  for (const accountId of ["baseline-account-rd", "baseline-account-doprep"]) {
+    currentActor = await db.user.findFirstOrThrow({ where: { accountId, isOwner: true } })
+    const before = await db.payment.count({ where: { ar: { sale: { accountId } } } })
+    for (const endpoint of endpoints) {
+      const req = new NextRequest("http://localhost/api/payments", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fiscalDocumentType: "E34", amountCents: 1, method: "EFECTIVO" }) })
+      const response = await load(endpoint).POST(req)
+      assert.equal(response.status, 400)
+      assert.equal((await response.json()).code, "FISCAL_NOT_AVAILABLE")
+    }
+    assert.equal(await db.payment.count({ where: { ar: { sale: { accountId } } } }), before)
+  }
+  currentActor = null
+  // La activación fue un fixture forzado: los escenarios ordinarios posteriores requieren el perfil desactivado.
+  await db.fiscalSettings.update({ where: { accountId: "baseline-account-doprep" }, data: { enabled: false } })
 })
 
 test("2. Venta al contado en empresa RD (ITBIS 18% incluido, sin e-NCF)", async () => {
@@ -676,5 +736,27 @@ test("11. Contratos HTTP móviles reales (paginación, permisos y ausencia de ca
       assert.equal("dgiiSecurityCode" in item, false, `Item de ${ep.name} no debe contener dgiiSecurityCode`)
     }
   }
+})
+
+test("12. HTTP de cola sin turnos confirma y recupera una venta una sola vez", async () => {
+  const { NextRequest } = require("next/server")
+  const actor = await db.user.findFirstOrThrow({ where: { accountId: "baseline-account-rd", isOwner: true } })
+  const product = await db.product.findFirstOrThrow({ where: { accountId: actor.accountId, sku: "PROD-RD-18" } })
+  const box = await db.treasuryAccount.findFirstOrThrow({ where: { accountId: actor.accountId, type: "CAJA" } })
+  const version = (await db.fiscalSettings.findUnique({ where: { accountId: actor.accountId } }))?.version ?? 0
+  const operationId = randomUUID()
+  const body = { kind: "sale", cashOperation: { accountId: actor.accountId, userId: actor.id, cashShiftId: null, clientSequence: null, clientOperationId: operationId, fiscalPolicyVersion: version }, payload: { customerId: null, type: "CONTADO", paymentMethod: "EFECTIVO", treasuryAccountId: box.id, items: [{ productId: product.id, qty: 1, unitPriceCents: 10000, wasPriceOverridden: false }] } }
+  const route = load("@/app/api/cash-shifts/operations/route")
+  const before = await db.sale.count({ where: { accountId: actor.accountId } })
+  currentActor = actor
+  try {
+    const send = () => route.POST(new NextRequest("http://localhost/api/cash-shifts/operations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }))
+    const first = await send(); assert.equal(first.status, 200)
+    const firstResult = await first.json()
+    const retry = await send(); assert.equal(retry.status, 200)
+    assert.equal((await retry.json()).result.id, firstResult.result.id)
+    assert.equal(await db.sale.count({ where: { accountId: actor.accountId } }), before + 1)
+    assert.equal((await db.cashOperation.findFirstOrThrow({ where: { accountId: actor.accountId, clientOperationId: operationId } })).fiscalPolicyVersion, version)
+  } finally { currentActor = null }
 })
 

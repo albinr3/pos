@@ -109,6 +109,10 @@ export async function POST(request: NextRequest) {
         canViewAllCashShifts: result.user.canViewAllCashShifts,
         canManageCashShifts: result.user.canManageCashShifts,
         canRecordCashMovements: result.user.canRecordCashMovements,
+        canManageFiscalSettings: result.user.canManageFiscalSettings,
+        canManageFiscalSequences: result.user.canManageFiscalSequences,
+        canPrepareFiscalDocuments: result.user.canPrepareFiscalDocuments,
+        canViewFiscalDocuments: result.user.canViewFiscalDocuments,
       },
     }, { headers: corsHeaders })
   } catch (error: any) {

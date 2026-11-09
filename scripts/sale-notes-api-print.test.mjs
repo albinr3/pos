@@ -34,6 +34,16 @@ const body = { customerId: null, type: "CONTADO", paymentMethod: "EFECTIVO", ite
 const request = payload => ({ json: async () => payload, nextUrl: new URL("https://example.test/api/sales"), headers: new Headers() })
 const params = { params: Promise.resolve({ id: "sale" }) }
 
+test("La API rechaza tipos E y bloques fiscales antes de crear ventas", async () => {
+  const f = fixture()
+  for (const extra of [{ type: "E31" }, { fiscal: { type: "E32" } }]) {
+    const response = await f.load("@/app/api/sales/route").POST(request({ ...body, ...extra }))
+    assert.equal(response.status, 400)
+    assert.equal(response.data.code, "FISCAL_NOT_AVAILABLE")
+  }
+  assert.equal(f.created(), 0)
+})
+
 function fixture(notes = null) {
   let created = 0
   const sale = { id: "sale", invoiceCode: "A-00001", type: "CONTADO", notes, soldAt: new Date("2026-11-02T16:00:00Z"), items: [], payments: [], customer: null, subtotalCents: 100, itbisCents: 0, totalCents: 100, salePricesIncludeItbis: true }
@@ -124,6 +134,14 @@ test("Operaciones de caja conservan la nota en result y validan el mismo contrat
     if (status === 200) assert.equal(response.data.result.notes, notes)
     else assert.match(response.data.error, /nota de la venta/)
   }
+})
+
+test("Caja rechaza datos fiscales fuera del payload sin crear la venta", async () => {
+  const f = fixture()
+  const response = await f.load("@/app/api/cash-shifts/operations/route").POST(request({ kind: "sale", fiscalDocumentType: "E31", payload: body, cashOperation: { clientOperationId: "stable" } }))
+  assert.equal(response.status, 400)
+  assert.equal(response.data.code, "FISCAL_NOT_AVAILABLE")
+  assert.equal(f.created(), 0)
 })
 
 test("Editar otros datos de la venta no permite reemplazar o borrar la nota", async () => {

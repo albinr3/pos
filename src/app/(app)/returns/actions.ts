@@ -1,5 +1,7 @@
 "use server"
 
+import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
+
 import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
 
 import { revalidatePath } from "next/cache"
@@ -300,6 +302,8 @@ type ReturnItemInput = {
 }
 
 export async function createReturn(input: Parameters<typeof createReturnInternal>[0], currentUserArg?: unknown) {
+  // No confirmar efectos ordinarios cuando el cliente solicita una operación fiscal no admitida.
+  assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
   return withCashOperation(cashOperation, { kind: "createReturn", ...payload }, () => createReturnInternal(input, currentUserArg))
 }

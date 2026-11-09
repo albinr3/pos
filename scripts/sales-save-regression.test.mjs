@@ -48,7 +48,7 @@ function fixture({ customer = named, stock = 3 } = {}) {
   function load(name) {
     if (name in mocks) return mocks[name]
     if (cache.has(name)) return cache.get(name)
-    assert.ok(["@/lib/pos-stock", "@/lib/money", "@/lib/transactions", "@/lib/sale-notes", "@/app/(app)/sales/actions"].includes(name), `Importación sin simular: ${name}`)
+    assert.ok(["@/lib/pos-stock", "@/lib/money", "@/lib/transactions", "@/lib/sale-notes", "@/lib/fiscal/core/input", "@/app/(app)/sales/actions"].includes(name), `Importación sin simular: ${name}`)
     const source = fs.readFileSync(new URL(`../src/${name.slice(2)}.ts`, import.meta.url), "utf8")
     const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
     const exports = {}
@@ -71,6 +71,16 @@ test("Una factura nominativa resuelve el cliente una vez y conserva descuento, s
   assert.equal(f.state.sales[0].totalCents, 900)
   assert.deepEqual(f.state.decrements, [1])
   assert.equal(f.state.audits[0].action, "SALE_CREATED")
+})
+
+test("Una solicitud fiscal no crea venta, deuda ni mueve inventario", async () => {
+  const f = fixture()
+  for (const input of [{ type: "E31" }, { fiscal: { type: "E32" } }]) {
+    await assert.rejects(f.save(input), /todavía no está disponible/)
+  }
+  assert.equal(f.state.sales.length, 0)
+  assert.equal(f.state.receivables.length, 0)
+  assert.equal(f.state.decrements.length, 0)
 })
 
 test("Crédito conserva el plazo y el saldo del cliente seleccionado", async () => {

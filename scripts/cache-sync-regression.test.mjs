@@ -142,3 +142,33 @@ test("El desmontaje cancela el timer y elimina el listener de reconexión", () =
   assert.equal(harness.listeners.size, 0)
   assert.deepEqual(harness.stats(), { calls: 0, writes: 0, marks: 0 })
 })
+
+test("La sincronización antigua conserva solicitudes fiscales sin convertirlas en operaciones ordinarias", async () => {
+  const fiscal = loadModule("src/lib/fiscal/core/input.ts", {})
+  const rows = {
+    sales: [{ tempId: "sale", fiscal: { type: "E31" }, items: [] }, { tempId: "old-sale", items: [{ productId: "p", qty: 1, unitPriceCents: 100 }] }, { tempId: "other", cashOperation: { accountId: "other", userId: "u", clientOperationId: "other", cashShiftId: null, clientSequence: null, fiscalPolicyVersion: 0 }, items: [{ productId: "p", qty: 1, unitPriceCents: 100 }] }],
+    batch: [{ tempId: "batch", fiscalDocumentType: "E34", arIds: ["ar"] }, { tempId: "old-batch", arIds: ["ar"] }],
+    payments: [{ tempId: "payment", eNcf: "E310000000001", arId: "ar" }, { tempId: "old-payment", arId: "ar" }],
+  }
+  const effects = []
+  const indexed = {
+    getPendingSales: async () => rows.sales,
+    getPendingBatchPayments: async () => rows.batch,
+    getPendingPayments: async () => rows.payments,
+  }
+  for (const name of ["deletePendingSale", "deletePendingPayment", "deletePendingBatchPayment", "deletePendingPaymentsByArId", "deletePendingBatchPaymentsByArId"]) {
+    indexed[name] = async () => effects.push(name)
+  }
+  const sync = loadModule("src/lib/sync-manager.ts", {
+    "./stock-cache-state": { invalidateStockCache() {} },
+    "./auto-sync": { async syncCacheData() {} },
+    "./fiscal/core/input": fiscal,
+    "./cash-offline": { async refreshCashContext() { return { enabled: false, accountId: "A" } }, async syncCashOutbox() {} },
+    "@/hooks/use-toast": { toast() {} },
+    "./indexed-db": indexed,
+    "@/app/(app)/sales/actions": { async createSale() { effects.push("sale") } },
+    "@/app/(app)/ar/actions": { async addPayment() { effects.push("payment") }, async addBatchPayment() { effects.push("batch") } },
+  }, { window: { addEventListener() {} }, navigator: { onLine: true } })
+  await sync.syncPendingData()
+  assert.deepEqual(effects, [])
+})

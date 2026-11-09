@@ -1598,7 +1598,7 @@ export function PosClient({
                 username: user.username,
               }, soldAt: Date.now() }, user, stockConsumptions, totalCents)
           if (controlled) {
-            toast({ title: controlled.pending ? "Venta guardada pendiente de sincronización" : "Venta guardada", description: controlled.pending ? "Se conserva en este dispositivo y turno. Revisa los pendientes en Cuadre diario." : `Factura ${controlled.result.invoiceCode}` })
+            toast({ title: controlled.pending ? "Venta guardada pendiente de sincronización" : "Venta guardada", description: controlled.pending ? "Se conserva en este dispositivo. Revisa los pendientes en Cuadre diario." : `Factura ${controlled.result.invoiceCode}` })
             if (controlled.result?.stockDecrements) {
               applyStockDecrements(controlled.result.stockDecrements)
               refreshConfirmedSaleStock()

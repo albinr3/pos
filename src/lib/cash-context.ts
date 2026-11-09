@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import type { CashControl, CashShift, Prisma, User } from "@prisma/client"
 import type { NextRequest } from "next/server"
 
-type CashOperationIdentity = { clientOperationId: string; accountId: string; userId: string }
+type CashOperationIdentity = { clientOperationId: string; accountId: string; userId: string; fiscalPolicyVersion?: number }
 export type CashOperationInput = CashOperationIdentity & ({ cashShiftId: string; clientSequence: number } | { cashShiftId: null; clientSequence: null })
 export type CashActor = Pick<User, "id" | "accountId" | "name" | "isOwner"> & Partial<User>
 export type CashRequestScope = {
@@ -16,6 +16,8 @@ export type CashRequestScope = {
   shift?: CashShift | null
   correction?: { sourceType: string; sourceId: string; moneyMoved: boolean; reason: string }
   maintenance?: boolean
+  fiscalDiscard?: boolean
+  fiscalCheckedAccountId?: string
 }
 export const cashRequest = new AsyncLocalStorage<CashRequestScope>()
 export const cashHash = (value: string) => createHash("sha256").update(value).digest("hex")

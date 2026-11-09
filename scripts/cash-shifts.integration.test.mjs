@@ -85,6 +85,9 @@ test("Migración aditiva conserva usuarios y asigna permisos equivalentes", asyn
   assert.equal(owner.canRecordCashMovements, true); assert.equal(cashier.canRecordCashMovements, false)
   assert.equal(cashier.canManageCashShifts, false); assert.equal(reader.canViewAllCashShifts, true)
   assert.equal(await db.cashControl.count({ where: { accountId: "cash-migration-test" } }), 0)
+  const historical = await db.cashOperation.findUniqueOrThrow({ where: { id: "cash-before-fiscal" } })
+  assert.equal(historical.fiscalPolicyVersion, null)
+  assert.deepEqual(historical.response, { ok: true })
 })
 test("Sin activar, una venta conserva su contrato y no genera asientos ni turnos", async () => {
   const f = await fixture(false)
@@ -92,6 +95,21 @@ test("Sin activar, una venta conserva su contrato y no genera asientos ni turnos
   assert.ok(sale.id)
   assert.equal(await db.cashMovement.count({ where: { accountId: f.account.id } }), 0)
   assert.equal((await service.getCashContext(f.actor, device)).enabled, false)
+})
+test("Sin control de caja, un pendiente conserva política y recupera su resultado una sola vez", async () => {
+  const f = await fixture(false), id = randomUUID()
+  const meta = { accountId: f.account.id, userId: f.actor.id, cashShiftId: null, clientSequence: null, clientOperationId: id, fiscalPolicyVersion: 0 }
+  const send = (operation, payload, callback) => cashRequest.run({ trustedActor: f.actor, deviceHash: device }, () => withCashOperation(operation, payload, () => engine.runCashTransaction(db, callback)))
+  const callback = tx => tx.sale.create({ data: saleData(f) })
+  const first = await send(meta, { kind: "sale" }, callback)
+  const recovered = await send(meta, { kind: "sale" }, () => assert.fail("No debe duplicar una venta confirmada"))
+  assert.equal(first.id, recovered.id)
+  assert.equal((await db.cashOperation.findFirstOrThrow({ where: { accountId: f.account.id, clientOperationId: id } })).fiscalPolicyVersion, 0)
+  await assert.rejects(send({ ...meta, userId: "another-user", clientOperationId: randomUUID() }, { kind: "sale" }, callback), error => error.code === "CASH_ACTOR_MISMATCH")
+  await load("@/lib/fiscal/core/policy-change").recordFiscalPolicyChange(f.actor, { expectedVersion: 0, enabled: false, jurisdiction: "DO", regime: "DO_ECF", environment: "TEST", configurationStatus: "INCOMPLETE" })
+  await assert.rejects(send({ ...meta, clientOperationId: randomUUID() }, { kind: "sale" }, callback), error => error.code === "FISCAL_POLICY_CHANGED")
+  assert.equal(await db.sale.count({ where: { accountId: f.account.id } }), 1)
+  assert.equal(await db.cashMovement.count({ where: { accountId: f.account.id } }), 0)
 })
 test("Apertura no duplica fondos y los saldos de banco sobreviven a la activación", async () => {
   const f = await fixture()
@@ -108,6 +126,29 @@ test("Reintentos y envíos simultáneos de la misma operación confirman una sol
   assert.ok(second.soldAt instanceof Date)
   assert.equal(await expected(f), 110000)
   assert.equal(await db.sale.count({ where: { accountId: f.account.id } }), 1)
+})
+test("Pendientes conservan versión fiscal, detectan cambios y recuperan respuestas sin duplicar", async () => {
+  const f = await fixture(), other = await fixture(), id = randomUUID()
+  const submit = (version, sequence, operationId, callback, options = {}) => {
+    const meta = { accountId: f.account.id, userId: f.actor.id, cashShiftId: f.shift.id, clientSequence: sequence, clientOperationId: operationId, ...(version === undefined ? {} : { fiscalPolicyVersion: version }) }
+    return cashRequest.run({ trustedActor: f.actor, deviceHash: device, ...options }, () => withCashOperation(meta, { sequence }, () => engine.runCashTransaction(db, callback)))
+  }
+  assert.equal((await service.getCashContext(f.actor, device)).fiscalQueuePolicy.version, 0)
+  const first = await submit(0, 1, id, tx => tx.sale.create({ data: saleData(f) }))
+  assert.equal((await db.cashOperation.findFirstOrThrow({ where: { accountId: f.account.id, clientOperationId: id } })).fiscalPolicyVersion, 0)
+  await load("@/lib/fiscal/core/policy-change").recordFiscalPolicyChange(f.actor, { expectedVersion: 0, enabled: false, jurisdiction: "DO", regime: "DO_ECF", environment: "TEST", configurationStatus: "INCOMPLETE" })
+  const recovered = await submit(0, 1, id, () => assert.fail("Un reintento no debe repetir efectos"))
+  assert.equal(recovered.id, first.id)
+  await assert.rejects(submit(0, 2, randomUUID(), tx => tx.sale.create({ data: saleData(f) })), error => error.code === "FISCAL_POLICY_CHANGED")
+  assert.equal(await db.sale.count({ where: { accountId: f.account.id } }), 1)
+  assert.equal((await service.getCashContext(other.actor, device)).fiscalQueuePolicy.version, 0)
+  await submit(1, 2, randomUUID(), tx => tx.sale.create({ data: saleData(f) }))
+  await db.fiscalSettings.update({ where: { accountId: f.account.id }, data: { enabled: true } })
+  await assert.rejects(submit(undefined, 3, randomUUID(), tx => tx.sale.create({ data: saleData(f) })), error => error.code === "FISCAL_POLICY_CHANGED")
+  await assert.rejects(transact(f, tx => tx.sale.create({ data: saleData(f) })), error => error.code === "FISCAL_NOT_AVAILABLE")
+  assert.ok((await operation(other, 1, tx => tx.sale.create({ data: saleData(other) }))).id)
+  assert.deepEqual(await submit(0, 3, randomUUID(), async () => ({ discarded: true }), { fiscalDiscard: true }), { discarded: true })
+  assert.equal(await db.sale.count({ where: { accountId: f.account.id } }), 2)
 })
 test("Un ID reutilizado con otro contenido se rechaza sin duplicar efectos", async () => {
   const f = await fixture(), id = randomUUID()

@@ -21,7 +21,7 @@ async function browserSuite(compiled, stockCompiled) {
   function fixture(enabled = true) {
     const unique = "cash-browser-" + Date.now() + "-" + (++caseId)
     const exports = {}; new Function("exports", "require", compiled.replace('"movopos-cash-v1"', JSON.stringify(unique)))(exports, name => { if (name === "./stock-cache-state") return stockState; throw new Error(name) })
-    const context = { protocolVersion: 1, enabled, accountId: unique, userId: "ana", userName: "Ana", canOperate: true, canManage: true, canViewAll: true, canTransfer: true, treasuryAccountId: "box", activeShift: { id: unique, isMine: true, isDevice: true, status: "OPEN", lastSequence: 0, finalSequence: null } }
+    const context = { protocolVersion: 1, enabled, fiscalQueuePolicy: { version: 0, enabled: false }, accountId: unique, userId: "ana", userName: "Ana", canOperate: true, canManage: true, canViewAll: true, canTransfer: true, treasuryAccountId: "box", activeShift: { id: unique, isMine: true, isDevice: true, status: "OPEN", lastSequence: 0, finalSequence: null } }
     let processed = 0, drop = false, validation = false, manualError = null, report = null
     const seen = new Map(), manualSeen = new Map()
     window.fetch = async (url, options = {}) => {
@@ -52,6 +52,15 @@ async function browserSuite(compiled, stockCompiled) {
     return { api: exports, context, seen, manualSeen, setReport: value => { report = value }, setDrop: () => { drop = true }, setValidation: value => { validation = value }, setManualError: (status, code) => { manualError = { status, code, error: "Error de prueba" } } }
   }
   const reportFor = (f, ids = []) => ({ accountId: f.context.accountId, userId: f.context.userId, shiftId: f.context.activeShift.id, cashierName: "Ana", openedAt: new Date().toISOString(), generatedAt: new Date().toISOString(), companyName: "Negocio", format: "CARTA", openingCents: 10000, expectedCashCents: 10000, lastSequence: f.context.activeShift.lastSequence, finalSequence: null, status: "OPEN", confirmedOperationIds: ids, movements: [], documents: [] })
+  await test("La cola conserva la versión fiscal del contexto y rechaza una copia antigua", async () => {
+    const f = fixture(); f.context.fiscalQueuePolicy.version = 7; await f.api.refreshCashContext(); online = false
+    await f.api.submitControlledDocument("sale", { paymentMethod: "EFECTIVO" }, { id: "ana", accountId: f.context.accountId })
+    const pending = await f.api.cashPending()
+    assert(pending.length === 1 && pending[0].cashOperation.fiscalPolicyVersion === 7, "La versión debe persistirse en IndexedDB")
+    online = true; delete f.context.fiscalQueuePolicy; await f.api.refreshCashContext(); online = false
+    await rejects(() => f.api.submitControlledDocument("sale", { paymentMethod: "EFECTIVO" }, { id: "ana", accountId: f.context.accountId }), "Una copia sin versión no autoriza pendientes nuevos")
+    assert((await f.api.cashPending()).length === 1, "No debe añadirse ni eliminarse otro pendiente")
+  })
   await test("Detalle offline usa la copia propia y separa pendientes sin inventar totales", async () => {
     const f = fixture(); f.setReport(reportFor(f)); await f.api.refreshCashContext(); await f.api.refreshCashShiftReport(f.context)
     online = false; await f.api.submitControlledDocument("payment", { method: "TARJETA", amountCents: 1250 }, { id: "ana", accountId: f.context.accountId })
@@ -108,11 +117,24 @@ async function browserSuite(compiled, stockCompiled) {
     f.setReport("unauthorized")
     await rejects(() => f.api.loadCashShiftReport(f.context, { id: "ana", accountId: f.context.accountId }), "Un 401, incluso sin JSON, no debe usar la copia")
   })
-  await test("Desactivado mantiene el camino legacy sin crear pendientes nuevos", async () => {
+  await test("Sin turnos, la cola conserva autoría y versión fiscal", async () => {
     const f = fixture(false)
-    const result = await f.api.submitControlledDocument("sale", { total: 100 })
-    assert(result === undefined, "Debe conservar el contrato anterior")
-    assert((await f.api.cashPending()).length === 0, "No debe crear outbox")
+    await f.api.refreshCashContext(); online = false
+    const result = await f.api.submitControlledDocument("sale", { total: 100 }, { id: "ana", accountId: f.context.accountId })
+    const pending = await f.api.cashPending()
+    assert(result.pending && pending.length === 1, "Debe conservar la venta")
+    assert(pending[0].cashOperation.cashShiftId === null && pending[0].cashOperation.userId === "ana" && pending[0].cashOperation.fiscalPolicyVersion === 0, "No debe inventar un turno ni perder identidad o versión")
+    online = true; await f.api.syncCashOutbox()
+    assert((await f.api.cashPending()).length === 0 && f.seen.size === 1, "Debe confirmar una sola vez")
+  })
+  await test("Sin turnos, una respuesta perdida se recupera con el mismo identificador", async () => {
+    const f = fixture(false); f.setDrop()
+    const result = await f.api.submitControlledDocument("sale", { total: 100 }, { id: "ana", accountId: f.context.accountId })
+    const pending = await f.api.cashPending()
+    assert(result.pending && pending.length === 1 && f.seen.size === 1, "Conservar el pendiente tras perder la respuesta")
+    const id = pending[0].cashOperation.clientOperationId
+    await f.api.syncCashOutbox()
+    assert((await f.api.cashPending()).length === 0 && f.seen.size === 1 && f.seen.has(id), "El reintento debe recuperar la misma venta")
   })
   await test("Sin conexión persiste autoría, turno y secuencia antes de devolver guardado", async () => {
     const f = fixture(); await f.api.refreshCashContext(); online = false

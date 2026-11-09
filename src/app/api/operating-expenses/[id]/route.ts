@@ -1,3 +1,4 @@
+import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 import { PaymentMethod } from "@prisma/client"
@@ -77,6 +78,7 @@ export async function GET(
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     console.error("Error en GET /api/operating-expenses/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al obtener gasto operativo" },
@@ -105,6 +107,7 @@ export async function PUT(
 
     const { id } = await params
     const body = await request.json()
+    assertNoFiscalInput(body)
     const description = String(body?.description || "").trim()
     const amountCents = Number(body?.amountCents || 0)
     const expenseDate = normalizeDateInput(body?.expenseDate)
@@ -202,6 +205,7 @@ export async function PUT(
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     if (error instanceof TreasuryAccountValidationError) {
       // Comentario preventivo: editar desde datos offline puede traer una cuenta de tesorería vieja.
       // Responder 400 evita clasificar esa validación como error interno de producción.
@@ -268,6 +272,7 @@ export async function DELETE(
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     console.error("Error en DELETE /api/operating-expenses/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error) || "Error al eliminar gasto operativo" },

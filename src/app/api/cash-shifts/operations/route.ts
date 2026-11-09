@@ -13,6 +13,7 @@ import { createPurchaseFromOCR } from "@/app/(app)/purchases/ocr-actions"
 import { createOperatingExpense } from "@/app/(app)/operating-expenses/actions"
 import { createReturn } from "@/app/(app)/returns/actions"
 import { createTreasuryTransfer } from "@/app/(app)/treasury/actions"
+import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 
 export const runtime = "nodejs"
 export async function POST(request: NextRequest) {
@@ -21,11 +22,16 @@ export async function POST(request: NextRequest) {
     if (origin && origin !== request.nextUrl.origin) return NextResponse.json({ error: "Origen no permitido" }, { status: 403 })
     const actor = await getCurrentUserFromRequest(request)
     if (!actor) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
-    const { kind, payload, cashOperation } = await request.json()
+    const body = await request.json()
+    // No omitir datos fiscales situados fuera de payload al desestructurar la solicitud.
+    assertNoFiscalInput(body)
+    const { kind, payload, cashOperation } = body
     if (!cashOperation || !payload || !["sale", "payment", "batchPayment", "purchase", "ocrPurchase", "supplierPayment", "expense", "return", "transfer", "discard"].includes(kind)) return NextResponse.json({ error: "Operación inválida" }, { status: 400 })
     const allowed: Record<string, boolean> = { sale: actor.canAccessSales, payment: actor.canAccessAccountsReceivable, batchPayment: actor.canAccessAccountsReceivable, supplierPayment: actor.canRegisterSupplierPayments, purchase: actor.canManagePurchases, ocrPurchase: actor.canManagePurchases, expense: actor.canManageExpenses, return: actor.canAccessReturns, transfer: actor.canCreateTreasuryTransfers, discard: true }
     if (!actor.isOwner && !allowed[kind]) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
-    const result = await cashRequest.run({ trustedActor: actor, deviceHash: cashDeviceHashFromRequest(request) }, async () => {
+    // La cola no puede transformar una solicitud fiscal en una operación ordinaria.
+    assertNoFiscalInput(payload)
+    const result = await cashRequest.run({ trustedActor: actor, deviceHash: cashDeviceHashFromRequest(request), fiscalDiscard: kind === "discard" }, async () => {
       if (kind === "discard") {
         if (typeof payload.reason !== "string" || !payload.reason.trim()) throw new Error("Explica por qué anulas el pendiente")
         return withCashOperation(cashOperation, { kind, ...payload }, () => runCashTransaction(getRawPrismaClient(), async tx => {
@@ -45,6 +51,7 @@ export async function POST(request: NextRequest) {
     })
     return NextResponse.json({ result })
   } catch (error) {
+    if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     return cashErrorResponse(error) ?? NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo registrar la operación" }, { status: 400 })
   }
 }

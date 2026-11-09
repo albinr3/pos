@@ -250,6 +250,8 @@ model Account {
   // Relaciones - todos los datos del tenant
   users                User[]
   companySettings      CompanySettings?
+  fiscalSettings       FiscalSettings?
+  fiscalPolicyChanges  FiscalPolicyChange[]
   customers            Customer[]
   suppliers            Supplier[]
   categories           Category[]
@@ -324,6 +326,31 @@ model AccountDeletion {
   @@index([stage, nextAttemptAt])
 }
 
+model FiscalSettings {
+  accountId String @id
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  enabled Boolean @default(false)
+  jurisdiction String?
+  regime String?
+  environment String @default("TEST")
+  configurationStatus String @default("INCOMPLETE")
+  version Int @default(1)
+  effectiveFrom DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FiscalPolicyChange {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  version Int
+  actorUserId String?
+  policy Json
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, version])
+}
+
 model AccountOnboarding {
   accountId String  @id
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
@@ -394,6 +421,10 @@ model User {
   canAccessShippingLabels     Boolean @default(false)
   canAccessBilling            Boolean @default(false)
   canAccessSettings           Boolean @default(false)
+  canManageFiscalSettings     Boolean @default(false)
+  canManageFiscalSequences    Boolean @default(false)
+  canPrepareFiscalDocuments   Boolean @default(false)
+  canViewFiscalDocuments      Boolean @default(false)
 
   // Granular permissions
   canOverridePrice    Boolean @default(false)
@@ -572,6 +603,8 @@ model CashOperation {
   accountId         String
   account           Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   clientOperationId String
+  // Versión observada en el servidor al confirmar; null conserva registros anteriores a esta migración.
+  fiscalPolicyVersion Int?
   payloadHash       String
   cashShiftId       String?
   cashShift         CashShift? @relation(fields: [cashShiftId], references: [id], onDelete: SetNull)

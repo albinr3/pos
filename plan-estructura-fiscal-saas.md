@@ -1,7 +1,7 @@
 # MOVOPos: preparación de la estructura fiscal por etapas
 
 **Fecha de revisión:** 9 de noviembre de 2026.  
-**Estado:** Etapa 0 completada y aceptada; línea base comercial registrada con evidencia reproducible en bases aisladas. Listo para iniciar la Etapa 1.  
+**Estado:** Etapas 0 y 1 completadas; lista para iniciar la Etapa 2.  
 **Objetivo:** preparar los diez tipos de comprobante electrónico de República Dominicana, conservando el funcionamiento actual de las empresas que no utilicen el módulo fiscal.  
 **Límite de esta entrega:** estructura, datos, ventanas, reglas locales, API interna para la aplicación móvil y pruebas. La integración con la API de un proveedor fiscal externo se realizará en un proyecto posterior.
 
@@ -10,6 +10,10 @@
 Cada etapa se puede ejecutar en una sesión diferente. Antes de comenzar, verificar el estado real del código: los nombres de modelos nuevos son propuestas, no afirmaciones de que ya existen.
 
 Para completar una etapa se necesitan sus cambios, migraciones cuando correspondan, comprobaciones y evidencia de aceptación. Actualizar la tabla de seguimiento y el registro final antes de detener el trabajo. No marcar una etapa como completada por haber construido solamente su ventana.
+
+**Regla de pruebas por etapa — preferencia del usuario:** dedicar como máximo cinco minutos en total a las comprobaciones de cada etapa, incluidos los arranques y preparativos necesarios. Verificar únicamente lo implementado en esa etapa de facturación electrónica y que el flujo ordinario afectado siga funcionando con el módulo fiscal apagado. Elegir pruebas breves y relevantes para web o API móvil cuando se hayan modificado; reutilizar el entorno y las pruebas existentes. No ejecutar auditorías integrales, repeticiones amplias ni desarrollar herramientas adicionales como requisito de cada etapa. Si una comprobación no puede completarse dentro del límite, registrar su alcance y limitación sin afirmar que pasó. La etapa 15 también debe respetar el máximo de cinco minutos de pruebas.
+
+Esta regla sustituye los requisitos de pruebas extensas, revisión visual con sesión real y validaciones transversales repetidas que aparezcan en registros anteriores o en otras secciones como condición general para cerrar cada etapa. Los registros anteriores son históricos. Mantener bloqueada la activación fiscal hasta que su propia etapa aborde la transición; los pendientes antiguos sin empresa verificable deben conservarse y no impiden por sí solos cerrar el aislamiento de la etapa 1.
 
 **Web y móvil son entregables de cada etapa.** La API propia de MOVOPos debe permitir realizar desde la app las mismas operaciones autorizadas que desde la web, con las mismas reglas y resultados. La cobertura móvil no se pospone a la etapa 15: esa etapa verifica lo construido antes. Una etapa con interfaz web pero sin contrato y comportamiento de API móvil comprobados permanece incompleta. El detalle transversal está en la sección 13.
 
@@ -40,6 +44,9 @@ La preparación local ya está realizada. Reutilizar este entorno al ejecutar el
 | `npm run fiscal-test:smoke` | Comprobar fixtures, PIN y comprobaciones básicas de base de datos. |
 | `npm run fiscal-test:auth` | Probar validación de firmas, vencimiento y separación de cuentas con tokens de prueba. |
 | `npm run fiscal-test:next` | Probar autenticación HTTP en Next real con las dos identidades Clerk autorizadas y la base ficticia. Cierra solo las sesiones temporales que crea. |
+| `npm run fiscal-test:next-policies` | Crear una base local nueva con fixtures y comprobar en Next real dos políticas distintas, mutación, reintento, inventario, permisos y aislamiento móvil. No elimina ni modifica la base fiscal existente. |
+| `npm run fiscal-test:settings` | Renderizar la página real de Ajustes con usuarios simulados y comprobar los cuatro permisos fiscales y el acceso al módulo. No sustituye la revisión visual con sesión real. |
+| `npm run fiscal-test:legacy-review` | Probar con IndexedDB y navegador temporal la revisión de pendientes antiguos, identidad, reintentos y cambios concurrentes; las respuestas del servidor son simuladas. |
 | `npm run fiscal-test:clerk-temporary` | Repetir consultas y permisos de dueño/cajero en el servidor local limitado a handlers de prueba. |
 | `npm run fiscal-test:regression` | Ejecutar las regresiones de ventas, caché, inventario, contratos móviles, cobros e impresión con dependencias simuladas. |
 | `npm run fiscal-test:integration` | Ejecutar las 3 suites completas (caja, compras y línea base comercial) en bases locales aisladas. |
@@ -67,7 +74,7 @@ La preparación local ya está realizada. Reutilizar este entorno al ejecutar el
 |---|---|---|---|
 | 0 | Línea base y alcance de compatibilidad | Ninguna | Completada: línea base registrada y aceptada con pruebas reproducibles de 3 perfiles comerciales, contratos HTTP móviles e idempotencia |
 | 0 | Línea base y alcance de compatibilidad | Ninguna | **Completada y aceptada** (evidencia reproducible en `npm run fiscal-test:baseline` y [docs/linea-base-fiscal.md](docs/linea-base-fiscal.md)) |
-| 1 | Aislamiento fiscal por empresa y país | 0 | Pendiente |
+| 1 | Aislamiento fiscal por empresa y país | 0 | **Completada**: pruebas enfocadas de aislamiento y funcionamiento ordinario aprobadas dentro de cinco minutos |
 | 2 | Preferencias de empresa | 1 | Pendiente |
 | 3 | Clientes, proveedores y productos | 1–2 | Pendiente |
 | 4 | Núcleo de documentos, importes y estados | 1–3 | Pendiente |
@@ -604,7 +611,7 @@ Sí se dejan preparados los datos, relaciones, estados, permisos, numeración de
 - [ ] Doble clic, concurrencia, caída y reintento son recuperables.
 - [ ] Móvil y offline respetan política, identidad de operación y compatibilidad anterior.
 - [ ] Cada etapa tiene rutas móviles comprobadas, permisos, contratos OpenAPI y ejemplos completos; no depende solo de Server Actions.
-- [ ] Se probaron solicitudes HTTP con credenciales móviles reales de prueba y sin cookies, compatibilidad con versiones anteriores y recuperación por identificador de operación.
+- [ ] Se verificaron los contratos móviles y la compatibilidad relevantes para cada etapa mediante pruebas enfocadas dentro del límite de cinco minutos.
 - [ ] Migraciones, copias, restauración y baja de empresas tienen una política verificada.
 - [ ] La interfaz distingue preparación y prueba de emisión legal real.
 - [ ] Ninguna prueba consumió numeración productiva ni envió documentos reales.
@@ -624,9 +631,10 @@ Implementa únicamente el alcance de la etapa, con migraciones compatibles y
 comprobaciones apropiadas. El módulo fiscal es opcional por empresa: conserva
 el comportamiento actual de las empresas que no lo activen.
 
-Incluye la API interna para móvil: servicios compartidos con la web, autenticación,
-permisos, contratos OpenAPI, ejemplos y pruebas HTTP sin cookies. Usa la cobertura
-por etapa de la sección 13. Una ventana web sola no completa la etapa.
+Incluye la API interna para móvil cuando corresponda, con servicios compartidos,
+autenticación, permisos y contrato documentado. Comprueba lo cambiado en web o API
+y el flujo ordinario con el módulo fiscal apagado. Las pruebas de la etapa,
+incluidos sus preparativos, deben durar como máximo cinco minutos en total.
 
 No conectes una API fiscal externa, no envíes documentos, no consumas numeración real
 ni presentes resultados simulados como aceptación de la DGII.
@@ -637,6 +645,36 @@ pasos de revisión desde la interfaz. Marca completa solo si cumple la aceptaci�
 ```
 
 ### Registro de ejecución por etapa
+
+**Cierre de la etapa 1, 9 de noviembre de 2026. Estado: completada.** Conforme al límite de pruebas solicitado, se ejecutaron en paralelo `fiscal-test:next-policies`, `fiscal-test:regression` (59/59) y `fiscal-test:settings` (7/7), en menos de cinco minutos en total. Next verificó dos empresas con políticas distintas, rechazo de datos fiscales no implementados, aislamiento de sesiones, venta ordinaria con fiscal apagado, reintento e inventario. Las políticas activas fueron únicamente fixtures de prueba. La configuración fiscal real sigue sin activación ni conexión externa. Los pendientes antiguos sin empresa identificable se conservan sin atribuir y su conciliación queda para la etapa de transición; no se hizo una revisión visual con sesión real en este cierre.
+
+**Etapa 1 — aislamiento fiscal, 9 de noviembre de 2026. Estado: en curso.** Se añadieron `FiscalSettings` y `FiscalPolicyChange`, migración aditiva, permisos fiscales y contexto móvil, consulta de capacidades, catálogo DO, servicio de cambios versionados y rechazo de entradas fiscales no implementadas en ventas, compras, pagos a proveedores, devoluciones, gastos y operaciones de caja. La activación permanece bloqueada; no existe emisión ni conexión externa. La migración se aplicó únicamente a `movopos_fiscal_test_2`. Documentación móvil: [API fiscal](docs/api-estructura-fiscal.md) y [OpenAPI](docs/openapi-estructura-fiscal.json).
+
+Pruebas: `fiscal-test:regression` 57/57; `fiscal-test:integration` 78/78 (41 caja, 24 compras, 13 línea base), incluido el rechazo sin efectos para cinco operaciones. En Next real, `fiscal-test:next` comprobó capacidades con credenciales móviles, rechazo y reintento de E31, falta de permiso y sesiones cruzadas para las dos empresas. ESLint de los módulos y rutas fiscales pasó. La comprobación TypeScript de fuentes pasó excluyendo tipos generados; la compilación habitual sigue bloqueada por errores de sintaxis en `.next/dev/types/routes.d.ts` preexistente.
+
+Pendientes para aceptación: revisar todos los demás puntos de mutación y la propagación de política/versiones en sincronización; ampliar las pruebas HTTP para políticas distintas con fixtures aislados y para todos los flujos afectados; revisar visualmente Ajustes con sesión real en un entorno con aislamiento completo de red. La tarjeta fiscal se debe ver solo para dueño o usuario con algún permiso fiscal y debe indicar «Pendiente de conexión». La restricción documentada del entorno interactivo sigue vigente. No marcar completa hasta verificar estos puntos y la política de transición de operaciones pendientes.
+
+**Continuación de la etapa 1, 9 de noviembre de 2026. Estado: en curso.** La cola antigua ahora rechaza y conserva ventas y pagos que contienen datos fiscales o versión de política, en vez de eliminarlos al convertirlos a operaciones ordinarias; la limpieza por cuenta por cobrar también preserva esos pendientes. La API de operaciones de caja rechaza datos fiscales en el cuerpo exterior además del `payload`. Cambios en `src/lib/fiscal/core/input.ts`, `src/lib/sync-manager.ts`, `src/lib/indexed-db.ts` y `src/app/api/cash-shifts/operations/route.ts`, con comentarios preventivos y pruebas en `scripts/cache-sync-regression.test.mjs` y `scripts/sale-notes-api-print.test.mjs`. `npm run fiscal-test:regression`: 59/59; `npm run fiscal-test:integration`: 78/78 en tres bases locales aisladas. La integración se ejecutó antes del último ajuste de validación exterior de caja, cubierto por la regresión posterior. ESLint del sincronizador sigue informando cuatro usos preexistentes de `any`.
+
+Estas protecciones no implementan todavía la captura y validación de la versión fiscal en ambas colas ni la transición de pendientes; tampoco sustituyen la revisión completa de mutaciones, las pruebas HTTP con políticas diferentes ni la revisión visual solicitada. La activación continúa bloqueada y el servidor interactivo sigue sin aislamiento de red suficiente. Mantener la etapa abierta.
+
+**Avance adicional de etapa 1, 9 de noviembre de 2026. Estado: en curso.** La cola de caja captura la versión del contexto autenticado y el servidor la compara dentro de la transacción, serializada con los cambios de política; recupera primero las respuestas ya confirmadas y conserva los conflictos. Se registra la versión del servidor en `CashOperation`; la migración `20261109120000_cash_fiscal_policy_version` deja en `null` los registros históricos y se aplicó a `movopos_fiscal_test_2`, no a producción. Las mutaciones financieras afectadas pasan por una protección común que rechaza un perfil activo aún no implementado, incluso si el cliente omite datos fiscales. Se protegieron también cobros individuales y múltiples, web y API. La guía móvil describe los nuevos datos y errores.
+
+Verificaciones: 42 pruebas de caja y 24 de compras en bases aisladas; 14 de línea base tras restablecer el perfil forzado de la prueba; 59 regresiones simuladas; 23 pruebas de cola con IndexedDB en navegador temporal y servidor simulado; 19 pruebas del POS con servidor simulado; comprobación TypeScript de fuentes sin errores al excluir tipos generados, y ESLint de los archivos fiscales y de la cola comprobados. La compilación general continúa bloqueada por `.next/dev/types/routes.d.ts` generado y corrupto. Las pruebas de política activa usan fixtures locales, no acreditan emisión fiscal.
+
+`fiscal-test:next` volvió a aprobarse con ambas identidades móviles y sin cookies: comprobó el nuevo contexto de cola, el rechazo fiscal de ambos endpoints de cobro, permisos y sesiones cruzadas. Las dos empresas tenían el perfil desactivado durante esta ejecución; el caso activo solo se verificó en las bases aisladas y con autenticación simulada. La migración se ensayó además sobre un `CashOperation` anterior, cuya versión permaneció en `null` y cuya respuesta se conservó.
+
+Pendiente: integrar captura y validación de política, autoría y recuperación en la cola anterior utilizada sin control de caja; revisar exhaustivamente las demás mutaciones y contratos móviles; comprobar HTTP con políticas distintas usando autenticación real; revisión visual de permisos y tarjeta en un entorno aislado, y transición de pendientes previa a habilitar activación. Los clientes antiguos sin versión se aceptan solo con el módulo desactivado; su versión histórica no puede inferirse. No marcar completa la etapa todavía.
+
+**Cola sin turnos, 9 de noviembre de 2026. Estado: en curso.** Las nuevas ventas y cobros web sin control de caja usan la cola durable común con identificador, empresa, empleado y versión de política; `CashOperation` ahora permite confirmar y recuperar una operación sin turno incluso si nunca se creó `CashControl`. El servidor sigue rechazando un turno inexistente y mantiene la comparación fiscal transaccional. El aviso de pendientes está disponible también sin turnos. Los registros de la cola anterior que carecen de esos datos se conservan sin reenviarse ni reasignarse; Cuadre diario advierte de ellos. Todavía falta una herramienta de revisión y resolución para esos registros y una política de transición que no infiera autoría ni provoque duplicados.
+
+Comprobaciones de esta continuación: 43 pruebas de caja, 24 de compras y 14 de línea base en bases aisladas; posteriormente, la línea base ampliada pasó 15/15, incluida una venta HTTP sin turnos y su reintento idempotente contra PostgreSQL con autenticación simulada. Pasaron 59 regresiones, 23 casos de cola en navegador y 19 del POS con servidor simulado, además de TypeScript de fuentes y ESLint de los archivos seleccionados. La nueva ruta sin turnos aún requiere una prueba HTTP con credenciales móviles reales y la revisión visual completa; no se considera terminada la etapa.
+
+**HTTP móvil con políticas diferentes, 9 de noviembre de 2026.** `npm run fiscal-test:next-policies` creó bases locales nuevas de fixtures y utilizó las dos identidades Clerk ficticias autorizadas. En Next real, con autenticación móvil y sin cookies, comprobó simultáneamente una empresa sin perfil y otra con DO_ECF activado únicamente como fixture. La primera pudo confirmar una venta sin turno y recuperar el mismo resultado en un reintento; la segunda rechazó una venta que omitía los datos fiscales. Comprobó que el inventario solo se descontó una vez, rechazó una versión desactualizada y sesiones o pendientes cruzados, y verificó el rechazo de datos fiscales en cobros, compras, OCR, pagos a proveedores, devoluciones y gastos. También verificó permisos de los cajeros. No se llamó a ningún proveedor fiscal ni se utilizó numeración fiscal. El esquema de esta base se generó desde Prisma; no reemplaza la comparación de plataforma de la base `movopos_fiscal_test_2` ni la revisión visual de la interfaz.
+
+La página de Ajustes pasó además 7 pruebas de renderizado con identidades simuladas: dueño, cada permiso fiscal por separado, usuario sin permisos fiscales y rechazo sin acceso al módulo. La tarjeta muestra «Pendiente de conexión» y no afirma que exista autorización para emitir. Son comprobaciones del HTML generado, no una revisión visual con sesión real.
+
+**Revisión de pendientes antiguos, 9 de noviembre de 2026.** Cuadre diario permite revisar y retirar expresamente pendientes vinculados a la empresa: el empleado ve los suyos y el dueño puede revisar también los de otro empleado o autor no registrado. Se exige motivo; el servidor conserva copia y revisor en auditoría antes de retirarlos del dispositivo, sin crear ni alterar una operación comercial. Un identificador estable permite recuperar una respuesta perdida; una modificación concurrente impide borrar la nueva versión. Los pendientes que no identifican empresa siguen ocultos y conservados, pues no se puede atribuirlos con seguridad. Pasaron 5 pruebas con IndexedDB y servidor simulado, 59 regresiones y la prueba HTTP autenticada real de auditoría y reintento en una base aislada. Quedan pendientes un procedimiento para registros sin empresa y la revisión visual con sesión real en un entorno de red completamente aislado; la etapa continúa en curso.
 
 **Etapa 0 — preparación del entorno, 9 de noviembre de 2026. Estado: en curso.** Base local y fixtures configurados; estructura `public` e historial comparados con producción en modo de solo lectura; autenticación real de ambas cuentas comprobada en Next, con cookies web, headers móviles y rechazo de cruce entre empresas. Scripts y resultados reproducibles: sección 1 y [guía del entorno](docs/entorno-pruebas-fiscales.md). No se implementaron modelos ni migraciones fiscales. Siguiente trabajo: completar aislamiento de salidas, revisión de interfaz y escenarios comerciales pendientes antes de aceptar la línea base e iniciar la etapa 1.
 
@@ -744,7 +782,7 @@ Los recursos nuevos de esta tabla son propuestas de contrato; no son rutas ya di
 
 ### Criterios de aceptación de la API móvil
 
-Una etapa se completa cuando tiene especificación, ejemplo y prueba HTTP de éxito, validación, falta de permiso, acceso a otra empresa y reintento. Cuando aplique, añadir concurrencia, vencimiento de sesión, pérdida de respuesta y recuperación. Usar autenticación móvil de prueba y llamadas sin cookies; no basta invocar la función de dominio directamente.
+Cuando una etapa modifica la API móvil, documentar el contrato y comprobar de forma enfocada el comportamiento relevante, respetando el máximo total de cinco minutos de pruebas por etapa. Elegir los casos de permisos, aislamiento, validación o reintento que correspondan al cambio; no repetir toda la matriz en cada etapa. Registrar cualquier verificación que no se haya realizado.
 
 Comprobar por operación la igualdad web/móvil de cálculo, secuencia, aplicación financiera y protección histórica. La app antigua de una empresa ordinaria continúa funcionando, mientras que una app sin capacidades fiscales no puede omitir requisitos de una empresa activa. Todos los documentos de estas pruebas permanecen en preparación, sin envíos ni credenciales de proveedores externos.
 
@@ -753,4 +791,5 @@ Comprobar por operación la igualdad web/móvil de cálculo, secuencia, aplicaci
 | Etapa | Nombre | Fecha | Estado | Evidencia de Aceptación |
 |---|---|---|---|---|
 | **0** | Línea base y alcance de compatibilidad | 9 de noviembre de 2026 | **Aceptada** | Fixtures de 3 empresas (`setup-fiscal-baseline-db.mjs`), 11 pruebas de aceptación comercial ordinaria (`fiscal-baseline-scenarios.test.mjs`), `fiscal-test:baseline` (11/11 aprobadas), `fiscal-test:integration` (76/76 aprobadas en 3 bases aisladas) y documentación completa en [docs/linea-base-fiscal.md](docs/linea-base-fiscal.md). Cero tablas o campos fiscales en el esquema ordinario. |
+| **1** | Aislamiento fiscal por empresa y país | 9 de noviembre de 2026 | **Completada** | `fiscal-test:next-policies` aprobado con dos políticas y venta ordinaria; `fiscal-test:regression` 59/59 y `fiscal-test:settings` 7/7, en menos de cinco minutos en conjunto. |
 

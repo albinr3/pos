@@ -141,6 +141,10 @@ export type CurrentUser = {
   canViewAllCashShifts: boolean
   canManageCashShifts: boolean
   canRecordCashMovements: boolean
+  canManageFiscalSettings: boolean
+  canManageFiscalSequences: boolean
+  canPrepareFiscalDocuments: boolean
+  canViewFiscalDocuments: boolean
 }
 
 export type AccountInfo = {
@@ -364,6 +368,8 @@ export async function getOrCreateAccount(clerkUserId?: string | null): Promise<A
     // Creación y baja serializadas: ni una sesión antigua ni un webhook pueden resucitar el negocio.
     return await withAccountIdentityLock(userId, async prisma => {
       if (await prisma.accountDeletion.findUnique({ where: { clerkUserHash: accountIdentityHash(userId) } })) return null
+      // Account incluye campos de migraciones recientes: mantener la base local migrada antes de iniciar sesión.
+      // PostgreSQL en español puede hacer que Prisma indique «existe» en vez del nombre de la columna faltante.
       let account = await prisma.account.findUnique({
         where: { clerkUserId: userId },
       })
@@ -686,6 +692,10 @@ export async function authenticateSubUser(
         canViewAllCashShifts: user.canViewAllCashShifts,
         canManageCashShifts: user.canManageCashShifts,
         canRecordCashMovements: user.canRecordCashMovements,
+        canManageFiscalSettings: user.canManageFiscalSettings,
+        canManageFiscalSequences: user.canManageFiscalSequences,
+        canPrepareFiscalDocuments: user.canPrepareFiscalDocuments,
+        canViewFiscalDocuments: user.canViewFiscalDocuments,
       },
     }
   } catch (error) {
@@ -760,6 +770,10 @@ export async function createSubUser(
       canViewAllCashShifts: boolean
       canManageCashShifts: boolean
       canRecordCashMovements: boolean
+      canManageFiscalSettings: boolean
+      canManageFiscalSequences: boolean
+      canPrepareFiscalDocuments: boolean
+      canViewFiscalDocuments: boolean
     }>
   }
 ): Promise<{ success: boolean; user?: SubUser; error?: string }> {
@@ -1129,6 +1143,10 @@ export async function getCurrentUserWithDiagnostics(options: {
     canViewAllCashShifts: user.canViewAllCashShifts,
     canManageCashShifts: user.canManageCashShifts,
     canRecordCashMovements: user.canRecordCashMovements,
+    canManageFiscalSettings: user.canManageFiscalSettings,
+    canManageFiscalSequences: user.canManageFiscalSequences,
+    canPrepareFiscalDocuments: user.canPrepareFiscalDocuments,
+    canViewFiscalDocuments: user.canViewFiscalDocuments,
   }
   
   return { user: currentUser }

@@ -2,6 +2,7 @@
 
 import { invalidateStockCache } from "./stock-cache-state"
 import { syncCacheData } from "./auto-sync"
+import { assertNoFiscalInput } from "./fiscal/core/input"
 
 import { refreshCashContext, syncCashOutbox } from "./cash-offline"
 
@@ -13,14 +14,25 @@ import {
   deletePendingSale,
   deletePendingPayment,
   deletePendingBatchPayment,
-  deletePendingPaymentsByArId,
-  deletePendingBatchPaymentsByArId,
 } from "./indexed-db"
 import { createSale } from "@/app/(app)/sales/actions"
 import { addBatchPayment, addPayment } from "@/app/(app)/ar/actions"
+import type { CashOperationInput } from "./cash-context"
+import type { CashContext } from "./cash-offline"
 
 let isSyncing = false
 let syncListeners: Array<(syncing: boolean) => void> = []
+
+function legacyOperation(row: { tempId?: unknown; cashOperation?: CashOperationInput }, context: CashContext): CashOperationInput {
+  const op = row.cashOperation
+  // Los pendientes previos sin autor y versión no pueden reasignarse al empleado que abrió la sesión.
+  if (!op || op.accountId !== context.accountId || op.userId !== context.userId ||
+      op.cashShiftId !== null || op.clientSequence !== null || op.clientOperationId !== row.tempId ||
+      typeof op.fiscalPolicyVersion !== "number" || !Number.isSafeInteger(op.fiscalPolicyVersion) || op.fiscalPolicyVersion < 0) {
+    throw new Error("Pendiente antiguo sin autoría o política verificable; consérvalo para revisión")
+  }
+  return op as CashOperationInput
+}
 
 function toPositiveInteger(value: unknown): number {
   const numeric = Number(value)
@@ -106,6 +118,9 @@ export async function syncPendingData() {
 
     for (const sale of pendingSales) {
       try {
+        // No descartar metadatos fiscales al convertir una venta antigua a la acción comercial.
+        assertNoFiscalInput(sale)
+        const cashOperation = legacyOperation(sale, cashContext)
         const normalizedItems = normalizePendingSaleItems(sale.items)
         if (normalizedItems.length === 0) {
           // Si toda la venta está corrupta/inválida, se descarta para no bloquear la cola.
@@ -116,6 +131,7 @@ export async function syncPendingData() {
 
         // Convertir la venta offline al formato esperado por createSale
         await createSale({
+          cashOperation,
           customerId: sale.customerId,
           type: sale.type,
           paymentMethod: sale.paymentMethod || undefined,
@@ -158,6 +174,9 @@ export async function syncPendingData() {
 
     for (const batchPayment of pendingBatchPayments) {
       try {
+        // La conversión de la cola antigua no debe eliminar una solicitud fiscal pendiente.
+        assertNoFiscalInput(batchPayment)
+        const cashOperation = legacyOperation(batchPayment, cashContext)
         const arIds = Array.isArray(batchPayment.arIds)
           ? batchPayment.arIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
           : []
@@ -166,6 +185,7 @@ export async function syncPendingData() {
         }
 
         await addBatchPayment({
+          cashOperation,
           arIds,
           amountCents: Number(batchPayment.amountCents ?? 0),
           method: batchPayment.method as any,
@@ -180,13 +200,7 @@ export async function syncPendingData() {
         console.error("Error sincronizando pago batch:", error)
         if (isAlreadyPaidError(error)) {
           await deletePendingBatchPayment(batchPayment.tempId)
-          const arIds = Array.isArray(batchPayment.arIds)
-            ? batchPayment.arIds.filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
-            : []
-          for (const arId of arIds) {
-            await deletePendingPaymentsByArId(arId)
-            await deletePendingBatchPaymentsByArId(arId)
-          }
+          // Cada pendiente se resuelve por separado; otro cobro de la misma factura puede pertenecer a otro empleado.
           paymentsDiscardedAlreadyPaid++
           continue
         }
@@ -200,7 +214,11 @@ export async function syncPendingData() {
 
     for (const payment of pendingPayments) {
       try {
+        // Conservar el pendiente si contiene datos fiscales aún no implementados.
+        assertNoFiscalInput(payment)
+        const cashOperation = legacyOperation(payment, cashContext)
         await addPayment({
+          cashOperation,
           arId: payment.arId,
           amountCents: payment.amountCents,
           method: payment.method as any,
@@ -216,10 +234,7 @@ export async function syncPendingData() {
         console.error("Error sincronizando pago:", error)
         if (isAlreadyPaidError(error)) {
           await deletePendingPayment(payment.tempId)
-          if (typeof payment.arId === "string" && payment.arId.length > 0) {
-            await deletePendingPaymentsByArId(payment.arId)
-            await deletePendingBatchPaymentsByArId(payment.arId)
-          }
+          // No borrar en cascada otros pendientes cuya autoría o resultado aún no se comprobó.
           paymentsDiscardedAlreadyPaid++
           continue
         }

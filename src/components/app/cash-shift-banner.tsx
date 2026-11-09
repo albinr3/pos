@@ -33,7 +33,7 @@ export function CashShiftBanner({ actor }: { actor?: { id: string; accountId: st
     window.addEventListener("cash-shift-changed", listener)
     return () => { live = false; window.removeEventListener("focus", listener); window.removeEventListener("online", listener); window.removeEventListener("cash-outbox-changed", listener); window.removeEventListener("cash-shift-changed", listener) }
   }, [actorId, actorAccountId])
-  if (!context?.enabled) return null
+  if (!context?.enabled) return pending > 0 ? <div className="col-span-full rounded-md border border-amber-400 p-3 text-sm" role="status">{pending} operación(es) pendiente(s) de sincronización. <Link className="font-medium underline" href="/daily-close">Revisar pendientes</Link></div> : null
   const shift = context.activeShift
   return <div className="col-span-full rounded-md border bg-muted/40 p-3 text-sm" role="status">
     <div className="flex flex-wrap items-center justify-between gap-2">
