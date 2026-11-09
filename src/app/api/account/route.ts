@@ -21,7 +21,7 @@ export async function DELETE(request: NextRequest) {
     let clerkUserId: string | null = null
     if (bearer) {
       try {
-        // No reutilizar la lectura legacy del JWT: aquí son obligatorias firma, caducidad y sesión Clerk.
+        // La baja requiere verificar explícitamente firma, caducidad y sesión Clerk.
         const token = await verifyToken(bearer.replace(/^Bearer\s+/i, ""), {
           secretKey: process.env.CLERK_SECRET_KEY,
           jwtKey: process.env.CLERK_JWT_KEY,

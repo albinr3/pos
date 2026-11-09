@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "@/app/api/_helpers/auth"
-import { cashHash, cashRequest } from "@/lib/cash-context"
+import { cashDeviceHashFromRequest, cashRequest } from "@/lib/cash-context"
 import { cashErrorResponse } from "@/lib/cash-http"
 import { PurchaseError, type PurchaseActor } from "@/lib/purchase-credit"
 
@@ -12,9 +12,9 @@ export async function purchaseAPI(request: NextRequest, run: (actor: PurchaseAct
     }
     const actor = await getCurrentUserFromRequest(request)
     if (!actor) throw new PurchaseError("UNAUTHENTICATED", "No autenticado", 401)
-    const token = request.cookies.get("movopos-cash-device")?.value
+    // El móvil usa X-Cash-Device-Token y la web su cookie; no sustituir uno por el otro.
     // El actor procede de los tokens verificados, nunca de accountId/userId enviados por el cliente.
-    const result = await cashRequest.run({ trustedActor: actor, deviceHash: token ? cashHash(token) : "" }, () => run(actor))
+    const result = await cashRequest.run({ trustedActor: actor, deviceHash: cashDeviceHashFromRequest(request) }, () => run(actor))
     // Las fechas de vencimiento son fechas de calendario, incluso dentro de objetos anidados.
     const serialized = result instanceof Response ? result : JSON.parse(JSON.stringify(result, (key, value) => key === "dueDate" && typeof value === "string" ? value.slice(0, 10) : value))
     return serialized instanceof Response ? serialized : NextResponse.json(serialized, { headers: { "Cache-Control": "no-store" } })

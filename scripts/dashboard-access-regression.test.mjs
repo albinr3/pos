@@ -45,6 +45,8 @@ const destinations = [
   ["canManageSuppliers", "/suppliers"],
   ["canManagePurchases", "/purchases"],
   ["canCancelPurchases", "/purchases/list"],
+  // El acceso a cuentas por pagar es un permiso de módulo, no una acción aislada.
+  ["canAccessAccountsPayable", "/ap"],
   ["canAccessAccountsReceivable", "/ar"],
   ["canAccessPayments", "/payments/list"],
   ["canAccessDailyClose", "/daily-close"],

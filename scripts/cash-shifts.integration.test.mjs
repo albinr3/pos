@@ -600,3 +600,24 @@ test("Acciones reales y proxy Prisma conservan inventario y dinero al reintentar
   assert.equal((await db.purchase.findUnique({ where: { id: scanned.id } })).cancelledAt, null)
   assert.equal(Number((await db.product.findFirst({ where: { accountId: f.account.id, sku: "OCR-NEW" } })).stock), 1)
 })
+
+test("Sin turnos: venta, edición, devolución parcial y anulación conservan inventario", async () => {
+  const f = await fixture(false)
+  const product = await db.product.create({ data: { accountId: f.account.id, productId: 1, name: "Producto ordinario", priceCents: 1000, costCents: 500, itbisRateBp: 0, stock: 10 } })
+  const sales = load("@/app/(app)/sales/actions"), returns = load("@/app/(app)/returns/actions")
+  const call = fn => cashRequest.run({ trustedActor: f.actor, deviceHash: device }, fn)
+  const cart = qty => [{ productId: product.id, qty, unitPriceCents: 1000, wasPriceOverridden: false }]
+  const base = { customerId: null, type: "CONTADO", paymentMethod: "EFECTIVO", treasuryAccountId: f.box.id, username: f.actor.username, user: f.actor }
+  const sale = await call(() => sales.createSale({ ...base, items: cart(3) }))
+  assert.equal(Number((await db.product.findUniqueOrThrow({ where: { id: product.id } })).stock), 7)
+  await call(() => sales.updateSale({ ...base, id: sale.id, items: cart(2) }))
+  assert.equal(Number((await db.product.findUniqueOrThrow({ where: { id: product.id } })).stock), 8)
+  const item = await db.saleItem.findFirstOrThrow({ where: { saleId: sale.id } })
+  await call(() => returns.createReturn({ saleId: sale.id, refundMethod: "EFECTIVO", refundTreasuryAccountId: f.box.id, items: [{ saleItemId: item.id, productId: product.id, qty: 1, unitPriceCents: 1000 }] }))
+  assert.equal(Number((await db.product.findUniqueOrThrow({ where: { id: product.id } })).stock), 9)
+  const second = await call(() => sales.createSale({ ...base, items: cart(1) }))
+  const cancelled = await call(() => sales.cancelSale(second.id, f.actor.username, "Anulación de prueba", f.actor))
+  assert.equal(cancelled.success, true)
+  assert.equal(Number((await db.product.findUniqueOrThrow({ where: { id: product.id } })).stock), 9)
+  assert.equal(await db.cashMovement.count({ where: { accountId: f.account.id } }), 0)
+})

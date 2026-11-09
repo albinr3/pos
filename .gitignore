@@ -17,6 +17,8 @@
 
 # next.js
 /.next/
+/.next-fiscal-test/
+/tsconfig.fiscal-test.json
 /out/
 
 # Cache local de auditorías SEO; contiene hallazgos efímeros y no debe versionarse.

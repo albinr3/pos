@@ -260,19 +260,47 @@ test("cliente antiguo omite tipo y mantiene compra al contado sin crear deuda", 
 })
 test("HTTP móvil con dispositivo de caja: consultar, abrir turno y pagar sin cookies de sesión web", async () => {
   const f = await fixture(), headers = mobile(f)
-  const context = await fetch(base + "/api/cash-shifts", { headers })
-  const deviceCookie = context.headers.get("set-cookie")?.split(";")[0]
-  assert.ok(deviceCookie); headers.Cookie = deviceCookie
+  // El protocolo móvil usa su propio token: nunca debe depender de la cookie httpOnly de la web.
+  const context = await fetch(base + "/api/cash-shifts?view=device", { headers })
+  assert.equal(context.status, 200)
+  assert.equal(context.headers.get("set-cookie"), null)
+  const device = await context.json()
+  assert.ok(device.token); headers["x-cash-device-token"] = device.token
   let response = await fetch(base + "/api/cash-shifts?view=preview", { headers }); const preview = await response.json()
   const postCash = body => fetch(base + "/api/cash-shifts", { method: "POST", headers, body: JSON.stringify(body) })
   response = await postCash({ action: "activate", treasuryAccountId: f.box.id, countedCents: 0, previewToken: preview.previewToken }); assert.equal(response.status, 200, await response.text())
   response = await postCash({ action: "open", countedCents: 0 }); const opened = await response.json(); assert.equal(response.status, 200, JSON.stringify(opened))
   const command = input(f, { initialPaymentCents: 200000, paymentMethod: "EFECTIVO", treasuryAccountId: f.box.id, cashOperation: { accountId: f.account.id, userId: f.actor.id, clientOperationId: randomUUID(), cashShiftId: opened.data.id, clientSequence: 1 } })
+  const spoofed = { ...headers, "x-cash-device-token": "token-ajeno", Cookie: `movopos-cash-device=${device.token}` }
+  response = await fetch(base + "/api/purchases", { method: "POST", headers: spoofed, body: JSON.stringify(command) })
+  assert.equal(response.status, 409); assert.equal((await response.json()).code, "CASH_SHIFT_MISMATCH")
+  assert.equal(await db.purchase.count({ where: { accountId: f.account.id } }), 0)
   response = await fetch(base + "/api/purchases", { method: "POST", headers, body: JSON.stringify(command) }); const result = await response.json(); assert.equal(response.status, 201, JSON.stringify(result))
   assert.equal(result.balanceCents, 800000)
   assert.equal(await db.cashMovement.count({ where: { accountId: f.account.id, sourceType: "supplierPayment" } }), 1)
   response = await fetch(base + "/api/purchases", { method: "POST", headers, body: JSON.stringify(command) }); assert.equal(response.status, 201)
   assert.equal(await db.cashMovement.count({ where: { accountId: f.account.id, sourceType: "supplierPayment" } }), 1)
+})
+test("HTTP web de compras conserva la cookie del dispositivo de caja", async () => {
+  const f = await fixture()
+  webActor = f.actor
+  try {
+    const context = await fetch(base + "/api/cash-shifts")
+    const cookie = context.headers.get("set-cookie")?.split(";")[0]
+    assert.ok(cookie)
+    const headers = { Cookie: cookie, "Content-Type": "application/json" }
+    const previewResponse = await fetch(base + "/api/cash-shifts?view=preview", { headers })
+    const preview = await previewResponse.json()
+    const post = body => fetch(base + "/api/cash-shifts", { method: "POST", headers, body: JSON.stringify(body) })
+    let response = await post({ action: "activate", treasuryAccountId: f.box.id, countedCents: 0, previewToken: preview.previewToken })
+    assert.equal(response.status, 200, await response.text())
+    response = await post({ action: "open", countedCents: 0 })
+    const opened = await response.json(); assert.equal(response.status, 200, JSON.stringify(opened))
+    const command = input(f, { initialPaymentCents: 200000, paymentMethod: "EFECTIVO", treasuryAccountId: f.box.id, cashOperation: { accountId: f.account.id, userId: f.actor.id, clientOperationId: randomUUID(), cashShiftId: opened.data.id, clientSequence: 1 } })
+    response = await fetch(base + "/api/purchases", { method: "POST", headers, body: JSON.stringify(command) })
+    assert.equal(response.status, 201, await response.text())
+    assert.equal(await db.cashMovement.count({ where: { accountId: f.account.id, sourceType: "supplierPayment" } }), 1)
+  } finally { webActor = null }
 })
 test("HTTP valida campos ausentes sin elegir otra deuda ni crear efectos parciales", async () => {
   const f = await fixture(), headers = mobile(f), p = await buy(f), ap = await getAP(f, p.id)

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Las pruebas fiscales no deben modificar la compilación usada por el desarrollo habitual.
+  ...(process.env.FISCAL_TEST_MODE === "1" ? { distDir: ".next-fiscal-test", typescript: { tsconfigPath: "tsconfig.fiscal-test.json" } } : {}),
   images: {
     localPatterns: [
       // Las imagenes locales de /public sin query deben seguir funcionando con next/image.
