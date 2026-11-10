@@ -8,6 +8,8 @@ import { prisma } from "@/lib/db"
 import { isGenericCustomerQuery } from "@/lib/customer-display"
 import { SaleNotesValidationError } from "@/lib/sale-notes"
 import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
+import { FiscalDocumentError } from "@/lib/fiscal/core/document"
+import { FiscalSequenceError } from "@/lib/fiscal/core/sequences"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -58,6 +60,7 @@ type SaleCreateBody = {
   manualDiscountPercentBp?: number
   manualDiscountPercent?: number
   onboardingProductId?: string | null
+  fiscal?: unknown
 }
 
 const methodMap: Record<string, PaymentMethod> = {
@@ -152,6 +155,7 @@ export async function GET(request: NextRequest) {
     const normalizedVisualQuery = query ? query.replace(/^#/, "") : ""
     const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
     const shouldIncludeLegacyNullGeneric = query ? isGenericCustomerQuery(query) : false
+    const fiscalSaleIds = query && /^E(?:31|32|44|45|46)\d{0,10}$/i.test(query) ? await (await import("@/lib/fiscal/core/sale-query")).findFiscalSaleIds(user, query) : []
     const requestedSkip = parseSkip(searchParams.get("skip"))
     const take = parseTake(searchParams.get("take"), 300, 500)
     const effectiveSkip = requestedSkip ?? 0
@@ -166,6 +170,7 @@ export async function GET(request: NextRequest) {
                 { customer: { name: { contains: query, mode: "insensitive" } } },
                 ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
                 ...(shouldIncludeLegacyNullGeneric ? [{ customerId: null }] : []),
+                ...(fiscalSaleIds.length ? [{ id: { in: fiscalSaleIds } }] : []),
               ],
             }
           : {}),
@@ -199,11 +204,13 @@ export async function GET(request: NextRequest) {
     const hasMore = sales.length > take
     const pageItems = hasMore ? sales.slice(0, take) : sales
     const nextSkip = hasMore ? effectiveSkip + take : null
+    const fiscalSummaries = await (await import("@/lib/fiscal/core/sale-query")).getFiscalSaleSummaries(user, pageItems.map(sale => sale.id))
 
     return NextResponse.json({
       data: pageItems.map((sale) => ({
         id: sale.id,
         invoiceCode: sale.invoiceCode,
+        ...(fiscalSummaries?.has(sale.id) ? { fiscal: fiscalSummaries.get(sale.id) } : {}),
         soldAt: sale.soldAt.toISOString(),
         createdAt: sale.soldAt.toISOString(),
         type: sale.type,
@@ -266,7 +273,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = (await request.json()) as SaleCreateBody
-    assertNoFiscalInput(body)
+    const commercialBody = { ...body }
+    delete commercialBody.fiscal
+    assertNoFiscalInput(commercialBody)
     const soldAt = parseOptionalSaleDate(body.soldAt ?? body.createdAt)
     const salePricesIncludeItbis =
       readBoolean(body.salePricesIncludeItbis) ??
@@ -359,6 +368,7 @@ export async function POST(request: NextRequest) {
       onboardingProductId: body.onboardingProductId || null,
       username: user.username,
       user,
+      ...(Object.hasOwn(body, "fiscal") ? { fiscal: body.fiscal } : {}),
     })
 
     return NextResponse.json({
@@ -379,6 +389,7 @@ export async function POST(request: NextRequest) {
       discountPercentBp: sale.discountPercentBp,
       discountSubtotalCents: sale.discountSubtotalCents,
       discountTotalCents: sale.discountTotalCents,
+      ...("fiscal" in sale ? { fiscal: sale.fiscal } : {}),
     }, { status: 201 })
   } catch (error: unknown) {
     const cashFailure = cashErrorResponse(error)
@@ -386,9 +397,13 @@ export async function POST(request: NextRequest) {
     if (error instanceof UnsupportedFiscalInputError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
     }
+    if (error instanceof FiscalDocumentError) return NextResponse.json({ error: error.message, code: error.code, fields: error.issues }, { status: error.status })
+    if (error instanceof FiscalSequenceError) return NextResponse.json({ error: error.message, code: error.code, fields: error.fields.map(field => ({ field, message: error.message })) }, { status: error.status })
     if (error instanceof SaleNotesValidationError) {
       return NextResponse.json({ error: error.message }, { status: 400 })
     }
+    // La precisión se valida tras recuperar cualquier operación ya confirmada.
+    if (error instanceof Error && error.message === "La cantidad vendida admite como máximo dos decimales.") return NextResponse.json({ error: error.message }, { status: 400 })
     console.error("Error en POST /api/sales:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al crear venta") },

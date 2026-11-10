@@ -1,3 +1,4 @@
+import { FiscalMasterDataError, fiscalFields, customerFiscalFields, preferredReceiptInput, preferredReceiptResponse } from "@/lib/fiscal/core/master-data"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { listCustomersPage, upsertCustomer } from "@/app/(app)/customers/actions"
@@ -54,6 +55,8 @@ export async function GET(request: NextRequest) {
       data: customers.map((c) => ({
         id: c.id,
         visualId: c.visualId,
+        ...fiscalFields(c, customerFiscalFields),
+        ...preferredReceiptResponse(c.fiscalPreferredReceiptType),
         name: c.name,
         phone: c.phone,
         address: c.address,
@@ -69,6 +72,7 @@ export async function GET(request: NextRequest) {
       nextCursor,
     })
   } catch (error: unknown) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     console.error("Error en GET /api/customers:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al obtener clientes") },
@@ -104,6 +108,8 @@ export async function POST(request: NextRequest) {
     }
 
     const persistedCustomer = await upsertCustomer({
+      ...fiscalFields(body, customerFiscalFields),
+      ...preferredReceiptInput(body),
       name: body.name,
       phone: body.phone || null,
       address: body.address || null,
@@ -130,6 +136,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       id: customer.id,
       visualId: customer.visualId,
+      ...fiscalFields(customer, customerFiscalFields),
+        ...preferredReceiptResponse(customer.fiscalPreferredReceiptType),
       name: customer.name,
       phone: customer.phone,
       address: customer.address,
@@ -143,6 +151,7 @@ export async function POST(request: NextRequest) {
       updatedAt: customer.updatedAt.toISOString(),
     }, { status: 201 })
   } catch (error: unknown) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     console.error("Error en POST /api/customers:", error)
     const message = getErrorMessage(error, "Error al crear cliente")
     if (message.includes("No tienes permiso")) {

@@ -60,6 +60,8 @@ function parseLastSyncDay(raw: string | null) {
 }
 
 type Props = {
+  fiscalSection: React.ReactNode
+  fiscalEnabled: boolean
   currentUserId: string
   isOwner: boolean
   role: UserRole
@@ -68,7 +70,7 @@ type Props = {
   canManageSettings: boolean
 }
 
-export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, canViewAuditLogs, canManageSettings }: Props) {
+export function SettingsClient({ fiscalSection, fiscalEnabled, currentUserId, isOwner, role, canManageUsers, canViewAuditLogs, canManageSettings }: Props) {
   const searchParams = useSearchParams()
   const [name, setName] = useState("")
   const [phone, setPhone] = useState("")
@@ -762,16 +764,17 @@ export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, c
       </Card>
 
       <InventoryRecoveryCard canManage={canManageBulkRecovery} />
-      {isOwner && <DeleteAccountCard />}
 
       {canSeeUsers && (
         <UsersTab
+          fiscalEnabled={fiscalEnabled}
           currentUserId={currentUserId}
           isOwner={isOwner}
           canManageUsers={canSeeUsers}
           openCurrentUserEditor={shouldEditTemporaryPin}
         />
       )}
+      {fiscalSection}
       {canSeeAudit && (
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="audit-log">
@@ -784,6 +787,7 @@ export function SettingsClient({ currentUserId, isOwner, role, canManageUsers, c
           </AccordionItem>
         </Accordion>
       )}
+      {isOwner && <DeleteAccountCard />}
     </div>
   )
 }

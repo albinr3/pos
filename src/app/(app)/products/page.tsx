@@ -1,3 +1,5 @@
+import { prisma } from "@/lib/db"
+import { FiscalConcepts } from "./fiscal-concepts"
 import { ProductsClient } from "./products-client"
 import { getAccountOnboardingState } from "../onboarding/actions"
 import { InventoryUploadOffer } from "@/components/inventory-upload-offer"
@@ -8,7 +10,10 @@ export default async function ProductsPage({
 }: {
   searchParams: Promise<{ onboarding?: string | string[] }>
 }) {
-  await requireModuleAccess("canAccessProducts")
+  const user = await requireModuleAccess("canAccessProducts")
+  // Un perfil configurado no activa por sí solo el módulo fiscal.
+  const fiscalSettings = await prisma.fiscalSettings.findUnique({ where: { accountId: user.accountId }, select: { enabled: true } })
+  const fiscalEnabled = fiscalSettings?.enabled === true
 
   const params = await searchParams
   const onboardingRaw = params.onboarding
@@ -24,7 +29,9 @@ export default async function ProductsPage({
         <p className="text-sm text-muted-foreground">Crea y administra tus productos e inventario.</p>
       </div>
       <InventoryUploadOffer />
+      {fiscalEnabled && <FiscalConcepts />}
       <ProductsClient
+        fiscalEnabled={fiscalEnabled}
         onboardingProductGuide={isOnboardingProduct && onboardingState?.phase === "PRODUCT"}
         onboardingSaleNavGuide={isOnboardingSaleNav && onboardingState?.phase === "SALE"}
         onboardingAccountId={onboardingState?.accountId ?? null}

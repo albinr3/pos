@@ -1,10 +1,32 @@
+import { FiscalMasterDataError, fiscalFields, customerFiscalFields, preferredReceiptInput, preferredReceiptResponse } from "@/lib/fiscal/core/master-data"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { upsertCustomer } from "@/app/(app)/customers/actions"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
+import { prisma } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+
+// El detalle usa la cuenta autenticada igual que el listado; un ID ajeno no concede acceso.
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getCurrentUserFromRequest(request)
+    if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    const { id } = await params
+    const c = await prisma.customer.findFirst({ where: { id, accountId: user.accountId, isActive: true } })
+    if (!c) return NextResponse.json({ error: "Cliente no encontrado" }, { status: 404 })
+    return NextResponse.json({
+      id: c.id, visualId: c.visualId, ...fiscalFields(c, customerFiscalFields), ...preferredReceiptResponse(c.fiscalPreferredReceiptType),
+      name: c.name, phone: c.phone, address: c.address, cedula: c.cedula, province: c.province,
+      creditEnabled: c.creditEnabled, creditDays: c.creditDays, saleDiscountPercentBp: c.saleDiscountPercentBp,
+      isGeneric: c.isGeneric, createdAt: c.createdAt.toISOString(), updatedAt: c.updatedAt.toISOString(),
+    })
+  } catch (error) {
+    console.error("Error en GET /api/customers/:id", error)
+    return NextResponse.json({ error: "Error al obtener cliente" }, { status: 500 })
+  }
+}
 
 function parseSaleDiscountPercentBp(body: Record<string, unknown>): number {
   if (Number.isFinite(Number(body.saleDiscountPercentBp))) {
@@ -49,6 +71,9 @@ export async function PUT(
 
     await upsertCustomer({
       id,
+      ...fiscalFields(body, customerFiscalFields),
+      ...preferredReceiptInput(body),
+      preserveLegacyReceiptTypes: body.fiscalPreferredReceiptTypes === undefined,
       name: body.name,
       phone: body.phone || null,
       address: body.address || null,
@@ -75,6 +100,8 @@ export async function PUT(
     return NextResponse.json({
       id: customer.id,
       visualId: customer.visualId,
+      ...fiscalFields(customer, customerFiscalFields),
+        ...preferredReceiptResponse(customer.fiscalPreferredReceiptType),
       name: customer.name,
       phone: customer.phone,
       address: customer.address,
@@ -88,6 +115,7 @@ export async function PUT(
       updatedAt: customer.updatedAt.toISOString(),
     })
   } catch (error: any) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     console.error("Error en PUT /api/customers/:id:", error)
     if (typeof error?.message === "string" && error.message.includes("No tienes permiso")) {
       return NextResponse.json({ error: error.message }, { status: 403 })

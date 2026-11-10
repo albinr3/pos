@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { fiscalFields, supplierFiscalFields, validateFiscalCatalogFields, type FiscalFields } from "@/lib/fiscal/core/master-data"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { creditDays } from "@/lib/purchase-credit"
@@ -54,7 +55,7 @@ export async function upsertSupplier(input: {
   discountPercentBp?: number
   chargesItbis?: boolean
   itbisRateBp?: number | null
-}) {
+} & FiscalFields<typeof supplierFiscalFields[number]>) {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
   await ensurePermission(user, "canManageSuppliers", {
@@ -81,10 +82,12 @@ export async function upsertSupplier(input: {
       where: { id: input.id, accountId: user.accountId },
     })
     if (!existing) throw new Error("Proveedor no encontrado")
+    validateFiscalCatalogFields(fiscalFields(input, supplierFiscalFields), existing)
 
     const updated = await prisma.supplier.updateMany({
       where: { id: input.id, accountId: user.accountId },
       data: {
+        ...fiscalFields(input, supplierFiscalFields),
         name,
         contactName,
         phone,
@@ -120,9 +123,11 @@ export async function upsertSupplier(input: {
       },
     })
   } else {
+    validateFiscalCatalogFields(fiscalFields(input, supplierFiscalFields))
     const created = await prisma.supplier.create({
       data: {
         accountId: user.accountId,
+        ...fiscalFields(input, supplierFiscalFields),
         name,
         contactName,
         phone,

@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 
 import { getCurrentUser } from "@/lib/auth"
 import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
@@ -61,11 +61,14 @@ export default async function InvoicePrintPage({
         cancelledUser: { select: { name: true } },
         payments: true,
         ar: true,
+        fiscalDocuments: { where: { state: "PREPARADO_PENDIENTE_CONEXION" }, select: { id: true }, take: 1 },
       },
     }),
   ])
 
   if (!sale) return notFound()
+  // Una copia fiscal histórica conserva los datos originales incluso tras apagar el módulo.
+  if (sale.fiscalDocuments?.[0]) redirect(`/invoices/fiscal/${encodeURIComponent(sale.fiscalDocuments[0].id)}?format=CARTA${shouldAutoPrint ? "&autoprint=1" : ""}`)
 
   const logoUrl = company?.logoUrl
   const paymentMethod = sale.paymentMethod

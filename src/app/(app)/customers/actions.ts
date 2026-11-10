@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { fiscalFields, customerFiscalFields, type FiscalFields, preserveLegacyPreferredReceipts, validateFiscalCatalogFields, parsePreferredReceiptTypes, FiscalMasterDataError } from "@/lib/fiscal/core/master-data"
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { sanitizeString, sanitizePhone, sanitizeCedula, validateLength } from "@/lib/sanitize"
@@ -20,6 +21,15 @@ function assertAuthActor(actor: unknown): asserts actor is AuthActor {
   const candidate = actor as { id?: unknown; accountId?: unknown }
   if (typeof candidate.id !== "string" || candidate.id.length === 0) throw new Error("No autenticado")
   if (typeof candidate.accountId !== "string" || candidate.accountId.length === 0) throw new Error("No autenticado")
+}
+
+async function validateReceiptProfile(accountId: string, value: string | null | undefined, existing: string | null) {
+  if (!value) return
+  const previous = parsePreferredReceiptTypes(existing)
+  if (parsePreferredReceiptTypes(value).every(type => previous.includes(type))) return
+  const settings = await prisma.fiscalSettings.findUnique({ where: { accountId }, select: { jurisdiction: true, regime: true } })
+  // Las preferencias E solo se agregan para el perfil DO; conservar históricos no exige reconfigurar la ficha.
+  if (settings?.jurisdiction !== "DO" || settings.regime !== "DO_ECF") throw new FiscalMasterDataError("Configura el perfil fiscal dominicano para añadir comprobantes E", "fiscalPreferredReceiptType")
 }
 
 function normalizeSaleDiscountPercentBp(value: unknown): number {
@@ -112,7 +122,8 @@ export async function upsertCustomer(input: {
   creditEnabled: boolean
   creditDays: number
   saleDiscountPercentBp?: number
-}, actor?: AuthActor) {
+  preserveLegacyReceiptTypes?: boolean
+} & FiscalFields<typeof customerFiscalFields[number]>, actor?: AuthActor) {
   const user = actor ?? await getCurrentUser()
   assertAuthActor(user)
   await ensurePermission(user, "canManageCustomers", {
@@ -170,9 +181,15 @@ export async function upsertCustomer(input: {
       })
     }
 
+    const fiscalData = fiscalFields(input, customerFiscalFields)
+    fiscalData.fiscalPreferredReceiptType = preserveLegacyPreferredReceipts(fiscalData.fiscalPreferredReceiptType, existing.fiscalPreferredReceiptType, input.preserveLegacyReceiptTypes === true)
+    validateFiscalCatalogFields(fiscalData, existing)
+    await validateReceiptProfile(user.accountId, fiscalData.fiscalPreferredReceiptType, existing.fiscalPreferredReceiptType)
+
     const updated = await prisma.customer.updateMany({
       where: { id: input.id, accountId: user.accountId },
       data: {
+        ...fiscalData,
         name: sanitized.name,
         phone: sanitized.phone,
         address: sanitized.address,
@@ -207,6 +224,8 @@ export async function upsertCustomer(input: {
       visualId: existing.visualId,
     }
   } else {
+    validateFiscalCatalogFields(fiscalFields(input, customerFiscalFields))
+    await validateReceiptProfile(user.accountId, input.fiscalPreferredReceiptType, null)
     if (input.creditEnabled || normalizedCreditDays > 0) {
       await ensurePermission(user, "canApproveCredit", {
         message: "No tienes permiso para aprobar lineas de credito",
@@ -232,6 +251,7 @@ export async function upsertCustomer(input: {
           data: {
             accountId: user.accountId,
             visualId,
+            ...fiscalFields(input, customerFiscalFields),
             name: sanitized.name,
             phone: sanitized.phone,
             address: sanitized.address,

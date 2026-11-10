@@ -1,3 +1,4 @@
+import { FiscalMasterDataError, validateFiscalCatalogFields, fiscalFields, supplierFiscalFields } from "@/lib/fiscal/core/master-data"
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
@@ -38,6 +39,7 @@ export async function GET(
 
     return NextResponse.json({
       id: supplier.id,
+      ...fiscalFields(supplier, supplierFiscalFields),
       name: supplier.name,
       contactName: supplier.contactName,
       phone: supplier.phone,
@@ -52,6 +54,7 @@ export async function GET(
       updatedAt: supplier.updatedAt.toISOString(),
     })
   } catch (error: unknown) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     if (error instanceof PurchaseError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
     console.error("Error en GET /api/suppliers/[id]:", error)
     return NextResponse.json(
@@ -117,7 +120,6 @@ export async function PUT(
 
     const exists = await prisma.supplier.findFirst({
       where: { id, accountId: user.accountId, isActive: true },
-      select: { id: true },
     })
     if (!exists) {
       return NextResponse.json({ error: "Proveedor no encontrado" }, { status: 404 })
@@ -139,9 +141,11 @@ export async function PUT(
       )
     }
 
+    validateFiscalCatalogFields(fiscalFields(body, supplierFiscalFields), exists)
     const updated = await prisma.supplier.update({
       where: { id },
       data: {
+        ...fiscalFields(body, supplierFiscalFields),
         name,
         contactName,
         phone,
@@ -157,6 +161,7 @@ export async function PUT(
 
     return NextResponse.json({
       id: updated.id,
+      ...fiscalFields(updated, supplierFiscalFields),
       name: updated.name,
       contactName: updated.contactName,
       phone: updated.phone,
@@ -171,6 +176,7 @@ export async function PUT(
       updatedAt: updated.updatedAt.toISOString(),
     })
   } catch (error: unknown) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     if (error instanceof PurchaseError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
     console.error("Error en PUT /api/suppliers/[id]:", error)
     return NextResponse.json(

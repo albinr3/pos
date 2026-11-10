@@ -46,9 +46,11 @@ test("La API rechaza tipos E y bloques fiscales antes de crear ventas", async ()
 
 function fixture(notes = null) {
   let created = 0
-  const sale = { id: "sale", invoiceCode: "A-00001", type: "CONTADO", notes, soldAt: new Date("2026-11-02T16:00:00Z"), items: [], payments: [], customer: null, subtotalCents: 100, itbisCents: 0, totalCents: 100, salePricesIncludeItbis: true }
+  const sale = { id: "sale", invoiceCode: "A-00001", type: "CONTADO", notes, soldAt: new Date("2026-11-02T16:00:00Z"), items: [], payments: [], fiscalDocuments: [], customer: null, subtotalCents: 100, itbisCents: 0, totalCents: 100, salePricesIncludeItbis: true }
   const prisma = {
     companySettings: { findFirst: async () => null },
+    fiscalDocument: { findFirst: async () => ({ snapshot: { type:"E32", issueDate:"2026-11-10", issuer:{name:"Emisor congelado",identification:"123456789"}, buyer:null, payment:{type:"CONTADO",dueDate:null}, lines:[{description:"Producto congelado",quantity:"1.00",unit:"UNIDAD",unitPrice:"100.0000",base:"100.00",tax:"0.00",gross:"100.00"}], totals:{tax:"0.00",gross:"100.00"},sale:{invoiceCode:"A-00001",payments:[{code:"1",amountCents:10000}]}} }) },
+    $queryRaw: async () => [{ eNcf:"E320000000001" }],
     sale: {
       findMany: async ({ where }) => { assert.equal(where.accountId, actor.accountId); return [sale] },
       findFirst: async ({ where }) => { assert.equal(where.accountId, actor.accountId); return sale },
@@ -58,7 +60,7 @@ function fixture(notes = null) {
   const nullComponent = () => null
   const mocks = {
     "next/server": { NextResponse: { json: (data, options = {}) => ({ status: options.status ?? 200, data }) } },
-    "next/navigation": { notFound: () => { throw new Error("Not found") } },
+    "next/navigation": { notFound: () => { throw new Error("Not found") }, redirect: target => { throw new Error(`Redirect ${target}`) } },
     "next/link": { default: nullComponent, __esModule: true },
     "../_helpers/auth": auth,
     "../../_helpers/auth": auth,
@@ -70,18 +72,24 @@ function fixture(notes = null) {
     "@/lib/date-time": { formatDateDO: date => date.toISOString(), formatDateTimeDO: date => date.toISOString() },
     "@/lib/money": { formatRD: cents => `${cents / 100}` },
     "@/lib/payment-methods": { formatPaymentWithBank: method => method },
+    "@/lib/fiscal/core/document": { FiscalDocumentError: class extends Error {} },
+    "@/lib/fiscal/core/sequences": { FiscalSequenceError: class extends Error {} },
+    "@/lib/fiscal/core/sale-query": { getFiscalSaleSummaries: async () => null },
   }
   for (const name of ["print-button", "auto-print-on-load", "download-receipt-pdf-button"]) {
     const exportName = { "print-button": "PrintButton", "auto-print-on-load": "AutoPrintOnLoad", "download-receipt-pdf-button": "DownloadReceiptPdfButton" }[name]
     mocks[`@/components/app/${name}`] = { [exportName]: nullComponent }
   }
+  mocks["@/components/app/print-toolbar"] = { PrintToolbar: nullComponent }
   mocks["@/components/ui/button"] = { Button: nullComponent }
   // Las demás operaciones de caja no se ejecutan en estos casos.
   for (const name of ["@/app/(app)/ar/actions", "@/lib/cash-financial-db", "@/lib/accounts-payable", "@/app/(app)/purchases/actions", "@/app/(app)/purchases/ocr-actions", "@/app/(app)/operating-expenses/actions", "@/app/(app)/returns/actions", "@/app/(app)/treasury/actions"]) mocks[name] = {}
   const load = loader(mocks)
   const { normalizeSaleNotes } = load("@/lib/sale-notes")
+  const { UnsupportedFiscalInputError } = load("@/lib/fiscal/core/input")
   mocks["@/app/(app)/sales/actions"] = {
     createSale: async input => {
+      if (Object.hasOwn(input, "fiscal")) throw new UnsupportedFiscalInputError()
       const normalized = normalizeSaleNotes(input.notes)
       created++
       return { ...sale, notes: normalized }
@@ -178,5 +186,17 @@ test("Factura carta y térmica imprimen la nota escapada antes del agradecimient
       const page = await f.load(path).default({ params: Promise.resolve({ invoiceCode: "A-00001" }), searchParams: Promise.resolve({}) })
       assert.doesNotMatch(renderToStaticMarkup(page), /data-sale-notes/)
     }
+  }
+})
+
+test("La impresión fiscal usa la copia congelada y la ordinaria redirige al documento preparado", async () => {
+  const f=fixture()
+  const fiscal=await f.load("@/app/invoices/fiscal/[id]/page").default({params:Promise.resolve({id:"doc"}),searchParams:Promise.resolve({format:"80mm"})})
+  const html=renderToStaticMarkup(fiscal)
+  assert.match(html,/Documento de prueba \/ No emitido fiscalmente/)
+  assert.match(html,/E320000000001/);assert.match(html,/Emisor congelado/);assert.match(html,/Producto congelado/)
+  f.sale.fiscalDocuments=[{id:"doc"}]
+  for (const path of ["@/app/invoices/[invoiceCode]/page", "@/app/receipts/sale/[invoiceCode]/page"]) {
+    await assert.rejects(f.load(path).default({params:Promise.resolve({invoiceCode:"A-00001"}),searchParams:Promise.resolve({})}),/Redirect \/invoices\/fiscal\/doc/)
   }
 })

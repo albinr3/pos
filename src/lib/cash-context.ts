@@ -18,6 +18,9 @@ export type CashRequestScope = {
   maintenance?: boolean
   fiscalDiscard?: boolean
   fiscalCheckedAccountId?: string
+  fiscalSaleRequested?: boolean
+  fiscalSaleAuthorizedAccountId?: string
+  fiscalCollectionRequested?: boolean
 }
 export const cashRequest = new AsyncLocalStorage<CashRequestScope>()
 export const cashHash = (value: string) => createHash("sha256").update(value).digest("hex")

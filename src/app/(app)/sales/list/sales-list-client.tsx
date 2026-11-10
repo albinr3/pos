@@ -1,5 +1,7 @@
 "use client"
 
+import { FiscalSourceLink, useFiscalSourceAccess } from "@/components/app/fiscal-source-link"
+
 import { useEffect, useState, useTransition, useMemo, useRef } from "react"
 import { Edit, Receipt, Trash2, Search, Printer, Plus } from "lucide-react"
 import Link from "next/link"
@@ -108,6 +110,7 @@ function toInt(v: string) {
 }
 
 export function SalesListClient() {
+  const canViewFiscal = useFiscalSourceAccess()
   const router = useRouter()
   const [sales, setSales] = useState<Sale[]>([])
   const [isLoading, startLoading] = useTransition()
@@ -584,7 +587,7 @@ export function SalesListClient() {
                 {sales.map((s) => (
                   <TableRow key={s.id} className={s.cancelledAt ? "bg-red-50" : ""}>
                     <TableCell className="font-medium">
-                      {s.invoiceCode}
+                      {s.invoiceCode}<FiscalSourceLink allowed={canViewFiscal} kind="SALE" id={s.id}/>
                       {s.returnStatus && (
                         <div className="mt-1">
                           <Badge

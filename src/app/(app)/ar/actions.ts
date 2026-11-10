@@ -1,6 +1,6 @@
 "use server"
 
-import { withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
 import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
 
 import { revalidatePath } from "next/cache"
@@ -394,7 +394,8 @@ export async function addPayment(input: Parameters<typeof addPaymentInternal>[0]
   const { cashOperation, ...payload } = input
   const hashPayload = { ...payload } as Record<string, unknown>
   delete hashPayload.user
-  return withCashOperation(cashOperation, { kind: "addPayment", ...hashPayload }, () => addPaymentInternal(input, actor))
+  // Solo esta acción de cobro puede abrir la excepción del perfil fiscal activo.
+  return cashRequest.run({ ...cashRequest.getStore(), fiscalCollectionRequested: true }, () => withCashOperation(cashOperation, { kind: "addPayment", ...hashPayload }, () => addPaymentInternal(input, actor)))
 }
 
 async function addPaymentInternal(input: {
@@ -569,7 +570,7 @@ export async function addBatchPayment(input: Parameters<typeof addBatchPaymentIn
   const { cashOperation, ...payload } = input
   const hashPayload = { ...payload } as Record<string, unknown>
   delete hashPayload.user
-  return withCashOperation(cashOperation, { kind: "addBatchPayment", ...hashPayload }, () => addBatchPaymentInternal(input, actor))
+  return cashRequest.run({ ...cashRequest.getStore(), fiscalCollectionRequested: true }, () => withCashOperation(cashOperation, { kind: "addBatchPayment", ...hashPayload }, () => addBatchPaymentInternal(input, actor)))
 }
 
 async function addBatchPaymentInternal(input: {

@@ -14,6 +14,8 @@ import { createOperatingExpense } from "@/app/(app)/operating-expenses/actions"
 import { createReturn } from "@/app/(app)/returns/actions"
 import { createTreasuryTransfer } from "@/app/(app)/treasury/actions"
 import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
+import { FiscalDocumentError } from "@/lib/fiscal/core/document"
+import { FiscalSequenceError } from "@/lib/fiscal/core/sequences"
 
 export const runtime = "nodejs"
 export async function POST(request: NextRequest) {
@@ -30,7 +32,11 @@ export async function POST(request: NextRequest) {
     const allowed: Record<string, boolean> = { sale: actor.canAccessSales, payment: actor.canAccessAccountsReceivable, batchPayment: actor.canAccessAccountsReceivable, supplierPayment: actor.canRegisterSupplierPayments, purchase: actor.canManagePurchases, ocrPurchase: actor.canManagePurchases, expense: actor.canManageExpenses, return: actor.canAccessReturns, transfer: actor.canCreateTreasuryTransfers, discard: true }
     if (!actor.isOwner && !allowed[kind]) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
     // La cola no puede transformar una solicitud fiscal en una operación ordinaria.
-    assertNoFiscalInput(payload)
+    if (kind === "sale") {
+      const commercialPayload = { ...payload }
+      delete commercialPayload.fiscal
+      assertNoFiscalInput(commercialPayload)
+    } else assertNoFiscalInput(payload)
     const result = await cashRequest.run({ trustedActor: actor, deviceHash: cashDeviceHashFromRequest(request), fiscalDiscard: kind === "discard" }, async () => {
       if (kind === "discard") {
         if (typeof payload.reason !== "string" || !payload.reason.trim()) throw new Error("Explica por qué anulas el pendiente")
@@ -52,6 +58,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ result })
   } catch (error) {
     if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
+    if (error instanceof FiscalDocumentError) return NextResponse.json({ error: error.issues[0]?.message ?? error.message, code: error.code, fields: error.issues }, { status: error.status })
+    if (error instanceof FiscalSequenceError) return NextResponse.json({ error: error.message, code: error.code, fields: error.fields.map(field => ({ field, message: error.message })) }, { status: error.status })
     return cashErrorResponse(error) ?? NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo registrar la operación" }, { status: 400 })
   }
 }

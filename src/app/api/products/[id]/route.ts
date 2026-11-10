@@ -1,3 +1,4 @@
+import { FiscalMasterDataError, fiscalFields, productFiscalFields } from "@/lib/fiscal/core/master-data"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { setProductSaleAvailability, upsertProduct } from "@/app/(app)/products/actions"
@@ -6,6 +7,27 @@ import { prisma } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
+
+// La consulta de detalle debe mantener el mismo aislamiento por empresa que el listado.
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const user = await getCurrentUserFromRequest(request)
+    if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+    const { id } = await params
+    const p = await prisma.product.findFirst({ where: { id, accountId: user.accountId, isActive: true }, include: { category: { select: { id: true, categoryId: true } } } })
+    if (!p) return NextResponse.json({ error: "Producto no encontrado" }, { status: 404 })
+    return NextResponse.json({
+      id: p.id, productId: p.productId, ...fiscalFields(p, productFiscalFields), name: p.name, sku: p.sku,
+      reference: p.reference, price: Number(p.priceCents) / 100, priceCents: Number(p.priceCents),
+      cost: Number(p.costCents) / 100, costCents: Number(p.costCents), stock: Number(p.stock), minStock: Number(p.minStock),
+      itbisRateBp: p.itbisRateBp, isAvailableForSale: p.isAvailableForSale, imageUrls: p.imageUrls,
+      productKind: p.productKind, unit: p.unit, categoryId: p.category?.categoryId ?? null, categoryInternalId: p.categoryId,
+    })
+  } catch (error) {
+    console.error("Error en GET /api/products/:id", error)
+    return NextResponse.json({ error: "Error al obtener producto" }, { status: 500 })
+  }
+}
 
 function hasValue(value: unknown) {
   if (value === null || value === undefined) return false
@@ -59,6 +81,7 @@ export async function PUT(
 
     const result = await upsertProduct({
       id,
+      ...fiscalFields(body, productFiscalFields),
       name: body.name,
       sku: body.sku || null,
       reference: body.reference || null,
@@ -102,6 +125,7 @@ export async function PUT(
     return NextResponse.json({
       id: product.id,
       productId: product.productId,
+      ...fiscalFields(product, productFiscalFields),
       name: product.name,
       sku: product.sku,
       reference: product.reference,
@@ -120,6 +144,7 @@ export async function PUT(
       categoryInternalId: product.categoryId ?? null,
     })
   } catch (error: any) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     console.error("Error en PUT /api/products/:id:", error)
     return NextResponse.json(
       { error: error.message || "Error al actualizar producto" },
@@ -166,6 +191,7 @@ export async function PATCH(
       isAvailableForSale: product.isAvailableForSale,
     })
   } catch (error: any) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     console.error("Error en PATCH /api/products/:id:", error)
     return NextResponse.json(
       { error: error.message || "Error al actualizar disponibilidad de venta" },

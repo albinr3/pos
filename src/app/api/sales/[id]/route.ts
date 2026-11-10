@@ -179,10 +179,12 @@ export async function GET(
     if (!sale) {
       return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 })
     }
+    const fiscalSummaries = await (await import("@/lib/fiscal/core/sale-query")).getFiscalSaleSummaries(user, [sale.id])
 
     return NextResponse.json({
       id: sale.id,
       invoiceCode: sale.invoiceCode,
+      ...(fiscalSummaries?.has(sale.id) ? { fiscal: fiscalSummaries.get(sale.id) } : {}),
       soldAt: sale.soldAt.toISOString(),
       createdAt: sale.soldAt.toISOString(),
       type: sale.type,
@@ -420,6 +422,7 @@ export async function PUT(
     const cashFailure = cashErrorResponse(error)
     if (cashFailure) return cashFailure
     if (error instanceof UnsupportedFiscalInputError) return NextResponse.json({ error: error.message, code: error.code }, { status: 400 })
+    if (error instanceof Error && error.message === "La cantidad vendida admite como máximo dos decimales.") return NextResponse.json({ error: error.message }, { status: 400 })
     console.error("Error en PUT /api/sales/[id]:", error)
     return NextResponse.json(
       { error: getErrorMessage(error, "Error al editar venta") },

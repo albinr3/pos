@@ -13,10 +13,16 @@ export default async function SalesPage({
   searchParams: Promise<{ onboarding?: string | string[]; onboardingProductId?: string | string[] }>
 }) {
   const actor = await requireModuleAccess("canAccessSales")
-  const [settings, cashControl] = await Promise.all([
+  const [settings, contextRows] = await Promise.all([
     getSettings(),
-    prisma.cashControl.findUnique({ where: { accountId: actor.accountId }, select: { enabled: true } }),
+    // Una sola consulta recupera caja y política; el POS ordinario no hace peticiones fiscales adicionales.
+    prisma.$queryRaw<Array<{ cashEnabled: boolean | null; fiscalEnabled: boolean | null; version: number | null; jurisdiction: string | null; regime: string | null; environment: string | null; configurationStatus: string | null }>>`
+      SELECT c.enabled AS "cashEnabled", f.enabled AS "fiscalEnabled", f.version, f.jurisdiction, f.regime, f.environment, f."configurationStatus"
+      FROM "Account" a LEFT JOIN "CashControl" c ON c."accountId"=a.id LEFT JOIN "FiscalSettings" f ON f."accountId"=a.id
+      WHERE a.id=${actor.accountId}`,
   ])
+  const context = contextRows[0]
+  const fiscalEnabled = !!context?.fiscalEnabled && context.jurisdiction === "DO" && context.regime === "DO_ECF" && context.environment === "TEST" && context.configurationStatus === "VALIDATED"
   const params = await searchParams
   const onboardingRaw = params.onboarding
   const onboarding = Array.isArray(onboardingRaw) ? onboardingRaw[0] : onboardingRaw
@@ -43,7 +49,7 @@ export default async function SalesPage({
           </Button>
         </div>
       </div>
-      <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }} cashControlEnabled={cashControl?.enabled ?? false} bypass={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}>
+      <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }} cashControlEnabled={context?.cashEnabled ?? false} bypass={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}>
         {/* Cambiar de práctica a operación real descarta el carrito demo. */}
         <PosClient
           key={`${actor.accountId}:${isDemoOnboarding && onboardingState?.phase === "DEMO_SALE" ? "practice" : "live"}`}
@@ -54,6 +60,7 @@ export default async function SalesPage({
           onboardingDemoGuide={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}
           onboardingSaleGuide={isOnboardingSale && onboardingState?.phase === "SALE"}
           onboardingAccountId={onboardingState?.accountId ?? null}
+          fiscalSale={fiscalEnabled && context?.version && !(isDemoOnboarding && onboardingState?.phase === "DEMO_SALE") ? { accountId: actor.accountId, version: context.version, canPrepare: actor.isOwner || actor.canPrepareFiscalDocuments } : null}
         />
       </CashShiftGate>
     </div>

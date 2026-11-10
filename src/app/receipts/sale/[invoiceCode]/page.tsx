@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import Link from "next/link"
 import { PaymentMethod } from "@prisma/client"
 
@@ -61,11 +61,14 @@ export default async function SaleReceiptPage({
         cancelledUser: { select: { name: true } },
         payments: true,
         ar: true,
+        fiscalDocuments: { where: { state: "PREPARADO_PENDIENTE_CONEXION" }, select: { id: true }, take: 1 },
       },
     }),
   ])
 
   if (!sale) return notFound()
+  // El recibo de una venta fiscal siempre usa la copia congelada, no la ficha actual del producto.
+  if (sale.fiscalDocuments?.[0]) redirect(`/invoices/fiscal/${encodeURIComponent(sale.fiscalDocuments[0].id)}?format=80mm${shouldAutoPrint ? "&autoprint=1" : ""}`)
 
   const paymentMethod = sale.paymentMethod
   const saleWithPayments = sale as typeof sale & {

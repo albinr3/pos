@@ -1,5 +1,7 @@
 "use client"
 
+import { FiscalSourceLink, useFiscalSourceAccess } from "@/components/app/fiscal-source-link"
+
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { Edit, ShoppingBag, Trash2, Search, Printer } from "lucide-react"
 import Link from "next/link"
@@ -46,6 +48,7 @@ function toInt(v: string) {
 }
 
 export function PurchasesListClient() {
+  const canViewFiscal = useFiscalSourceAccess()
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [isLoading, startLoading] = useTransition()
   const [query, setQuery] = useState("")
@@ -380,7 +383,7 @@ export function PurchasesListClient() {
                       {formatDateDO(p.purchasedAt)}
                       {p.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADA</div>}
                     </TableCell>
-                    <TableCell>{p.supplierName ?? "-"}</TableCell>
+                    <TableCell>{p.supplierName ?? "-"}<FiscalSourceLink allowed={canViewFiscal} kind="PURCHASE" id={p.id}/></TableCell>
                     <TableCell>{p.type === "CREDITO" ? <div className="grid gap-1"><strong>Crédito</strong><span>Abonado: {formatRD(p.cancelledAt ? 0 : p.totalCents - (p.payable?.balanceCents ?? 0))}</span><span>Pendiente: {formatRD(p.cancelledAt ? 0 : p.payable?.balanceCents ?? 0)}</span><span>Vence: {p.payable?.dueDate ? new Date(p.payable.dueDate).toISOString().slice(0,10) : "—"}</span><Link href="/ap" className="underline text-xs">Ver cuenta y pagos</Link></div> : "Contado"}</TableCell>
                     <TableCell>{p.items.length} productos</TableCell>
                     <TableCell className="text-right font-medium">{formatRD(p.totalCents)}</TableCell>

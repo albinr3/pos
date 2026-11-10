@@ -75,6 +75,7 @@ const nav = [
   { href: "/operating-expenses", label: "Gastos operativos", icon: DollarSign },
   { href: "/treasury", label: "Tesorería", icon: Landmark },
   { href: "/billing", label: "Planes y facturación", icon: CreditCard },
+  { href: "/fiscal/documents", label: "Bandeja fiscal", icon: FileText },
   { href: "/settings", label: "Ajustes", icon: Settings },
   { href: "/backups", label: "Backups", icon: Database },
 ]
@@ -89,6 +90,8 @@ function canAccessNavItem(user: CurrentUser, href: string) {
   if (user.isOwner) return true
 
   switch (href) {
+    case "/fiscal/documents":
+      return user.canViewFiscalDocuments ?? false
     case "/sales":
       return user.canAccessSales ?? true
     case "/dashboard":

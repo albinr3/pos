@@ -13,6 +13,7 @@ import {
   ALL_PERMISSION_KEYS,
   CRITICAL_PERMISSION_KEYS,
   hasPermission,
+  getVisiblePermissionKeys,
   isCriticalPermission,
   type PermissionKey,
 } from "@/lib/permissions"
@@ -435,7 +436,10 @@ export async function setAllUserPermissions(userId: string, value: boolean) {
     throw new Error("Solo el owner puede modificar permisos del owner")
   }
 
-  const keysToUpdate = currentUser.isOwner ? ALL_PERMISSION_KEYS : NON_CRITICAL_PERMISSION_KEYS
+  // Las acciones masivas no deben alterar permisos fiscales ocultos con el módulo apagado.
+  const fiscalSettings = await prisma.fiscalSettings.findUnique({ where: { accountId: currentUser.accountId }, select: { enabled: true } })
+  const visibleKeys = getVisiblePermissionKeys(fiscalSettings?.enabled === true)
+  const keysToUpdate = currentUser.isOwner ? visibleKeys : visibleKeys.filter((key) => !isCriticalPermission(key))
   const data = keysToUpdate.reduce<Record<string, boolean>>((acc, key) => {
     acc[key] = value
     return acc
@@ -463,3 +467,4 @@ export async function setAllUserPermissions(userId: string, value: boolean) {
 
   revalidatePath("/settings")
 }
+

@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 
 import { TutorialVideoHub } from "@/components/marketing/tutorial-video-hub"
+import { InventoryUploadOffer } from "@/components/inventory-upload-offer"
 import { getPublishedTutorialLibrary } from "@/lib/tutorial-library"
 import { siteUrl } from "@/lib/site-url"
 
@@ -56,7 +57,11 @@ export default async function HowToUsePlatformPage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <TutorialVideoHub categories={categories} videos={videos} />
+      <TutorialVideoHub
+        categories={categories}
+        videos={videos}
+        inventoryUploadOffer={<InventoryUploadOffer className="md:col-span-2 xl:col-span-3" />}
+      />
     </>
   )
 }

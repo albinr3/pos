@@ -1034,6 +1034,8 @@ export async function getCurrentUserWithDiagnostics(options: {
 
   // 2. Obtener el subusuario y su cuenta asociada en la base de datos
   const prisma = await getPrisma()
+  // El include lee también todas las columnas de Account: una migración local pendiente
+  // puede aparecer como columna «existe» cuando PostgreSQL devuelve errores en español.
   const user = await prisma.user.findUnique({
     where: { id: subUserSession.userId },
     include: { account: true },

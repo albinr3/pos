@@ -1,5 +1,8 @@
 "use client"
 
+import { FiscalMasterFields } from "@/components/app/fiscal-master-fields"
+import { fiscalFields, customerFiscalFields } from "@/lib/fiscal/core/master-data"
+
 import { useEffect, useState, useTransition } from "react"
 import { Edit, Plus, Search, Trash2, Users } from "lucide-react"
 
@@ -21,7 +24,7 @@ type Customer = Awaited<ReturnType<typeof listCustomersPage>>["items"][number]
 // La accion del servidor pagina hasta 200 por llamada y mantiene "Cargar mas" si hace falta.
 const PAGE_SIZE = 200
 
-export function CustomersClient() {
+export function CustomersClient({ fiscalEnabled = false, defaultFiscalCountry = null, doFiscalProfile = false }: { fiscalEnabled?: boolean; defaultFiscalCountry?: string | null; doFiscalProfile?: boolean }) {
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Customer[]>([])
   const [isLoading, startLoading] = useTransition()
@@ -33,6 +36,7 @@ export function CustomersClient() {
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
   const [cedula, setCedula] = useState("")
+  const [fiscalData, setFiscalData] = useState<Record<string, string | null>>({})
   const [province, setProvince] = useState("")
   const [creditEnabled, setCreditEnabled] = useState(false)
   const [creditDays, setCreditDays] = useState<number | "">(0)
@@ -77,6 +81,7 @@ export function CustomersClient() {
   }
 
   function resetForm(c?: Customer | null) {
+    setFiscalData(c ? fiscalFields(c, customerFiscalFields) : { fiscalIdentificationCountry: defaultFiscalCountry })
     setEditing(c ?? null)
     setName(c?.name ?? "")
     setPhone(c?.phone ?? "")
@@ -110,6 +115,7 @@ export function CustomersClient() {
     startSaving(async () => {
       try {
         await upsertCustomer({
+          ...(fiscalEnabled ? fiscalData : {}),
           id: editing?.id,
           name,
           phone: phone || null,
@@ -273,6 +279,7 @@ export function CustomersClient() {
                 </div>
               </div>
 
+              {fiscalEnabled && <FiscalMasterFields kind="customer" value={fiscalData} onChange={setFiscalData} doProfile={doFiscalProfile} />}
               <DialogFooter>
                 <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
                   Cancelar

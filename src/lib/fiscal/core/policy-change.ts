@@ -14,7 +14,7 @@ type PolicyChange = {
 // Servicio interno para una futura interfaz. Cada cambio y su copia se confirman juntos.
 export async function recordFiscalPolicyChange(actor: FiscalActor, input: PolicyChange) {
   if (!hasPermission(actor, "canManageFiscalSettings")) throw new Error("Sin permiso para configurar el módulo fiscal")
-  // La activación requiere primero comprobar pendientes y operaciones offline en la etapa 2.
+  // Este servicio anterior no implementa la transición; usar el servicio de Ajustes para activar.
   if (input.enabled) throw new Error("La activación fiscal todavía no está disponible")
   if (input.environment !== "TEST" || !["INCOMPLETE", "VALIDATED"].includes(input.configurationStatus) ||
       !((input.jurisdiction === null && input.regime === null) || (input.jurisdiction === "DO" && input.regime === "DO_ECF")) ||
@@ -26,6 +26,8 @@ export async function recordFiscalPolicyChange(actor: FiscalActor, input: Policy
     if (!account.length) throw new Error("Empresa no encontrada")
     const current = await tx.fiscalSettings.findUnique({ where: { accountId: actor.accountId } })
     if ((current?.version ?? 0) !== input.expectedVersion) throw new Error("La política fiscal cambió; actualiza la consulta")
+    // Este servicio antiguo no gestiona transiciones: no debe apagar una configuración activada desde Ajustes.
+    if (current?.enabled) throw new Error("Modifica la configuración activa desde Ajustes")
     const version = input.expectedVersion + 1
     const effectiveFrom = new Date()
     const data = { enabled: false, jurisdiction: input.jurisdiction, regime: input.regime, environment: input.environment, configurationStatus: input.configurationStatus, version, effectiveFrom }

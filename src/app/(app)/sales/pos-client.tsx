@@ -4,6 +4,7 @@ import { buildStockInventory, getStockConsumptions, initialStockQuantity, roundS
 import { readPosStockState } from "@/lib/pos-stock-offline"
 import { invalidateStockCache, stockCacheToken } from "@/lib/stock-cache-state"
 import { submitControlledDocument } from "@/lib/cash-offline"
+import { calculateExemptSalePrices } from "@/lib/fiscal/core/sale-pricing"
 import { CashShiftBanner } from "@/components/app/cash-shift-banner"
 import { useCashShiftAccess } from "@/components/app/cash-shift-gate"
 
@@ -100,6 +101,9 @@ type PaymentSplit = {
 }
 
 type DiscountMode = "AUTO" | "MANUAL"
+type FiscalSaleType = "E31" | "E32" | "E44" | "E45" | "E46" | "ORDINARIO"
+type FiscalSaleContext = { policyVersion: number; customers: Array<{ id: string; preferredReceiptType: FiscalSaleType }>; sequences: Array<{ type: string; usable: boolean; remaining: string }> }
+type FiscalCustomerMatch = { id: string; visualId: number; name: string; legalName: string | null; identification: string }
 
 const USER_CACHE_KEY = clientStorageKeys.user
 const POS_FORCE_RESET_KEY = clientStorageKeys.posForceReset
@@ -191,6 +195,7 @@ export function PosClient({
   onboardingDemoGuide = false,
   onboardingSaleGuide = false,
   onboardingAccountId = null,
+  fiscalSale = null,
 }: {
   defaultViewMode?: string
   showItbisOnReceipts?: boolean
@@ -199,6 +204,7 @@ export function PosClient({
   onboardingDemoGuide?: boolean
   onboardingSaleGuide?: boolean
   onboardingAccountId?: string | null
+  fiscalSale?: { accountId: string; version: number; canPrepare: boolean } | null
 }) {
   const cashAccess = useCashShiftAccess()
   const isOnline = useOnlineStatus()
@@ -221,6 +227,28 @@ export function PosClient({
   const [customerId, setCustomerId] = useState<string | null>("generic")
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
   const [customerPickerQuery, setCustomerPickerQuery] = useState("")
+  const [fiscalType, setFiscalType] = useState<FiscalSaleType>("E32")
+  const [fiscalContext, setFiscalContext] = useState<FiscalSaleContext | null>(null)
+  const [fiscalIdentification, setFiscalIdentification] = useState("")
+  const [fiscalBuyerName, setFiscalBuyerName] = useState("")
+  const [fiscalBuyerCountry, setFiscalBuyerCountry] = useState("DO")
+  const [fiscalMatches, setFiscalMatches] = useState<FiscalCustomerMatch[]>([])
+  const [fiscalLookupMessage, setFiscalLookupMessage] = useState("")
+  const [fiscalDueDate, setFiscalDueDate] = useState("")
+  const [fiscalShippingTreatment, setFiscalShippingTreatment] = useState("")
+  const [fiscalRegime, setFiscalRegime] = useState("")
+  const [fiscalExemptionReference, setFiscalExemptionReference] = useState("")
+  const [fiscalGovernment, setFiscalGovernment] = useState(false)
+  const [fiscalPurchaseOrder, setFiscalPurchaseOrder] = useState("")
+  const [fiscalPurchaseOrderDate, setFiscalPurchaseOrderDate] = useState("")
+  const [fiscalExportMode, setFiscalExportMode] = useState("EXPORTACION")
+  const [fiscalDestination, setFiscalDestination] = useState("")
+  const [fiscalShipmentNumber, setFiscalShipmentNumber] = useState("")
+  const [fiscalContainerNumber, setFiscalContainerNumber] = useState("")
+  const [fiscalDeparturePort, setFiscalDeparturePort] = useState("")
+  const [fiscalDeliveryTerms, setFiscalDeliveryTerms] = useState("")
+  const [fiscalPricesConfirmed, setFiscalPricesConfirmed] = useState(false)
+  const [fiscalOrdinaryConfirmed, setFiscalOrdinaryConfirmed] = useState(false)
   const [saleType, setSaleType] = useState<SaleType>(SaleType.CONTADO)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(PaymentMethod.EFECTIVO)
   const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>([])
@@ -353,15 +381,27 @@ export function PosClient({
 
   function flushEditingQuantities() {
     if (quantityRejectedRef.current) { quantityRejectedRef.current = false; return false }
+    // Validar el texto antes de parseQty: esa función redondea y ocultaría el tercer decimal.
+    if (cartRef.current.some(line => {
+      const raw = editingQuantities[line.lineId]
+      return raw !== undefined && !validSaleQuantityText(raw, unitAllowsDecimals(line.unit))
+    })) {
+      toast({ title: "Cantidad inválida", description: "La cantidad vendida admite como máximo dos decimales.", variant: "destructive" })
+      return false
+    }
     const next = cartRef.current.map(line => {
       const raw = editingQuantities[line.lineId]
       if (raw === undefined) return line
-      const parsed = parseQty(raw.trim(), line.unit)
+      const parsed = parseQty(raw.trim().replace(",", "."), line.unit)
       return { ...line, qty: parsed < (unitAllowsDecimals(line.unit) ? 0.01 : 1) ? (unitAllowsDecimals(line.unit) ? 0.5 : 1) : parsed }
     })
     if (!commitCartChange(next)) return false
     setEditingQuantities({})
     return true
+  }
+
+  function validSaleQuantityText(raw: string, allowsDecimals: boolean) {
+    return (allowsDecimals ? /^\d+(?:[.,]\d{1,2})?$/ : /^\d+$/).test(raw.trim())
   }
 
   const cartStockIssue = cart.length ? stockProblem(cart) : null
@@ -417,6 +457,49 @@ export function PosClient({
     [customers, effectiveCustomerId]
   )
 
+  useEffect(() => {
+    if (!fiscalSale?.canPrepare) return
+    const key = `movopos:fiscal-sales:${fiscalSale.accountId}:${fiscalSale.version}`
+    let active = true
+    try {
+      const cached = sessionStorage.getItem(key)
+      if (cached) setFiscalContext(JSON.parse(cached) as FiscalSaleContext)
+    } catch { /* El perfil se obtiene de nuevo cuando vuelva la conexión. */ }
+    if (navigator.onLine) fetch("/api/fiscal/sales/context", { cache: "no-store" }).then(async response => {
+      if (!response.ok) throw new Error("No se pudo consultar la disponibilidad fiscal")
+      const data = await response.json() as FiscalSaleContext
+      if (data.policyVersion !== fiscalSale.version) throw new Error("La política fiscal cambió; actualiza la página")
+      if (active) { setFiscalContext(data); sessionStorage.setItem(key, JSON.stringify(data)) }
+    }).catch(() => { if (active) setFiscalLookupMessage("Conéctate para actualizar la disponibilidad fiscal.") })
+    return () => { active = false }
+  }, [fiscalSale?.accountId, fiscalSale?.version, fiscalSale?.canPrepare])
+
+  useEffect(() => {
+    if (!fiscalSale?.canPrepare) return
+    const preferred = selectedCustomer?.isGeneric ? "E32" : fiscalContext?.customers.find(customer => customer.id === effectiveCustomerId)?.preferredReceiptType ?? "E32"
+    setFiscalType(preferred)
+    setFiscalIdentification(""); setFiscalBuyerName(""); setFiscalBuyerCountry("DO"); setFiscalMatches([]); setFiscalLookupMessage("")
+  }, [effectiveCustomerId, selectedCustomer?.isGeneric, fiscalContext, fiscalSale?.canPrepare])
+
+  const lookupFiscalBuyer = useCallback(async () => {
+    setFiscalMatches([])
+    if (!fiscalIdentification.trim()) { setFiscalLookupMessage("Indica el RNC o la cédula."); return }
+    if (!navigator.onLine) { setFiscalLookupMessage("Sin conexión: la identificación se comprobará al sincronizar."); return }
+    try {
+      const response = await fetch(`/api/fiscal/sales/customer?identification=${encodeURIComponent(fiscalIdentification)}`, { cache: "no-store" })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data?.error?.message || "No se pudo buscar el comprador")
+      const matches = data.matches as FiscalCustomerMatch[]
+      if (matches.length === 1 && !data.hasMore) {
+        setCustomerId(matches[0].id)
+        setFiscalLookupMessage(`Cliente seleccionado: ${matches[0].name}`)
+      } else if (matches.length) {
+        setFiscalMatches(matches)
+        setFiscalLookupMessage("Hay varios clientes con esa identificación; selecciona uno.")
+      } else setFiscalLookupMessage("No existe una ficha con esa identificación. Indica la razón social para esta factura.")
+    } catch (error) { setFiscalLookupMessage(error instanceof Error ? error.message : "No se pudo buscar el comprador") }
+  }, [fiscalIdentification])
+
   const selectedCustomerLabel = useMemo(() => {
     return formatCustomerLabel(selectedCustomer, { includeVisualId: true })
   }, [selectedCustomer])
@@ -447,6 +530,9 @@ export function PosClient({
     cartRef.current = []
     setCart([])
     setCustomerId("generic")
+    setFiscalType("E32"); setFiscalIdentification(""); setFiscalBuyerName(""); setFiscalBuyerCountry("DO"); setFiscalMatches([]); setFiscalLookupMessage("")
+    setFiscalDueDate(""); setFiscalShippingTreatment(""); setFiscalRegime(""); setFiscalExemptionReference(""); setFiscalGovernment(false); setFiscalPurchaseOrder(""); setFiscalPurchaseOrderDate("")
+    setFiscalExportMode("EXPORTACION"); setFiscalDestination(""); setFiscalShipmentNumber(""); setFiscalContainerNumber(""); setFiscalDeparturePort(""); setFiscalDeliveryTerms(""); setFiscalPricesConfirmed(false); setFiscalOrdinaryConfirmed(false)
     setSaleType(SaleType.CONTADO)
     setShippingInput("")
     setNotesInput("")
@@ -1088,12 +1174,7 @@ export function PosClient({
     return () => clearTimeout(handle)
   }, [query, viewMode, isOnline, onboardingDemoGuide])
 
-  const {
-    subtotalCents,
-    itbisCents,
-    discountTotalCents,
-    itemsTotalCents,
-  } = useMemo(() => {
+  const commercialTotals = useMemo(() => {
     return calcDiscountedDocumentTotalsByTaxMode(
       cart.map((item) => ({
         unitPriceCents: item.unitPriceCents,
@@ -1105,6 +1186,16 @@ export function PosClient({
     )
   }, [cart, salePricesIncludeItbis, effectiveDiscountPercentBp])
   const shippingCents = useMemo(() => toCents(shippingInput), [shippingInput])
+  const exemptPreview = useMemo(() => {
+    if (!fiscalSale?.canPrepare || !["E44", "E46"].includes(fiscalType) || !cart.length) return null
+    try {
+      return calculateExemptSalePrices({ lines: cart.map(item => ({ unitPriceCents: item.unitPriceCents, qty: item.qty, itbisRateBp: item.itbisRateBp })), priceIncludesItbis: salePricesIncludeItbis, discountPercentBp: effectiveDiscountPercentBp, shippingCents, applyLegalTip: legalTipEnabled && applyLegalTip })
+    } catch { return null }
+  }, [fiscalSale?.canPrepare, fiscalType, cart, salePricesIncludeItbis, effectiveDiscountPercentBp, shippingCents, legalTipEnabled, applyLegalTip])
+  const subtotalCents = exemptPreview?.subtotalCents ?? commercialTotals.subtotalCents
+  const itbisCents = exemptPreview?.itbisCents ?? commercialTotals.itbisCents
+  const discountTotalCents = exemptPreview ? commercialTotals.discountSubtotalCents : commercialTotals.discountTotalCents
+  const itemsTotalCents = exemptPreview ? exemptPreview.subtotalCents : commercialTotals.itemsTotalCents
   const legalTipBaseCents = useMemo(() => Math.max(0, subtotalCents), [subtotalCents])
   const legalTipCents = useMemo(
     () => (legalTipEnabled && applyLegalTip ? calcPercentAmountCents(legalTipBaseCents, 1000) : 0),
@@ -1114,6 +1205,7 @@ export function PosClient({
     () => itemsTotalCents + shippingCents + legalTipCents,
     [itemsTotalCents, shippingCents, legalTipCents]
   )
+  useEffect(() => { setFiscalPricesConfirmed(false) }, [fiscalType, totalCents, commercialTotals.itbisCents, effectiveCustomerId])
   const amountPaidCents = useMemo(() => toCents(amountPaidInput), [amountPaidInput])
   const changeCents = useMemo(() => amountPaidCents - totalCents, [amountPaidCents, totalCents])
   const exactAmountInput = useMemo(() => (totalCents / 100).toFixed(2), [totalCents])
@@ -1453,6 +1545,16 @@ export function PosClient({
       toast({ title: "Error", description: "Usuario no disponible. Por favor, recarga la p gina.", variant: "destructive" })
       return
     }
+    if (fiscalSale && !fiscalSale.canPrepare && !fiscalOrdinaryConfirmed) { toast({ title: "Comprobante", description: "Confirma que la venta será sin comprobante fiscal.", variant: "destructive" }); return }
+    if (fiscalSale?.canPrepare && fiscalType !== "ORDINARIO") {
+      if (fiscalMatches.length) { toast({ title: "Selecciona el comprador", description: "Hay varias fichas con esa identificación.", variant: "destructive" }); return }
+      if ((fiscalIdentification.trim() && !fiscalBuyerName.trim()) || (!fiscalIdentification.trim() && fiscalBuyerName.trim())) { toast({ title: "Comprador incompleto", description: "Indica la identificación y la razón social.", variant: "destructive" }); return }
+      if (fiscalType === "E44" && (!fiscalRegime.trim() || !fiscalExemptionReference.trim())) { toast({ title: "Régimen especial", description: "Indica el régimen y el soporte de exención.", variant: "destructive" }); return }
+      if (fiscalType === "E45" && !fiscalGovernment) { toast({ title: "Entidad gubernamental", description: "Confirma que el comprador es elegible.", variant: "destructive" }); return }
+      if (fiscalType === "E46" && !fiscalDestination.trim()) { toast({ title: "Exportación", description: "Indica el país de destino.", variant: "destructive" }); return }
+      if (shippingCents > 0 && !["E44", "E46"].includes(fiscalType) && !fiscalShippingTreatment) { toast({ title: "Envío", description: "Indica la clasificación fiscal del envío.", variant: "destructive" }); return }
+      if (["E44", "E46"].includes(fiscalType) && (!exemptPreview || !fiscalPricesConfirmed)) { toast({ title: "Revisa el importe", description: "Confirma el total sin ITBIS antes de guardar.", variant: "destructive" }); return }
+    }
     if (saleType === SaleType.CONTADO && paymentMethod === PaymentMethod.DIVIDIR_PAGO) {
       if (
         paymentSplits.length === 0 ||
@@ -1499,6 +1601,20 @@ export function PosClient({
         adjustmentType: adjustment.adjustmentType,
       })),
     }))
+    const fiscalPayload = fiscalSale ? {
+      fiscal: fiscalSale.canPrepare && fiscalType !== "ORDINARIO" ? {
+        type: fiscalType,
+        expectedPolicyVersion: fiscalSale.version,
+        expectedTotalCents: totalCents,
+        incomeType: "01",
+        ...(fiscalIdentification.trim() ? { buyer: { name: fiscalBuyerName.trim(), identification: fiscalIdentification.trim(), country: fiscalBuyerCountry.trim().toUpperCase() } } : {}),
+        ...(saleType === SaleType.CREDITO && fiscalDueDate ? { dueDate: fiscalDueDate } : {}),
+        ...(shippingCents > 0 && !["E44", "E46"].includes(fiscalType) && fiscalShippingTreatment ? { shippingTaxTreatment: fiscalShippingTreatment } : {}),
+        ...(fiscalType === "E44" ? { special: { regime: fiscalRegime.trim(), exemptionReference: fiscalExemptionReference.trim() } } : {}),
+        ...(fiscalType === "E45" ? { special: { governmentEntity: fiscalGovernment, ...(fiscalPurchaseOrder.trim() ? { purchaseOrder: fiscalPurchaseOrder.trim() } : {}), ...(fiscalPurchaseOrderDate ? { purchaseOrderDate: fiscalPurchaseOrderDate } : {}) } } : {}),
+        ...(fiscalType === "E46" ? { special: { exportMode: fiscalExportMode, destinationCountry: fiscalDestination.trim().toUpperCase(), ...(fiscalShipmentNumber.trim() ? { shipmentNumber: fiscalShipmentNumber.trim() } : {}), ...(fiscalContainerNumber.trim() ? { containerNumber: fiscalContainerNumber.trim() } : {}), ...(fiscalDeparturePort.trim() ? { departurePort: fiscalDeparturePort.trim() } : {}), ...(fiscalDeliveryTerms.trim() ? { deliveryTerms: fiscalDeliveryTerms.trim().toUpperCase() } : {}) } } : {}),
+      } : null,
+    } : {}
     const invalidPriceItem = normalizedSaleItems.find((item) => item.unitPriceCents <= 0)
     if (invalidPriceItem) {
       const invalidProduct = cart.find((item) => item.productId === invalidPriceItem.productId)
@@ -1578,7 +1694,8 @@ export function PosClient({
             const issue = stockProblem(cartRef.current, localState)
             if (issue) { showStockProblem(issue); return }
           }
-          const controlled = await submitControlledDocument("sale", { ...{
+          const controlledPayload = { ...{
+                ...fiscalPayload,
                 customerId: customerId === "generic" ? null : customerId,
                 type: saleType,
                 paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
@@ -1596,9 +1713,17 @@ export function PosClient({
                 salePricesIncludeItbis,
                 onboardingSale: onboardingSaleGuide,
                 username: user.username,
-              }, soldAt: Date.now() }, user, stockConsumptions, totalCents)
+              }, soldAt: Date.now() }
+          if (fiscalSale?.canPrepare && fiscalType !== "ORDINARIO" && navigator.onLine) {
+            const preview = await fetch("/api/fiscal/sales/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(controlledPayload) })
+            const details = await preview.json()
+            if (!preview.ok) throw new Error(details?.error?.fields?.[0]?.message || details?.error?.message || "No se pudo validar la venta fiscal")
+            // La previsualización jamás sustituye la validación transaccional del servidor.
+            if (Math.round(Number(details?.totals?.gross) * 100) !== totalCents) throw new Error("El total cambió durante la validación; revisa la venta")
+          }
+          const controlled = await submitControlledDocument("sale", controlledPayload, user, stockConsumptions, totalCents)
           if (controlled) {
-            toast({ title: controlled.pending ? "Venta guardada pendiente de sincronización" : "Venta guardada", description: controlled.pending ? "Se conserva en este dispositivo. Revisa los pendientes en Cuadre diario." : `Factura ${controlled.result.invoiceCode}` })
+            toast({ title: controlled.pending ? (fiscalSale && fiscalType !== "ORDINARIO" ? "Venta pendiente fiscal" : "Venta guardada pendiente de sincronización") : "Venta guardada", description: controlled.pending ? (fiscalSale && controlled.error ? `${controlled.error}. La venta se conserva en pendientes para revisión.` : "Se conserva en este dispositivo. Revisa los pendientes en Cuadre diario.") : `Factura ${controlled.result.invoiceCode}`, ...(fiscalSale && controlled.pending && controlled.error ? { variant: "destructive" as const } : {}) })
             if (controlled.result?.stockDecrements) {
               applyStockDecrements(controlled.result.stockDecrements)
               refreshConfirmedSaleStock()
@@ -1621,6 +1746,7 @@ export function PosClient({
           } else {
             try {
               const sale = await createSale({
+                ...fiscalPayload,
                 customerId: customerId === "generic" ? null : customerId,
                 type: saleType,
                 paymentMethod: saleType === SaleType.CONTADO && paymentMethod !== PaymentMethod.DIVIDIR_PAGO ? paymentMethod : null,
@@ -1799,6 +1925,42 @@ export function PosClient({
             </div>
           </CardHeader>
           <CardContent className="grid gap-4">
+            {fiscalSale && <section className="grid gap-3 rounded-md border p-3" aria-label="Comprobante de la venta">
+              {fiscalSale.canPrepare ? <>
+                <div className="grid gap-2">
+                  <Label>Comprobante</Label>
+                  <Select value={fiscalType} onValueChange={value => setFiscalType(value as FiscalSaleType)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="E32">E32 · Consumidor final</SelectItem>
+                      <SelectItem value="E31">E31 · Crédito fiscal</SelectItem>
+                      <SelectItem value="E44">E44 · Regímenes especiales</SelectItem>
+                      <SelectItem value="E45">E45 · Gubernamental</SelectItem>
+                      <SelectItem value="E46">E46 · Exportaciones</SelectItem>
+                      <SelectItem value="ORDINARIO">Sin comprobante fiscal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {fiscalType !== "ORDINARIO" && <>
+                  <p className="text-xs text-muted-foreground">{!isOnline ? "Pendiente fiscal: el número se asignará al sincronizar." : fiscalContext?.sequences.some(sequence => sequence.type === fiscalType && sequence.usable) ? `Secuencia de prueba disponible · ${fiscalContext.sequences.find(sequence => sequence.type === fiscalType && sequence.usable)?.remaining} restantes` : "No hay una secuencia de prueba disponible para este tipo."}</p>
+                  <p className="text-xs text-muted-foreground">Documento de prueba / No emitido fiscalmente</p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <div className="grid gap-1"><Label htmlFor="fiscal-buyer-country">País de identificación</Label><Input id="fiscal-buyer-country" maxLength={2} value={fiscalBuyerCountry} onChange={event => { setFiscalBuyerCountry(event.target.value.toUpperCase()); setFiscalMatches([]) }} placeholder="DO" /></div>
+                    <div className="grid gap-1"><Label htmlFor="fiscal-buyer-id">RNC, cédula o identificación</Label><Input id="fiscal-buyer-id" value={fiscalIdentification} onChange={event => { setFiscalIdentification(event.target.value); setFiscalMatches([]); setFiscalLookupMessage("") }} onBlur={() => { if (fiscalBuyerCountry === "DO" && /^(?:\d{9}|\d{11})$/.test(fiscalIdentification.replace(/[\s-]/g, ""))) void lookupFiscalBuyer() }} /></div>
+                    <div className="grid gap-1"><Label htmlFor="fiscal-buyer-name">Nombre o razón social</Label><Input id="fiscal-buyer-name" value={fiscalBuyerName} onChange={event => setFiscalBuyerName(event.target.value)} /></div>
+                  </div>
+                  {fiscalBuyerCountry === "DO" && <Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => void lookupFiscalBuyer()}>Buscar cliente por identificación</Button>}
+                  {fiscalLookupMessage && <p className="text-sm" role="status">{fiscalLookupMessage}</p>}
+                  {fiscalMatches.map(match => <Button key={match.id} type="button" variant="outline" onClick={() => { setCustomerId(match.id); setFiscalMatches([]) }}>#{match.visualId} {match.name}{match.legalName ? ` · ${match.legalName}` : ""}</Button>)}
+                  {saleType === SaleType.CREDITO && <div className="grid gap-1"><Label htmlFor="fiscal-due-date">Vencimiento de crédito (si no tiene plazo configurado)</Label><Input id="fiscal-due-date" type="date" value={fiscalDueDate} onChange={event => setFiscalDueDate(event.target.value)} /></div>}
+                  {shippingCents > 0 && !["E44", "E46"].includes(fiscalType) && <div className="grid gap-1"><Label>Tratamiento fiscal del envío</Label><Select value={fiscalShippingTreatment} onValueChange={setFiscalShippingTreatment}><SelectTrigger><SelectValue placeholder="Selecciona el tratamiento" /></SelectTrigger><SelectContent><SelectItem value="EXENTO">Exento</SelectItem><SelectItem value="TASA_CERO">Tasa cero</SelectItem></SelectContent></Select></div>}
+                  {fiscalType === "E44" && <div className="grid gap-2 sm:grid-cols-2"><div className="grid gap-1"><Label htmlFor="fiscal-regime">Régimen especial</Label><Input id="fiscal-regime" value={fiscalRegime} onChange={event => setFiscalRegime(event.target.value)} /></div><div className="grid gap-1"><Label htmlFor="fiscal-exemption">Referencia del soporte de exención</Label><Input id="fiscal-exemption" value={fiscalExemptionReference} onChange={event => setFiscalExemptionReference(event.target.value)} /></div></div>}
+                  {fiscalType === "E45" && <div className="grid gap-2"><div className="flex items-center gap-2"><Switch id="fiscal-government" checked={fiscalGovernment} onCheckedChange={setFiscalGovernment} /><Label htmlFor="fiscal-government">El comprador es una entidad gubernamental elegible</Label></div><div className="grid gap-2 sm:grid-cols-2"><Input aria-label="Orden de compra" placeholder="Orden de compra (opcional)" value={fiscalPurchaseOrder} onChange={event => setFiscalPurchaseOrder(event.target.value)} /><Input aria-label="Fecha de orden de compra" type="date" value={fiscalPurchaseOrderDate} onChange={event => setFiscalPurchaseOrderDate(event.target.value)} /></div></div>}
+                  {fiscalType === "E46" && <div className="grid gap-2"><Label>Datos de exportación</Label><div className="grid gap-2 sm:grid-cols-2"><Select value={fiscalExportMode} onValueChange={setFiscalExportMode}><SelectTrigger aria-label="Modalidad de exportación"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="EXPORTACION">Exportación nacional</SelectItem><SelectItem value="ZONA_FRANCA">Zona franca</SelectItem><SelectItem value="ZONA_FRANCA_COMERCIAL_RESIDENTE">Zona franca comercial · residente</SelectItem><SelectItem value="ZONA_FRANCA_COMERCIAL_NO_RESIDENTE">Zona franca comercial · no residente</SelectItem></SelectContent></Select><Input aria-label="País de destino" placeholder="País de destino (código ISO)" maxLength={2} value={fiscalDestination} onChange={event => setFiscalDestination(event.target.value.toUpperCase())} /><Input aria-label="Número de embarque" placeholder="Embarque (opcional)" value={fiscalShipmentNumber} onChange={event => setFiscalShipmentNumber(event.target.value)} /><Input aria-label="Número de contenedor" placeholder="Contenedor (opcional)" value={fiscalContainerNumber} onChange={event => setFiscalContainerNumber(event.target.value)} /><Input aria-label="Puerto de salida" placeholder="Puerto (opcional)" value={fiscalDeparturePort} onChange={event => setFiscalDeparturePort(event.target.value)} /><Input aria-label="Condiciones de entrega" placeholder="Entrega: FOB, CIF... (opcional)" maxLength={3} value={fiscalDeliveryTerms} onChange={event => setFiscalDeliveryTerms(event.target.value.toUpperCase())} /></div></div>}
+                  {exemptPreview && <div className="grid gap-2 rounded-md bg-muted p-3 text-sm"><p>Base conservada: {formatRD(exemptPreview.subtotalCents)} · ITBIS retirado: {formatRD(exemptPreview.originalItbisCents)} · Nuevo total: {formatRD(totalCents)}</p><div className="flex items-center gap-2"><Switch id="fiscal-confirm-prices" checked={fiscalPricesConfirmed} onCheckedChange={setFiscalPricesConfirmed} /><Label htmlFor="fiscal-confirm-prices">Confirmo el importe de esta venta</Label></div></div>}
+                </>}
+              </> : <div className="flex items-center gap-2"><Switch id="fiscal-ordinary-confirm" checked={fiscalOrdinaryConfirmed} onCheckedChange={setFiscalOrdinaryConfirmed} /><Label htmlFor="fiscal-ordinary-confirm">Confirmo que la venta será sin comprobante fiscal</Label></div>}
+            </section>}
             {!isSaleConfigCollapsed && (
               <>
                 <div className="grid gap-2" data-onboarding-target="sales-customer-field">
@@ -2326,25 +2488,19 @@ export function PosClient({
                               value={editingQuantities[c.lineId] ?? formatQtyNumber(c.qty, c.unit)}
                               onChange={(e) => {
                                 // Solo actualizar el estado temporal mientras el usuario escribe
-                                let rawValue = e.target.value
-
-                                // Si no permite decimales, remover cualquier punto decimal
-                                if (!allowsDecimals && rawValue.includes(".")) {
-                                  rawValue = rawValue.replace(".", "")
-                                }
-
-                                // Solo permitir números enteros si no permite decimales
-                                if (!allowsDecimals) {
-                                  // Remover cualquier carácter no numérico excepto el menos al inicio (aunque no usamos negativos)
-                                  rawValue = rawValue.replace(/[^\d]/g, "")
-                                }
+                                const rawValue = e.target.value
 
                                 setEditingQuantities((prev) => ({ ...prev, [c.lineId]: rawValue }))
                               }}
                               onBlur={(e) => {
                                 // Parsear y validar el valor al perder el foco
                                 const rawValue = e.target.value.trim()
-                                const newQty = parseQty(rawValue, c.unit)
+                                if (!validSaleQuantityText(rawValue, allowsDecimals)) {
+                                  quantityRejectedRef.current = true
+                                  toast({ title: "Cantidad inválida", description: "La cantidad vendida admite como máximo dos decimales.", variant: "destructive" })
+                                  return
+                                }
+                                const newQty = parseQty(rawValue.replace(",", "."), c.unit)
                                 const finalQty = newQty < (allowsDecimals ? 0.01 : 1) ? (allowsDecimals ? 0.5 : 1) : newQty
 
                                 changeCartQuantity(c.lineId, finalQty, true)
@@ -2539,18 +2695,17 @@ export function PosClient({
                                 className="h-8 w-16 text-center text-sm font-semibold"
                                 value={editingQuantities[c.lineId] ?? formatQtyNumber(c.qty, c.unit)}
                                 onChange={(e) => {
-                                  let rawValue = e.target.value
-                                  if (!allowsDecimals && rawValue.includes(".")) {
-                                    rawValue = rawValue.replace(".", "")
-                                  }
-                                  if (!allowsDecimals) {
-                                    rawValue = rawValue.replace(/[^\d]/g, "")
-                                  }
+                                  const rawValue = e.target.value
                                   setEditingQuantities((prev) => ({ ...prev, [c.lineId]: rawValue }))
                                 }}
                                 onBlur={(e) => {
                                   const rawValue = e.target.value.trim()
-                                  const newQty = parseQty(rawValue, c.unit)
+                                  if (!validSaleQuantityText(rawValue, allowsDecimals)) {
+                                    quantityRejectedRef.current = true
+                                    toast({ title: "Cantidad inválida", description: "La cantidad vendida admite como máximo dos decimales.", variant: "destructive" })
+                                    return
+                                  }
+                                  const newQty = parseQty(rawValue.replace(",", "."), c.unit)
                                   const finalQty = newQty < (allowsDecimals ? 0.01 : 1) ? (allowsDecimals ? 0.5 : 1) : newQty
 
                                   changeCartQuantity(c.lineId, finalQty, true)

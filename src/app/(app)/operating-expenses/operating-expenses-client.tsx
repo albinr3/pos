@@ -1,5 +1,7 @@
 "use client"
 
+import { FiscalSourceLink, useFiscalSourceAccess } from "@/components/app/fiscal-source-link"
+
 import { submitControlledDocument } from "@/lib/cash-offline"
 
 import { useEffect, useState, useTransition } from "react"
@@ -52,6 +54,7 @@ function fromInputDateValue(value: string) {
 }
 
 export function OperatingExpensesClient() {
+  const canViewFiscal = useFiscalSourceAccess()
   const router = useRouter()
   const today = toInputDateValue(new Date())
   const [query, setQuery] = useState("")
@@ -416,7 +419,7 @@ export function OperatingExpensesClient() {
                 {filteredItems.map((item) => (
                   <TableRow key={item.id}>
                     <TableCell>{new Date(item.expenseDate).toLocaleDateString("es-DO", { timeZone: "America/Santo_Domingo" })}</TableCell>
-                    <TableCell className="font-medium">{item.description}</TableCell>
+                    <TableCell className="font-medium">{item.description}<FiscalSourceLink allowed={canViewFiscal} kind="EXPENSE" id={item.id}/></TableCell>
                     <TableCell>{item.category ?? "—"}</TableCell>
                     <TableCell className="text-right">{formatRD(item.amountCents)}</TableCell>
                     <TableCell className="text-right">

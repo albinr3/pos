@@ -196,6 +196,16 @@ export const PERMISSION_MODULES: PermissionModule[] = [
   },
 ]
 
+// Mantener ocultos los permisos fiscales sin modificarlos cuando el módulo está apagado.
+export function getVisiblePermissionModules(fiscalEnabled: boolean) {
+  return PERMISSION_MODULES.filter((module) => fiscalEnabled || module.id !== "fiscal")
+}
+
+export function getVisiblePermissionKeys(fiscalEnabled: boolean): PermissionKey[] {
+  const fiscalKeys = PERMISSION_MODULES.find((module) => module.id === "fiscal")?.permissions ?? []
+  return fiscalEnabled ? ALL_PERMISSION_KEYS : ALL_PERMISSION_KEYS.filter((key) => !fiscalKeys.includes(key))
+}
+
 export type PermissionAwareUser = {
   id?: string
   accountId?: string

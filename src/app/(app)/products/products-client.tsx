@@ -1,6 +1,9 @@
 "use client"
 import { useOnboardingCompleted } from "@/hooks/use-onboarding-completed"
 
+import { FiscalMasterFields } from "@/components/app/fiscal-master-fields"
+import { fiscalFields, productFiscalFields } from "@/lib/fiscal/core/master-data"
+
 import { useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent, type DragEvent, type FocusEvent } from "react"
 import { Edit, History, Loader2, Plus, Printer, Search, Trash2, Upload } from "lucide-react"
 import { UnitType } from "@prisma/client"
@@ -499,11 +502,13 @@ function formatInventoryPreviewValue(value: BulkProductImportRow[keyof BulkProdu
 }
 
 export function ProductsClient({
+  fiscalEnabled = false,
   onboardingProductGuide = false,
   onboardingSaleNavGuide = false,
   onboardingAccountId = null,
   onboardingStepOffset = 0,
 }: {
+  fiscalEnabled?: boolean
   onboardingProductGuide?: boolean
   onboardingSaleNavGuide?: boolean
   onboardingAccountId?: string | null
@@ -556,6 +561,7 @@ export function ProductsClient({
   const [price, setPrice] = useState("0")
   const [cost, setCost] = useState("0")
   const [itbisRateBp, setItbisRateBp] = useState(1800) // 18% por defecto
+  const [fiscalData, setFiscalData] = useState<Record<string, string | null>>({ fiscalItemType: "BIEN", fiscalTaxTreatment: "GRAVADO" })
   const [salePricesIncludeItbis, setSalePricesIncludeItbis] = useState(true)
   const [isAvailableForSale, setIsAvailableForSale] = useState(true)
   const [stock, setStock] = useState("0")
@@ -696,6 +702,8 @@ export function ProductsClient({
 
   function resetForm(p?: Product | null) {
     const x = p ?? null
+    // El valor predeterminado solo aplica a productos nuevos, no reclasifica fichas históricas.
+    setFiscalData(x ? fiscalFields(x, productFiscalFields) : { fiscalItemType: "BIEN", fiscalTaxTreatment: "GRAVADO" })
     setEditing(x)
     setOnboardingFieldCompletion(createOnboardingFieldCompletionState())
     setName(x?.name ?? "")
@@ -830,6 +838,7 @@ export function ProductsClient({
             : []
 
         const result = await upsertProduct({
+          ...(fiscalEnabled ? fiscalData : {}),
           id: editing?.id,
           name,
           sku: sku || null,
@@ -2558,6 +2567,7 @@ export function ProductsClient({
 
                         <Separator />
 
+                        {fiscalEnabled && <FiscalMasterFields kind="product" value={fiscalData} onChange={setFiscalData} />}
                         <div className="grid gap-2">
                           <Label>Imágenes del producto</Label>
                           <ProductImageUpload images={imageUrls} onChange={setImageUrls} maxImages={3} />
@@ -2568,7 +2578,7 @@ export function ProductsClient({
                           {salePricesIncludeItbis
                             ? "Tip: el precio es el precio final al público (incluye ITBIS)."
                             : "Tip: el precio es base (sin ITBIS); al vender se sumará el ITBIS según la tasa del producto."}
-                          {itbisRateBp === 0 ? " En este caso, estará excento." : ""}
+                          {/* La tasa comercial cero no determina si el producto es exento o de tasa cero fiscal. */}
                         </div>
                       </div>
                     </div>

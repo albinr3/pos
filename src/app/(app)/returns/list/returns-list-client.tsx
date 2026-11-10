@@ -1,5 +1,7 @@
 "use client"
 
+import { FiscalSourceLink, useFiscalSourceAccess } from "@/components/app/fiscal-source-link"
+
 import { useEffect, useState, useTransition } from "react"
 import { Trash2, Search, Receipt } from "lucide-react"
 import Link from "next/link"
@@ -21,6 +23,7 @@ import { cancelReturn, listReturns } from "../actions"
 type Return = Awaited<ReturnType<typeof listReturns>>[number]
 
 export function ReturnsListClient() {
+  const canViewFiscal = useFiscalSourceAccess()
   const [returns, setReturns] = useState<Return[]>([])
   const [isLoading, startLoading] = useTransition()
   const [query, setQuery] = useState("")
@@ -153,7 +156,7 @@ export function ReturnsListClient() {
                 ) : (
                   filtered.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.returnCode}</TableCell>
+                      <TableCell className="font-medium">{r.returnCode}<FiscalSourceLink allowed={canViewFiscal} kind="RETURN" id={r.id}/></TableCell>
                       <TableCell>
                         <Link
                           href={`/sales/list`}

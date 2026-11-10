@@ -24,12 +24,12 @@ async function browserSuite() {
     await sleep(20)
   }
   function basic(id, stock = 2, extra = {}) { return { id, name: id, stock, sku: `${id}-123456789012`, priceCents: 100, itbisRateBp: 0, unit: "UNIDAD", productKind: "BASIC", recipeItems: [], ...extra } }
-  async function setup(products, { view = "grid", owner = false, permitted = false, restored = null, cashEnabled = true } = {}) {
+  async function setup(products, { view = "grid", owner = false, permitted = false, restored = null, cashEnabled = true, fiscal = false } = {}) {
     rootView?.unmount(); await sleep(20)
     online = true
     localStorage.clear(); sessionStorage.clear()
     const accountId = `pos-test-${++serial}`
-    const f = window.__fixture = { accountId, products, toasts: [], preflights: 0, saves: 0, savedNotes: [], printed: 0, transactions: new Map(), user: { id: accountId, accountId, username: "ana", name: "Ana", isOwner: owner, canSellWithoutStock: permitted } }
+    const f = window.__fixture = { accountId, products, fiscal, fiscalRequests: 0, toasts: [], preflights: 0, saves: 0, savedNotes: [], printed: 0, transactions: new Map(), user: { id: accountId, accountId, username: "ana", name: "Ana", isOwner: owner, canSellWithoutStock: permitted } }
     f.snapshot = () => f.products.map(product => ({ ...product, accountId, stockSnapshotAt: Date.now(), recipeItems: product.recipeItems.map(item => ({ ...item, ingredientStock: f.products.find(p => p.id === item.ingredientId)?.stock ?? 0, ingredientIsActive: true })) }))
     f.check = items => {
       f.preflights++
@@ -48,11 +48,13 @@ async function browserSuite() {
       f.savedNotes.push(notes ?? null)
       return { id: `sale-${f.saves}`, invoiceCode: `A-${f.saves}`, notes: notes ?? null, stockDecrements: result.consumptions }
     }
-    const context = { enabled: cashEnabled, fiscalQueuePolicy: { version: 0, enabled: false }, accountId, userId: f.user.id, canOperate: true, treasuryAccountId: "cash", activeShift: { id: accountId, isMine: true, isDevice: true, status: "OPEN", lastSequence: 0 } }
+    const context = { enabled: cashEnabled, fiscalQueuePolicy: { version: fiscal ? 1 : 0, enabled: fiscal }, accountId, userId: f.user.id, canOperate: true, treasuryAccountId: "cash", activeShift: { id: accountId, isMine: true, isDevice: true, status: "OPEN", lastSequence: 0 } }
     window.fetch = async (url, options = {}) => {
       if (!online) throw new TypeError("Failed to fetch")
       if (String(url).includes("auth/me")) return Response.json({ user: f.user })
       if (String(url).includes("health-check")) return new Response(null, { status: 200 })
+      if (String(url).includes("/api/fiscal/sales/context")) { f.fiscalRequests++; return Response.json({policyVersion:1,customers:[{id:'generic',preferredReceiptType:'E32'},{id:'named',preferredReceiptType:'E31'}],sequences:[{type:'E32',remaining:'10',usable:true}]}) }
+      if (String(url).includes("/api/fiscal/sales/customer")) { f.fiscalRequests++; return Response.json({matches:[{id:'named',visualId:2,name:'Empresa prueba',legalName:null,identification:'101111111'}],hasMore:false}) }
       if (!options.method) return Response.json(context)
       const body = JSON.parse(options.body)
       try {
@@ -65,7 +67,7 @@ async function browserSuite() {
     window.open = () => { f.printed++; return { closed: false } }
     if (restored) localStorage.setItem("posCartState", JSON.stringify({ timestamp: Date.now(), cart: restored, customerId: "generic", saleType: "CONTADO", paymentMethod: "EFECTIVO" }))
     rootView = createRoot(document.getElementById("test-root"))
-    rootView.render(React.createElement(PosClient, { defaultViewMode: view }))
+    rootView.render(React.createElement(PosClient, { defaultViewMode: view, ...(fiscal ? { fiscalSale:{accountId,version:1,canPrepare:true} } : {}) }))
     await until(() => document.querySelector('input[placeholder="Buscar productos"]'), "No montó el POS")
     if (view === "list") await input(document.querySelector('input[placeholder="Buscar productos"]'), products[0].name)
     await until(() => card(products[0].name) && !card(products[0].name).textContent.includes("Sincroniza para validar"), "No cargó el inventario")
@@ -84,6 +86,22 @@ async function browserSuite() {
     target("sales-change-confirm").click()
     await until(() => !target("sales-change-amount"), "No terminó el guardado")
     await sleep(50)
+  }
+  if (window.__fiscalOnly) {
+    await test("POS ordinario sin controles ni consultas fiscales", async () => {
+      const f=await setup([basic("pan",2)],{fiscal:false})
+      assert(!document.querySelector('[aria-label="Comprobante de la venta"]'),"El comprobante no debe aparecer con el módulo apagado")
+      assert(!document.getElementById('fiscal-buyer-id') && f.fiscalRequests===0,"No debe pedir RNC ni consultar rutas fiscales")
+    })
+    await test("POS activo propone E32 y selecciona la ficha por RNC", async () => {
+      const f=await setup([basic("pan",2)],{fiscal:true})
+      const section=document.querySelector('[aria-label="Comprobante de la venta"]')
+      assert(section && section.textContent.includes('E32') && f.fiscalRequests>0,"Debe proponer consumo y consultar disponibilidad")
+      await input(document.getElementById('fiscal-buyer-id'),'101111111')
+      button('Buscar cliente por identificación').click()
+      await until(()=>section.textContent.includes('E31'),"El RNC existente debe seleccionar al cliente y proponer su comprobante")
+    })
+    rootView?.unmount(); document.getElementById("result").textContent=JSON.stringify(results); return
   }
   await test("Agotados visibles y bloqueados en lista, tarjetas y escáner", async () => {
     for (const view of ["list", "grid"]) {
@@ -316,7 +334,7 @@ async function browserSuite() {
 }
 
 const mocks = {
-  "sales-actions": `export async function listCustomers(){return [{id:'generic',name:'Consumidor final',isGeneric:true}]} export async function listAllProductsForSale(){return window.__fixture.snapshot()} export async function searchProducts(q){return window.__fixture.snapshot().filter(p=>p.name.includes(q)||p.sku===q)} export async function findProductByBarcode(q){return window.__fixture.snapshot().find(p=>p.sku===q)} export async function checkSaleStock(items){return window.__fixture.check(items)} export async function createSale(input){return window.__fixture.save(input.items,input.notes)}`,
+  "sales-actions": `export async function listCustomers(){return [{id:'generic',name:'Consumidor final',isGeneric:true},...(window.__fixture.fiscal?[{id:'named',visualId:2,name:'Empresa prueba',isGeneric:false}]:[])]} export async function listAllProductsForSale(){return window.__fixture.snapshot()} export async function searchProducts(q){return window.__fixture.snapshot().filter(p=>p.name.includes(q)||p.sku===q)} export async function findProductByBarcode(q){return window.__fixture.snapshot().find(p=>p.sku===q)} export async function checkSaleStock(items){return window.__fixture.check(items)} export async function createSale(input){return window.__fixture.save(input.items,input.notes)}`,
   "payments-actions": `export async function addPayment(){} export async function addBatchPayment(){}`,
   "sync-actions": `export async function syncProductsToIndexedDB(){const f=window.__fixture;return f.syncProducts?f.syncProducts():f.snapshot()} export async function syncCustomersToIndexedDB(){return [{id:'generic',name:'Consumidor final',isGeneric:true}]} export async function syncARToIndexedDB(){return [{id:'ar'}]}`,
   "treasury-actions": `export async function listTreasuryAccounts(){return [{id:'cash',name:'Caja efectivo',type:'CAJA',bankName:null}]}`,
@@ -342,4 +360,4 @@ const compiled = await build({
     build.onLoad({ filter: /.*/, namespace: "stock-test" }, args => ({ contents: mocks[args.path], resolveDir: root }))
   } }],
 })
-await runBrowserSuite(root, "pos-stock-browser", `<!doctype html><meta charset="utf-8"><div id="test-root"></div><pre id="result">RUNNING</pre><script>window.__errors=[];window.addEventListener('error',e=>window.__errors.push(e.message));${compiled.outputFiles[0].text}</script>`)
+await runBrowserSuite(root, "pos-stock-browser", `<!doctype html><meta charset="utf-8"><div id="test-root"></div><pre id="result">RUNNING</pre><script>window.__fiscalOnly=${process.argv.includes('--fiscal-only')};window.__errors=[];window.addEventListener('error',e=>window.__errors.push(e.message));${compiled.outputFiles[0].text}</script>`)

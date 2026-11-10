@@ -3,7 +3,7 @@
 import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
 
 import { aggregateStockConsumptions, validateStockConsumptions, type StockEntry } from "@/lib/pos-stock"
-import { CashControlError, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+import { CashControlError, cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
@@ -336,6 +336,7 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
   const normalizedVisualQuery = q ? q.replace(/^#/, "") : ""
   const visualIdQuery = normalizedVisualQuery && /^\d+$/.test(normalizedVisualQuery) ? Number(normalizedVisualQuery) : null
   const shouldIncludeLegacyNullGeneric = q ? isGenericCustomerQuery(q) : false
+  const fiscalSaleIds = q && /^E(?:31|32|44|45|46)\d{0,10}$/i.test(q) ? await (await import("@/lib/fiscal/core/sale-query")).findFiscalSaleIds(user, q) : []
   const take = Math.min(Math.max(options?.take ?? 50, 1), 200)
   const from = parseDateParam(options?.from)
   const to = parseDateParam(options?.to)
@@ -354,6 +355,7 @@ export async function listSales(options?: { query?: string; cursor?: string | nu
             { customer: { name: { contains: q, mode: "insensitive" } } },
             ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
             ...(shouldIncludeLegacyNullGeneric ? [{ customerId: null }] : []),
+            ...(fiscalSaleIds.length ? [{ id: { in: fiscalSaleIds } }] : []),
             { items: { some: { product: { name: { contains: q, mode: "insensitive" } } } } },
           ],
         }
@@ -470,6 +472,10 @@ function validateCartItems(items: CartItemInput[]) {
     if (!item.productId) throw new Error("Producto inválido en el carrito.")
     if (!Number.isFinite(item.qty) || item.qty <= 0) {
       throw new Error("La cantidad debe ser mayor a 0.")
+    }
+    // La API y la sincronización también deben respetar la precisión del POS.
+    if (Math.abs(item.qty * 100 - Math.round(item.qty * 100)) > 1e-8) {
+      throw new Error("La cantidad vendida admite como máximo dos decimales.")
     }
     if (!Number.isFinite(item.unitPriceCents) || item.unitPriceCents <= 0 || !Number.isInteger(item.unitPriceCents)) {
       throw new Error("El precio unitario debe ser un entero positivo en centavos.")
@@ -959,13 +965,18 @@ async function applyConsumptions(
 
 export async function createSale(input: Parameters<typeof createSaleInternal>[0]) {
   // Validar antes de registrar la operación idempotente o ejecutar efectos comerciales.
-  assertNoFiscalInput(input)
+  const hasFiscalSelection = Object.hasOwn(input, "fiscal")
+  const commercialInput = { ...input }
+  delete commercialInput.fiscal
+  assertNoFiscalInput(commercialInput)
   const { cashOperation, ...payload } = input
   const hashPayload = { ...payload } as Record<string, unknown>
   delete hashPayload.user
   // El nombre puede cambiar mientras una respuesta queda pendiente; la identidad estable es userId.
   delete hashPayload.username
-  return withCashOperation(cashOperation, { kind: "createSale", ...hashPayload }, () => createSaleInternal(input))
+  const run = () => withCashOperation(cashOperation, { kind: "createSale", ...hashPayload }, () => createSaleInternal(input))
+  // No crear una excepción fiscal para llamadas antiguas que omitieron la elección.
+  return hasFiscalSelection ? cashRequest.run({ ...cashRequest.getStore(), fiscalSaleRequested: true }, run) : run()
 }
 
 async function createSaleInternal(input: {
@@ -988,8 +999,25 @@ async function createSaleInternal(input: {
   username: string
   user?: any
   cashOperation?: CashOperationInput
+  fiscal?: unknown
 }) {
   let user = input.user
+  const hasFiscalSelection = Object.hasOwn(input, "fiscal")
+  let fiscalCommand: import("@/lib/fiscal/core/sale-command").FiscalSaleCommand | null = null
+  if (hasFiscalSelection) {
+    const { resolveCashIdentity } = await import("@/lib/cash-context")
+    // El actor de una venta fiscal siempre viene de la sesión, nunca del cuerpo móvil.
+    const identity = await resolveCashIdentity()
+    if (user && (user.id !== identity.actor.id || user.accountId !== identity.actor.accountId)) throw new CashControlError("CASH_ACTOR_MISMATCH", "La sesión no coincide con la venta", 403)
+    user = identity.actor
+    const { hasPermission } = await import("@/lib/permissions")
+    if (!hasPermission(user, "canAccessSales")) throw new CashControlError("CASH_FORBIDDEN", "Sin permiso para registrar ventas", 403)
+    if (input.fiscal !== null) {
+      const { parseFiscalSaleCommand } = await import("@/lib/fiscal/core/sale-command")
+      fiscalCommand = parseFiscalSaleCommand(input.fiscal)
+      if (!input.cashOperation) throw new CashControlError("CASH_OPERATION_INVALID", "La venta fiscal requiere un identificador durable", 400)
+    }
+  }
   if (!user) {
     const authResult = await getCurrentUserWithDiagnostics({ source: "sales/create-invoice" })
     // Preventivo: el POS puede seguir abierto tras expirar una sesión. Esta causa
@@ -1044,6 +1072,16 @@ async function createSaleInternal(input: {
       })
       if (!dbUser) {
         throw new Error("El usuario no existe. Por favor, inicia sesión de nuevo.")
+      }
+
+      if (hasFiscalSelection) {
+        const fiscalSettings = await tx.fiscalSettings.findUnique({ where: { accountId: user.accountId } })
+        if (!fiscalSettings?.enabled || fiscalSettings.jurisdiction !== "DO" || fiscalSettings.regime !== "DO_ECF" || fiscalSettings.environment !== "TEST" || fiscalSettings.configurationStatus !== "VALIDATED") throw new CashControlError("FISCAL_POLICY_CHANGED", "La configuración fiscal no está activa y validada; conserva la venta para revisión")
+        if (fiscalCommand && fiscalSettings.version !== fiscalCommand.expectedPolicyVersion) throw new CashControlError("FISCAL_POLICY_CHANGED", "La política fiscal cambió; conserva la venta para revisión")
+        if (input.cashOperation && input.cashOperation.fiscalPolicyVersion !== fiscalSettings.version) throw new CashControlError("FISCAL_POLICY_CHANGED", "La política fiscal cambió; conserva la venta para revisión")
+        const scope = cashRequest.getStore()
+        if (!scope) throw new Error("Falta contexto de caja para la venta fiscal")
+        scope.fiscalSaleAuthorizedAccountId = user.accountId
       }
 
       // Usar el permiso del usuario para vender sin stock
@@ -1122,6 +1160,8 @@ async function createSaleInternal(input: {
         })
         : null
       if (!finalCustomer?.isActive) {
+        // No sustituir silenciosamente el comprador fiscal seleccionado por el genérico.
+        if (fiscalCommand && requestedCustomerId) throw new Error("El cliente seleccionado no existe o está inactivo; revisa la venta fiscal.")
         if (requestedCustomerId) {
           console.warn(`Cliente ${requestedCustomerId} no existe o está inactivo, usando cliente genérico`)
         }
@@ -1133,6 +1173,18 @@ async function createSaleInternal(input: {
       }
       if (!finalCustomer) {
         throw new Error("No se pudo resolver el cliente de la venta.")
+      }
+      let autoSelectedFiscalCustomer = false
+      if (fiscalCommand?.buyer && finalCustomer.isGeneric) {
+        const { resolveFiscalBuyerCustomer } = await import("@/lib/fiscal/core/sale-customer")
+        const matchedId = await resolveFiscalBuyerCustomer(user, true, fiscalCommand.buyer, tx)
+        if (matchedId) {
+          const matched = await tx.customer.findFirst({ where: { id: matchedId, accountId: user.accountId, isActive: true }, select: { id: true, isActive: true, creditDays: true, saleDiscountPercentBp: true, isGeneric: true } })
+          if (!matched || matched.isGeneric) throw new Error("El cliente con esa identificación ya no está disponible.")
+          finalCustomer = matched
+          fiscalCommand = { ...fiscalCommand, buyer: undefined }
+          autoSelectedFiscalCustomer = true
+        }
       }
       const finalCustomerId = finalCustomer.id
       if (input.type === SaleType.CREDITO && finalCustomer.isGeneric) {
@@ -1146,7 +1198,7 @@ async function createSaleInternal(input: {
         customer: { saleDiscountPercentBp: finalCustomer.saleDiscountPercentBp },
       })
 
-      const {
+      let {
         discountSubtotalCents,
         subtotalCents,
         itbisCents,
@@ -1158,12 +1210,22 @@ async function createSaleInternal(input: {
         discountPercentBp
       )
       const shippingCents = input.shippingCents ?? 0
+      if (fiscalCommand && ["E44", "E46"].includes(fiscalCommand.type)) {
+        const { calculateExemptSalePrices } = await import("@/lib/fiscal/core/sale-pricing")
+        const exempt = calculateExemptSalePrices({ lines: resolvedLines.map(line => ({ unitPriceCents: line.item.unitPriceCents, qty: line.item.qty, itbisRateBp: line.product.itbisRateBp })), priceIncludesItbis: salePricesIncludeItbis, discountPercentBp, shippingCents, applyLegalTip: false })
+        subtotalCents = exempt.subtotalCents
+        itbisCents = 0
+        itemsTotalCents = exempt.subtotalCents
+        discountTotalCents = discountSubtotalCents
+      }
       const { legalTipApplied, legalTipBaseCents, legalTipCents, legalTipPercentBp } = resolveLegalTip({
         legalTipEnabled,
         applyLegalTip: input.applyLegalTip,
         subtotalCents,
       })
       const totalCents = itemsTotalCents + shippingCents + legalTipCents
+      // El total recibido solo actúa como condición de revisión; nunca determina los importes guardados.
+      if (fiscalCommand && ((autoSelectedFiscalCustomer && finalCustomer.saleDiscountPercentBp > 0 && fiscalCommand.expectedTotalCents === undefined) || (fiscalCommand.expectedTotalCents !== undefined && fiscalCommand.expectedTotalCents !== totalCents))) throw new CashControlError("FISCAL_TOTAL_CHANGED", "El total cambió al identificar al cliente; revisa la venta antes de confirmarla")
       const paymentSplits = input.paymentSplits ?? []
       const hasPaymentSplits = paymentSplits.length > 0
 
@@ -1380,6 +1442,7 @@ async function createSaleInternal(input: {
           dueDate = new Date(soldAt ?? new Date())
           dueDate.setDate(dueDate.getDate() + finalCustomer.creditDays)
         }
+        if (fiscalCommand?.dueDate) dueDate = new Date(`${fiscalCommand.dueDate}T12:00:00.000Z`)
 
         await tx.accountReceivable.create({
           data: {
@@ -1421,6 +1484,13 @@ async function createSaleInternal(input: {
 
       // Devolver los consumos reales evita que el POS conserve existencias obsoletas
       // hasta que el usuario recargue la pestaña (especialmente en productos tipo receta).
+      if (fiscalCommand) {
+        const { buildFiscalSaleDocument } = await import("@/lib/fiscal/core/sale-document")
+        const { prepareFiscalSaleInTransaction } = await import("@/lib/fiscal/core/preparation")
+        const { document, metadata } = await buildFiscalSaleDocument(tx, user, sale.id, fiscalCommand)
+        const fiscal = await prepareFiscalSaleInTransaction(tx, user, document, metadata)
+        return { ...sale, stockDecrements, fiscal }
+      }
       return { ...sale, stockDecrements }
     }, TRANSACTION_OPTIONS)
 
@@ -1547,11 +1617,14 @@ export async function cancelSale(id: string, username: string, reason: string, c
             },
           },
           ar: true,
+          fiscalDocuments: { where: { state: "PREPARADO_PENDIENTE_CONEXION" }, select: { id: true }, take: 1 },
         },
       })
 
       if (!sale) return { success: false, error: "Venta no encontrada" }
       if (sale.cancelledAt) return { success: false, error: "Esta venta ya está cancelada" }
+      // La desactivación del módulo nunca autoriza anular la operación que respalda una copia congelada.
+      if (sale.fiscalDocuments.length) return { success: false, error: "Esta venta tiene un documento fiscal preparado. Su corrección requiere una nota fiscal." }
 
       // Verificar permiso para cancelar ventas
       if (!user.canCancelSales && !user.isOwner) {
@@ -1686,11 +1759,14 @@ export async function updateSale(input: {
         },
         payments: true,
         ar: true,
+        fiscalDocuments: { where: { state: "PREPARADO_PENDIENTE_CONEXION" }, select: { id: true }, take: 1 },
       },
     })
 
     if (!existingSale) throw new Error("Venta no encontrada")
     if (existingSale.cancelledAt) throw new Error("No se puede editar una venta cancelada")
+    // Nunca modificar importes de una venta cuyo documento ya fue preparado, aunque el perfil esté apagado.
+    if (existingSale.fiscalDocuments.length) throw new Error("Esta venta tiene un documento fiscal preparado. Su corrección requiere una nota fiscal.")
 
     // Validar permiso para cambiar tipo de venta
     if (input.type !== existingSale.type) {

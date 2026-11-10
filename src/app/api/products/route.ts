@@ -1,3 +1,4 @@
+import { FiscalMasterDataError, fiscalFields, productFiscalFields, validateFiscalCatalogFields } from "@/lib/fiscal/core/master-data"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { listProducts, upsertProduct } from "@/app/(app)/products/actions"
@@ -32,6 +33,7 @@ export async function GET(request: NextRequest) {
     const products = result.items.map((p: any) => ({
       id: p.id,
       productId: p.productId,
+      ...fiscalFields(p, productFiscalFields),
       name: p.name,
       sku: p.sku,
       reference: p.reference,
@@ -69,6 +71,7 @@ export async function GET(request: NextRequest) {
       nextCursor: result.nextCursor,
     })
   } catch (error: any) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     console.error("Error en GET /api/products:", error)
     return NextResponse.json(
       { error: error.message || "Error al obtener productos" },
@@ -86,6 +89,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+    // Validar antes del retorno idempotente evita aceptar datos fiscales inválidos en un reintento.
+    validateFiscalCatalogFields(fiscalFields(body, productFiscalFields))
     if (hasValue(body.purchaseUnit) || hasValue(body.saleUnit)) {
       return NextResponse.json({ error: "Usa unit. purchaseUnit y saleUnit ya no son válidos." }, { status: 400 })
     }
@@ -115,6 +120,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           id: existing.id,
           productId: existing.productId,
+          ...fiscalFields(existing, productFiscalFields),
           name: existing.name,
           sku: existing.sku,
           reference: existing.reference,
@@ -194,6 +200,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await upsertProduct({
+      ...fiscalFields(body, productFiscalFields),
       name: body.name,
       sku: body.sku || null,
       reference: body.reference || null,
@@ -238,6 +245,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       id: product.id,
       productId: product.productId,
+      ...fiscalFields(product, productFiscalFields),
       name: product.name,
       sku: product.sku,
       reference: product.reference,
@@ -256,6 +264,7 @@ export async function POST(request: NextRequest) {
       categoryInternalId: product.categoryId ?? null,
     }, { status: 201 })
   } catch (error: any) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     console.error("Error en POST /api/products:", error)
     return NextResponse.json(
       { error: error.message || "Error al crear producto" },

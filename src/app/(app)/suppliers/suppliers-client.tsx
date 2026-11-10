@@ -1,5 +1,8 @@
 "use client"
 
+import { FiscalMasterFields } from "@/components/app/fiscal-master-fields"
+import { fiscalFields, supplierFiscalFields } from "@/lib/fiscal/core/master-data"
+
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { Edit, Plus, Search, Trash2 } from "lucide-react"
 
@@ -16,7 +19,7 @@ import { deactivateSupplier, listSuppliers, upsertSupplier } from "./actions"
 
 type Supplier = Awaited<ReturnType<typeof listSuppliers>>[number]
 
-export function SuppliersClient({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
+export function SuppliersClient({ fiscalEnabled = false, initiallyOpen = false, defaultFiscalCountry = null }: { fiscalEnabled?: boolean; initiallyOpen?: boolean; defaultFiscalCountry?: string | null }) {
   const [query, setQuery] = useState("")
   const [items, setItems] = useState<Supplier[]>([])
   const [isLoading, startLoading] = useTransition()
@@ -25,6 +28,7 @@ export function SuppliersClient({ initiallyOpen = false }: { initiallyOpen?: boo
   const [editing, setEditing] = useState<Supplier | null>(null)
 
   const [name, setName] = useState("")
+  const [fiscalData, setFiscalData] = useState<Record<string, string | null>>({ fiscalIdentificationCountry: defaultFiscalCountry, fiscalResidence: defaultFiscalCountry })
   const [contactName, setContactName] = useState("")
   const [phone, setPhone] = useState("")
   const [email, setEmail] = useState("")
@@ -67,6 +71,7 @@ export function SuppliersClient({ initiallyOpen = false }: { initiallyOpen?: boo
 
   function resetForm(s?: Supplier | null) {
     const x = s ?? null
+    setFiscalData(x ? fiscalFields(x, supplierFiscalFields) : { fiscalIdentificationCountry: defaultFiscalCountry, fiscalResidence: defaultFiscalCountry })
     setEditing(x)
     setName(x?.name ?? "")
     setContactName(x?.contactName ?? "")
@@ -101,6 +106,7 @@ export function SuppliersClient({ initiallyOpen = false }: { initiallyOpen?: boo
           return
         }
         await upsertSupplier({
+          ...(fiscalEnabled ? fiscalData : {}),
           id: editing?.id,
           name,
           contactName: contactName || null,
@@ -242,6 +248,7 @@ export function SuppliersClient({ initiallyOpen = false }: { initiallyOpen?: boo
                 </div>
               </div>
 
+              {fiscalEnabled && <FiscalMasterFields kind="supplier" value={fiscalData} onChange={setFiscalData} />}
               <DialogFooter>
                 <Button variant="secondary" onClick={() => setOpen(false)} type="button">Cancelar</Button>
                 <Button onClick={onSave} disabled={isSaving} type="button">{isSaving ? "Guardando…" : "Guardar"}</Button>

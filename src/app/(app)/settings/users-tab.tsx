@@ -50,7 +50,8 @@ import {
   ALL_PERMISSION_KEYS,
   CRITICAL_PERMISSION_KEYS,
   PERMISSION_LABELS,
-  PERMISSION_MODULES,
+  getVisiblePermissionModules,
+  getVisiblePermissionKeys,
   buildPermissionPatch,
   getModulePermissionState,
   isCriticalPermission,
@@ -96,13 +97,14 @@ function getPermissionValue(user: UserWithPermissions, permission: PermissionKey
 }
 
 type UsersTabProps = {
+  fiscalEnabled: boolean
   currentUserId: string
   isOwner: boolean
   canManageUsers: boolean
   openCurrentUserEditor?: boolean
 }
 
-export function UsersTab({ currentUserId, isOwner, canManageUsers, openCurrentUserEditor = false }: UsersTabProps) {
+export function UsersTab({ fiscalEnabled, currentUserId, isOwner, canManageUsers, openCurrentUserEditor = false }: UsersTabProps) {
   const [users, setUsers] = useState<UserWithPermissions[]>([])
   const [isLoading, startLoading] = useTransition()
   const [isSaving, startSaving] = useTransition()
@@ -200,10 +202,10 @@ export function UsersTab({ currentUserId, isOwner, canManageUsers, openCurrentUs
           role: selectedUser.role,
           isActive: selectedUser.isActive,
           password: editPassword || undefined,
-          permissions: ALL_PERMISSION_KEYS.reduce<Record<PermissionKey, boolean>>((acc, key) => {
+          permissions: getVisiblePermissionKeys(fiscalEnabled).reduce<Partial<Record<PermissionKey, boolean>>>((acc, key) => {
             acc[key] = getPermissionValue(selectedUser, key)
             return acc
-          }, {} as Record<PermissionKey, boolean>),
+          }, {}),
         })
         toast({ title: "Usuario actualizado" })
         setShowEditDialog(false)
@@ -278,7 +280,8 @@ export function UsersTab({ currentUserId, isOwner, canManageUsers, openCurrentUs
   }
 
   const handleSetAllPermissions = (targetUser: UserWithPermissions, value: boolean) => {
-    const editablePermissions = isOwner ? ALL_PERMISSION_KEYS : NON_CRITICAL_PERMISSION_KEYS
+    const visiblePermissions = getVisiblePermissionKeys(fiscalEnabled)
+    const editablePermissions = isOwner ? visiblePermissions : visiblePermissions.filter((key) => NON_CRITICAL_PERMISSION_KEYS.includes(key))
     const patch = buildPermissionPatch(editablePermissions, value)
 
     setUsers((prev) =>
@@ -288,6 +291,7 @@ export function UsersTab({ currentUserId, isOwner, canManageUsers, openCurrentUs
     startSaving(async () => {
       try {
         await setAllUserPermissions(targetUser.id, value)
+        loadUsers() // El servidor comprueba el estado fiscal vigente al guardar.
         toast({ title: value ? "Todos los permisos aplicables activados" : "Todos los permisos aplicables desactivados" })
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "Error al guardar", variant: "destructive" })
@@ -429,7 +433,7 @@ export function UsersTab({ currentUserId, isOwner, canManageUsers, openCurrentUs
                       </div>
                       <AccordionContent>
                         <div className="grid gap-4 pt-2">
-                          {PERMISSION_MODULES.map((module) => {
+                          {getVisiblePermissionModules(fiscalEnabled).map((module) => {
                             const editableModulePermissions = getEditableModulePermissions(module.permissions)
                             const moduleState = getModulePermissionState(
                               user,

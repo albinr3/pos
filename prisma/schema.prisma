@@ -242,6 +242,8 @@ model Account {
   deletionPinWindowStartedAt DateTime?
   // Baja para comunicaciones de seguimiento; no afecta correos transaccionales.
   engagementEmailsEnabled Boolean @default(true)
+  // Cierre permanente del aviso de inventario, compartido por los usuarios y dispositivos del negocio.
+  inventoryUploadOfferDismissed Boolean @default(false)
   registrationSource   RegistrationSource     @default(UNKNOWN)
   registeredFromDevice RegistrationDeviceType @default(UNKNOWN)
   registeredWithMethod RegistrationMethod     @default(UNKNOWN)
@@ -252,9 +254,12 @@ model Account {
   companySettings      CompanySettings?
   fiscalSettings       FiscalSettings?
   fiscalPolicyChanges  FiscalPolicyChange[]
+  fiscalDocuments      FiscalDocument[]
+  fiscalSequences      FiscalSequence[]
   customers            Customer[]
   suppliers            Supplier[]
   categories           Category[]
+  fiscalConcepts       FiscalConcept[]
   products             Product[]
   sales                Sale[]
   purchases            Purchase[]
@@ -330,6 +335,11 @@ model FiscalSettings {
   accountId String @id
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   enabled Boolean @default(false)
+  legalName String?
+  taxId String?
+  fiscalAddress String?
+  fiscalEmail String?
+  fiscalPhone String?
   jurisdiction String?
   regime String?
   environment String @default("TEST")
@@ -349,6 +359,127 @@ model FiscalPolicyChange {
   createdAt DateTime @default(now())
 
   @@unique([accountId, version])
+}
+
+model FiscalSequence {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  regime String @default("DO_ECF")
+  environment String @default("TEST")
+  type String
+  rangeStart BigInt
+  rangeEnd BigInt
+  lastNumber BigInt
+  expiresOn DateTime? @db.Date
+  active Boolean @default(false)
+  readyForRollover Boolean @default(false)
+  authorizationRef String?
+  notes String?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  allocations FiscalNumberAllocation[]
+  events FiscalSequenceEvent[]
+  @@unique([accountId, id])
+  @@index([accountId, type, environment])
+}
+
+model FiscalNumberAllocation {
+  id String @id @default(cuid())
+  accountId String
+  sequenceId String
+  sequence FiscalSequence @relation(fields: [accountId, sequenceId], references: [accountId, id], onDelete: Restrict)
+  documentId String
+  environment String
+  type String
+  number BigInt
+  eNcf String
+  sequenceSnapshot Json
+  actorUserId String
+  voidedAt DateTime?
+  voidedBy String?
+  voidReason String?
+  createdAt DateTime @default(now())
+  @@unique([accountId, documentId])
+  @@unique([accountId, environment, eNcf])
+  @@unique([accountId, sequenceId, number])
+}
+
+model FiscalSequenceEvent {
+  id String @id @default(cuid())
+  accountId String
+  sequenceId String
+  sequence FiscalSequence @relation(fields: [accountId, sequenceId], references: [accountId, id], onDelete: Restrict)
+  actorUserId String
+  action String
+  reason String
+  details Json
+  createdAt DateTime @default(now())
+  @@index([accountId, sequenceId, createdAt])
+}
+
+// El documento es una copia propia; todavía no se asignan números ni se envía.
+model FiscalDocument {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  saleId String?
+  sale Sale? @relation(fields: [saleId], references: [id], onDelete: Restrict)
+  purchaseId String?
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  returnId String?
+  return Return? @relation(fields: [returnId], references: [id], onDelete: Restrict)
+  expenseId String?
+  expense OperatingExpense? @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  type String
+  state String @default("BORRADOR")
+  policyVersion Int
+  ruleVersion String
+  revision Int @default(1)
+  snapshot Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lines FiscalDocumentLine[]
+  events FiscalDocumentEvent[]
+  references FiscalDocumentReference[] @relation("FiscalReferenceSource")
+  referencedBy FiscalDocumentReference[] @relation("FiscalReferenceTarget")
+  @@unique([accountId, id])
+  @@index([accountId, state])
+}
+
+model FiscalDocumentLine {
+  id String @id @default(cuid())
+  accountId String
+  documentId String
+  document FiscalDocument @relation(fields: [accountId, documentId], references: [accountId, id], onDelete: Restrict)
+  position Int
+  snapshot Json
+  @@unique([accountId, documentId, position])
+}
+
+model FiscalDocumentReference {
+  id String @id @default(cuid())
+  accountId String
+  documentId String
+  document FiscalDocument @relation("FiscalReferenceSource", fields: [accountId, documentId], references: [accountId, id], onDelete: Restrict)
+  referencedDocumentId String
+  referencedDocument FiscalDocument @relation("FiscalReferenceTarget", fields: [accountId, referencedDocumentId], references: [accountId, id], onDelete: Restrict)
+  snapshot Json
+  @@unique([accountId, documentId, referencedDocumentId])
+}
+
+model FiscalDocumentEvent {
+  id String @id @default(cuid())
+  accountId String
+  documentId String
+  document FiscalDocument @relation(fields: [accountId, documentId], references: [accountId, id], onDelete: Restrict)
+  actorUserId String?
+  state String
+  reason String?
+  details Json?
+  createdAt DateTime @default(now())
+  @@index([accountId, documentId, createdAt])
 }
 
 model AccountOnboarding {
@@ -849,6 +980,14 @@ model Customer {
   cedula   String?
   province String?
 
+  fiscalIdentificationType String?
+  fiscalIdentificationCountry String?
+  fiscalIdentification String?
+  fiscalLegalName String?
+  fiscalEmail String?
+  fiscalAddress String?
+  fiscalPreferredReceiptType String?
+
   isGeneric Boolean @default(false)
   isActive  Boolean @default(true)
 
@@ -883,6 +1022,13 @@ model Supplier {
   email       String?
   address     String?
   notes       String?
+
+  fiscalIdentificationType String?
+  fiscalIdentificationCountry String?
+  fiscalIdentification String?
+  fiscalResidence String?
+  fiscalLegalName String?
+  fiscalDeclaredCondition String?
 
   discountPercentBp Int     @default(0)
   creditDays Int @default(0)
@@ -956,6 +1102,10 @@ model Product {
 
   itbisRateBp Int @default(1800)
 
+  fiscalItemType String?
+  fiscalUnit String?
+  fiscalTaxTreatment String?
+
   productKind ProductKind @default(BASIC)
   unit        UnitType    @default(UNIDAD)
   stock       Decimal     @default(0) @db.Decimal(10, 3)
@@ -992,6 +1142,22 @@ model Product {
   @@index([accountId, stock])
   @@index([accountId, isAvailableForSale])
   @@index([accountId, isOnboardingDemo])
+}
+
+// Los conceptos fiscales no participan en existencias ni ventas del POS.
+model FiscalConcept {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  name String
+  kind String
+  fiscalUnit String?
+  fiscalTaxTreatment String?
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId, isActive])
 }
 
 model ProductRecipeItem {
@@ -1148,9 +1314,11 @@ model Sale {
   payments SalePayment[]
   ar       AccountReceivable?
   returns  Return[]
+  fiscalDocuments FiscalDocument[]
 
   // invoiceCode único dentro del account
   @@unique([accountId, invoiceCode])
+  @@unique([accountId, id])
   @@index([accountId])
   @@index([accountId, soldAt])
   @@index([customerId])
@@ -1411,6 +1579,9 @@ model Purchase {
   cancelledUser User?     @relation("CancelledPurchases", fields: [cancelledBy], references: [id])
 
   items PurchaseItem[]
+  fiscalDocuments FiscalDocument[]
+
+  @@unique([accountId, id])
 
   @@index([accountId])
   @@index([accountId, purchasedAt])
@@ -1467,6 +1638,9 @@ model OperatingExpense {
   cancelledAt DateTime?
   cancelledBy String?
   cancellationReason String?
+  fiscalDocuments FiscalDocument[]
+
+  @@unique([accountId, id])
 
   @@index([accountId])
   @@index([accountId, expenseDate])
@@ -1483,6 +1657,9 @@ model Return {
 
   accountId String
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  fiscalDocuments FiscalDocument[]
+
+  @@unique([accountId, id])
 
   returnNumber Int
   returnCode   String // e.g. DEV-00001
@@ -2174,4 +2351,34 @@ model PurchaseOperation {
   response Json
   createdAt DateTime @default(now())
   @@unique([accountId, operationId])
+}
+
+// Comandos y revisiones conservan la evidencia de cada preparación local.
+model FiscalDocumentRevision {
+  id String @id
+  accountId String
+  documentId String
+  revision Int
+  actorUserId String
+  input Json
+  createdAt DateTime @default(now())
+  @@unique([accountId, documentId, revision])
+}
+
+model FiscalPreparationOperation {
+  id String @id
+  accountId String
+  operationId String
+  actorUserId String
+  kind String
+  payloadHash String
+  documentId String?
+  revision Int?
+  status String
+  result Json?
+  error Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now())
+  @@unique([accountId, operationId])
+  @@index([accountId, documentId, createdAt, id])
 }

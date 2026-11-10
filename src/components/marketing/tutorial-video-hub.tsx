@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useMemo, useState, type ReactNode } from "react"
 import {
   ArrowRight,
   Clock3,
@@ -32,7 +32,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { InventoryUploadOffer } from "@/components/inventory-upload-offer"
 import type { PublicTutorialCategory, PublicTutorialVideo } from "@/lib/tutorial-types"
 
 type TabValue = "todos" | string
@@ -40,6 +39,7 @@ type TabValue = "todos" | string
 type TutorialVideoHubProps = {
   categories: PublicTutorialCategory[]
   videos: PublicTutorialVideo[]
+  inventoryUploadOffer: ReactNode
 }
 
 function isPublished(video: PublicTutorialVideo) {
@@ -231,7 +231,7 @@ function VideoPlayerModal({
   )
 }
 
-export function TutorialVideoHub({ categories, videos }: TutorialVideoHubProps) {
+export function TutorialVideoHub({ categories, videos, inventoryUploadOffer }: TutorialVideoHubProps) {
   const categoriesWithAll = useMemo(
     () => [
       {
@@ -403,7 +403,7 @@ export function TutorialVideoHub({ categories, videos }: TutorialVideoHubProps) 
                         />
                       </div>
                       {insertOfferAfterSecondTutorial && index === 1 ? (
-                        <InventoryUploadOffer className="md:col-span-2 xl:col-span-3" />
+                        inventoryUploadOffer
                       ) : null}
                     </Fragment>
                   ))}

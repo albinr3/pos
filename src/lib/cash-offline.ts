@@ -32,7 +32,7 @@ export function assertCashShiftAccess(context: CashContext, actor?: CashActorIde
 }
 export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "supplierPayment" | "expense" | "return" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; reportAmountCents?: number; reportCreatedAt?: string; cashOperation: CashOperationInput; error?: string }
 type DocumentResult = { id?: string; reference?: string; invoiceCode?: string; returnCode?: string; stockDecrements?: Array<{ ingredientId: string; qty: number }>; paymentId?: string; paymentIds?: string[] }
-type SubmitResult = { pending: true; result: null } | { pending: false; result: DocumentResult }
+type SubmitResult = { pending: true; result: null; error?: string } | { pending: false; result: DocumentResult }
 type ManualInput = { shiftId: string; kind: string; amountCents: number; otherAccountId?: string; note: string }
 type ManualPending = { accountId: string; userId: string; input: ManualInput; body: ManualInput & { action: string; operationId: string } }
 const DB_NAME = "movopos-cash-v1"
@@ -170,7 +170,12 @@ export async function clearCashShiftReport(context: CashContext) {
 }
 async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, bindToShift: boolean, stockConsumptions?: StockConsumption[], reportAmountCents?: number) {
   // Una caché anterior no identifica la política: no inventar una versión para una operación nueva.
-  if (!context.fiscalQueuePolicy || context.fiscalQueuePolicy.enabled || !Number.isSafeInteger(context.fiscalQueuePolicy.version)) throw new Error("Conéctate para comprobar la política fiscal antes de guardar el pendiente")
+  if (!context.fiscalQueuePolicy || !Number.isSafeInteger(context.fiscalQueuePolicy.version)) throw new Error("Conéctate para comprobar la política fiscal antes de guardar el pendiente")
+  const hasFiscalSelection = kind === "sale" && Object.hasOwn(payload, "fiscal")
+  const isCollection = kind === "payment" || kind === "batchPayment"
+  // La cola nunca convierte una venta entre perfiles al perder conexión o cambiar de empresa.
+  if ((context.fiscalQueuePolicy.enabled && !hasFiscalSelection && !isCollection) || (!context.fiscalQueuePolicy.enabled && hasFiscalSelection)) throw new Error("La política fiscal cambió; conserva el carrito y vuelve a comprobar la configuración")
+  if (hasFiscalSelection && payload.fiscal && (payload.fiscal as { expectedPolicyVersion?: unknown }).expectedPolicyVersion !== context.fiscalQueuePolicy.version) throw new Error("La política fiscal cambió; revisa el comprobante antes de guardarlo")
   const fiscalPolicyVersion = context.fiscalQueuePolicy.version
   if (!bindToShift) {
     const db = await database(), tx = db.transaction("outbox", "readwrite"), id = crypto.randomUUID()
@@ -249,6 +254,10 @@ export async function syncCashOutbox(context?: CashContext) {
   else await work()
 }
 export async function submitControlledDocument(kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, actor?: { id: string; accountId: string }, stockConsumptions?: StockConsumption[], reportAmountCents?: number): Promise<SubmitResult | undefined> {
+  if (kind === "sale" && Array.isArray(payload.items) && payload.items.some(item => {
+    const qty = Number((item as { qty?: unknown }).qty)
+    return !Number.isFinite(qty) || Math.abs(qty * 100 - Math.round(qty * 100)) > 1e-8
+  })) throw new Error("La cantidad vendida admite como máximo dos decimales.")
   const { context, connected } = await resolveCashContext(actor)
   const posOperation = ["sale", "payment", "batchPayment"].includes(kind)
   if (posOperation) assertCashShiftAccess(context, actor)
@@ -268,7 +277,9 @@ export async function submitControlledDocument(kind: CashQueuedOperation["kind"]
   }
   const result = await readState<DocumentResult>(`receipt:${record.id}`)
   window.dispatchEvent(new Event("cash-outbox-changed"))
-  return result === undefined ? { result: null, pending: true } : { result, pending: false }
+  // Un rechazo de negocio se conserva en la cola y debe explicarse; repetir el carrito crearía otro identificador.
+  const queued = result === undefined && kind === "sale" && Object.hasOwn(payload, "fiscal") ? (await cashPending()).find(item => item.id === record.id) : undefined
+  return result === undefined ? { result: null, pending: true, ...(queued?.error ? { error: queued.error } : {}) } : { result, pending: false }
 }
 export async function freezeCashShift(context: CashContext) {
   const shift = context.activeShift!

@@ -4,6 +4,7 @@ import { finalizeAccountOnboardingTx, withOnboardingTransaction } from "@/lib/ac
 
 import { randomUUID } from "crypto"
 import { revalidatePath } from "next/cache"
+import { fiscalFields, productFiscalFields, validateFiscalCatalogFields, FiscalMasterDataError, type FiscalFields } from "@/lib/fiscal/core/master-data"
 import { prisma } from "@/lib/db"
 import { InventoryBulkOperationStatus, InventoryBulkSource, ProductKind, UnitType, Prisma } from "@prisma/client"
 import { Decimal } from "@prisma/client/runtime/library"
@@ -317,7 +318,7 @@ export async function upsertProduct(input: {
   recipeItems?: RecipeItemInput[]
   unit: UnitType
   user?: any
-}): Promise<{ ok: true; id: string } | { ok: false; error: string; code?: "SKU_DUPLICATE" }> {
+} & FiscalFields<typeof productFiscalFields[number]>): Promise<{ ok: true; id: string } | { ok: false; error: string; code?: "SKU_DUPLICATE" }> {
   const user = input.user ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
 
@@ -400,9 +401,13 @@ export async function upsertProduct(input: {
             stock: true,
             productKind: true,
             isAvailableForSale: true,
+            fiscalItemType: true,
+            fiscalUnit: true,
+            fiscalTaxTreatment: true,
           },
         })
         if (!existing) throw new Error("Producto no encontrado")
+        validateFiscalCatalogFields(fiscalFields(input, productFiscalFields), existing)
 
         const originalPriceCents = Number(existing.priceCents)
         if (input.priceCents !== originalPriceCents && !user.canOverridePrice && !user.isOwner) {
@@ -428,6 +433,7 @@ export async function upsertProduct(input: {
             categoryId: input.categoryId || null,
             priceCents: input.priceCents,
             costCents: input.costCents,
+            ...fiscalFields(input, productFiscalFields),
             itbisRateBp: input.itbisRateBp ?? 1800,
             stock: finalStock,
             minStock: finalMinStock,
@@ -459,6 +465,7 @@ export async function upsertProduct(input: {
           tx
         )
       } else {
+        validateFiscalCatalogFields(fiscalFields(input, productFiscalFields))
         const seq = await tx.productSequence.upsert({
           where: { accountId: user.accountId },
           update: { lastNumber: { increment: 1 } },
@@ -478,6 +485,7 @@ export async function upsertProduct(input: {
             categoryId: input.categoryId || null,
             priceCents: input.priceCents,
             costCents: input.costCents,
+            ...fiscalFields(input, productFiscalFields),
             itbisRateBp: input.itbisRateBp ?? 1800,
             stock: finalStock,
             minStock: finalMinStock,
@@ -551,6 +559,7 @@ export async function upsertProduct(input: {
     safeRevalidate("/sales")
     return { ok: true, id: savedProductId ?? input.id ?? "" }
   } catch (error) {
+    if (error instanceof FiscalMasterDataError) return { ok: false, error: error.message }
     if (error instanceof UpsertProductUserError) {
       return { ok: false, error: error.message, code: error.code }
     }

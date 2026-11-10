@@ -1,3 +1,4 @@
+import { FiscalMasterDataError, validateFiscalCatalogFields, fiscalFields, supplierFiscalFields } from "@/lib/fiscal/core/master-data"
 import { NextRequest, NextResponse } from "next/server"
 import { hasPermission } from "@/lib/permissions"
 import { prisma } from "@/lib/db"
@@ -62,6 +63,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       data: pageItems.map((s) => ({
         id: s.id,
+        ...fiscalFields(s, supplierFiscalFields),
         name: s.name,
         isActive: s.isActive,
         contactName: s.contactName,
@@ -76,6 +78,7 @@ export async function GET(request: NextRequest) {
       nextCursor,
     })
   } catch (error: unknown) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     if (error instanceof PurchaseError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
     console.error("Error en GET /api/suppliers:", error)
     return NextResponse.json(
@@ -154,9 +157,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    validateFiscalCatalogFields(fiscalFields(body, supplierFiscalFields))
     const created = await prisma.supplier.create({
       data: {
         accountId: user.accountId,
+        ...fiscalFields(body, supplierFiscalFields),
         name,
         contactName,
         phone,
@@ -173,6 +178,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         id: created.id,
+        ...fiscalFields(created, supplierFiscalFields),
         name: created.name,
         contactName: created.contactName,
         phone: created.phone,
@@ -189,6 +195,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error: unknown) {
+    if (error instanceof FiscalMasterDataError) return NextResponse.json({ error: error.message, field: error.field }, { status: 400 })
     if (error instanceof PurchaseError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
     console.error("Error en POST /api/suppliers:", error)
     return NextResponse.json(

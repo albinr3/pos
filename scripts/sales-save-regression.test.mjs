@@ -9,14 +9,16 @@ import ts from "typescript"
 const require = createRequire(import.meta.url)
 const generic = { id: "general", accountId: "A", isActive: true, isGeneric: true, creditDays: 0, saleDiscountPercentBp: 0 }
 const named = { id: "customer", accountId: "A", isActive: true, isGeneric: false, creditDays: 15, saleDiscountPercentBp: 1000 }
-const user = { id: "employee", accountId: "A", username: "ana", isOwner: false, canSellWithoutStock: false }
+const user = { id: "employee", accountId: "A", username: "ana", isOwner: false, canAccessSales: true, canSellWithoutStock: false }
 
-function fixture({ customer = named, stock = 3 } = {}) {
+function fixture({ customer = named, stock = 3, fiscalEnabled = false, fiscalMatch = false } = {}) {
   const state = { customerReads: 0, genericCalls: 0, sales: [], receivables: [], decrements: [], audits: [], revalidations: [] }
+  let cashScope = {}
   const customers = [generic, ...(customer ? [customer] : [])]
   const product = { id: "pan", name: "Pan", stock, priceCents: 1000, costCents: 300, itbisRateBp: 0, productKind: "BASIC", isActive: true, isAvailableForSale: true, recipeItems: [] }
   const tx = {
     account: { findUnique: async () => ({ id: "A" }) },
+    fiscalSettings: { findUnique: async () => fiscalEnabled ? { enabled:true, jurisdiction:"DO", regime:"DO_ECF", environment:"TEST", configurationStatus:"VALIDATED", version:1 } : null },
     user: { findFirst: async () => user },
     invoiceSequence: { upsert: async () => ({ lastNumber: 1 }) },
     product: {
@@ -34,7 +36,12 @@ function fixture({ customer = named, stock = 3 } = {}) {
   const mocks = {
     "@prisma/client": require("@prisma/client"),
     "@prisma/client/runtime/library": require("@prisma/client/runtime/library"),
-    "@/lib/cash-context": { withCashOperation: (_operation, _payload, fn) => fn(), CashControlError: class extends Error {} },
+    "@/lib/cash-context": { cashRequest: { getStore: () => cashScope, run: (scope, fn) => { cashScope = scope; return fn() } }, resolveCashIdentity: async () => ({ actor:user, deviceHash:"" }), withCashOperation: (_operation, _payload, fn) => fn(), CashControlError: class extends Error { constructor(code, message) { super(message); this.code = code } } },
+    "@/lib/permissions": { hasPermission: (actor, key) => !!(actor.isOwner || actor[key]) },
+    "@/lib/fiscal/core/sale-command": { parseFiscalSaleCommand: input => { if (!input.expectedPolicyVersion) throw new Error("La versión fiscal es obligatoria"); return input } },
+    "@/lib/fiscal/core/sale-customer": { resolveFiscalBuyerCustomer: async () => fiscalMatch ? "customer" : null },
+    "@/lib/fiscal/core/sale-document": { buildFiscalSaleDocument: async () => ({ document:{}, metadata:{} }) },
+    "@/lib/fiscal/core/preparation": { prepareFiscalSaleInTransaction: async () => ({ id:"doc", type:"E31", state:"PREPARADO_PENDIENTE_CONEXION", eNcf:"E310000000001" }) },
     "@/lib/auth": { getCurrentUserWithDiagnostics: async () => ({ user }) },
     "@/lib/db": { prisma: { companySettings: { findFirst: async () => ({ salePricesIncludeItbis: true, legalTipEnabled: false }) }, $transaction: async fn => fn(tx) } },
     "@/lib/customer-helpers": { ensureGenericCustomer: async (_tx, accountId) => { assert.equal(accountId, "A"); state.genericCalls++; return generic } },
@@ -61,6 +68,13 @@ function fixture({ customer = named, stock = 3 } = {}) {
   return { state, save }
 }
 
+test("Rechaza cantidades con tres decimales sin crear la venta ni mover inventario", async () => {
+  const f = fixture()
+  await assert.rejects(f.save({ items: [{ productId: "pan", qty: 1.001, unitPriceCents: 1000 }] }), /máximo dos decimales/)
+  assert.equal(f.state.sales.length, 0)
+  assert.equal(f.state.decrements.length, 0)
+})
+
 test("Una factura nominativa resuelve el cliente una vez y conserva descuento, stock y auditoría", async () => {
   const f = fixture()
   await f.save()
@@ -76,11 +90,22 @@ test("Una factura nominativa resuelve el cliente una vez y conserva descuento, s
 test("Una solicitud fiscal no crea venta, deuda ni mueve inventario", async () => {
   const f = fixture()
   for (const input of [{ type: "E31" }, { fiscal: { type: "E32" } }]) {
-    await assert.rejects(f.save(input), /todavía no está disponible/)
+    await assert.rejects(f.save(input), /todavía no está disponible|versión fiscal/)
   }
   assert.equal(f.state.sales.length, 0)
   assert.equal(f.state.receivables.length, 0)
   assert.equal(f.state.decrements.length, 0)
+})
+
+test("El servidor selecciona el cliente por RNC y exige revisar un total modificado", async () => {
+  const cashOperation={accountId:"A",userId:"employee",clientOperationId:"test-fiscal-match",cashShiftId:null,clientSequence:null,fiscalPolicyVersion:1}
+  const fiscal={type:"E31",expectedPolicyVersion:1,expectedTotalCents:900,buyer:{name:"Temporal",identification:"101111111",country:"DO"}}
+  const accepted=fixture({fiscalEnabled:true,fiscalMatch:true})
+  const result=await accepted.save({customerId:null,cashOperation,fiscal})
+  assert.equal(accepted.state.sales[0].customerId,"customer");assert.equal(accepted.state.sales[0].totalCents,900);assert.equal(result.fiscal.eNcf,"E310000000001")
+  const changed=fixture({fiscalEnabled:true,fiscalMatch:true})
+  await assert.rejects(changed.save({customerId:null,cashOperation,fiscal:{...fiscal,expectedTotalCents:1000}}),/total cambió/)
+  assert.equal(changed.state.sales.length,0);assert.equal(changed.state.decrements.length,0)
 })
 
 test("Crédito conserva el plazo y el saldo del cliente seleccionado", async () => {

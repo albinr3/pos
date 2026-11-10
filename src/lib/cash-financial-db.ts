@@ -72,9 +72,13 @@ async function mutate(tx: any, model: string, action: string, args: any) {
     // El perfil activo no puede eludirse omitiendo el bloque fiscal, ni cuando caja está desactivada.
     // La preparación todavía no existe: conservar las operaciones sin crear efectos hasta implementarla.
     const fiscal = await tx.fiscalSettings.findUnique({ where: { accountId }, select: { enabled: true } })
-    if (fiscal?.enabled) throw new CashControlError("FISCAL_NOT_AVAILABLE", "La preparación de documentos fiscales todavía no está disponible", 409)
+    // Esta excepción solo cubre la creación de una venta cuya política fue comprobada
+    // dentro de esta transacción; nunca habilita compras, pagos u otras mutaciones.
+    const authorizedSale = model === "sale" && action === "create" && scope.fiscalSaleAuthorizedAccountId === accountId
+    const authorizedCollection = model === "payment" && action === "create" && scope.fiscalCollectionRequested && !!scope.operation && !!scope.trustedActor && hasPermission(scope.trustedActor, "canAccessAccountsReceivable") && args.data?.userId === scope.trustedActor.id
+    if (fiscal?.enabled && !authorizedSale && !authorizedCollection) throw new CashControlError("FISCAL_NOT_AVAILABLE", "La preparación de documentos fiscales todavía no está disponible", 409)
     const current = cashRequest.getStore()
-    if (current) current.fiscalCheckedAccountId = accountId
+    if (current && !fiscal?.enabled) current.fiscalCheckedAccountId = accountId
   }
   if (!scope.control) return tx[model][action](args)
   if (before.length) before = await rowsFor(tx, sourceModel, { where: { id: { in: before.map(r => r.id) } } })
@@ -249,8 +253,8 @@ export async function runCashTransaction(client: any, callback: (tx: any) => Pro
         if (!scope.fiscalDiscard) {
           const supplied = operation.fiscalPolicyVersion
           if (supplied !== undefined && (!Number.isSafeInteger(supplied) || supplied < 0)) throw new CashControlError("FISCAL_POLICY_INVALID", "Versión de política fiscal inválida", 400)
-          if (fiscal?.enabled || (supplied !== undefined && supplied !== fiscalPolicyVersion)) throw new CashControlError("FISCAL_POLICY_CHANGED", "La política fiscal cambió; conserva este pendiente para revisión")
-          scope.fiscalCheckedAccountId = actor.accountId
+          if ((fiscal?.enabled && (!(scope.fiscalSaleRequested || scope.fiscalCollectionRequested) || supplied !== fiscalPolicyVersion)) || (!fiscal?.enabled && (scope.fiscalSaleRequested || (supplied !== undefined && supplied !== fiscalPolicyVersion)))) throw new CashControlError("FISCAL_POLICY_CHANGED", "La política fiscal cambió; conserva este pendiente para revisión")
+          if (!fiscal?.enabled) scope.fiscalCheckedAccountId = actor.accountId
         }
         Object.assign(scope, { trustedActor: actor, deviceHash })
         if (boundToShift) {
