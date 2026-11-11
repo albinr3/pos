@@ -158,8 +158,9 @@ export async function syncARToIndexedDB() {
 
   const arItems = await prisma.accountReceivable.findMany({
     where: {
+      accountId: user.accountId,
       status: { in: ["PENDIENTE", "PARCIAL"] },
-      sale: { accountId: user.accountId, cancelledAt: null },
+      OR: [{ sale: { accountId: user.accountId, cancelledAt: null } }, { debitAdjustment: { accountId: user.accountId, state: "PREPARADO_PENDIENTE_CONEXION" } }],
     },
     include: {
       customer: true,
@@ -168,8 +169,12 @@ export async function syncARToIndexedDB() {
           id: true,
           invoiceCode: true,
           totalCents: true,
+          returns: { where: { cancelledAt: null, fiscalAdjustmentId: null }, select: { totalCents: true } },
         },
       },
+      debitAdjustment: { select: { id: true, fiscalDocumentId: true, originalDocument: { select: { sale: { select: { invoiceCode: true } } } } } },
+      fiscalAdjustmentApplications: { where: { kind: "DEBT" }, select: { amountCents: true } },
+      fiscalCustomerCreditApplications: { select: { amountCents: true } },
       payments: {
         where: { cancelledAt: null },
         select: {
@@ -183,8 +188,8 @@ export async function syncARToIndexedDB() {
   })
 
   return arItems.map((ar) => {
-    const totalPaid = ar.payments.reduce((sum, p) => sum + p.amountCents, 0)
-    const balanceCents = ar.totalCents - totalPaid
+    // El saldo persistido ya incorpora devoluciones y créditos; recalcular solo pagos perdería esos ajustes.
+    const balanceCents = ar.balanceCents
 
     return {
       id: ar.id,
@@ -192,18 +197,20 @@ export async function syncARToIndexedDB() {
       customerId: ar.customerId,
       totalCents: ar.totalCents,
       balanceCents,
+      paidCents: ar.payments.reduce((sum, payment) => sum + payment.amountCents, 0),
+      // La caché conserva el desglose sin reconstruir ni alterar el saldo persistido.
+      adjustments: { ordinaryReturnsCents: ar.sale?.returns.reduce((sum, item) => sum + item.totalCents, 0) ?? 0, creditNotesCents: ar.fiscalAdjustmentApplications.reduce((sum, item) => sum + item.amountCents, 0), customerCreditsCents: ar.fiscalCustomerCreditApplications.reduce((sum, item) => sum + item.amountCents, 0) },
       status: ar.status,
+      dueDate: ar.dueDate,
+      createdAt: ar.createdAt,
       customer: {
         id: ar.customer.id,
         visualId: ar.customer.visualId,
         name: ar.customer.name,
         phone: ar.customer.phone,
       },
-      sale: {
-        id: ar.sale.id,
-        invoiceCode: ar.sale.invoiceCode,
-        totalCents: ar.sale.totalCents,
-      },
+      sale: ar.sale ? { id: ar.sale.id, invoiceCode: ar.sale.invoiceCode, totalCents: ar.sale.totalCents } : null,
+      origin: ar.sale ? { kind: "SALE" as const, reference: ar.sale.invoiceCode, saleId: ar.sale.id } : { kind: "DEBIT_NOTE" as const, reference: `ND-${ar.debitAdjustment!.id.slice(-8).toUpperCase()}`, adjustmentId: ar.debitAdjustment!.id, documentId: ar.debitAdjustment!.fiscalDocumentId, originalInvoiceCode: ar.debitAdjustment!.originalDocument.sale?.invoiceCode ?? null },
     }
   })
 }

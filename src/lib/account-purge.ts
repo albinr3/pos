@@ -11,11 +11,16 @@ export async function purgeAccountData(tx: Prisma.TransactionClient, accountId: 
   await tx.treasuryTransfer.deleteMany({ where: { accountId, reversesTransferId: { not: null } } })
   await tx.treasuryTransfer.deleteMany({ where: { accountId } })
   await tx.return.deleteMany({ where: { accountId } })
-  await tx.payment.deleteMany({ where: { ar: { sale: { accountId } } } })
+  await tx.payment.deleteMany({ where: { ar: { accountId } } })
   // Los pagos y la deuda restringen la compra/proveedor; Cascade de Account no resuelve ese orden.
+  // Primero las asignaciones exteriores: sus claves restringen tanto el pago como la obligación.
+  await tx.fiscalForeignPayment.deleteMany({ where: { accountId } })
+  await tx.fiscalForeignOperation.deleteMany({ where: { accountId } })
   await tx.supplierPayment.deleteMany({ where: { accountId } })
   await tx.accountPayable.deleteMany({ where: { accountId } })
   await tx.purchase.deleteMany({ where: { accountId } })
+  // Los reembolsos restringen su gasto y deben eliminarse antes durante la baja autorizada.
+  await tx.employeeExpenseSettlement.deleteMany({ where: { accountId } })
   await tx.operatingExpense.deleteMany({ where: { accountId } })
   await tx.quote.deleteMany({ where: { accountId } })
   await tx.sale.deleteMany({ where: { accountId } })

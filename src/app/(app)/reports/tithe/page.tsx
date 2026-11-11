@@ -75,6 +75,7 @@ export default async function TitheReportPage({
                 </div>
                 <div className="text-base font-medium">{formatRD(data.creditPaymentsTotalCents)}</div>
               </div>
+              <div className="flex items-center justify-between"><div><div className="text-sm">Cobros de notas de débito</div><div className="text-xs text-muted-foreground">{data.debitPaymentsCount} pagos</div></div><div className="text-base font-medium">{formatRD(data.debitPaymentsTotalCents)}</div></div>
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm">Devoluciones de contado</div>
@@ -82,6 +83,7 @@ export default async function TitheReportPage({
                 </div>
                 <div className="text-base font-medium text-red-600">-{formatRD(data.cashReturnsTotalCents)}</div>
               </div>
+              <div className="flex items-center justify-between"><div><div className="text-sm">Reembolsos de notas de crédito</div><div className="text-xs text-muted-foreground">{data.fiscalRefundsCount} reembolsos</div></div><div className="text-base font-medium text-red-600">-{formatRD(data.fiscalRefundsTotalCents)}</div></div>
             </div>
             <div className="flex items-center justify-between border-t pt-2">
               <div className="font-semibold">Total cobrado que quedó en mano</div>
@@ -107,10 +109,12 @@ export default async function TitheReportPage({
                 </div>
                 <div className="text-base font-medium">{formatRD(data.creditCollectedRevenueNoTipCents)}</div>
               </div>
+              <div className="flex items-center justify-between"><div className="text-sm">Cobros de notas de débito</div><div className="text-base font-medium">{formatRD(data.debitPaymentsTotalCents)}</div></div>
               <div className="flex items-center justify-between">
                 <div className="text-sm">Devoluciones contado</div>
                 <div className="text-base font-medium text-red-600">-{formatRD(data.cashReturnsRevenueNoTipCents)}</div>
               </div>
+              <div className="flex items-center justify-between"><div className="text-sm">Reembolsos fiscales sin propina</div><div className="text-base font-medium text-red-600">-{formatRD(data.fiscalRefundRevenueCents)}</div></div>
             </div>
             <div className="flex items-center justify-between border-t pt-2">
               <div className="font-semibold">Total ingresos para utilidad operativa</div>
@@ -135,6 +139,7 @@ export default async function TitheReportPage({
                 <div className="text-sm">Reverso de costo por devoluciones contado</div>
                 <div className="text-base font-medium text-green-600">{formatRD(data.cashReturnsCostCents)}</div>
               </div>
+              <div className="flex items-center justify-between"><div className="text-sm">Reverso proporcional por devoluciones fiscales de crédito</div><div className="text-base font-medium text-green-600">{formatRD(data.creditFiscalReturnsCostCents)}</div></div>
             </div>
             <div className="flex items-center justify-between border-t pt-2">
               <div className="font-semibold">Total costo reconocido</div>

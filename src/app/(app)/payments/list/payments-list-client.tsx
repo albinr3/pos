@@ -12,6 +12,7 @@ import { toast } from "@/hooks/use-toast"
 import { formatDateDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
+import { receivableOriginLabel } from "@/lib/receivable-origin"
 import type { CurrentUser } from "@/lib/auth"
 
 import { cancelPayment, listAllPayments } from "../../ar/actions"
@@ -79,7 +80,7 @@ export function PaymentsListClient() {
     const q = query.toLowerCase()
     return (
       p.receiptCode.toLowerCase().includes(q) ||
-      p.ar.sale.invoiceCode.toLowerCase().includes(q) ||
+      receivableOriginLabel(p.ar).toLowerCase().includes(q) ||
       p.ar.customer.name.toLowerCase().includes(q) ||
       String(p.ar.customer.visualId ?? "").includes(q) ||
       methodLabel(p.method).toLowerCase().includes(q) ||
@@ -125,7 +126,7 @@ export function PaymentsListClient() {
                       {formatDateDO(p.paidAt)}
                       {p.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADO</div>}
                     </TableCell>
-                    <TableCell className="font-medium">{p.ar.sale.invoiceCode}</TableCell>
+                    <TableCell className="font-medium">{receivableOriginLabel(p.ar)}</TableCell>
                     <TableCell>{p.ar.customer.name}</TableCell>
                     <TableCell>{formatPaymentWithBank(p.method, p.transferBankName)}</TableCell>
                     <TableCell>{p.transferBankName || "-"}</TableCell>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getReceiptsReportForPDF, type ReceiptFilters } from "@/app/(app)/reports/receipts/actions"
 import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
+import { receivableOriginLabel } from "@/lib/receivable-origin"
 
 export async function GET(request: NextRequest) {
   try {
@@ -322,7 +323,7 @@ export async function GET(request: NextRequest) {
           <td class="receipt-code">${p.receiptCode}</td>
           <td>${fmtDate(p.paidAt)}</td>
           <td>#${p.ar.customer.visualId} ${p.ar.customer.name}</td>
-          <td class="receipt-code">${p.ar.sale.invoiceCode}</td>
+          <td class="receipt-code">${receivableOriginLabel(p.ar)}</td>
           <td class="amount">${formatRD(p.amountCents)}</td>
           <td>${p.method}</td>
           <td>${p.user.name}</td>

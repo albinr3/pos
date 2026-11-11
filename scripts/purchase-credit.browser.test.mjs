@@ -83,6 +83,42 @@ async function browserSuite() {
     await until(() => document.body.textContent.includes("Historial de pagos"), "No abrió detalle")
     assert(!button("Registrar pago") && !button("Anular") && !button("Guardar notas y vencimiento"), "Expuso acciones sin permiso")
   })
+  await test("CxP ofrece revisión E41 solo cuando está autorizada", async () => {
+    setupFetch(); await mount(AccountsPayableClient, { canPay: false, canCancel: false, canEdit: true, canPrepareE41: true })
+    await until(() => button("Ver cuenta"), "No cargó CxP"); button("Ver cuenta").click()
+    await until(() => document.querySelector('[role="dialog"] a[href*="source=PURCHASE"]'), "No ofrece revisión E41 de la compra")
+    assert(document.querySelector('[role="dialog"] a[href*="sourceId=purchase"]'), "El enlace perdió el origen")
+    await mount(AccountsPayableClient, { canPay: false, canCancel: false, canEdit: false, canPrepareE41: false })
+    await until(() => button("Ver cuenta"), "No cargó CxP sin permiso"); button("Ver cuenta").click()
+    await until(() => document.body.textContent.includes("Historial de pagos"), "No abrió el detalle")
+    assert(!document.querySelector('[role="dialog"] a[href*="source=PURCHASE"]'), "Ofreció E41 sin autorización")
+  })
+  await test("Obligación sin inventario envía el comprobante recibido", async () => {
+    setupFetch(); await mount(AccountsPayableClient, { canPay: false, canCancel: false, canEdit: true })
+    await until(() => document.querySelector('details summary'), "No cargó el formulario")
+    const summary=[...document.querySelectorAll('summary')].find(s=>s.textContent.includes('Registrar obligación sin inventario')); summary.click()
+    const form=summary.parentElement.querySelector('form'), labels=[...form.querySelectorAll('label')]
+    await choose(form.querySelector('select'), 'supplier')
+    await fill(labels.find(l=>l.textContent.includes('Concepto')).querySelector('input'), 'Servicio')
+    await fill(labels.find(l=>l.textContent.includes('Comprobante recibido')).querySelector('input'), 'E310000000001')
+    await fill(labels.find(l=>l.textContent.includes('Total adeudado')).querySelector('input'), '100')
+    await fill(labels.find(l=>l.textContent.includes('Vencimiento')).querySelector('input'), '2099-12-30')
+    form.requestSubmit()
+    await until(()=>requests.some(r=>r.url==='/api/accounts-payable'&&r.method==='POST'), 'No envió la obligación')
+    const body=requests.find(r=>r.url==='/api/accounts-payable'&&r.method==='POST').body
+    assert(body.supplierReceiptNumber==='E310000000001'&&body.totalCents===10000, 'Perdió el soporte o el importe')
+  })
+  await test("Compras ofrece E41 solo al faltar comprobante y estar habilitado", async () => {
+    setupFetch(); await mount(PurchasesClient, { canRegisterSupplierPayments:true, canPrepareE41:true })
+    await until(()=>document.getElementById('supplier-receipt'), 'No cargó el formulario de compra')
+    const choice=[...document.querySelectorAll('label')].find(l=>l.textContent.includes('Revisar si corresponde preparar un E41'))
+    assert(choice, 'No ofreció revisión E41')
+    choice.querySelector('input').click(); await until(()=>document.getElementById('e41-cash-paid'), 'No pidió el importe neto')
+    await fill(document.getElementById('supplier-receipt'), 'E310000000001')
+    assert(![...document.querySelectorAll('label')].some(l=>l.textContent.includes('Revisar si corresponde preparar un E41')), 'Ofreció E41 con comprobante recibido')
+    await mount(PurchasesClient, { canRegisterSupplierPayments:true, canPrepareE41:false })
+    assert(![...document.querySelectorAll('label')].some(l=>l.textContent.includes('Revisar si corresponde preparar un E41')), 'Ofreció E41 con el módulo apagado')
+  })
   await test("Revisión: efectivo solo ofrece la caja configurada aunque otra aparezca primero", async () => {
     setupFetch()
     const original = options.accounts
@@ -132,12 +168,14 @@ async function browserSuite() {
   view?.unmount(); document.getElementById("result").textContent = JSON.stringify(results)
 }
 const compiled = await build({
-  stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {PurchaseCreditFields,purchaseCreditError} from './src/components/app/purchase-credit-fields'; import {AccountsPayableClient} from './src/app/(app)/ap/payables-client'; import {PurchaseReportClient} from './src/components/app/purchase-report-client'; (${browserSuite.toString()})().catch(error=>document.getElementById('result').textContent=JSON.stringify([{ok:false,error:error.stack}]));`, resolveDir: root },
+  stdin: { contents: `import React from 'react'; import {createRoot} from 'react-dom/client'; import {PurchaseCreditFields,purchaseCreditError} from './src/components/app/purchase-credit-fields'; import {AccountsPayableClient} from './src/app/(app)/ap/payables-client'; import {PurchasesClient} from './src/app/(app)/purchases/purchases-client'; import {PurchaseReportClient} from './src/components/app/purchase-report-client'; (${browserSuite.toString()})().catch(error=>document.getElementById('result').textContent=JSON.stringify([{ok:false,error:error.stack}]));`, resolveDir: root },
   bundle: true, write: false, platform: "browser", format: "iife", jsx: "automatic", define: { "process.env.NODE_ENV": '"production"' },
   plugins: [{ name: "credit-browser-boundaries", setup(build) {
     build.onResolve({ filter: /^next\/link$/ }, () => ({ path: "link", namespace: "credit-test" }))
+    build.onResolve({ filter: /^next\/navigation$/ }, () => ({ path: "navigation", namespace: "credit-test" }))
+    build.onResolve({ filter: /^(\.\/actions|\.\.\/suppliers\/actions|\.\.\/settings\/actions)$/ }, args => args.importer.endsWith("purchases-client.tsx") ? { path:"purchase-actions", namespace:"credit-test" } : null)
     build.onResolve({ filter: /cash-offline$/ }, () => ({ path: "cash", namespace: "credit-test" }))
-    build.onLoad({ filter: /.*/, namespace: "credit-test" }, args => ({ contents: args.path === "cash" ? 'export async function submitControlledDocument(){ return undefined }' : 'import React from "react"; export default function Link(props){return React.createElement("a",props)}', resolveDir: root }))
+    build.onLoad({ filter: /.*/, namespace: "credit-test" }, args => ({ contents: args.path === "cash" ? 'export async function submitControlledDocument(){ return undefined }' : args.path === "navigation" ? 'export function useRouter(){return {push(){},refresh(){}}}' : args.path === "purchase-actions" ? 'export async function createPurchase(){}; export async function listPurchases(){return []}; export async function searchProductsForPurchase(){return []}; export async function getPurchasePaymentAccounts(){return []}; export async function getAllSuppliers(){return []}; export async function getSettings(){return {defaultProfitMarginBp:3000,itbisRateBp:1800,salePricesIncludeItbis:true}}' : 'import React from "react"; export default function Link(props){return React.createElement("a",props)}', resolveDir: root }))
   } }],
 })
 await runBrowserSuite(root, "cash-purchase-credit-browser", `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><div id="test-root"></div><pre id="result">RUNNING</pre><script>${compiled.outputFiles[0].text}</script>`)

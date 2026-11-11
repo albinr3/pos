@@ -164,6 +164,8 @@ export async function updateOperatingExpense(input: {
     where: { accountId: user.accountId, id: input.id } 
   })
   if (!existing) throw new Error("Gasto operativo no encontrado")
+  // La edición antigua no actualiza el detalle fiscal: no permitir importes divergentes.
+  if (existing.fiscalExpenseDetails) throw new Error("Este gasto fiscal requiere revisión y no admite edición ordinaria")
 
   const treasuryAccount = input.treasuryAccountId?.trim()
     ? await requireTreasuryAccount(prisma, {

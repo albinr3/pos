@@ -47,7 +47,7 @@ function toInt(v: string) {
   return Number.isFinite(n) ? Math.trunc(n) : 0
 }
 
-export function PurchasesListClient() {
+export function PurchasesListClient({canPrepareE41 = false}: {canPrepareE41?: boolean}) {
   const canViewFiscal = useFiscalSourceAccess()
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [isLoading, startLoading] = useTransition()
@@ -383,8 +383,8 @@ export function PurchasesListClient() {
                       {formatDateDO(p.purchasedAt)}
                       {p.cancelledAt && <div className="text-xs text-red-600 font-semibold">CANCELADA</div>}
                     </TableCell>
-                    <TableCell>{p.supplierName ?? "-"}<FiscalSourceLink allowed={canViewFiscal} kind="PURCHASE" id={p.id}/></TableCell>
-                    <TableCell>{p.type === "CREDITO" ? <div className="grid gap-1"><strong>Crédito</strong><span>Abonado: {formatRD(p.cancelledAt ? 0 : p.totalCents - (p.payable?.balanceCents ?? 0))}</span><span>Pendiente: {formatRD(p.cancelledAt ? 0 : p.payable?.balanceCents ?? 0)}</span><span>Vence: {p.payable?.dueDate ? new Date(p.payable.dueDate).toISOString().slice(0,10) : "—"}</span><Link href="/ap" className="underline text-xs">Ver cuenta y pagos</Link></div> : "Contado"}</TableCell>
+                    <TableCell>{p.supplierName ?? "-"}<FiscalSourceLink allowed={canViewFiscal} kind="PURCHASE" id={p.id}/>{canPrepareE41 && !p.cancelledAt && !p.supplierReceiptNumber && <Link className="ml-2 text-xs underline" href={`/fiscal/documents/new?source=PURCHASE&sourceId=${encodeURIComponent(p.id)}`}>Revisar E41</Link>}</TableCell>
+                    <TableCell>{p.type === "CREDITO" ? <div className="grid gap-1"><strong>Crédito</strong><span>Abonado: {formatRD(p.cancelledAt ? 0 : (p.payable?.totalCents ?? p.totalCents) - (p.payable?.balanceCents ?? 0))}</span><span>Pendiente: {formatRD(p.cancelledAt ? 0 : p.payable?.balanceCents ?? 0)}</span><span>Vence: {p.payable?.dueDate ? new Date(p.payable.dueDate).toISOString().slice(0,10) : "—"}</span><Link href="/ap" className="underline text-xs">Ver cuenta y pagos</Link></div> : "Contado"}</TableCell>
                     <TableCell>{p.items.length} productos</TableCell>
                     <TableCell className="text-right font-medium">{formatRD(p.totalCents)}</TableCell>
                     <TableCell className="text-right">

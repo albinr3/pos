@@ -1,7 +1,7 @@
 import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
 
 
-import { withCashOperation, type CashOperationInput } from "@/lib/cash-context"
+import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
 
 import { revalidatePath } from "next/cache"
 import { prisma } from "@/lib/db"
@@ -168,12 +168,15 @@ export async function createPurchase(actor: PurchaseActor, input: Parameters<typ
   // No confirmar efectos ordinarios cuando el cliente solicita una operación fiscal no admitida.
   assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
-  return withCashOperation(cashOperation, { kind: "createPurchase", ...payload }, () => createPurchaseInternal(actor, input))
+  return cashRequest.run({ ...cashRequest.getStore(), fiscalPurchaseRequested: true }, () => withCashOperation(cashOperation, { kind: "createPurchase", ...payload }, () => createPurchaseInternal(actor, input)))
 }
 
 async function createPurchaseInternal(actor: PurchaseActor, input: {
   supplierId?: string | null
   supplierName?: string | null
+  supplierReceiptNumber?: string | null
+  e41CashPaidCents?: number
+  e41DeclaredUnregistered?: boolean
   notes?: string | null
   paymentMethod?: PaymentMethod | null
   treasuryAccountId?: string | null
@@ -190,6 +193,7 @@ async function createPurchaseInternal(actor: PurchaseActor, input: {
     message: "No tienes permiso para gestionar compras",
     resourceType: "Purchase",
   })
+  if (input.e41CashPaidCents !== undefined || input.e41DeclaredUnregistered !== undefined) await ensurePermission(currentUser, "canPrepareFiscalDocuments", { message: "No tienes permiso para preparar documentos fiscales", resourceType: "Purchase" })
 
   validatePurchaseMetadata(input)
   if (!Array.isArray(input.items) || !input.items.length) throw new PurchaseError("INVALID_PURCHASE", "La compra no tiene productos")
@@ -233,6 +237,14 @@ async function createPurchaseInternal(actor: PurchaseActor, input: {
 
     const totalCents = itemsWithNetCost.reduce((s, i) => s + i.lineTotalCents, 0)
     moneyCents(totalCents, type !== "CREDITO")
+    let supplierNetPaidCents: number | null = null
+    if (input.e41CashPaidCents !== undefined || input.e41DeclaredUnregistered !== undefined) {
+      if (type !== "CONTADO" || input.supplierReceiptNumber?.trim() || input.e41DeclaredUnregistered !== true || !supplier?.fiscalIdentification) throw new PurchaseError("INVALID_E41_PAYMENT", "Para registrar el pago neto declara al proveedor informal y completa su identificación fiscal")
+      const fiscal = await tx.fiscalSettings.findUnique({ where: { accountId: currentUser.accountId } })
+      if (!fiscal?.enabled || fiscal.jurisdiction !== "DO" || fiscal.regime !== "DO_ECF" || fiscal.environment !== "TEST" || fiscal.configurationStatus !== "VALIDATED") throw new PurchaseError("FISCAL_NOT_AVAILABLE", "Activa una configuración fiscal de prueba válida")
+      supplierNetPaidCents = moneyCents(input.e41CashPaidCents, true)
+      if (supplierNetPaidCents > totalCents) throw new PurchaseError("INVALID_E41_PAYMENT", "El pago neto no puede superar el bruto")
+    }
     const initialPaymentCents = moneyCents(input.initialPaymentCents ?? 0, true)
     if (type === "CONTADO" && initialPaymentCents) throw new PurchaseError("INVALID_INITIAL_PAYMENT", "El abono inicial solo corresponde a crédito")
     if (type === "CREDITO" && initialPaymentCents >= totalCents) throw new PurchaseError("INVALID_INITIAL_PAYMENT", "El abono inicial debe ser menor que el total; usa Contado para pagar todo")
@@ -240,12 +252,17 @@ async function createPurchaseInternal(actor: PurchaseActor, input: {
     const updateProductPrice = input.updateProductPrice !== false
 
     const supplierName = input.supplierName?.trim() || supplier?.name || null
+    const purchaseScope = cashRequest.getStore()
+    if (purchaseScope) purchaseScope.fiscalPurchaseAuthorizedAccountId = currentUser.accountId
     const purchase = await tx.purchase.create({
       data: {
         accountId: currentUser.accountId,
         type,
         supplierId: supplier?.id ?? null,
         supplierName,
+        supplierReceiptNumber: input.supplierReceiptNumber?.trim() || null,
+        supplierNetPaidCents,
+        e41DeclaredUnregistered: supplierNetPaidCents !== null,
         paymentMethod: type === "CREDITO" || !purchaseTreasuryAccount ? null : input.paymentMethod ?? PaymentMethod.OTRO,
         treasuryAccountId: purchaseTreasuryAccount?.id ?? null,
         notes: input.notes?.trim() || null,
@@ -309,7 +326,7 @@ async function createPurchaseInternal(actor: PurchaseActor, input: {
     revalidatePath("/products")
     revalidatePath("/dashboard")
 
-    return { ...purchase, purchasedAt: purchase.purchasedAt.toISOString(), createdAt: purchase.createdAt.toISOString(), updatedAt: purchase.updatedAt.toISOString(), payableId, dueDate: dueDate?.toISOString().slice(0, 10) ?? null, paidCents: type === "CREDITO" ? initialPaymentCents : totalCents, balanceCents: type === "CREDITO" ? totalCents - initialPaymentCents : 0 }
+    return { ...purchase, purchasedAt: purchase.purchasedAt.toISOString(), createdAt: purchase.createdAt.toISOString(), updatedAt: purchase.updatedAt.toISOString(), payableId, dueDate: dueDate?.toISOString().slice(0, 10) ?? null, paidCents: type === "CREDITO" ? initialPaymentCents : supplierNetPaidCents ?? totalCents, balanceCents: type === "CREDITO" ? totalCents - initialPaymentCents : 0 }
     }
     return type === "CREDITO" ? purchaseOperation(tx, currentUser, "creditPurchase", input.operationId, input, run) : run()
   }, TRANSACTION_OPTIONS)
@@ -402,6 +419,8 @@ export async function cancelPurchase(actor: PurchaseActor, id: string) {
 
     if (!purchase) throw new PurchaseError("NOT_FOUND", "Compra no encontrada", 404)
     if (purchase.cancelledAt) return { id }
+    // Un documento preparado conserva el origen: no revertir inventario detrás de su copia fiscal.
+    if (await tx.fiscalDocument.count({ where: { accountId: currentUser.accountId, purchaseId: id, state: "PREPARADO_PENDIENTE_CONEXION" } })) throw new PurchaseError("FISCAL_DOCUMENT_EXISTS", "La compra tiene un documento fiscal preparado", 409)
 
     if (await tx.supplierPayment.count({ where: { accountId: currentUser.accountId, cancelledAt: null, ap: { purchaseId: id } } })) throw new PurchaseError("ACTIVE_PAYMENTS", "Revierte los pagos antes de anular la compra", 409)
     // Revertir el stock que se agregó
@@ -416,6 +435,8 @@ export async function cancelPurchase(actor: PurchaseActor, id: string) {
     }
 
     // Marcar como cancelada
+    const purchaseScope = cashRequest.getStore()
+    if (purchaseScope) purchaseScope.fiscalPurchaseAuthorizedAccountId = currentUser.accountId
     const cancelled = await tx.purchase.updateMany({
       where: { id, accountId: currentUser.accountId },
       data: {
@@ -483,6 +504,10 @@ export async function updatePurchase(actor: PurchaseActor, input: {
 
     if (!existingPurchase) throw new PurchaseError("NOT_FOUND", "Compra no encontrada", 404)
     if (existingPurchase.cancelledAt) throw new PurchaseError("PURCHASE_CANCELLED", "No se puede editar una compra cancelada", 409)
+    // El pago neto ya quedó registrado en caja; cambiar la compra no puede recalcularlo silenciosamente.
+    if (existingPurchase.supplierNetPaidCents != null) throw new PurchaseError("E41_PAYMENT_LOCKED", "La compra tiene un pago neto registrado para revisión E41; no se pueden editar sus importes", 409)
+    // Cambiar proveedor o líneas después de preparar dejaría la copia fiscal sin respaldo.
+    if (await tx.fiscalDocument.count({ where: { accountId: currentUser.accountId, purchaseId: input.id, state: "PREPARADO_PENDIENTE_CONEXION" } })) throw new PurchaseError("FISCAL_DOCUMENT_EXISTS", "La compra tiene un documento fiscal preparado", 409)
 
     if (input.type && input.type !== existingPurchase.type) throw new PurchaseError("PURCHASE_TYPE_IMMUTABLE", "No puedes cambiar el tipo de una compra", 409)
     if (await tx.supplierPayment.count({ where: { accountId: currentUser.accountId, cancelledAt: null, ap: { purchaseId: input.id } } })) throw new PurchaseError("ACTIVE_PAYMENTS", "Revierte los pagos antes de editar productos, importe o proveedor", 409)
@@ -547,6 +572,8 @@ export async function updatePurchase(actor: PurchaseActor, input: {
     const supplierName = input.supplierName === undefined
       ? (supplier && requestedSupplierId !== existingPurchase.supplierId ? supplier.name : existingPurchase.supplierName)
       : input.supplierName?.trim() || supplier?.name || null
+    const purchaseScope = cashRequest.getStore()
+    if (purchaseScope) purchaseScope.fiscalPurchaseAuthorizedAccountId = currentUser.accountId
     const updatedPurchase = await tx.purchase.updateMany({
       where: { id: input.id, accountId: currentUser.accountId },
       data: {
@@ -627,9 +654,15 @@ export async function patchPurchase(actor: PurchaseActor, id: string, input: { n
     const purchase = await tx.purchase.findFirst({ where: { id, accountId: actor.accountId } })
     if (!purchase) throw new PurchaseError("NOT_FOUND", "Compra no encontrada", 404)
     if (purchase.cancelledAt) throw new PurchaseError("PURCHASE_CANCELLED", "La compra está anulada", 409)
+    // El trigger protege toda la compra preparada; avisar antes de que PostgreSQL rechace el cambio.
+    if ((input.dueDate !== undefined || input.notes !== undefined) && await tx.fiscalDocument.count({ where: { accountId: actor.accountId, purchaseId: id, state: "PREPARADO_PENDIENTE_CONEXION" } })) throw new PurchaseError("FISCAL_DOCUMENT_EXISTS", "La compra está protegida por un documento fiscal preparado", 409)
     if (input.dueDate !== undefined && purchase.type !== "CREDITO") throw new PurchaseError("INVALID_DUE_DATE", "Solo las compras a crédito tienen vencimiento")
     if (input.dueDate !== undefined) await tx.accountPayable.update({ where: { purchaseId: id }, data: { dueDate: dateOnly(input.dueDate) } })
-    if (input.notes !== undefined) await tx.purchase.update({ where: { id }, data: { notes: input.notes?.trim() || null } })
+    if (input.notes !== undefined) {
+      const purchaseScope = cashRequest.getStore()
+      if (purchaseScope) purchaseScope.fiscalPurchaseAuthorizedAccountId = actor.accountId
+      await tx.purchase.update({ where: { id }, data: { notes: input.notes?.trim() || null } })
+    }
     await logAuditEvent({ accountId: actor.accountId, userId: actor.id, action: "PURCHASE_EDITED", resourceType: "Purchase", resourceId: id, details: input }, tx)
     return { id }
   }, TRANSACTION_OPTIONS)

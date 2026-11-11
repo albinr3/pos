@@ -10,6 +10,7 @@ import { PaymentMethod, type Prisma } from "@prisma/client"
 import { logAuditEvent } from "@/lib/audit-log"
 import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { endOfDay } from "@/lib/dates"
+import { hasPermission } from "@/lib/permissions"
 import { logError, ErrorCodes } from "@/lib/error-logger"
 import {
   ensureDefaultTreasuryAccount,
@@ -23,6 +24,10 @@ type AuthActor = {
   accountId: string
   email?: string | null
   username?: string | null
+  isOwner?: boolean
+  canAccessSales?: boolean
+  canAccessAccountsReceivable?: boolean
+  canPrepareFiscalDocuments?: boolean
 }
 
 function assertAuthActor(actor: unknown): asserts actor is AuthActor {
@@ -30,6 +35,14 @@ function assertAuthActor(actor: unknown): asserts actor is AuthActor {
   const candidate = actor as Partial<AuthActor>
   if (typeof candidate.id !== "string" || candidate.id.length === 0) throw new Error("No autenticado")
   if (typeof candidate.accountId !== "string" || candidate.accountId.length === 0) throw new Error("No autenticado")
+}
+
+async function requireReceivableActor() {
+  // Las acciones públicas no deben aceptar identidades aportadas por el navegador.
+  const actor = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
+  assertAuthActor(actor)
+  if (!hasPermission(actor, "canAccessAccountsReceivable")) throw new Error("Sin acceso a cuentas por cobrar")
+  return actor
 }
 
 function parseVisualIdQuery(rawQuery: string | undefined): number | null {
@@ -54,7 +67,7 @@ type ARDebugSnapshot = {
   customerId: string
   customerName: string | null
   customerVisualId: number | null
-  saleId: string
+  saleId: string | null
   invoiceCode: string
   saleType: string
   soldAt: Date
@@ -69,10 +82,11 @@ async function getArDebugSnapshots(accountId: string, arIds: string[]): Promise<
     const ars = await prisma.accountReceivable.findMany({
       where: {
         id: { in: arIds },
-        sale: { accountId },
+        accountId,
       },
       select: {
         id: true,
+        createdAt: true,
         status: true,
         balanceCents: true,
         totalCents: true,
@@ -105,9 +119,9 @@ async function getArDebugSnapshots(accountId: string, arIds: string[]): Promise<
       customerName: ar.customer?.name ?? null,
       customerVisualId: ar.customer?.visualId ?? null,
       saleId: ar.saleId,
-      invoiceCode: ar.sale.invoiceCode,
-      saleType: ar.sale.type,
-      soldAt: ar.sale.soldAt,
+      invoiceCode: ar.sale?.invoiceCode ?? `ND-${ar.id.slice(-8)}`,
+      saleType: ar.sale?.type ?? "DEBITO",
+      soldAt: ar.sale?.soldAt ?? ar.createdAt,
     }))
   } catch {
     return []
@@ -163,15 +177,14 @@ async function hasRecentAlreadyPaidLog(params: {
 export async function listOpenAR(
   options?: {
     query?: string
+    customerId?: string
     skip?: number
     take?: number
     overdueOnly?: boolean
     sortBy?: "alphabetical" | "dueDate" | "amount"
-  },
-  actor?: AuthActor
+  }
 ) {
-  const user = actor ?? await getCurrentUser()
-  assertAuthActor(user)
+  const user = await requireReceivableActor()
 
   const query = options?.query?.trim()
   const visualIdQuery = parseVisualIdQuery(query)
@@ -181,19 +194,21 @@ export async function listOpenAR(
   const take = options?.take ?? 10
 
   const where: Prisma.AccountReceivableWhereInput = {
+    accountId: user.accountId,
     status: { in: ["PENDIENTE", "PARCIAL"] },
-    sale: { 
-      accountId: user.accountId,
-      cancelledAt: null, // Excluir ventas canceladas
-    },
+    // Una deuda procede de una venta activa o de una nota de débito preparada.
+    OR: [{ sale: { accountId: user.accountId, cancelledAt: null } }, { debitAdjustment: { accountId: user.accountId, state: "PREPARADO_PENDIENTE_CONEXION" } }],
   }
+  // Filtrar en servidor evita ocultar deudas del cliente detrás de la primera página global.
+  if (options?.customerId?.trim()) where.customerId = options.customerId.trim()
 
   if (query) {
-    where.OR = [
+    where.AND = [{ OR: [
       { sale: { invoiceCode: { contains: query, mode: "insensitive" }, cancelledAt: null } },
+      { debitAdjustment: { id: { contains: query, mode: "insensitive" } } },
       { customer: { name: { contains: query, mode: "insensitive" } } },
       ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
-    ]
+    ] }]
   }
   if (overdueOnly) {
     where.dueDate = {
@@ -212,12 +227,15 @@ export async function listOpenAR(
           { id: "asc" as const },
         ]
 
-  return prisma.accountReceivable.findMany({
+  const accounts = await prisma.accountReceivable.findMany({
     where,
     orderBy,
     include: {
       customer: true,
-      sale: true,
+      sale: { include: { fiscalDocuments: { where: { state: "PREPARADO_PENDIENTE_CONEXION", type: { in: ["E31", "E32", "E44", "E45", "E46"] } }, select: { id: true }, take: 1 }, returns: { where: { cancelledAt: null, fiscalAdjustmentId: null }, select: { totalCents: true } } } },
+      debitAdjustment: { select: { id: true, fiscalDocumentId: true, createdAt: true, originalDocument: { select: { sale: { select: { invoiceCode: true } } } } } },
+      fiscalAdjustmentApplications: { where: { kind: "DEBT" }, select: { amountCents: true } },
+      fiscalCustomerCreditApplications: { select: { amountCents: true } },
       payments: {
         where: { cancelledAt: null }, // Solo pagos no cancelados
         orderBy: { paidAt: "desc" },
@@ -226,34 +244,37 @@ export async function listOpenAR(
     skip,
     take,
   })
+  const canPrepareDebit = hasPermission(user, "canPrepareFiscalDocuments") && hasPermission(user, "canAccessSales") && hasPermission(user, "canAccessAccountsReceivable")
+  return accounts.map(ar => {
+    const sale = ar.sale ? (({ fiscalDocuments, returns, ...commercial }) => { void fiscalDocuments; void returns; return commercial })(ar.sale) : null
+    const { fiscalAdjustmentApplications, fiscalCustomerCreditApplications, ...account } = ar
+    // Un ajuste reduce el saldo, pero no es un recibo de pago ni debe contarse como ingreso de caja.
+    const adjustments = { ordinaryReturnsCents: ar.sale?.returns.reduce((sum, item) => sum + item.totalCents, 0) ?? 0, creditNotesCents: fiscalAdjustmentApplications.reduce((sum, item) => sum + item.amountCents, 0), customerCreditsCents: fiscalCustomerCreditApplications.reduce((sum, item) => sum + item.amountCents, 0) }
+    return { ...account, sale, adjustments, paidCents: ar.payments.reduce((sum, payment) => sum + payment.amountCents, 0), debitEligibleOriginalId: canPrepareDebit ? ar.sale?.fiscalDocuments[0]?.id ?? null : null, origin: ar.sale ? { kind: "SALE" as const, reference: ar.sale.invoiceCode, saleId: ar.sale.id } : { kind: "DEBIT_NOTE" as const, reference: `ND-${ar.debitAdjustment!.id.slice(-8).toUpperCase()}`, adjustmentId: ar.debitAdjustment!.id, documentId: ar.debitAdjustment!.fiscalDocumentId, originalInvoiceCode: ar.debitAdjustment!.originalDocument.sale?.invoiceCode ?? null } }
+  })
 }
 
-export async function getARSummaryStats(actor?: AuthActor) {
-  const user = actor ?? await getCurrentUser()
-  assertAuthActor(user)
+export async function getARSummaryStats() {
+  const user = await requireReceivableActor()
 
   const todayEnd = endOfDay()
 
   const [arOpen, arOverdue] = await Promise.all([
     prisma.accountReceivable.aggregate({
       where: {
+        accountId: user.accountId,
         status: { in: ["PENDIENTE", "PARCIAL"] },
-        sale: {
-          accountId: user.accountId,
-          cancelledAt: null,
-        },
+        OR: [{ sale: { accountId: user.accountId, cancelledAt: null } }, { debitAdjustment: { accountId: user.accountId, state: "PREPARADO_PENDIENTE_CONEXION" } }],
       },
       _sum: { balanceCents: true },
       _count: true,
     }),
     prisma.accountReceivable.aggregate({
       where: {
+        accountId: user.accountId,
         status: { in: ["PENDIENTE", "PARCIAL"] },
         dueDate: { lte: todayEnd },
-        sale: {
-          accountId: user.accountId,
-          cancelledAt: null,
-        },
+        OR: [{ sale: { accountId: user.accountId, cancelledAt: null } }, { debitAdjustment: { accountId: user.accountId, state: "PREPARADO_PENDIENTE_CONEXION" } }],
       },
       _count: true,
     }),
@@ -267,21 +288,20 @@ export async function getARSummaryStats(actor?: AuthActor) {
 }
 
 export async function cancelPayment(id: string, reason: string) {
-  const currentUser = await getCurrentUser()
+  // El actor móvil solo puede proceder del contexto autenticado, nunca de argumentos del cliente.
+  const currentUser = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
   const normalizedReason = reason.trim()
   // Validación defensiva: exige motivo para evitar cancelaciones sin trazabilidad.
   if (!normalizedReason) throw new Error("Debes indicar un motivo de cancelación")
 
-  return prisma.$transaction(async (tx) => {
+  return cashRequest.run({ ...cashRequest.getStore(), fiscalCollectionCancellationRequested: true }, () => prisma.$transaction(async (tx) => {
     // Verificar que el pago pertenece al account del usuario
     const payment = await tx.payment.findFirst({
       where: { 
         id,
         ar: {
-          sale: {
-            accountId: currentUser.accountId,
-          },
+          accountId: currentUser.accountId,
         },
       },
       include: { ar: true },
@@ -298,26 +318,14 @@ export async function cancelPayment(id: string, reason: string) {
       throw new Error("No tienes permiso para cancelar pagos")
     }
 
-    // Recalcular el balance de la cuenta por cobrar
-    const activePayments = await tx.payment.findMany({
-      where: {
-        arId: payment.arId,
-        cancelledAt: null,
-        id: { not: id }, // Excluir este pago
-        ar: {
-          sale: {
-            accountId: currentUser.accountId,
-          },
-        },
-      },
-    })
-
-    const totalPaid = activePayments.reduce((sum, p) => sum + p.amountCents, 0)
-    const newBalance = payment.ar.totalCents - totalPaid
+    // Restaurar solo este cobro conserva devoluciones y créditos aplicados después del pago.
+    // Recalcular desde total menos pagos borraría silenciosamente esos ajustes.
+    const newBalance = payment.ar.balanceCents + payment.amountCents
+    if (newBalance > payment.ar.totalCents) throw new Error("El saldo calculado supera el importe original de la cuenta")
 
     // Actualizar cuenta por cobrar
     const updatedAr = await tx.accountReceivable.updateMany({
-      where: { id: payment.arId, sale: { accountId: currentUser.accountId } },
+      where: { id: payment.arId, accountId: currentUser.accountId },
       data: {
         balanceCents: newBalance,
         status: newBalance === 0 ? "PAGADA" : newBalance === payment.ar.totalCents ? "PENDIENTE" : "PARCIAL",
@@ -327,7 +335,7 @@ export async function cancelPayment(id: string, reason: string) {
 
     // Marcar pago como cancelado
     const cancelled = await tx.payment.updateMany({
-      where: { id, ar: { sale: { accountId: currentUser.accountId } } },
+      where: { id, ar: { accountId: currentUser.accountId } },
       data: {
         cancelledAt: new Date(),
         cancelledBy: user.id,
@@ -357,20 +365,19 @@ export async function cancelPayment(id: string, reason: string) {
     revalidatePath("/daily-close")
     revalidatePath("/reports/payments")
     revalidatePath("/reports/profit")
-  }, TRANSACTION_OPTIONS)
+    return { id: payment.id, arId: payment.arId, amountCents: payment.amountCents, newBalanceCents: newBalance, newStatus: newBalance === 0 ? "PAGADA" : newBalance === payment.ar.totalCents ? "PENDIENTE" : "PARCIAL" }
+  }, TRANSACTION_OPTIONS))
 }
 
 export async function listAllPayments() {
   const user = await getCurrentUser()
   if (!user) throw new Error("No autenticado")
+  // La acción pública no puede eludir el permiso requerido por la pantalla de recibos.
+  if (!hasPermission(user, "canAccessPayments")) throw new Error("Sin acceso a recibos")
 
   return prisma.payment.findMany({
     where: {
-      ar: {
-        sale: {
-          accountId: user.accountId,
-        },
-      },
+      ar: { accountId: user.accountId },
     },
     orderBy: { paidAt: "desc" },
     include: {
@@ -380,6 +387,7 @@ export async function listAllPayments() {
           sale: {
             select: { invoiceCode: true, cancelledAt: true },
           },
+          debitAdjustment: { select: { id: true } },
         },
       },
       cancelledUser: { select: { name: true, username: true } },
@@ -388,14 +396,14 @@ export async function listAllPayments() {
   })
 }
 
-export async function addPayment(input: Parameters<typeof addPaymentInternal>[0], actor?: AuthActor) {
+export async function addPayment(input: Parameters<typeof addPaymentInternal>[0]) {
   // No convertir un cobro con instrucciones fiscales desconocidas en un cobro ordinario.
   assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
   const hashPayload = { ...payload } as Record<string, unknown>
   delete hashPayload.user
   // Solo esta acción de cobro puede abrir la excepción del perfil fiscal activo.
-  return cashRequest.run({ ...cashRequest.getStore(), fiscalCollectionRequested: true }, () => withCashOperation(cashOperation, { kind: "addPayment", ...hashPayload }, () => addPaymentInternal(input, actor)))
+  return cashRequest.run({ ...cashRequest.getStore(), fiscalCollectionRequested: true }, () => withCashOperation(cashOperation, { kind: "addPayment", ...hashPayload }, () => addPaymentInternal(input)))
 }
 
 async function addPaymentInternal(input: {
@@ -406,11 +414,11 @@ async function addPaymentInternal(input: {
   treasuryAccountId?: string | null
   note?: string | null
   cashOperation?: CashOperationInput
-}, actor?: AuthActor) {
-  const currentUser = actor ?? await getCurrentUser()
-  assertAuthActor(currentUser)
+}) {
+  const currentUser = await requireReceivableActor()
 
-  if (input.amountCents <= 0) throw new Error("El abono debe ser mayor a 0")
+  // Los cobros comerciales son centavos enteros; no redondear importes inválidos silenciosamente.
+  if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0 || input.amountCents > 2147483647) throw new Error("El abono debe ser un número entero válido de centavos")
   if (input.method === PaymentMethod.DIVIDIR_PAGO) {
     throw new Error("Dividir pago no es un metodo valido para registrar un cobro.")
   }
@@ -420,9 +428,9 @@ async function addPaymentInternal(input: {
       const ar = await tx.accountReceivable.findFirst({
         where: {
           id: input.arId,
-          sale: {
-            accountId: currentUser.accountId,
-          },
+          accountId: currentUser.accountId,
+          // No cobrar una venta cancelada ni un ajuste que todavía no esté preparado.
+          OR: [{ sale: { cancelledAt: null } }, { debitAdjustment: { state: "PREPARADO_PENDIENTE_CONEXION" } }],
         },
       })
       if (!ar) throw new Error("Cuenta por cobrar no encontrada")
@@ -484,7 +492,7 @@ async function addPaymentInternal(input: {
     const newBalance = ar.balanceCents - amount
 
     const updatedAr = await tx.accountReceivable.updateMany({
-      where: { id: ar.id, sale: { accountId: currentUser.accountId } },
+      where: { id: ar.id, accountId: currentUser.accountId },
       data: {
         balanceCents: newBalance,
         status: newBalance === 0 ? "PAGADA" : "PARCIAL",
@@ -564,13 +572,13 @@ async function addPaymentInternal(input: {
   }
 }
 
-export async function addBatchPayment(input: Parameters<typeof addBatchPaymentInternal>[0], actor?: AuthActor) {
+export async function addBatchPayment(input: Parameters<typeof addBatchPaymentInternal>[0]) {
   // Conservar la solicitud fiscal para revisión en vez de aplicar el lote parcialmente.
   assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
   const hashPayload = { ...payload } as Record<string, unknown>
   delete hashPayload.user
-  return cashRequest.run({ ...cashRequest.getStore(), fiscalCollectionRequested: true }, () => withCashOperation(cashOperation, { kind: "addBatchPayment", ...hashPayload }, () => addBatchPaymentInternal(input, actor)))
+  return cashRequest.run({ ...cashRequest.getStore(), fiscalCollectionRequested: true }, () => withCashOperation(cashOperation, { kind: "addBatchPayment", ...hashPayload }, () => addBatchPaymentInternal(input)))
 }
 
 async function addBatchPaymentInternal(input: {
@@ -581,12 +589,12 @@ async function addBatchPaymentInternal(input: {
   treasuryAccountId?: string | null
   note?: string | null
   cashOperation?: CashOperationInput
-}, actor?: AuthActor) {
-  const currentUser = actor ?? await getCurrentUser()
-  assertAuthActor(currentUser)
+}) {
+  const currentUser = await requireReceivableActor()
 
   if (!input.arIds.length) throw new Error("Debes seleccionar al menos una factura")
-  if (input.amountCents <= 0) throw new Error("El abono debe ser mayor a 0")
+  // El lote comparte la misma validación de centavos que el cobro individual.
+  if (!Number.isSafeInteger(input.amountCents) || input.amountCents <= 0 || input.amountCents > 2147483647) throw new Error("El abono debe ser un número entero válido de centavos")
   const uniqueArIds = Array.from(new Set(input.arIds))
   if (uniqueArIds.length !== input.arIds.length) {
     throw new Error("Hay facturas duplicadas en la selección")
@@ -603,7 +611,7 @@ async function addBatchPaymentInternal(input: {
       transferBankName: input.transferBankName,
       treasuryAccountId: input.treasuryAccountId,
       note: input.note,
-    }, actor)
+    })
     return {
       receiptCode: result.receiptCode,
       paymentIds: [result.paymentId],
@@ -616,7 +624,8 @@ async function addBatchPaymentInternal(input: {
       const ars = await tx.accountReceivable.findMany({
         where: {
           id: { in: uniqueArIds },
-          sale: { accountId: currentUser.accountId },
+          accountId: currentUser.accountId,
+          OR: [{ sale: { cancelledAt: null } }, { debitAdjustment: { state: "PREPARADO_PENDIENTE_CONEXION" } }],
         },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       })
@@ -704,7 +713,7 @@ async function addBatchPaymentInternal(input: {
 
       const newBalance = ar.balanceCents - amount
       await tx.accountReceivable.updateMany({
-        where: { id: ar.id, sale: { accountId: currentUser.accountId } },
+        where: { id: ar.id, accountId: currentUser.accountId },
         data: {
           balanceCents: newBalance,
           status: newBalance === 0 ? "PAGADA" : "PARCIAL",

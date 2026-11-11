@@ -6,6 +6,8 @@ import { formatRD } from "@/lib/money"
 import { formatCustomerName } from "@/lib/customer-display"
 import { PrintButton } from "@/components/app/print-button"
 import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
+import { hasPermission } from "@/lib/permissions"
+import Link from "next/link"
 
 // Evitar prerender y forzar evaluación dinámica
 export const dynamic = "force-dynamic"
@@ -53,12 +55,16 @@ export default async function ReturnCartaPrintPage({
         sale: { include: { customer: true } },
         user: { select: { name: true } },
         cancelledUser: { select: { name: true } },
+        fiscalAdjustment: { select: { fiscalDocumentId: true, actorUserId: true } },
         items: { include: { product: true } },
       },
     }),
   ])
 
   if (!returnRecord) return notFound()
+  const fiscalReturn = Boolean(returnRecord.fiscalAdjustmentId)
+  const fiscalDocumentId = returnRecord.fiscalAdjustment?.fiscalDocumentId
+  const canPrintFiscal = fiscalDocumentId && (hasPermission(user, "canViewFiscalDocuments") || (hasPermission(user, "canPrepareFiscalDocuments") && returnRecord.fiscalAdjustment?.actorUserId === user.id))
 
   const logoUrl = company?.logoUrl
   const itbisModeLabel = returnRecord.salePricesIncludeItbis ? "incluido" : "no incluido"
@@ -85,15 +91,16 @@ export default async function ReturnCartaPrintPage({
 
       <div className="no-print mb-6 flex items-center justify-between">
         <div className="text-sm text-neutral-600">Devolución {returnRecord.returnCode}</div>
-        <PrintButton />
+        <div className="flex gap-3">{fiscalDocumentId && canPrintFiscal && <Link className="underline" href={`/invoices/fiscal/${encodeURIComponent(fiscalDocumentId)}?format=CARTA`}>Ver nota fiscal de prueba</Link>}<PrintButton /></div>
       </div>
 
       {returnRecord.cancelledAt && (
         <div className="mb-4 border-2 border-red-500 bg-red-50 p-4 text-center">
-          <div className="text-xl font-bold text-red-600">⚠️ DEVOLUCIÓN CANCELADA</div>
+          <div className="text-xl font-bold text-red-600">{fiscalReturn ? "REVERSIÓN FÍSICA" : "⚠️ DEVOLUCIÓN CANCELADA"}</div>
           <div className="mt-1 text-sm text-red-600">
             Cancelada el {fmtDate(returnRecord.cancelledAt)}
             {returnRecord.cancelledUser && ` por ${returnRecord.cancelledUser.name}`}
+            {fiscalReturn && <div>La nota fiscal y sus aplicaciones financieras permanecen vigentes.{returnRecord.cancellationReason && ` Motivo: ${returnRecord.cancellationReason}`}</div>}
           </div>
         </div>
       )}
@@ -113,7 +120,8 @@ export default async function ReturnCartaPrintPage({
         </div>
 
         <div className="text-right">
-          <div className="text-2xl font-bold">DEVOLUCIÓN</div>
+          <div className="text-2xl font-bold">{fiscalReturn ? "REPOSICIÓN FÍSICA" : "DEVOLUCIÓN"}</div>
+          {fiscalReturn && <div className="text-sm">Documento de prueba / No emitido fiscalmente</div>}
           <div className="mt-2 text-sm">
             <div>
               <span className="font-semibold">No:</span> {returnRecord.returnCode}
@@ -148,8 +156,7 @@ export default async function ReturnCartaPrintPage({
             <th className="py-2 text-left">Código</th>
             <th className="py-2 text-left">Descripción</th>
             <th className="py-2 text-right">Cant. Devuelta</th>
-            <th className="py-2 text-right">Precio Unitario</th>
-            <th className="py-2 text-right">Importe</th>
+            {!fiscalReturn && <><th className="py-2 text-right">Precio Unitario</th><th className="py-2 text-right">Importe</th></>}
           </tr>
         </thead>
         <tbody>
@@ -158,8 +165,7 @@ export default async function ReturnCartaPrintPage({
               <td className="py-2 pr-2">{it.product.sku ?? "—"}</td>
               <td className="py-2 pr-2">{it.product.name}</td>
               <td className="py-2 text-right">{decimalToNumber(it.qty)}</td>
-              <td className="py-2 text-right">{formatRD(it.unitPriceCents)}</td>
-              <td className="py-2 text-right">{formatRD(it.lineTotalCents)}</td>
+              {!fiscalReturn && <><td className="py-2 text-right">{formatRD(it.unitPriceCents)}</td><td className="py-2 text-right">{formatRD(it.lineTotalCents)}</td></>}
             </tr>
           ))}
         </tbody>
@@ -175,7 +181,7 @@ export default async function ReturnCartaPrintPage({
           )}
         </div>
 
-        <div className="ml-auto w-full max-w-sm rounded-md border p-4 text-sm">
+        {fiscalReturn ? <div className="ml-auto w-full max-w-sm rounded-md border p-4 text-sm">Este documento describe el movimiento físico. El importe económico, la deuda y cualquier reembolso constan en la nota fiscal de prueba.</div> : <div className="ml-auto w-full max-w-sm rounded-md border p-4 text-sm">
           <div className="flex items-center justify-between">
             <span>Subtotal</span>
             <span>{formatRD(returnRecord.subtotalCents)}</span>
@@ -194,7 +200,7 @@ export default async function ReturnCartaPrintPage({
             <span>Total Devuelto</span>
             <span>{formatRD(returnRecord.totalCents)}</span>
           </div>
-        </div>
+        </div>}
       </div>
       
       <div className="mt-12 pt-6">

@@ -17,9 +17,10 @@ export function purchaseWhere(accountId: string, f: PurchaseFilters): Prisma.Pur
 export function purchaseReadPermit(actor: PurchaseActor) {
   if (!["canManagePurchases", "canCancelPurchases", "canAccessAccountsPayable"].some(p => hasPermission(actor, p as "canManagePurchases"))) throw new PurchaseError("FORBIDDEN", "No tienes permiso para consultar compras", 403)
 }
-export function purchaseFinancialFields(row: { totalCents: number; cancelledAt: Date | null; payable?: { id: string; balanceCents: number; dueDate: Date } | null }) {
+export function purchaseFinancialFields(row: { totalCents: number; supplierNetPaidCents?: number | null; cancelledAt: Date | null; payable?: { id: string; totalCents: number; balanceCents: number; dueDate: Date } | null }) {
   const balanceCents = row.cancelledAt ? 0 : row.payable?.balanceCents ?? 0
-  return { dueDate: row.payable?.dueDate.toISOString().slice(0, 10) ?? null, payableId: row.payable?.id ?? null, balanceCents, paidCents: row.cancelledAt ? 0 : row.totalCents - balanceCents }
+  // Las retenciones no son pagos al proveedor y no deben sumarse a los abonos.
+  return { dueDate: row.payable?.dueDate.toISOString().slice(0, 10) ?? null, payableId: row.payable?.id ?? null, balanceCents, paidCents: row.cancelledAt ? 0 : (row.payable?.totalCents ?? row.supplierNetPaidCents ?? row.totalCents) - balanceCents }
 }
 export async function listPurchaseRecords(actor: PurchaseActor, filters: PurchaseFilters = {}) {
   purchaseReadPermit(actor)

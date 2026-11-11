@@ -4,11 +4,11 @@ import type { CashShift } from "@prisma/client"
 import { hasPermission, type PermissionKey } from "@/lib/permissions"
 import { documentLegs, legDelta, encodeCashResult, decodeCashResult } from "@/lib/cash-money"
 
-const financialModels = new Set(["sale", "salePayment", "payment", "supplierPayment", "purchase", "operatingExpense", "return", "treasuryTransfer", "treasuryOpeningBalance"])
-const fiscalAffectedModels = new Set(["sale", "salePayment", "payment", "supplierPayment", "purchase", "operatingExpense", "return"])
+const financialModels = new Set(["sale", "salePayment", "payment", "supplierPayment", "purchase", "operatingExpense", "employeeExpenseSettlement", "return", "fiscalAdjustmentApplication", "treasuryTransfer", "treasuryOpeningBalance"])
+const fiscalAffectedModels = new Set(["sale", "salePayment", "payment", "supplierPayment", "purchase", "operatingExpense", "employeeExpenseSettlement", "return", "fiscalAdjustmentApplication"])
 const mutationNames = new Set(["create", "createMany", "update", "updateMany", "delete", "deleteMany", "upsert"])
 const includes: Record<string, object> = { sale: { payments: true }, payment: { ar: { include: { sale: true } } }, return: { sale: true } }
-const accountOf = (row: any) => row.accountId ?? row.ar?.sale?.accountId
+const accountOf = (row: any) => row.accountId ?? row.ar?.accountId ?? row.ar?.sale?.accountId
 const referenceOf = (row: any) => row.invoiceCode ?? row.receiptCode ?? row.reference ?? row.returnCode ?? row.description ?? row.note ?? row.id
 
 async function lockAccount(tx: any, accountId: string) {
@@ -61,7 +61,8 @@ async function mutate(tx: any, model: string, action: string, args: any) {
   let accountId = args.data?.accountId ?? (before[0] && accountOf(before[0]))
   if (!accountId && model === "payment" && args.data?.arId) {
     const ar = await tx.accountReceivable.findUnique({ where: { id: args.data.arId }, include: { sale: true } })
-    accountId = ar?.sale.accountId
+    // Una cuenta de débito tiene empresa propia y puede no tener venta como origen.
+    accountId = ar?.accountId ?? ar?.sale?.accountId
   }
   if (!accountId && model === "salePayment") accountId = before[0]?.accountId
   // createMany de modelos financieros debe tener un solo tenant y pasar por esta misma ruta.
@@ -75,8 +76,18 @@ async function mutate(tx: any, model: string, action: string, args: any) {
     // Esta excepción solo cubre la creación de una venta cuya política fue comprobada
     // dentro de esta transacción; nunca habilita compras, pagos u otras mutaciones.
     const authorizedSale = model === "sale" && action === "create" && scope.fiscalSaleAuthorizedAccountId === accountId
+    // Solo el servicio que validó el gasto y el usuario puede abrir esta excepción fiscal.
+    const authorizedExpense = scope.fiscalExpenseAuthorizedAccountId === accountId && !!scope.trustedActor && ((["operatingExpense", "employeeExpenseSettlement"].includes(model) && action === "create" && args.data?.userId === scope.trustedActor.id) || (model === "operatingExpense" && action === "update" && before.length === 1 && Object.keys(args.data ?? {}).length === 1 && Object.hasOwn(args.data, "fiscalExpenseDetails")))
+    // Solo los servicios que validaron cuenta, permisos y origen abren las rutas de compras y pagos.
+    const authorizedPurchase = model === "purchase" && scope.fiscalPurchaseAuthorizedAccountId === accountId && !!scope.trustedActor && (action !== "create" || args.data?.userId === scope.trustedActor.id) && hasPermission(scope.trustedActor, action === "create" ? "canManagePurchases" : action.startsWith("update") && args.data?.cancelledAt ? "canCancelPurchases" : "canManagePurchases") && ["create","update","updateMany"].includes(action)
+    const authorizedSupplierPayment = model === "supplierPayment" && scope.fiscalSupplierPaymentAuthorizedAccountId === accountId && !!scope.trustedActor && ((action === "create" && args.data?.userId === scope.trustedActor.id && hasPermission(scope.trustedActor,"canRegisterSupplierPayments")) || (["update","updateMany"].includes(action) && args.data?.cancelledBy === scope.trustedActor.id && hasPermission(scope.trustedActor,"canCancelSupplierPayments")))
     const authorizedCollection = model === "payment" && action === "create" && scope.fiscalCollectionRequested && !!scope.operation && !!scope.trustedActor && hasPermission(scope.trustedActor, "canAccessAccountsReceivable") && args.data?.userId === scope.trustedActor.id
-    if (fiscal?.enabled && !authorizedSale && !authorizedCollection) throw new CashControlError("FISCAL_NOT_AVAILABLE", "La preparación de documentos fiscales todavía no está disponible", 409)
+    // Anular un cobro autorizado no altera la copia fiscal; solo revierte ese recibo.
+    const authorizedCollectionCancellation = model === "payment" && ["update", "updateMany"].includes(action) && scope.fiscalCollectionCancellationRequested && !!scope.trustedActor && hasPermission(scope.trustedActor, "canCancelPayments") && before.length === 1 && Object.keys(args.data ?? {}).every(key => ["cancelledAt", "cancelledBy", "cancellationReason"].includes(key)) && args.data?.cancelledBy === scope.trustedActor.id
+    // Esta excepción solo se abre dentro de la confirmación fiscal que ya comprobó la reserva y la política.
+    const reversalOnly = model === "return" && ["update", "updateMany"].includes(action) && before.length === 1 && !!before[0].fiscalAdjustmentId && Object.keys(args.data ?? {}).every(key => ["cancelledAt", "cancelledBy", "cancellationReason"].includes(key)) && typeof args.data?.cancellationReason === "string" && !!args.data.cancellationReason.trim()
+    const authorizedAdjustment = scope.fiscalAdjustmentAuthorizedAccountId === accountId && ((["return", "fiscalAdjustmentApplication"].includes(model) && action === "create" && args.data?.userId === scope.trustedActor?.id) || reversalOnly)
+    if (fiscal?.enabled && !authorizedSale && !authorizedExpense && !authorizedPurchase && !authorizedSupplierPayment && !authorizedCollection && !authorizedCollectionCancellation && !authorizedAdjustment) throw new CashControlError("FISCAL_NOT_AVAILABLE", "La preparación de documentos fiscales todavía no está disponible", 409)
     const current = cashRequest.getStore()
     if (current && !fiscal?.enabled) current.fiscalCheckedAccountId = accountId
   }
@@ -97,7 +108,7 @@ async function mutate(tx: any, model: string, action: string, args: any) {
     transferReversal = true
   }
   if (control.enabled && action === "create") {
-    const permissions: Record<string, PermissionKey> = { sale: "canAccessSales", payment: "canAccessAccountsReceivable", purchase: "canManagePurchases", supplierPayment: "canRegisterSupplierPayments", operatingExpense: "canManageExpenses", return: "canAccessReturns", treasuryTransfer: transferReversal ? "canReverseTreasuryTransfers" : "canCreateTreasuryTransfers" }
+    const permissions: Record<string, PermissionKey> = { sale: "canAccessSales", payment: "canAccessAccountsReceivable", purchase: "canManagePurchases", supplierPayment: "canRegisterSupplierPayments", operatingExpense: "canManageExpenses", employeeExpenseSettlement: "canManageExpenses", return: "canAccessReturns", fiscalAdjustmentApplication: "canAccessReturns", treasuryTransfer: transferReversal ? "canReverseTreasuryTransfers" : "canCreateTreasuryTransfers" }
     if (permissions[model] && !hasPermission(actor, permissions[model])) throw new CashControlError("CASH_FORBIDDEN", "No tienes permiso para registrar esta operación", 403)
   }
   const correction = scope.correction
@@ -143,9 +154,16 @@ async function mutate(tx: any, model: string, action: string, args: any) {
         const account = await tx.treasuryAccount.findFirst({ where: { id: leg.treasuryAccountId, accountId } })
         if (!account || (action === "create" && !account.isActive)) throw new CashControlError("CASH_ACCOUNT_INVALID", "Cuenta de tesorería inválida o inactiva", 400)
         if (sourceModel !== "treasuryTransfer" && sourceModel !== "treasuryOpeningBalance") {
-          if (leg.method === "EFECTIVO" && account.id !== control.treasuryAccountId) throw new CashControlError("CASH_ACCOUNT_INVALID", "El efectivo debe usar la caja controlada", 400)
+          // Una caja chica identificada es otro fondo; no confundirla con la caja principal del turno.
+          const pettyExpense = sourceModel === "operatingExpense" && row?.fundingSource === "PETTY_CASH" && account.type === "CAJA" && scope.fiscalExpenseAuthorizedAccountId === accountId
+          if (leg.method === "EFECTIVO" && account.id !== control.treasuryAccountId && !pettyExpense) throw new CashControlError("CASH_ACCOUNT_INVALID", "El efectivo debe usar la caja controlada", 400)
           if (leg.method !== "EFECTIVO" && account.type === "CAJA") throw new CashControlError("CASH_ACCOUNT_INVALID", "Selecciona Efectivo para caja o una cuenta bancaria para pagos digitales", 400)
         }
+      }
+      if (sourceModel === "operatingExpense" && row?.fundingSource === "PETTY_CASH" && action === "create") {
+        // La caja chica también exige el dispositivo y la secuencia del turno responsable.
+        requireActiveCashier(scope)
+        if (!scope.operation?.cashShiftId) throw new CashControlError("CLIENT_UPDATE_REQUIRED", "Registra el gasto de caja chica desde tu turno")
       }
       if (delta.some(l => l.treasuryAccountId === control.treasuryAccountId)) {
         requireActiveCashier(scope)
@@ -243,9 +261,12 @@ export async function runCashTransaction(client: any, callback: (tx: any) => Pro
         // Recuperar el resultado ANTES de evaluar enabled: desactivar turnos nunca habilita un duplicado.
         const previous = await tx.cashOperation.findUnique({ where: { accountId_clientOperationId: { accountId: actor.accountId, clientOperationId: operation.clientOperationId } } })
         if (previous) {
-          if (previous.userId !== actor.id || previous.payloadHash !== scope.payloadHash || previous.cashShiftId !== operation.cashShiftId || previous.clientSequence !== operation.clientSequence) throw new CashControlError("CASH_OPERATION_CONFLICT", "Este identificador ya corresponde a otra operación")
+          // La versión observada también es parte de la operación; cambiarla no debe recuperar otro comando.
+          if (previous.userId !== actor.id || previous.payloadHash !== scope.payloadHash || previous.cashShiftId !== operation.cashShiftId || previous.clientSequence !== operation.clientSequence || (operation.fiscalPolicyVersion !== undefined && previous.fiscalPolicyVersion !== operation.fiscalPolicyVersion)) throw new CashControlError("CASH_OPERATION_CONFLICT", "Este identificador ya corresponde a otra operación")
           return decodeCashResult(previous.response)
         }
+        // El cliente exige turno para notas y aplicaciones; una llamada directa no debe saltarlo por no mover efectivo.
+        if (controlScope.control?.enabled && (scope.fiscalAdjustmentRequested || scope.fiscalCreditApplicationRequested) && !boundToShift) throw new CashControlError("CASH_SHIFT_REQUIRED", "Abre un turno en Cuadre diario antes de registrar esta operación")
         // Primero recuperar un commit anterior; un cambio posterior no debe convertir un reintento en una segunda operación.
         // El candado de Account también lo usa el cambio de política, por lo que la comparación y el commit son atómicos.
         const fiscal = await tx.fiscalSettings.findUnique({ where: { accountId: actor.accountId }, select: { enabled: true, version: true } })
@@ -253,7 +274,7 @@ export async function runCashTransaction(client: any, callback: (tx: any) => Pro
         if (!scope.fiscalDiscard) {
           const supplied = operation.fiscalPolicyVersion
           if (supplied !== undefined && (!Number.isSafeInteger(supplied) || supplied < 0)) throw new CashControlError("FISCAL_POLICY_INVALID", "Versión de política fiscal inválida", 400)
-          if ((fiscal?.enabled && (!(scope.fiscalSaleRequested || scope.fiscalCollectionRequested) || supplied !== fiscalPolicyVersion)) || (!fiscal?.enabled && (scope.fiscalSaleRequested || (supplied !== undefined && supplied !== fiscalPolicyVersion)))) throw new CashControlError("FISCAL_POLICY_CHANGED", "La política fiscal cambió; conserva este pendiente para revisión")
+          if ((fiscal?.enabled && (!(scope.fiscalSaleRequested || scope.fiscalCollectionRequested || scope.fiscalAdjustmentRequested || scope.fiscalExpenseRequested || scope.fiscalPurchaseRequested || scope.fiscalSupplierPaymentRequested || scope.fiscalTreasuryTransferRequested) || supplied !== fiscalPolicyVersion)) || (!fiscal?.enabled && (scope.fiscalSaleRequested || scope.fiscalAdjustmentRequested || (supplied !== undefined && supplied !== fiscalPolicyVersion)))) throw new CashControlError("FISCAL_POLICY_CHANGED", "La política fiscal cambió; conserva este pendiente para revisión")
           if (!fiscal?.enabled) scope.fiscalCheckedAccountId = actor.accountId
         }
         Object.assign(scope, { trustedActor: actor, deviceHash })

@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
+import { receivableOriginLabel } from "@/lib/receivable-origin"
 import { PrintButton } from "@/components/app/print-button"
 import { AutoPrintOnLoad } from "@/components/app/auto-print-on-load"
 
@@ -38,11 +39,11 @@ export default async function PaymentCartaPrintPage({
     prisma.payment.findFirst({
       where: {
         id: paymentId,
-        ar: { sale: { accountId: user.accountId } },
+        ar: { accountId: user.accountId },
       },
       include: {
         ar: {
-          include: { customer: true, sale: true },
+          include: { customer: true, sale: true, debitAdjustment: { select: { id: true } } },
         },
         user: true,
         cancelledUser: { select: { name: true } },
@@ -55,15 +56,11 @@ export default async function PaymentCartaPrintPage({
     where: {
       receiptCode: payment.receiptCode,
       cancelledAt: null,
-      ar: {
-        sale: {
-          accountId: user.accountId,
-        },
-      },
+      ar: { accountId: user.accountId },
     },
     include: {
       ar: {
-        include: { customer: true, sale: true },
+        include: { customer: true, sale: true, debitAdjustment: { select: { id: true } } },
       },
     },
     orderBy: [{ paidAt: "asc" }, { createdAt: "asc" }],
@@ -137,7 +134,7 @@ export default async function PaymentCartaPrintPage({
               </div>
             ) : (
               <div className="mt-1">
-                <span className="font-semibold">Factura:</span> {payment.ar.sale.invoiceCode}
+                <span className="font-semibold">Origen:</span> {receivableOriginLabel(payment.ar)}
               </div>
             )}
           </div>
@@ -189,7 +186,7 @@ export default async function PaymentCartaPrintPage({
             <tbody>
               {visibleReceiptPayments.map((p) => (
                 <tr key={p.id} className="border-b last:border-b-0">
-                  <td className="py-2">{p.ar.sale.invoiceCode}</td>
+                  <td className="py-2">{receivableOriginLabel(p.ar)}</td>
                   <td className="py-2 text-right font-semibold">{formatRD(p.amountCents)}</td>
                 </tr>
               ))}

@@ -1,7 +1,7 @@
 # MOVOPos: preparación de la estructura fiscal por etapas
 
-**Fecha de revisión:** 9 de noviembre de 2026.  
-**Estado:** Etapas 0, 1, 3, 4, 5 y 6 completadas; etapa 2 en curso.  
+**Fecha de revisión:** 11 de noviembre de 2026.  
+**Estado:** Etapas 0, 1 y 3 a 13 completadas con las limitaciones registradas; etapa 2 en curso y etapas 14 y 15 pendientes.  
 **Objetivo:** preparar los diez tipos de comprobante electrónico de República Dominicana, conservando el funcionamiento actual de las empresas que no utilicen el módulo fiscal.  
 **Límite de esta entrega:** estructura, datos, ventanas, reglas locales, API interna para la aplicación móvil y pruebas. La integración con la API de un proveedor fiscal externo se realizará en un proyecto posterior.
 
@@ -82,11 +82,11 @@ La preparación local ya está realizada. Reutilizar este entorno al ejecutar el
 | 6 | Registro transaccional y bandeja fiscal | 4–5 | **Completada por indicación del usuario**; se conservan las limitaciones de verificación registradas |
 | 7 | Facturación E31 y E32 | 3–6 | **Completada por indicación del usuario**; se conservan las limitaciones de verificación registradas |
 | 8 | Ventas E44, E45 y E46 | 7 | **Completada por indicación del usuario**; se conservan las limitaciones de verificación registradas |
-| 9 | Notas de crédito E34 y devoluciones | 7–8 | Pendiente |
-| 10 | Notas de débito E33 | 7–9 | Pendiente |
-| 11 | Compras y cuentas por pagar E41 | 3–6 | Pendiente |
-| 12 | Gastos menores E43 y reembolsos | 6, 11 | Pendiente |
-| 13 | Pagos al exterior E47 | 11–12 | Pendiente |
+| 9 | Notas de crédito E34 y devoluciones | 7–8 | **Completada por indicación del usuario**; se conservan las limitaciones de verificación registradas |
+| 10 | Notas de débito E33 | 7–9 | **Completada por indicación del usuario**; se conservan las limitaciones de verificación registradas |
+| 11 | Compras y cuentas por pagar E41 | 3–6 | **Completada**, con las limitaciones de comprobación registradas |
+| 12 | Gastos menores E43 y reembolsos | 6, 11 | Completada; comprobaciones y límites al final |
+| 13 | Pagos al exterior E47 | 11–12 | Completada; comprobaciones y límites al final |
 | 14 | Impresión, soportes e informes | 7–13 | Pendiente |
 | 15 | Móvil, offline, migraciones y cierre de preparación | Todas | Pendiente |
 
@@ -456,6 +456,12 @@ Este requisito productivo no modifica el alcance ni el estado de la etapa 6 que 
 
 **Objetivo:** cubrir compras a informales sin reconstruir el módulo de proveedores.
 
+**Estado: completada.** Se implementaron soportes recibidos, obligaciones sin inventario y revisión y preparación E41 con retenciones separadas del pago al proveedor. En la base local configurada se aplicaron las seis migraciones de etapa 11, de `20261110190000_purchase_supplier_receipt` a `20261110240000_fiscal_payable_protection`; las migraciones de etapas posteriores no se aplicaron como parte de esta etapa.
+
+**Comprobaciones:** `fiscal-stage11-check.mjs` pasó en una base PostgreSQL aislada existente, con datos ficticios revertidos: compra ordinaria con fiscal apagado, soporte recibido, E41 de contado y crédito, pagos, reintento, retenciones, protección de datos y obligación sin inventario. Se ejercitaron las rutas móviles de propuesta, compra, obligación y pago con autenticación y parte del contexto HTTP simulados. `purchase-credit.browser.test.mjs` pasó diez escenarios con servicios simulados, incluidos la opción de E41, el comprobante recibido y permisos. Pasaron las 62 regresiones generales y ESLint de los archivos de la etapa; la revisión más amplia de interfaz comunicó tres advertencias existentes, sin errores. El tiempo acumulado de ejecución y preparativos de comprobación se mantuvo por debajo de cinco minutos.
+
+**Límites:** no se comprobó una sesión real de navegador, una caja física ni una integración externa; el E41 sigue siendo una copia TEST pendiente de conexión. TypeScript general informó errores en scripts de etapas anteriores y en trabajo simultáneo de pagos exteriores; señaló además literales BigInt en la prueba nueva que se corrigieron después, sin repetir TypeScript. Para ejecutar la prueba aislada con el trabajo simultáneo se añadió allí la migración de pagos exteriores, sin aplicarla a la base local configurada.
+
 **Trabajo:**
 
 - Ampliar compras y obligaciones sin inventario, conservando las deudas históricas dependientes de `Purchase`.
@@ -471,6 +477,8 @@ Este requisito productivo no modifica el alcance ni el estado de la etapa 6 que 
 **Aceptación:** compra formal recibida no se firma como propia; E41 de contado no deja deuda; E41 a crédito admite abonos sin alterar su copia fiscal.
 
 ### Etapa 12 — Gastos menores E43, empleados y caja chica
+
+**Estado:** implementada; véase el registro de comprobaciones y limitaciones al final.
 
 **Objetivo:** documentar gastos elegibles y liquidarlos sin duplicar gasto.
 
@@ -490,6 +498,8 @@ Este requisito productivo no modifica el alcance ni el estado de la etapa 6 que 
 **Aceptación:** gasto, pago y documento se concilian; un reembolso/reintento no repite el gasto. Los gastos ordinarios mantienen el funcionamiento actual con el perfil desactivado.
 
 ### Etapa 13 — E47 y pagos al exterior
+
+**Estado:** implementada; véase el registro de comprobaciones y limitaciones al final.
 
 **Objetivo:** preparar el comprobante correcto en operaciones elegibles de no residentes.
 
@@ -933,6 +943,10 @@ Comprobar por operación la igualdad web/móvil de cálculo, secuencia, aplicaci
 | **6** | Registro transaccional y bandeja fiscal | 10 de noviembre de 2026 | **Completada por indicación del usuario** | Preparación y recuperación comprobadas en PostgreSQL aislado y mediante HTTP móvil con credenciales reales; venta ordinaria con módulo apagado verificada. Permanecen pendientes la revisión visual y la recuperación real en navegador; véanse las demás limitaciones registradas. |
 | **7** | Facturación E31 y E32 | 10 de noviembre de 2026 | **Completada por indicación del usuario** | Integración fiscal, venta ordinaria con módulo apagado, API móvil y cola offline comprobadas; se conservan las limitaciones registradas en el avance. |
 | **8** | Ventas E44, E45 y E46 | 10 de noviembre de 2026 | **Completada por indicación del usuario** | Integración, reglas y pruebas enfocadas de los tres tipos, ventas existentes y aislamiento; se conservan las limitaciones registradas en el avance. |
+| **9** | Notas de crédito E34 y devoluciones | 10 de noviembre de 2026 | **Completada por indicación del usuario** | Disponibilidad, reservas y redondeo de devoluciones sucesivas comprobados en pruebas enfocadas y PostgreSQL aislado; regresión ordinaria 62/62 con dependencias simuladas. Permanecen las limitaciones de confirmación, efectos e interfaces registradas abajo. |
+| **10** | Notas de débito E33 | 10 de noviembre de 2026 | **Completada por indicación del usuario** | E33 al contado, deuda, reintentos y previsualización móvil con autenticación simulada comprobados en PostgreSQL aislado; se conservan las limitaciones y cambios posteriores sin verificar registrados abajo. |
+| **12** | Gastos menores E43 y reembolsos | 11 de noviembre de 2026 | **Completada con límites** | Pruebas enfocadas de gastos, reembolsos, preparación y migración en PostgreSQL aislado; funcionamiento ordinario con perfil apagado. Véase el registro final para los cambios y recorridos no verificados. |
+| **13** | Pagos al exterior E47 | 11 de noviembre de 2026 | **Completada con límites** | Pruebas enfocadas de deuda, abonos, retenciones, preparación y migración en PostgreSQL aislado; funcionamiento ordinario con perfil apagado. Véase el registro final para los cambios y recorridos no verificados. |
 
 
 ### Etapa 6 — avance del 10 de noviembre de 2026
@@ -973,3 +987,77 @@ En la etapa 8, una ejecución detectó un error de sintaxis en la nueva ruta de 
 Un borrador previo E44/E45/E46 que impida revisar una venta puede descartarse con motivo desde la bandeja conservando sus revisiones; la operación exige perfil activo y no permite descartar una copia preparada. Se verificaron directamente en PostgreSQL aislado su idempotencia, historial y protección de documentos preparados. TypeScript focalizado de las pantallas y rutas nuevas aprobó tras corregir el manejo de capacidades ausentes. Estos últimos comandos agregaron aproximadamente ocho segundos al tiempo de la etapa 8.
 
 **Límites:** no se repitió la comprobación integral de la etapa 7 después de la última ampliación de la huella de revisión, para respetar su presupuesto; la misma huella se ejercitó posteriormente con E44. La selección automática por RNC posterior al recorrido HTTP integral se comprobó con pruebas focalizadas y navegador con servicios simulados, no nuevamente mediante HTTP real. La revisión de presentación se limitó al navegador de pruebas y la impresión fiscal se verificó con dependencias simuladas. No se verificó por separado en navegador una configuración fiscal guardada pero desactivada. El descarte se comprobó directamente contra el servicio y PostgreSQL, sin probar su nueva ruta HTTP ni su interfaz en navegador. Las bases y datos de estas pruebas fueron locales y aislados.
+
+### Etapas 9 y 10 — avance parcial del 10 de noviembre de 2026
+
+**Registro histórico: etapa 9 en curso y etapa 10 pendiente en este momento.** Se agregó una migración aditiva para ajustes, líneas, eventos y operaciones idempotentes; un cálculo de disponibilidad acumulada que distingue importes y cantidades físicas; servicios y rutas móviles de borrador E34, previsualización, edición, reserva, consulta y descarte. Las rutas toman los datos de la copia original, bloquean la factura durante la conciliación, exigen perfil TEST para crear o reservar y conservan el descarte cuando se apaga el perfil. Las facturas con devoluciones o notas antiguas sin conciliar se bloquean explícitamente. Las rutas, contratos y su carácter parcial están descritos en la guía y OpenAPI fiscales.
+
+La preparación genérica de E33/E34 se bloqueó para impedir asignar un número sin los efectos comerciales correspondientes. Se corrigió la serialización de reintentos para que el primer resultado y el recuperado tengan el mismo contenido JSON; se dejó el comentario preventivo. No se añadió una ruta de confirmación que aparente aplicar efectos aún no implementados.
+
+**Comprobaciones de etapa 9:** cinco pruebas del cálculo de disponibilidad y 11 regresiones de guardado ordinario con dependencias simuladas aprobaron. En PostgreSQL local aislado se aplicó la migración y se comprobó la previsualización, reserva concurrente, aislamiento, reintento, descarte con perfil apagado y ausencia de nuevas asignaciones de números; el handler móvil se comprobó con autenticación simulada, sin cookies. ESLint de los módulos y rutas modificados aprobó. Una prueba inicial falló por importación de módulos y otra por diferencia de serialización; se corrigieron. Una prueba de aislamiento falló inicialmente porque el segundo perfil estaba apagado; se activó en el fixture y la repetición aprobó. TypeScript completo informó un literal BigInt en la prueba nueva, corregido después, y un error en `scripts/fiscal-stage8-discard-check.mts`, archivo no modificado. No se repitió TypeScript completo tras la corrección. Los preparativos y comprobaciones registrados terminaron dentro del límite de cinco minutos.
+
+**Pendiente en ese momento:** confirmación E34 con devolución física, reembolso o saldo a favor, aplicaciones y correcciones de cuentas por cobrar, interfaz web, disponibilidad en búsqueda de devoluciones, offline y recorridos HTTP con credenciales reales. Entonces faltaban implementar E33 comercial y financiera y comprobar la etapa 10. No se aplicaron migraciones a producción ni se enviaron documentos o consumieron números productivos.
+
+### Etapas 9 y 10 — integración adicional del 10 de noviembre de 2026
+
+**Registro histórico: ambas etapas continuaban en curso en este momento.** Se añadieron confirmaciones transaccionales E34/E33, aplicaciones de deuda, reembolsos y saldos a favor; cuentas por cobrar con origen en venta o débito; formularios, rutas móviles, cola para devoluciones físicas y adaptaciones de cobros, anulaciones, recibos y varios informes. Se añadieron migraciones locales para las relaciones y restricciones; no se aplicaron a producción. Las notas financieras exigen conexión y los números asignados son exclusivamente TEST.
+
+**Comprobaciones:** se conservan los resultados y el límite de la etapa 9 de la entrada anterior; su nueva confirmación y sus efectos no se volvieron a probar. Para la etapa 10 se generó un cliente Prisma aislado sin detener el servidor existente. Se aplicaron las migraciones fiscales en bases PostgreSQL locales nuevas y se verificaron una E33 al contado sobre factura pagada, deuda independiente, cobro único, reintento idéntico y conflicto al cambiar sus datos, sin modificación del stock. La ruta móvil de previsualización se ejercitó con autenticación simulada: 401 sin usuario, 403 sin permisos, 404 para otra empresa y 200 autorizado. Pasaron 11 regresiones de guardado ordinario con dependencias simuladas. La revisión TypeScript con cliente aislado solo informó el error preexistente de tipo desconocido en `scripts/fiscal-stage8-discard-check.mts`. Los preparativos, intentos y comprobaciones de esta etapa duraron menos de cinco minutos; se corrigieron un índice requerido por Prisma y dos problemas del lanzador de prueba antes de obtener el resultado indicado.
+
+**Sin verificar:** confirmación y reversión E34, aplicaciones de deuda, reembolso, saldo a favor, días 30/31, concurrencia final y cola offline; E33 a crédito y cobro posterior, impuestos alternativos y anulación de cobro con ajustes previos; recorridos móviles con credenciales reales, impresión, presentación y todos los informes afectados. Se añadieron después de esas pruebas la captura de fecha E33 y la recuperación de confirmaciones por identificador de operación; ambas siguen sin verificar. Los detalles completos de OpenAPI requieren revisión. Estas limitaciones se conservan pese al cierre indicado por el usuario; no se recomienda utilizar la integración para operaciones reales.
+
+**Integración posterior:** se corrigió la aceptación de identidades proporcionadas como argumentos en acciones de cuentas por cobrar y devoluciones; las rutas móviles colocan ahora el usuario autenticado en el contexto del servidor. Se añadieron detalle y resultado financiero autorizado a la API de devoluciones, y se ampliaron los esquemas de OpenAPI. La edición de una E34 validada sustituye su reserva en la misma transacción; una ruta de previsualización excluye solo la reserva propia y la pantalla permite editarla y muestra copia y notas previas. Estos cambios se realizaron después de las comprobaciones y no se volvieron a ejecutar pruebas para respetar los límites acumulados. Permanecen sin verificar tanto estas modificaciones como los escenarios enumerados arriba.
+
+La impresión compartida se amplió para aceptar el origen en notas, mostrar la referencia original y separar ITBIS no acreditable e importe aplicable; incluye el aviso de documento de prueba. La pantalla de detalle ofrece el enlace de impresión. Esta ampliación tampoco ha sido verificada.
+
+Una migración posterior añade comprobaciones de empresa a las relaciones financieras y obliga a que las aplicaciones de saldo correspondan al mismo cliente. El cálculo de devoluciones físicas también descuenta automáticamente las reducciones previas, respetando el redondeo por línea, y muestra el descuento en la previsualización. La migración y el cálculo se añadieron después del presupuesto de comprobaciones: permanecen sin ejecutar ni verificar, y las comprobaciones anteriores no los cubren.
+
+También se reforzó la validación de centavos y origen vigente en los cobros individuales y por lote. El reporte de utilidad cobrada incluye los cobros E33 y los reembolsos E34 por separado, sin tratar la devolución física como salida de dinero; el costo de devoluciones fiscales de crédito se prorratea según los cobros anteriores. Estas adaptaciones se añadieron después de las pruebas y permanecen sin verificar.
+
+La migración local también protege las devoluciones físicas y sus artículos asociados a notas preparadas. La reversión conserva su motivo y solo permite modificar los campos necesarios para marcarla cancelada. Esta protección y el detalle móvil de su motivo permanecen sin verificar.
+
+La factura fiscal imprimible ofrece accesos a notas de crédito y débito para los permisos correspondientes y el perfil TEST activo; OpenAPI incorpora las rutas de búsqueda, detalle y confirmación de devoluciones. La ruta de devoluciones acepta únicamente confirmaciones con reposición física. Estos cambios tampoco se han verificado.
+
+La pantalla de saldos a favor filtra las deudas por cliente y pagina saldos y cuentas para no ocultar opciones fuera de las primeras cien. Se añadió la recuperación de resultados de cuentas por cobrar por identificador de operación, limitada al autor y la empresa. Estas ampliaciones se hicieron después de las pruebas y permanecen sin verificar.
+
+Los recibos físico-carta y térmico de una devolución E34 muestran cantidades y estado físico sin presentar su importe como un reembolso; enlazan a la nota fiscal cuando el usuario está autorizado. El listado de devoluciones también enlaza al documento por el ajuste, ya que la nota no usa `returnId` como origen. Estas modificaciones no se han verificado.
+
+Las confirmaciones y aplicaciones nuevas exigen identificadores compatibles con su recuperación, y la caja rechaza reutilizar uno con una versión de política diferente. Este ajuste posterior sigue sin verificar dentro del presupuesto de pruebas.
+
+Los listados móviles de E33/E34 y la pantalla de notas de débito permiten consultar páginas posteriores a las primeras cien. Esta paginación, añadida después de las comprobaciones, permanece sin verificar.
+
+Los enlaces a copias de notas desde las pantallas de crédito y débito usan la impresión fiscal, para que un preparador autorizado pueda consultar sus propias notas sin permiso de lectura de toda la bandeja. Este cambio no se ha verificado.
+
+En la pantalla E33 se impide confirmar mientras hay una edición sin guardar. Los comandos pendientes de creación y edición usan claves separadas, se recuperan tras recargar y conservan el identificador ante respuestas perdidas; las validaciones de revisiones anteriores no se reutilizan. Esta corrección se añadió después de las comprobaciones y está sin verificar.
+
+La confirmación E33 normaliza los campos del cobro antes de calcular la identidad de la operación, para que el orden de propiedades JSON no convierta el mismo reintento en un conflicto. Este ajuste también permanece sin verificar.
+
+Para evitar que una edición reinicie un saldo ajustado, las ventas ordinarias con saldo a favor fiscal aplicado no pueden editarse ni anularse sin conciliación. Las acciones de edición y anulación toman el usuario del contexto autenticado. La conciliación o reversión de una aplicación no se ha implementado; esta protección y el comportamiento ordinario posterior al cambio no se han vuelto a verificar.
+
+El reporte de cuentas por cobrar separa recibos de ajustes y expone las aplicaciones fiscales y devoluciones ordinarias sin duplicar la devolución física E34; el CSV conserva el desglose. Esta ampliación se realizó después de las comprobaciones y no se ha verificado.
+
+La consulta móvil y la caché de cuentas por cobrar también incluyen un desglose de recibos y ajustes, conservando el saldo persistido. La interfaz muestra el total de ajustes cuando dispone de él; las cachés anteriores siguen siendo legibles. Estos cambios aún no se han verificado.
+
+El cobro inmediato E33 conserva el nombre del banco y registra el evento comercial de pago; una devolución física E34 registra también su evento comercial de creación. Ambos eventos se incorporaron a la transacción existente y no se han vuelto a comprobar.
+
+Cuando los turnos están activos, el servidor exige turno y dispositivo también para notas y aplicaciones sin movimiento de efectivo, igual que la interfaz; un reintento de una operación ya confirmada se recupera antes de esa comprobación. Esta protección se añadió después de las pruebas y está sin verificar.
+
+**Limitación detectada por lectura y corrección posterior:** el cálculo anterior redondeaba cada devolución física por separado y podía acumular diferencias de milésimas. La implementación ahora reparte el resto acumulado y guarda la reposición exacta por artículo para revertirla, con compatibilidad para registros anteriores. El nuevo cálculo y las reversiones en distinto orden permanecen sin verificar; la columna necesaria está incluida en la migración local no aplicada.
+
+La reversión física de una E34 añade ahora un evento fiscal inmutable con actor, motivo y devolución dentro de la misma transacción. Esta protección se añadió después de las comprobaciones y no se ha verificado.
+
+La interfaz E34 ya no afirma que falta numeración cuando una respuesta perdida deja incierto el resultado de la confirmación; solicita consultar el estado de la operación. El cambio no se ha verificado.
+
+**Corrección posterior del redondeo:** la última devolución física puede absorber el centavo acumulado dentro del saldo disponible. Una prueba en PostgreSQL aislado comprobó dos reservas sucesivas de RD$0.04 y la previsualización de la cancelación restante por RD$0.05, además del descuento adicional; seis pruebas de capacidad y ESLint de los módulos modificados aprobaron. La prueba usa una línea exenta y no verifica la confirmación final ni todos los tratamientos de impuestos. La batería ordinaria `fiscal-test:regression` pasó 62/62 con dependencias simuladas tras actualizar tres pruebas.
+
+**Cierre de etapas 9 y 10, 10 de noviembre de 2026:** completadas por indicación expresa del usuario. Se mantienen las limitaciones y comprobaciones pendientes descritas en este registro; el cierre no convierte en verificadas las funciones señaladas como pendientes ni habilita emisión externa.
+
+### Etapas 12 y 13 — 11 de noviembre de 2026
+
+Se implementaron gastos fiscales de la empresa, adelantados por empleados y de caja chica, sus revisiones, liquidaciones y propuestas E43; los reembolsos liquidan el saldo sin duplicar el gasto y la reposición es una transferencia. Para pagos al exterior se incorporaron obligaciones de servicios, moneda y tasa declaradas, abonos con retención por concepto y propuestas E47 ligadas al pago. Ambas etapas incluyen controles de reintento, copia fiscal, permisos, aislamiento por empresa, interfaces web y rutas para móvil. La liquidación de pagos exteriores está limitada a DOP y la numeración preparada es exclusivamente TEST.
+
+Las pruebas enfocadas de las dos etapas aprobaron en PostgreSQL local aislado con las migraciones reales; incluyeron gastos y reembolsos, obligaciones y abonos, reintentos, preparación e inmutabilidad, así como el funcionamiento ordinario con el perfil fiscal apagado. También aprobaron dos pruebas de renderizado simulado y la comprobación de tipos TypeScript. Las rutas móviles se probaron previamente mediante handlers con credenciales locales de prueba; esto no equivale a una revisión interactiva de navegador o aplicación móvil.
+
+Después de esas pruebas se ajustaron las validaciones y el manejo de caja chica y transferencias con turnos controlados. No se pudo completar la repetición final de los handlers: PostgreSQL de pruebas estaba recuperando su directorio y no admitía conexiones dentro del tiempo disponible. Por tanto, esos últimos ajustes y su interacción con las rutas no quedan acreditados por las pruebas anteriores. Tampoco se revisaron visualmente las pantallas ni se aplicaron las migraciones nuevas a la base local de la aplicación o a producción. No se firmaron ni enviaron documentos externos.
+
+**Comprobación posterior de caja chica y transferencias, 11 de noviembre de 2026:** una vez recuperado PostgreSQL, aprobó la prueba enfocada en una base local aislada. Se verificaron la reposición sin crear otro gasto, los movimientos de origen y destino, el gasto de caja chica contra su propia cuenta, el vínculo al turno, los reintentos sin duplicar y el rechazo de dispositivo o versión fiscal incorrectos. También se probó la transferencia por la cola de turnos con el perfil activo y apagado, y el gasto y pago ordinarios con el perfil apagado. Los handlers se invocaron directamente con credenciales ficticias firmadas; para la transferencia directa se simuló el contexto de dispositivo que proporciona Next y para la cola se simuló la invalidación de caché de Next. No hubo revisión visual ni ejecución en un navegador o aplicación móvil reales. La limitación anterior sobre estos ajustes queda sustituida por esta evidencia, conservando las demás limitaciones indicadas.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { searchSalesForReturn } from "@/app/(app)/returns/actions"
+import { cashRequest } from "@/lib/cash-context"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -15,7 +16,8 @@ export async function GET(request: NextRequest) {
 
     const query = request.nextUrl.searchParams.get("query") || ""
     const customerId = request.nextUrl.searchParams.get("customerId") || null
-    const result = await searchSalesForReturn(query, user, { customerId })
+    if (!user.isOwner && !user.canAccessReturns) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
+    const result = await cashRequest.run({ trustedActor: user }, () => searchSalesForReturn(query, { customerId }))
 
     return NextResponse.json({
       data: result.map((sale: any) => ({

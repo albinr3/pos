@@ -117,7 +117,7 @@ export function calculateFiscalDocument(input: unknown, policyVersion: number) {
   if (body.source !== undefined) {
     const s = object(body.source, "source", ["kind", "id"])
     const kind = str(s.kind, "source.kind")
-    if (!["SALE", "PURCHASE", "RETURN", "EXPENSE"].includes(kind)) return issue("source.kind", "Origen no admitido")
+    if (!["SALE", "PURCHASE", "PAYABLE", "RETURN", "EXPENSE", "SUPPLIER_PAYMENT"].includes(kind)) return issue("source.kind", "Origen no admitido")
     source = { kind, id: str(s.id, "source.id", 100) }
   }
   if (!Array.isArray(body.lines) || !body.lines.length || body.lines.length > 100) return issue("lines", "Indica entre una y cien líneas")
@@ -151,12 +151,14 @@ export function calculateFiscalDocument(input: unknown, policyVersion: number) {
     if (retentionAgent !== null && retentionAgent !== "1") return issue(`${field}.retentionAgent`, "Solo se admite el indicador de agente retenedor 1")
     if ((rules.retention === "required" || (Array.isArray(l.withholdings) && l.withholdings.length > 0)) && !retentionAgent) return issue(`${field}.retentionAgent`, "Indica el agente retenedor")
     const withholdings = ((l.withholdings ?? []) as unknown[]).map((value, i) => {
-      const w = object(value, `${field}.withholdings.${i}`, ["kind", "rate"])
+      const w = object(value, `${field}.withholdings.${i}`, ["kind", "rate", "amount"])
       const wkind = str(w.kind, `${field}.withholdings.${i}.kind`)
       if (!["ISR", "ITBIS"].includes(wkind)) return issue(`${field}.withholdings.${i}.kind`, "Retención no admitida")
       const wrate = decimal(w.rate, `${field}.withholdings.${i}.rate`, 4)
       if (wrate.gt(100)) return issue(`${field}.withholdings.${i}.rate`, "La tasa no puede superar 100")
-      return { kind: wkind, rate: wrate }
+      if (w.amount !== undefined && (type !== "E47" || wkind !== "ISR")) return issue(`${field}.withholdings.${i}.amount`, "El importe explícito solo corresponde a ISR de E47")
+      const allocatedAmount = w.amount === undefined ? null : decimal(w.amount, `${field}.withholdings.${i}.amount`, 2)
+      return { kind: wkind, rate: wrate, allocatedAmount }
     })
     if (new Set(withholdings.map(w => w.kind)).size !== withholdings.length) return issue(`${field}.withholdings`, "Retención duplicada")
     if (treatment === "NO_FACTURABLE" && withholdings.length) return issue(`${field}.withholdings`, "Una línea no facturable no admite retenciones")
@@ -197,7 +199,7 @@ export function calculateFiscalDocument(input: unknown, policyVersion: number) {
       if (l.rate.gt(0) || l.withholdings.length || l.treatment === "NO_FACTURABLE") return issue(`lines.${i}.taxTreatment`, "La propina legal no puede convertirse en una base gravada ni no facturable")
       legalTip = legalTip.plus(gross)
     } else bases[l.treatment] = bases[l.treatment].plus(base)
-    const withholdings = l.withholdings.map(w => { const withholdingBase = w.kind === "ITBIS" ? tax : base; const retained = round(withholdingBase.mul(w.rate).div(100)); totalWithheld = totalWithheld.plus(retained); withheldByKind[w.kind] = withheldByKind[w.kind].plus(retained); return { kind: w.kind, rate: w.rate.toString(), base: amount(withholdingBase), amount: amount(retained) } })
+    const withholdings = l.withholdings.map(w => { const withholdingBase = w.kind === "ITBIS" ? tax : base; const calculated = round(withholdingBase.mul(w.rate).div(100)); const retained = w.allocatedAmount ?? calculated; /* La diferencia de un centavo solo se admite para repartir el ISR acumulado entre abonos. */ if (retained.minus(calculated).abs().gt("0.01")) return issue(`lines.${i}.withholdings`, "El ISR asignado no coincide con la tasa"); totalWithheld = totalWithheld.plus(retained); withheldByKind[w.kind] = withheldByKind[w.kind].plus(retained); return { kind: w.kind, rate: w.rate.toString(), base: amount(withholdingBase), amount: amount(retained) } })
     if (l.treatment !== "NO_FACTURABLE") { totalTax = totalTax.plus(tax); totalBillable = totalBillable.plus(gross) }
     // En las líneas exentas con agente retenedor el formato exige ITBIS retenido cero; E47 no admite ese campo.
     if (["E31", "E33", "E34", "E41"].includes(type) && l.treatment === "EXENTO" && l.retentionAgent && !withholdings.some(w => w.kind === "ITBIS")) withholdings.push({ kind: "ITBIS", rate: "0", base: "0.00", amount: "0.00" })

@@ -1,0 +1,3 @@
+ALTER TABLE "Purchase" ADD COLUMN "supplierNetPaidCents" INTEGER, ADD COLUMN "e41DeclaredUnregistered" BOOLEAN NOT NULL DEFAULT false, ADD COLUMN "e41WithheldItbisCents" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "e41WithheldIsrCents" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "Purchase" ADD CONSTRAINT "Purchase_e41_cash_net_valid" CHECK ("supplierNetPaidCents" IS NULL OR ("type" = 'CONTADO' AND "supplierReceiptNumber" IS NULL AND "e41DeclaredUnregistered" AND "supplierNetPaidCents" >= 0 AND "supplierNetPaidCents" <= "totalCents"));
+ALTER TABLE "Purchase" ADD CONSTRAINT "Purchase_e41_withholding_nonnegative" CHECK ("e41WithheldItbisCents" >= 0 AND "e41WithheldIsrCents" >= 0);

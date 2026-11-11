@@ -6,6 +6,10 @@ import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
+import { hasPermission } from "@/lib/permissions"
+import { purchaseAPI } from "@/lib/purchase-http"
+import { PurchaseError } from "@/lib/purchase-credit"
+import { updateFiscalExpenseDetails, type FiscalExpenseRevision } from "@/lib/fiscal/core/employee-expenses"
 import { parseDateParam } from "@/lib/dates"
 import {
   ensureDefaultTreasuryAccount,
@@ -61,6 +65,8 @@ export async function GET(
     if (!item) {
       return NextResponse.json({ error: "Gasto operativo no encontrado" }, { status: 404 })
     }
+    const canSeeFiscal = hasPermission(user, "canManageExpenses") && (hasPermission(user, "canPrepareFiscalDocuments") || hasPermission(user, "canViewFiscalDocuments"))
+    const fiscalDocuments = canSeeFiscal && item.fiscalExpenseDetails ? await prisma.fiscalDocument.findMany({ where: { accountId: user.accountId, expenseId: item.id, state: { not: "DESCARTADO" } }, select: { id: true, type: true, state: true, revision: true } }) : []
 
     return NextResponse.json({
       id: item.id,
@@ -71,6 +77,8 @@ export async function GET(
       expenseDate: item.expenseDate.toISOString(),
       category: item.category,
       notes: item.notes,
+      ...(hasPermission(user, "canManageExpenses") && item.fiscalExpenseDetails ? { fundingSource: item.fundingSource, fiscalExpenseDetails: item.fiscalExpenseDetails } : {}),
+      ...(canSeeFiscal && item.fiscalExpenseDetails ? { fiscalDocuments } : {}),
       user: item.user,
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
@@ -92,6 +100,11 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const requested = await request.clone().json().catch(() => ({}))
+  if (requested?.fiscalExpense !== undefined) return purchaseAPI(request, async actor => {
+    if (!requested.fiscalExpense || typeof requested.fiscalExpense !== "object" || Array.isArray(requested.fiscalExpense) || Object.keys(requested).some(key => key !== "fiscalExpense")) throw new PurchaseError("INVALID_BODY", "Envía únicamente el detalle fiscal")
+    return updateFiscalExpenseDetails(actor, (await params).id, requested.fiscalExpense as FiscalExpenseRevision)
+  })
   try {
     const user = await getCurrentUserFromRequest(request)
     if (!user) {
@@ -145,6 +158,8 @@ export async function PUT(
     if (!existing) {
       return NextResponse.json({ error: "Gasto operativo no encontrado" }, { status: 404 })
     }
+    // La edición anterior desconoce las líneas fiscales y podría dejar un detalle inconsistente.
+    if (existing.fiscalExpenseDetails) return NextResponse.json({ error: "Este gasto fiscal requiere revisión y no admite edición ordinaria", code: "FISCAL_DOCUMENT_CONFLICT" }, { status: 409 })
 
     const treasuryAccount = treasuryAccountIdRaw
       ? await requireTreasuryAccount(prisma, {

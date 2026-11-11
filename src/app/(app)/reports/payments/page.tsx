@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
+import { receivableOriginLabel } from "@/lib/receivable-origin"
 
 import { ReportDateRangeFilter } from "../filter-client"
 import { getPaymentsReport } from "../actions"
@@ -54,7 +55,7 @@ export default async function PaymentsReportPage({
               <TableBody>
                 {data.payments.map((p) => (
                   <TableRow key={p.id}>
-                    <TableCell className="font-medium">{p.ar.sale.invoiceCode}</TableCell>
+                    <TableCell className="font-medium">{receivableOriginLabel(p.ar)}</TableCell>
                     <TableCell>{p.ar.customer.name}</TableCell>
                     <TableCell>{formatPaymentWithBank(p.method, p.transferBankName)}</TableCell>
                     <TableCell>{p.transferBankName || "-"}</TableCell>

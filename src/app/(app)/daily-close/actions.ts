@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { endOfDay, startOfDay, parseDateParam } from "@/lib/dates"
 import { getCurrentUser } from "@/lib/auth"
 import { getPaymentMethodLabel } from "@/lib/payment-methods"
+import { Decimal } from "@prisma/client/runtime/library"
 
 type MethodBreakdown = {
   method: string
@@ -24,8 +25,9 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
   const toDate = parseDateParam(input?.to) ?? fromDate
   const from = startOfDay(fromDate)
   const to = endOfDay(toDate)
+  const fiscalSettings = await prisma.fiscalSettings.findUnique({ where: { accountId: user.accountId }, select: { accountId: true } })
 
-  const [sales, arPayments, cashReturns, expenses] = await Promise.all([
+  const [sales, arPayments, cashReturns, directExpenses, fiscalReturnIds, fiscalRefunds, fiscalNotes, debitNotes, expenseSettlements] = await Promise.all([
     prisma.sale.findMany({
       where: {
         accountId: user.accountId,
@@ -49,11 +51,7 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
     }),
     prisma.payment.findMany({
       where: {
-        ar: {
-          sale: {
-            accountId: user.accountId,
-          },
-        },
+        ar: { accountId: user.accountId },
         paidAt: { gte: from, lte: to },
         cancelledAt: null,
       },
@@ -68,16 +66,25 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
           type: "CONTADO",
         },
       },
-      select: { totalCents: true, legalTipCents: true },
+      select: { id: true, totalCents: true, legalTipCents: true },
     }),
     prisma.operatingExpense.findMany({
       where: {
         accountId: user.accountId,
         expenseDate: { gte: from, lte: to },
+        fundingSource: { not: "EMPLOYEE" },
       },
       select: { amountCents: true, description: true },
     }),
+    fiscalSettings ? prisma.$queryRaw<Array<{ id: string }>>`SELECT id FROM "Return" WHERE "accountId"=${user.accountId} AND "fiscalAdjustmentId" IS NOT NULL AND "returnedAt">=${from} AND "returnedAt"<=${to}` : Promise.resolve([]),
+    fiscalSettings ? prisma.$queryRaw<Array<{ amountCents: number }>>`SELECT "amountCents" FROM "FiscalAdjustmentApplication" WHERE "accountId"=${user.accountId} AND kind='REFUND' AND method='EFECTIVO' AND "createdAt">=${from} AND "createdAt"<=${to}` : Promise.resolve([]),
+    fiscalSettings ? prisma.$queryRaw<Array<{ snapshot: { adjustment?: { economicCents?: number }; lines?: Array<{ kind?: string; gross?: string; taxNotCreditable?: string; withholdings?: Array<{ amount?: string }> }> } }>>`SELECT snapshot FROM "FiscalAdjustment" WHERE "accountId"=${user.accountId} AND type='E34' AND state='PREPARADO_PENDIENTE_CONEXION' AND "updatedAt">=${from} AND "updatedAt"<=${to}` : Promise.resolve([]),
+    fiscalSettings ? prisma.$queryRaw<Array<{ snapshot: { adjustment?: { amountCents?: number } } }>>`SELECT snapshot FROM "FiscalAdjustment" WHERE "accountId"=${user.accountId} AND type='E33' AND state='PREPARADO_PENDIENTE_CONEXION' AND "updatedAt">=${from} AND "updatedAt"<=${to}` : Promise.resolve([]),
+    prisma.employeeExpenseSettlement.findMany({ where: { accountId: user.accountId, createdAt: { gte: from, lte: to } }, select: { amountCents: true, expense: { select: { description: true } } } }),
   ])
+
+  // En el cierre el adelanto personal aparece cuando se reembolsa, no al registrar el gasto.
+  const expenses = [...directExpenses, ...expenseSettlements.map(row => ({ amountCents: row.amountCents, description: `Reembolso: ${row.expense.description}` }))]
 
   // ─── SECCIÓN 1: VENTAS DEL DÍA ──────────────────────────
 
@@ -88,9 +95,16 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
   const soldCreditCents = creditSales.reduce((a, b) => a + b.totalCents, 0)
   const soldCashLegalTipCents = cashSales.reduce((sum, sale) => sum + (sale.legalTipCents ?? 0), 0)
   const soldCreditLegalTipCents = creditSales.reduce((sum, sale) => sum + (sale.legalTipCents ?? 0), 0)
-  const soldTotalCents = soldCashCents + soldCreditCents
-  const cashReturnsCents = cashReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
-  const cashReturnsLegalTipCents = cashReturns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0)
+  const debitNoteCents = debitNotes.reduce((sum, note) => sum + (note.snapshot.adjustment?.amountCents ?? 0), 0)
+  const soldTotalCents = soldCashCents + soldCreditCents + debitNoteCents
+  const fiscalReturnSet = new Set(fiscalReturnIds.map(ret => ret.id))
+  const ordinaryReturns = cashReturns.filter(ret => !fiscalReturnSet.has(ret.id))
+  // Una devolución fiscal puede ser solo inventario; caja resta únicamente su reembolso efectivo.
+  const ordinaryReturnsCents = ordinaryReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
+  const cashReturnsCents = ordinaryReturnsCents + fiscalRefunds.reduce((sum, refund) => sum + refund.amountCents, 0)
+  const salesReturnsCents = ordinaryReturnsCents + fiscalNotes.reduce((sum, note) => sum + (note.snapshot.adjustment?.economicCents ?? 0), 0)
+  const asCents = (amount?: string) => new Decimal(amount ?? "0").mul(100).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber()
+  const cashReturnsLegalTipCents = ordinaryReturns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0) + fiscalNotes.reduce((sum, note) => sum + (note.snapshot.lines ?? []).filter(line => line.kind === "PROPINA").reduce((total, line) => total + asCents(line.gross) - asCents(line.taxNotCreditable) - (line.withholdings ?? []).reduce((n, item) => n + asCents(item.amount), 0), 0), 0)
 
   // Desglose de ventas contado por método de pago
   const cashSalesMethodMap = new Map<
@@ -231,13 +245,15 @@ export async function getDailyClose(input?: { from?: string; to?: string }) {
       cashTransferenciaCents: cashSalesMethodMap.get("TRANSFERENCIA")?.totalCents ?? 0,
       cashTotalCents: soldCashCents,
       creditCents: soldCreditCents,
+      debitNoteCents,
+      debitNoteCount: debitNotes.length,
       cashLegalTipCents: soldCashLegalTipCents,
       creditLegalTipCents: soldCreditLegalTipCents,
       legalTipCents: soldCashLegalTipCents + soldCreditLegalTipCents,
       legalTipReturnedCents: cashReturnsLegalTipCents,
       totalCents: soldTotalCents,
-      returnsCents: cashReturnsCents,
-      netCents: soldTotalCents - cashReturnsCents,
+      returnsCents: salesReturnsCents,
+      netCents: soldTotalCents - salesReturnsCents,
       cashCount: cashSales.length,
       creditCount: creditSales.length,
       totalCount: sales.length,

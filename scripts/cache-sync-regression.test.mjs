@@ -58,7 +58,10 @@ test("Con sesión, una lista vacía es válida y todas las consultas se limitan 
   for (const name of actionNames) assert.equal((await actions[name]()).length, 0)
   assert.equal(queries[0].where.accountId, "tenant-A")
   assert.equal(queries[1].where.accountId, "tenant-A")
-  assert.equal(queries[2].where.sale.accountId, "tenant-A")
+  // Las cuentas pueden proceder de una venta o de una nota de débito; ambas ramas deben respetar la empresa.
+  assert.equal(queries[2].where.accountId, "tenant-A")
+  assert.equal(queries[2].where.OR[0].sale.accountId, "tenant-A")
+  assert.equal(queries[2].where.OR[1].debitAdjustment.accountId, "tenant-A")
 })
 
 test("Un error real de base de datos sigue propagándose", async () => {

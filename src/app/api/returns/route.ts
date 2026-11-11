@@ -1,10 +1,13 @@
 import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
-import { withCashOperation } from "@/lib/cash-context"
+import { cashRequest, cashDeviceHashFromRequest, withCashOperation } from "@/lib/cash-context"
 import { cashErrorResponse } from "@/lib/cash-http"
+import { confirmCreditAdjustment } from "@/lib/fiscal/core/credit-drafts"
+import { errorResponse as fiscalErrorResponse } from "@/app/api/fiscal/documents/_shared"
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { createReturn, listReturns } from "@/app/(app)/returns/actions"
 import { PaymentMethod } from "@prisma/client"
+import { prisma } from "@/lib/db"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -36,22 +39,32 @@ export async function GET(request: NextRequest) {
     const take = parseTake(searchParams.get("take"), 500, 500)
     const effectiveSkip = requestedSkip ?? 0
 
-    const returnsList = await listReturns(user, { skip: effectiveSkip, take: take + 1 })
+    if (!user.isOwner && !user.canAccessReturns) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
+    const returnsList = await cashRequest.run({ trustedActor: user }, () => listReturns({ skip: effectiveSkip, take: take + 1 }))
     const hasMore = returnsList.length > take
     const pageItems = hasMore ? returnsList.slice(0, take) : returnsList
     const nextSkip = hasMore ? effectiveSkip + take : null
+    const canViewFiscal = user.isOwner || user.canViewFiscalDocuments || user.canPrepareFiscalDocuments
+    const fiscalIds = canViewFiscal ? pageItems.flatMap(item => item.fiscalAdjustmentId ? [item.fiscalAdjustmentId] : []) : []
+    const adjustments = fiscalIds.length ? await prisma.fiscalAdjustment.findMany({
+      where: { accountId: user.accountId, id: { in: fiscalIds }, type: "E34" },
+      select: { id: true, state: true, fiscalDocumentId: true, originalDocumentId: true, applications: { select: { kind: true, amountCents: true, method: true, treasuryAccountId: true } } },
+    }) : []
+    const fiscalById = new Map(adjustments.map(item => [item.id, item]))
 
     return NextResponse.json({
       data: pageItems.map((r: any) => ({
         id: r.id,
         returnCode: r.returnCode,
         saleId: r.saleId,
+        fiscal: canViewFiscal && r.fiscalAdjustmentId ? fiscalById.get(r.fiscalAdjustmentId) ?? null : null,
         totalCents: r.totalCents,
         refundMethod: r.refundMethod ?? null,
         refundTreasuryAccountId: r.refundTreasuryAccountId ?? null,
         notes: r.notes || null,
         returnedAt: r.returnedAt?.toISOString?.() || null,
         cancelledAt: r.cancelledAt?.toISOString?.() || null,
+        cancellationReason: canViewFiscal ? r.cancellationReason ?? null : null,
         sale: r.sale
           ? {
               id: r.sale.id,
@@ -100,6 +113,15 @@ export async function GET(request: NextRequest) {
 // POST /api/returns - Crear devolución
 export async function POST(request: NextRequest) {
   const body = await request.clone().json().catch(() => ({}))
+  if (typeof body.fiscalAdjustmentId === "string" && body.fiscalAdjustmentId.trim()) {
+    try {
+      const user = await getCurrentUserFromRequest(request)
+      if (!user) return NextResponse.json({ error: "No autenticado" }, { status: 401 })
+      const { fiscalAdjustmentId, ...command } = body
+      // La ruta de devoluciones solo admite notas con reposición física; las reducciones usan su recurso financiero.
+      return NextResponse.json(await cashRequest.run({ trustedActor: user, deviceHash: cashDeviceHashFromRequest(request), fiscalPhysicalOnlyQueued: true }, () => confirmCreditAdjustment(user, fiscalAdjustmentId, command)), { status: 201, headers: { "Cache-Control": "private, no-store" } })
+    } catch (error) { return cashErrorResponse(error) ?? fiscalErrorResponse(error) }
+  }
   const { cashOperation, ...payload } = body
   return withCashOperation(cashOperation, { kind: "api-return", ...payload }, () => postCashDocument(request))
 }
@@ -139,16 +161,16 @@ async function postCashDocument(request: NextRequest) {
       return NextResponse.json({ error: "Hay items inválidos en la devolución." }, { status: 400 })
     }
 
-    const created = await createReturn(
+    if (!user.isOwner && !user.canAccessReturns) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
+    const created = await cashRequest.run({ ...cashRequest.getStore(), trustedActor: user, deviceHash: cashDeviceHashFromRequest(request) }, () => createReturn(
       {
         saleId,
         items,
         notes,
         refundMethod: refundMethod as PaymentMethod | null,
         refundTreasuryAccountId,
-      },
-      user
-    )
+      }
+    ))
 
     return NextResponse.json(
       {

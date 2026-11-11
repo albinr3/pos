@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { formatDateDO } from "@/lib/date-time"
+import { receivableOriginLabel } from "@/lib/receivable-origin"
 
 export interface ARFilters {
   status?: string // PENDIENTE, PARCIAL, PAGADA, ALL
@@ -20,10 +21,9 @@ export async function getARReport(filters: ARFilters = {}) {
   if (!user) throw new Error("No autenticado")
 
   const where: any = {
-    sale: {
-      accountId: user.accountId,
-      cancelledAt: null,
-    },
+    accountId: user.accountId,
+    OR: [{ sale: { accountId: user.accountId, cancelledAt: null } }, { debitAdjustment: { accountId: user.accountId, state: "PREPARADO_PENDIENTE_CONEXION" } }],
+    AND: [],
   }
 
   // Filtrar por estado
@@ -41,29 +41,21 @@ export async function getARReport(filters: ARFilters = {}) {
 
   // Filtrar por código de factura
   if (filters.invoiceCode) {
-    where.sale = {
-      ...where.sale,
-      invoiceCode: {
-        contains: filters.invoiceCode,
-        mode: "insensitive",
-      },
-    }
+    where.AND.push({ OR: [{ sale: { invoiceCode: { contains: filters.invoiceCode, mode: "insensitive" } } }, { debitAdjustment: { id: { contains: filters.invoiceCode, mode: "insensitive" } } }] })
   }
 
   // Filtrar por rango de fechas
   if (filters.startDate || filters.endDate) {
-    where.sale = {
-      ...where.sale,
-      soldAt: {},
-    }
+    const dates: { gte?: Date; lte?: Date } = {}
     if (filters.startDate) {
-      where.sale.soldAt.gte = new Date(filters.startDate)
+      dates.gte = new Date(filters.startDate)
     }
     if (filters.endDate) {
       const endDate = new Date(filters.endDate)
       endDate.setHours(23, 59, 59, 999)
-      where.sale.soldAt.lte = endDate
+      dates.lte = endDate
     }
+    where.AND.push({ OR: [{ sale: { soldAt: dates } }, { debitAdjustment: { createdAt: dates } }] })
   }
 
   // Filtrar por monto pendiente
@@ -101,8 +93,14 @@ export async function getARReport(filters: ARFilters = {}) {
           invoiceCode: true,
           soldAt: true,
           totalCents: true,
+          // Las devoluciones ordinarias también reducen la deuda; las fiscales se contabilizan mediante su aplicación.
+          returns: { where: { cancelledAt: null, fiscalAdjustmentId: null }, select: { totalCents: true } },
         },
       },
+      debitAdjustment: { select: { id: true, createdAt: true } },
+      // Separar aplicaciones de los recibos evita presentar un ajuste como dinero cobrado.
+      fiscalAdjustmentApplications: { where: { kind: "DEBT" }, select: { amountCents: true } },
+      fiscalCustomerCreditApplications: { select: { amountCents: true } },
       payments: {
         where: { cancelledAt: null },
         select: {
@@ -212,25 +210,35 @@ export async function exportARToCSV(filters: ARFilters = {}) {
     "Teléfono",
     "Total Factura",
     "Pagado",
+    "Devoluciones ordinarias",
+    "Notas de crédito aplicadas",
+    "Saldo a favor aplicado",
     "Pendiente",
     "Estado",
     "Días Vencido",
   ]
 
   const rows = arItems.map(ar => {
-    const totalPagado = ar.totalCents - ar.balanceCents
+    // Un crédito reduce la deuda sin ser un pago: sumar únicamente recibos activos.
+    const totalPagado = ar.payments.reduce((sum, payment) => sum + payment.amountCents, 0)
+    const devoluciones = ar.sale?.returns.reduce((sum, item) => sum + item.totalCents, 0) ?? 0
+    const notasAplicadas = ar.fiscalAdjustmentApplications.reduce((sum, item) => sum + item.amountCents, 0)
+    const saldosAplicados = ar.fiscalCustomerCreditApplications.reduce((sum, item) => sum + item.amountCents, 0)
     const diasVencido = ar.dueDate 
       ? Math.floor((new Date().getTime() - new Date(ar.dueDate).getTime()) / (1000 * 60 * 60 * 24))
       : 0
     
     return [
-      ar.sale.invoiceCode,
-      formatDateDO(ar.sale.soldAt),
+      receivableOriginLabel(ar),
+      formatDateDO(ar.sale?.soldAt ?? ar.debitAdjustment?.createdAt ?? ar.createdAt),
       ar.dueDate ? formatDateDO(ar.dueDate) : "N/A",
       ar.customer.name,
       ar.customer.phone || "",
       (ar.totalCents / 100).toFixed(2),
       (totalPagado / 100).toFixed(2),
+      (devoluciones / 100).toFixed(2),
+      (notasAplicadas / 100).toFixed(2),
+      (saldosAplicados / 100).toFixed(2),
       (ar.balanceCents / 100).toFixed(2),
       ar.status,
       ar.dueDate && diasVencido > 0 ? diasVencido.toString() : "0",

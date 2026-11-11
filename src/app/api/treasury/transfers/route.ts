@@ -1,4 +1,4 @@
-import { withCashOperation } from "@/lib/cash-context"
+import { cashRequest, withCashOperation } from "@/lib/cash-context"
 import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
 
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   const body = await request.clone().json().catch(() => ({}))
   const { cashOperation, ...payload } = body
-  return withCashOperation(cashOperation, { kind: "api-transfer", ...payload }, () => postCashTransfer(request))
+  return cashRequest.run({ ...cashRequest.getStore(), fiscalTreasuryTransferRequested: true }, () => withCashOperation(cashOperation, { kind: "api-transfer", ...payload }, () => postCashTransfer(request)))
 }
 
 async function postCashTransfer(request: NextRequest) {

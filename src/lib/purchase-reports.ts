@@ -24,18 +24,22 @@ export async function purchaseReport(actor: PurchaseActor, kind: PurchaseReportK
       title = "Compras"
       const where = purchaseWhere(actor.accountId, filters)
       const activeWhere = { AND: [where, { cancelledAt: null }] } satisfies Prisma.PurchaseWhereInput
-      const [purchases, active, cancelled, conditions, debt] = await Promise.all([
+      const [purchases, active, cancelled, conditions, debt, cashOrdinary, cashNet] = await Promise.all([
         tx.purchase.findMany({ where, include: { payable: true }, orderBy: [{ purchasedAt: "desc" }, { id: "desc" }], ...pagination }),
         tx.purchase.aggregate({ where: activeWhere, _count: true, _sum: { totalCents: true } }),
         tx.purchase.aggregate({ where: { AND: [where, { cancelledAt: { not: null } }] }, _count: true, _sum: { totalCents: true } }),
         tx.purchase.groupBy({ by: ["type"], where: activeWhere, _sum: { totalCents: true } }),
-        tx.accountPayable.aggregate({ where: { accountId: actor.accountId, purchase: activeWhere }, _sum: { balanceCents: true } }),
+        tx.accountPayable.aggregate({ where: { accountId: actor.accountId, purchase: activeWhere }, _sum: { totalCents: true, balanceCents: true } }),
+        tx.purchase.aggregate({ where: { AND: [activeWhere, {type:"CONTADO",supplierNetPaidCents:null}] }, _sum: { totalCents: true } }),
+        tx.purchase.aggregate({ where: { AND: [activeWhere, {type:"CONTADO",supplierNetPaidCents:{not:null}}] }, _sum: { supplierNetPaidCents: true } }),
       ])
       columns = [{ key: "date", label: "Fecha de compra" }, { key: "supplier", label: "Proveedor" }, { key: "reference", label: "Compra" }, { key: "type", label: "Condición" }, moneyColumn("totalCents", "Total comprado"), moneyColumn("paidCents", "Abonado actual"), moneyColumn("balanceCents", "Pendiente actual"), { key: "dueDate", label: "Vencimiento" }, { key: "status", label: "Estado" }]
       const totalCents = active._sum.totalCents ?? 0, balanceCents = debt._sum.balanceCents ?? 0
-      Object.assign(summary, { count: active._count + cancelled._count, activeCount: active._count, cancelledCount: cancelled._count, totalCents, cashCents: conditions.find(c => c.type === "CONTADO")?._sum.totalCents ?? 0, creditCents: conditions.find(c => c.type === "CREDITO")?._sum.totalCents ?? 0, paidCents: totalCents - balanceCents, balanceCents, cancelledCents: cancelled._sum.totalCents ?? 0 })
+      // El bruto retenido no es dinero pagado al proveedor.
+      const paidCents=(cashOrdinary._sum.totalCents ?? 0)+(cashNet._sum.supplierNetPaidCents ?? 0)+(debt._sum.totalCents ?? 0)-balanceCents
+      Object.assign(summary, { count: active._count + cancelled._count, activeCount: active._count, cancelledCount: cancelled._count, totalCents, cashCents: conditions.find(c => c.type === "CONTADO")?._sum.totalCents ?? 0, creditCents: conditions.find(c => c.type === "CREDITO")?._sum.totalCents ?? 0, paidCents, balanceCents, cancelledCents: cancelled._sum.totalCents ?? 0 })
       rows = purchases.map(p => {
-        const cancelled = !!p.cancelledAt, balanceCents = cancelled ? 0 : p.payable?.balanceCents ?? 0, paidCents = cancelled ? 0 : p.totalCents - balanceCents
+        const cancelled = !!p.cancelledAt, balanceCents = cancelled ? 0 : p.payable?.balanceCents ?? 0, paidCents = cancelled ? 0 : (p.payable?.totalCents ?? p.supplierNetPaidCents ?? p.totalCents) - balanceCents
         return { id: p.id, date: businessDate(p.purchasedAt), supplier: p.supplierName ?? "Sin proveedor", reference: p.id, type: p.type, totalCents: p.totalCents, paidCents, balanceCents, dueDate: p.payable?.dueDate.toISOString().slice(0, 10) ?? null, status: cancelled ? "ANULADA" : p.payable?.status ?? "PAGADA" }
       })
     } else if (kind === "accounts-payable") {
@@ -54,7 +58,7 @@ export async function purchaseReport(actor: PurchaseActor, kind: PurchaseReportK
       Object.assign(summary, { count: totals._count, activeCount: totals._count, totalCents: totals._sum.totalCents ?? 0, paidCents: (totals._sum.totalCents ?? 0) - (totals._sum.balanceCents ?? 0), balanceCents: totals._sum.balanceCents ?? 0, overdueCents: overdue._sum.balanceCents ?? 0 })
       rows = aps.map(ap => {
         const days = overdueDays(ap.dueDate, ap.balanceCents)
-        return { id: ap.id, supplier: ap.purchase.supplierName ?? ap.supplier.name, supplierId: ap.supplierId, reference: ap.purchaseId, dueDate: ap.dueDate.toISOString().slice(0, 10), totalCents: ap.totalCents, paidCents: ap.totalCents - ap.balanceCents, balanceCents: ap.balanceCents, overdueDays: days, status: ap.status }
+        return { id: ap.id, supplier: ap.purchase?.supplierName ?? ap.supplier.name, supplierId: ap.supplierId, reference: ap.purchaseId ?? ap.description ?? ap.id, dueDate: ap.dueDate.toISOString().slice(0, 10), totalCents: ap.totalCents, paidCents: ap.totalCents - ap.balanceCents, balanceCents: ap.balanceCents, overdueDays: days, status: ap.status }
       })
     } else if (kind === "supplier-payments") {
       title = "Pagos a proveedores"

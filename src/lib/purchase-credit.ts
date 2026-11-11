@@ -79,9 +79,10 @@ export type CreditPurchaseInput = {
 }
 
 export function validatePurchaseMetadata(input: Record<string, unknown>) {
-  for (const key of ["supplierId", "supplierName", "notes", "treasuryAccountId"]) {
+  for (const key of ["supplierId", "supplierName", "notes", "treasuryAccountId", "supplierReceiptNumber"]) {
     if (input[key] !== undefined && input[key] !== null && typeof input[key] !== "string") throw new PurchaseError("INVALID_BODY", `${key} debe ser texto`)
   }
+  if (typeof input.supplierReceiptNumber === "string" && input.supplierReceiptNumber.trim().length > 50) throw new PurchaseError("INVALID_BODY", "El comprobante del proveedor admite hasta 50 caracteres")
 }
 
 export function validatePurchaseItems(items: unknown): asserts items is Array<{ productId: string; qty: number; unitCostCents: number }> {

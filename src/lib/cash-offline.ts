@@ -30,8 +30,8 @@ export function assertCashShiftAccess(context: CashContext, actor?: CashActorIde
   const reason = cashShiftBlockReason(context, actor)
   if (reason) throw new CashShiftAccessError(context, reason)
 }
-export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "supplierPayment" | "expense" | "return" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; reportAmountCents?: number; reportCreatedAt?: string; cashOperation: CashOperationInput; error?: string }
-type DocumentResult = { id?: string; reference?: string; invoiceCode?: string; returnCode?: string; stockDecrements?: Array<{ ingredientId: string; qty: number }>; paymentId?: string; paymentIds?: string[] }
+export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "supplierPayment" | "foreignPayment" | "expense" | "fiscalExpense" | "employeeExpenseSettlement" | "return" | "fiscalCredit" | "fiscalFinancialCredit" | "fiscalDebit" | "applyFiscalCustomerCredit" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; reportAmountCents?: number; reportCreatedAt?: string; cashOperation: CashOperationInput; error?: string }
+type DocumentResult = { id?: string; reference?: string; invoiceCode?: string; returnCode?: string; documentId?: string; eNcf?: string; stockDecrements?: Array<{ ingredientId: string; qty: number }>; paymentId?: string; paymentIds?: string[] }
 type SubmitResult = { pending: true; result: null; error?: string } | { pending: false; result: DocumentResult }
 type ManualInput = { shiftId: string; kind: string; amountCents: number; otherAccountId?: string; note: string }
 type ManualPending = { accountId: string; userId: string; input: ManualInput; body: ManualInput & { action: string; operationId: string } }
@@ -171,11 +171,15 @@ export async function clearCashShiftReport(context: CashContext) {
 async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, bindToShift: boolean, stockConsumptions?: StockConsumption[], reportAmountCents?: number) {
   // Una caché anterior no identifica la política: no inventar una versión para una operación nueva.
   if (!context.fiscalQueuePolicy || !Number.isSafeInteger(context.fiscalQueuePolicy.version)) throw new Error("Conéctate para comprobar la política fiscal antes de guardar el pendiente")
-  const hasFiscalSelection = kind === "sale" && Object.hasOwn(payload, "fiscal")
-  const isCollection = kind === "payment" || kind === "batchPayment"
+  const hasFiscalSelection = (kind === "sale" && Object.hasOwn(payload, "fiscal")) || kind === "fiscalCredit" || kind === "fiscalFinancialCredit" || kind === "fiscalDebit" || kind === "fiscalExpense" || kind === "foreignPayment"
+  const isCollection = kind === "payment" || kind === "batchPayment" || kind === "applyFiscalCustomerCredit" || kind === "employeeExpenseSettlement"
+  // Una reposición mueve fondos entre cuentas y no crea otro gasto fiscal.
+  const isPurchaseFlow = kind === "purchase" || kind === "supplierPayment" || kind === "transfer"
   // La cola nunca convierte una venta entre perfiles al perder conexión o cambiar de empresa.
-  if ((context.fiscalQueuePolicy.enabled && !hasFiscalSelection && !isCollection) || (!context.fiscalQueuePolicy.enabled && hasFiscalSelection)) throw new Error("La política fiscal cambió; conserva el carrito y vuelve a comprobar la configuración")
+  if ((context.fiscalQueuePolicy.enabled && !hasFiscalSelection && !isCollection && !isPurchaseFlow) || (!context.fiscalQueuePolicy.enabled && hasFiscalSelection)) throw new Error("La política fiscal cambió; conserva el carrito y vuelve a comprobar la configuración")
   if (hasFiscalSelection && payload.fiscal && (payload.fiscal as { expectedPolicyVersion?: unknown }).expectedPolicyVersion !== context.fiscalQueuePolicy.version) throw new Error("La política fiscal cambió; revisa el comprobante antes de guardarlo")
+  if ((kind === "fiscalCredit" || kind === "fiscalFinancialCredit" || kind === "fiscalDebit") && payload.expectedPolicyVersion !== context.fiscalQueuePolicy.version) throw new Error("La política fiscal cambió; conserva la nota para revisión")
+  if ((kind === "fiscalExpense" || kind === "foreignPayment") && payload.expectedPolicyVersion !== context.fiscalQueuePolicy.version) throw new Error("La política fiscal cambió; revisa la operación")
   const fiscalPolicyVersion = context.fiscalQueuePolicy.version
   if (!bindToShift) {
     const db = await database(), tx = db.transaction("outbox", "readwrite"), id = crypto.randomUUID()
@@ -210,7 +214,7 @@ async function enqueue(context: CashContext, kind: CashQueuedOperation["kind"], 
   return operation!
 }
 async function confirm(record: CashQueuedOperation, result: unknown) {
-  if (record.kind === "sale") invalidateStockCache(record.cashOperation.accountId)
+  if (record.kind === "sale" || record.kind === "fiscalCredit") invalidateStockCache(record.cashOperation.accountId)
   const db = await database(), tx = db.transaction(["state", "outbox"], "readwrite")
   const state = tx.objectStore("state"), outbox = tx.objectStore("outbox")
   state.put({ key: `receipt:${record.id}`, value: result })
@@ -259,10 +263,13 @@ export async function submitControlledDocument(kind: CashQueuedOperation["kind"]
     return !Number.isFinite(qty) || Math.abs(qty * 100 - Math.round(qty * 100)) > 1e-8
   })) throw new Error("La cantidad vendida admite como máximo dos decimales.")
   const { context, connected } = await resolveCashContext(actor)
-  const posOperation = ["sale", "payment", "batchPayment"].includes(kind)
+  const posOperation = ["sale", "payment", "batchPayment", "fiscalCredit", "fiscalFinancialCredit", "fiscalDebit", "applyFiscalCustomerCredit"].includes(kind)
   if (posOperation) assertCashShiftAccess(context, actor)
   // Ventas y cobros sin turnos también usan una cola idempotente con autoría y política verificables.
   if (!context.enabled && !posOperation) return undefined
+  if ((kind === "fiscalFinancialCredit" || kind === "fiscalDebit") && !connected) throw new Error("Necesitas conexión para registrar una nota financiera")
+  if ((kind === "fiscalExpense" || kind === "employeeExpenseSettlement" || kind === "foreignPayment") && !connected) throw new Error("Necesitas conexión para registrar esta operación")
+  if (kind === "applyFiscalCustomerCredit" && !connected) throw new Error("Necesitas conexión para aplicar un saldo a favor")
   if (!posOperation && !connected) throw new Error("Necesitas conexión para registrar esta operación")
   const shift = context.activeShift
   // SupplierPayment usa method: también debe exigir turno antes de encolar un pago en efectivo.
@@ -278,7 +285,7 @@ export async function submitControlledDocument(kind: CashQueuedOperation["kind"]
   const result = await readState<DocumentResult>(`receipt:${record.id}`)
   window.dispatchEvent(new Event("cash-outbox-changed"))
   // Un rechazo de negocio se conserva en la cola y debe explicarse; repetir el carrito crearía otro identificador.
-  const queued = result === undefined && kind === "sale" && Object.hasOwn(payload, "fiscal") ? (await cashPending()).find(item => item.id === record.id) : undefined
+  const queued = result === undefined && ((kind === "sale" && Object.hasOwn(payload, "fiscal")) || kind === "fiscalCredit" || kind === "fiscalFinancialCredit" || kind === "fiscalDebit" || kind === "applyFiscalCustomerCredit" || kind === "fiscalExpense" || kind === "employeeExpenseSettlement" || kind === "foreignPayment") ? (await cashPending()).find(item => item.id === record.id) : undefined
   return result === undefined ? { result: null, pending: true, ...(queued?.error ? { error: queued.error } : {}) } : { result, pending: false }
 }
 export async function freezeCashShift(context: CashContext) {

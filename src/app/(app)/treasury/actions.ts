@@ -34,7 +34,9 @@ type Movement = {
     | "SUPPLIER_PAYMENT"
     | "PURCHASE"
     | "OPERATING_EXPENSE"
+    | "EMPLOYEE_REIMBURSEMENT"
     | "CASH_RETURN"
+    | "FISCAL_REFUND"
     | "TREASURY_TRANSFER"
   direction: "IN" | "OUT"
   amountCents: number
@@ -271,6 +273,7 @@ async function getTreasuryAccountBalanceUntil(
   if (control && input.at >= control.ledgerStartedAt) {
     return (await db.cashMovement.aggregate({ where: { accountId: input.accountId, treasuryAccountId: input.treasuryAccountId, recordedAt: { lte: input.at } }, _sum: { amountCents: true } }))._sum.amountCents ?? 0
   }
+  const fiscalSettings = await db.fiscalSettings.findUnique({ where: { accountId: input.accountId }, select: { accountId: true } })
   const [
     openingBalanceSum,
     saleSplitSum,
@@ -279,7 +282,9 @@ async function getTreasuryAccountBalanceUntil(
     supplierPaymentSum,
     purchaseSum,
     expenseSum,
+    expenseSettlementSum,
     returnSum,
+    fiscalRefundSum,
     transferInSum,
     transferOutSum,
   ] = await Promise.all([
@@ -319,11 +324,7 @@ async function getTreasuryAccountBalanceUntil(
         cancelledAt: null,
         paidAt: { lte: input.at },
         treasuryAccountId: input.treasuryAccountId,
-        ar: {
-          sale: {
-            accountId: input.accountId,
-          },
-        },
+        ar: { accountId: input.accountId },
       },
       _sum: { amountCents: true },
     }),
@@ -346,6 +347,7 @@ async function getTreasuryAccountBalanceUntil(
       },
       _sum: { amountCents: true },
     }),
+    db.employeeExpenseSettlement.aggregate({ where: { accountId: input.accountId, treasuryAccountId: input.treasuryAccountId, createdAt: { lte: input.at } }, _sum: { amountCents: true } }),
     db.return.aggregate({
       where: {
         accountId: input.accountId,
@@ -356,6 +358,7 @@ async function getTreasuryAccountBalanceUntil(
       },
       _sum: { totalCents: true },
     }),
+    fiscalSettings ? db.$queryRaw<Array<{ total: bigint }>>`SELECT COALESCE(SUM("amountCents"),0)::bigint AS total FROM "FiscalAdjustmentApplication" WHERE "accountId"=${input.accountId} AND kind='REFUND' AND "treasuryAccountId"=${input.treasuryAccountId} AND "createdAt"<=${input.at}` : Promise.resolve([]),
     db.treasuryTransfer.aggregate({
       where: {
         accountId: input.accountId,
@@ -393,7 +396,9 @@ async function getTreasuryAccountBalanceUntil(
     purchaseCents -
     (supplierPaymentSum._sum.amountCents ?? 0) -
     expenseCents -
+    (expenseSettlementSum._sum.amountCents ?? 0) -
     returnCents -
+    Number(fiscalRefundSum[0]?.total ?? 0) -
     transferOutCents
   )
 }
@@ -460,7 +465,7 @@ export async function previewTreasuryTransfer(input: {
 
 export async function createTreasuryTransfer(input: Parameters<typeof createTreasuryTransferInternal>[0]) {
   const { cashOperation, ...payload } = input
-  return withCashOperation(cashOperation, { kind: "createTreasuryTransfer", ...payload }, () => createTreasuryTransferInternal(input))
+  return cashRequest.run({ ...cashRequest.getStore(), fiscalTreasuryTransferRequested: true }, () => withCashOperation(cashOperation, { kind: "createTreasuryTransfer", ...payload }, () => createTreasuryTransferInternal(input)))
 }
 
 async function createTreasuryTransferInternal(input: {
@@ -705,6 +710,7 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
   const { from, to } = getFromTo(input)
 
   await ensureDefaultTreasuryAccount(prisma, user.accountId, user.id)
+  const fiscalSettings = await prisma.fiscalSettings.findUnique({ where: { accountId: user.accountId }, select: { accountId: true } })
 
   const [
     treasuryAccounts,
@@ -714,7 +720,9 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
     purchases,
     supplierPayments,
     expenses,
+    expenseSettlements,
     returns,
+    fiscalRefunds,
     transfers,
   ] = await Promise.all([
     prisma.treasuryAccount.findMany({
@@ -763,7 +771,7 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
     }),
     prisma.payment.findMany({
       where: {
-        ar: { sale: { accountId: user.accountId } },
+        ar: { accountId: user.accountId },
         cancelledAt: null,
         paidAt: { lte: to },
       },
@@ -810,6 +818,7 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
         description: true,
       },
     }),
+    prisma.employeeExpenseSettlement.findMany({ where: { accountId: user.accountId, createdAt: { lte: to } }, include: { expense: { select: { description: true } } } }),
     prisma.return.findMany({
       where: {
         accountId: user.accountId,
@@ -827,6 +836,7 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
         refundTreasuryAccountId: true,
       },
     }),
+    fiscalSettings ? prisma.$queryRaw<Array<{ id: string; adjustmentId: string; amountCents: number; method: PaymentMethod; treasuryAccountId: string; createdAt: Date }>>`SELECT id,"adjustmentId","amountCents",method,"treasuryAccountId","createdAt" FROM "FiscalAdjustmentApplication" WHERE "accountId"=${user.accountId} AND kind='REFUND' AND "createdAt"<=${to}` : Promise.resolve([]),
     prisma.treasuryTransfer.findMany({
       where: {
         accountId: user.accountId,
@@ -991,6 +1001,13 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
     })
   }
 
+  // El gasto del empleado no movió tesorería; solo el reembolso aparece como salida.
+  for (const settlement of expenseSettlements) {
+    const account = accountById.get(settlement.treasuryAccountId)
+    if (!account) continue
+    movements.push({ id: `employeeExpenseSettlement:${settlement.id}`, source: "EMPLOYEE_REIMBURSEMENT", direction: "OUT", amountCents: settlement.amountCents, occurredAt: settlement.createdAt, method: settlement.method, treasuryAccountId: account.id, treasuryAccountName: account.name, reference: "Reembolso de gasto", note: settlement.expense.description })
+  }
+
   for (const ret of returns) {
     const accountId = ret.refundTreasuryAccountId
     if (!accountId) continue
@@ -1009,6 +1026,13 @@ export async function getTreasuryDashboard(input?: DateRangeInput) {
       reference: ret.returnCode,
       note: null,
     })
+  }
+
+  for (const refund of fiscalRefunds) {
+    const account = accountById.get(refund.treasuryAccountId)
+    if (!account) continue
+    // La devolución física no genera dinero: el reembolso se cuenta por esta aplicación.
+    movements.push({ id: `fiscal-refund:${refund.id}`, source: "FISCAL_REFUND", direction: "OUT", amountCents: refund.amountCents, occurredAt: refund.createdAt, method: refund.method, treasuryAccountId: account.id, treasuryAccountName: account.name, reference: `Nota ${refund.adjustmentId}`, note: null })
   }
 
   for (const transfer of transfers) {

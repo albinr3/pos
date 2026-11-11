@@ -97,7 +97,8 @@ export async function getProfitReport(actor: PurchaseActor, input: { from?: stri
   // 1. INGRESOS/VENTAS (base devengado):
   // Ventas del período (contado + crédito) - devoluciones del período.
   // Los cobros a crédito no son ingresos; solo reducen cuentas por cobrar.
-  const [allSales, payments, periodReturns] = await Promise.all([
+  const fiscalSettings = await prisma.fiscalSettings.findUnique({ where: { accountId: user.accountId }, select: { accountId: true } })
+  const [allSales, payments, periodReturns, fiscalCreditNotes, fiscalDebitNotes] = await Promise.all([
     // 2. COSTO DE VENTAS: Obtener ventas del período con sus items/consumos
     prisma.sale.findMany({
       where: {
@@ -129,11 +130,7 @@ export async function getProfitReport(actor: PurchaseActor, input: { from?: stri
       where: {
         paidAt: { gte: from, lte: to },
         cancelledAt: null, // Excluir cancelados
-        ar: {
-          sale: {
-            accountId: user.accountId,
-          },
-        },
+        ar: { accountId: user.accountId },
       },
     }),
     prisma.return.findMany({
@@ -174,21 +171,28 @@ export async function getProfitReport(actor: PurchaseActor, input: { from?: stri
         },
       },
     }),
+    fiscalSettings ? prisma.$queryRaw<Array<{ snapshot: { adjustment?: { economicCents?: number }; lines?: Array<{ kind?: string; gross?: string; tax?: string; taxNotCreditable?: string; withholdings?: Array<{ amount?: string }> }> } }>>`SELECT snapshot FROM "FiscalAdjustment" WHERE "accountId"=${user.accountId} AND type='E34' AND state='PREPARADO_PENDIENTE_CONEXION' AND "updatedAt">=${from} AND "updatedAt"<=${to}` : Promise.resolve([]),
+    fiscalSettings ? prisma.$queryRaw<Array<{ snapshot: { adjustment?: { amountCents?: number }; totals?: { tax?: string } } }>>`SELECT snapshot FROM "FiscalAdjustment" WHERE "accountId"=${user.accountId} AND type='E33' AND state='PREPARADO_PENDIENTE_CONEXION' AND "updatedAt">=${from} AND "updatedAt"<=${to}` : Promise.resolve([]),
   ])
 
   // Defensa extra: aunque la consulta ya filtra canceladas, solo calcular con ventas activas.
   const activeSales = allSales.filter((sale) => sale.cancelledAt === null)
 
-  const grossSalesTotalCents = activeSales.reduce((sum, sale) => sum + sale.totalCents, 0)
-  const returnsTotalCents = periodReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
+  const debitNoteTotalCents = fiscalDebitNotes.reduce((sum, note) => sum + (note.snapshot.adjustment?.amountCents ?? 0), 0)
+  // El cargo es ingreso propio; su cobro aparece solo en pagos y no como segunda venta.
+  const grossSalesTotalCents = activeSales.reduce((sum, sale) => sum + sale.totalCents, 0) + debitNoteTotalCents
+  // La nota conserva su efecto financiero aunque la devolución física se revierta; no contar ambos.
+  const ordinaryReturns = periodReturns.filter(ret => !(ret as typeof ret & { fiscalAdjustmentId?: string | null }).fiscalAdjustmentId)
+  const returnsTotalCents = ordinaryReturns.reduce((sum, ret) => sum + ret.totalCents, 0) + fiscalCreditNotes.reduce((sum, note) => sum + (note.snapshot.adjustment?.economicCents ?? 0), 0)
   const grossSalesLegalTipCents = activeSales.reduce((sum, sale) => sum + (sale.legalTipCents ?? 0), 0)
-  const returnsLegalTipCents = periodReturns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0)
+  const fiscalCents = (value?: string) => new Decimal(value ?? "0").mul(100).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber()
+  const returnsLegalTipCents = ordinaryReturns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0) + fiscalCreditNotes.reduce((sum, note) => sum + (note.snapshot.lines ?? []).filter(line => line.kind === "PROPINA").reduce((total, line) => total + fiscalCents(line.gross) - fiscalCents(line.taxNotCreditable) - (line.withholdings ?? []).reduce((n, withholding) => n + fiscalCents(withholding.amount), 0), 0), 0)
   const grossSalesNetOfLegalTipCents = grossSalesTotalCents - grossSalesLegalTipCents
   const returnsNetOfLegalTipCents = returnsTotalCents - returnsLegalTipCents
   const salesTotalCents = grossSalesNetOfLegalTipCents - returnsNetOfLegalTipCents
   const paymentsTotalCents = payments.reduce((sum, payment) => sum + payment.amountCents, 0)
   const totalRevenueCents = salesTotalCents
-  const returnsItbisCents = periodReturns.reduce((sum, ret) => sum + ret.itbisCents, 0)
+  const returnsItbisCents = ordinaryReturns.reduce((sum, ret) => sum + ret.itbisCents, 0) + fiscalCreditNotes.reduce((sum, note) => sum + (note.snapshot.lines ?? []).reduce((total, line) => total + fiscalCents(line.tax) - fiscalCents(line.taxNotCreditable), 0), 0)
 
   const soldDatesForCost = [
     ...activeSales.map((sale) => sale.soldAt),
@@ -314,7 +318,7 @@ export async function getProfitReport(actor: PurchaseActor, input: { from?: stri
   const otherIncomeExpensesCents = 0
 
   // 7. IMPUESTOS (ITBIS neto): ITBIS registrado en ventas - ITBIS registrado en compras (fecha del documento)
-  const grossSalesItbisCents = activeSales.reduce((sum, sale) => sum + sale.itbisCents, 0)
+  const grossSalesItbisCents = activeSales.reduce((sum, sale) => sum + sale.itbisCents, 0) + fiscalDebitNotes.reduce((sum, note) => sum + fiscalCents(note.snapshot.totals?.tax), 0)
   const salesItbisCents = grossSalesItbisCents - returnsItbisCents
   const purchases = await prisma.purchase.findMany({
     where: {
@@ -354,16 +358,14 @@ export async function getProfitReport(actor: PurchaseActor, input: { from?: stri
   // Cuentas por cobrar (total de balance pendiente)
   const accountsReceivable = await prisma.accountReceivable.findMany({
     where: {
+      accountId: user.accountId,
       status: { in: ["PENDIENTE", "PARCIAL"] },
-      sale: {
-        accountId: user.accountId,
-        cancelledAt: null,
-      },
+      OR: [{ sale: { cancelledAt: null } }, { debitAdjustment: { state: "PREPARADO_PENDIENTE_CONEXION" } }],
     },
   })
   const accountsReceivableTotalCents = accountsReceivable.reduce((sum, ar) => sum + ar.balanceCents, 0)
 
-  const accountsPayable = hasPermission(actor, "canAccessAccountsPayable") ? await prisma.accountPayable.aggregate({ where: { accountId: actor.accountId, purchase: { cancelledAt: null }, balanceCents: { gt: 0 } }, _sum: { balanceCents: true }, _count: true }) : null
+  const accountsPayable = hasPermission(actor, "canAccessAccountsPayable") ? await prisma.accountPayable.aggregate({ where: { accountId: actor.accountId, OR: [{ purchaseId: null }, { purchase: { cancelledAt: null } }], balanceCents: { gt: 0 } }, _sum: { balanceCents: true }, _count: true }) : null
   return {
     // Cero significa sin deuda; null se reserva para quien no tiene permiso de consultar CxP.
     accountsPayableTotalCents: accountsPayable ? accountsPayable._sum.balanceCents ?? 0 : null,
@@ -376,7 +378,9 @@ export async function getProfitReport(actor: PurchaseActor, input: { from?: stri
     grossSalesNetOfLegalTipCents,
     salesTotalCents,
     salesCount: activeSales.length,
-    returnsCount: periodReturns.length,
+    debitNoteCount: fiscalDebitNotes.length,
+    debitNoteTotalCents,
+    returnsCount: ordinaryReturns.length + fiscalCreditNotes.length,
     returnsTotalCents,
     returnsLegalTipCents,
     returnsNetOfLegalTipCents,

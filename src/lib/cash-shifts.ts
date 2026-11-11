@@ -22,16 +22,19 @@ async function audit(tx: Prisma.TransactionClient, actor: Actor, event: string, 
   await tx.auditLog.create({ data: { accountId: actor.accountId, userId: actor.id, userUsername: actor.username, userEmail: actor.email, action: "SETTINGS_CHANGED", resourceType: "CashShift", resourceId, details: { event, ...details } } })
 }
 async function legacySnapshot(tx: Prisma.TransactionClient, accountId: string) {
-  const [accounts, sales, payments, purchases, expenses, returns, transfers, openings, supplierPayments] = await Promise.all([
+  const fiscalSettings = await tx.fiscalSettings.findUnique({ where: { accountId }, select: { accountId: true } })
+  const [accounts, sales, payments, purchases, expenses, returns, transfers, openings, supplierPayments, fiscalRefunds, expenseSettlements] = await Promise.all([
     tx.treasuryAccount.findMany({ where: { accountId }, orderBy: { id: "asc" } }),
     tx.sale.findMany({ where: { accountId, cancelledAt: null }, include: { payments: true } }),
-    tx.payment.findMany({ where: { ar: { sale: { accountId } }, cancelledAt: null } }),
+    tx.payment.findMany({ where: { ar: { accountId }, cancelledAt: null } }),
     tx.purchase.findMany({ where: { accountId, cancelledAt: null } }),
     tx.operatingExpense.findMany({ where: { accountId, cancelledAt: null } }),
     tx.return.findMany({ where: { accountId, cancelledAt: null }, include: { sale: { select: { type: true } } } }),
     tx.treasuryTransfer.findMany({ where: { accountId } }),
     tx.treasuryOpeningBalance.findMany({ where: { accountId } }),
     tx.supplierPayment.findMany({ where: { accountId, cancelledAt: null } }),
+    fiscalSettings ? tx.$queryRaw<Array<{ kind: string; amountCents: number; treasuryAccountId: string; method: string; createdAt: Date }>>`SELECT kind,"amountCents","treasuryAccountId",method,"createdAt" FROM "FiscalAdjustmentApplication" WHERE "accountId"=${accountId} AND kind='REFUND'` : Promise.resolve([]),
+    tx.employeeExpenseSettlement.findMany({ where: { accountId } }),
   ])
   function collect<T extends MoneyDocument>(model: string, rows: T[], dateOf: (row: T) => Date, ignore: (row: T) => boolean = () => false) {
     return rows.map(row => ({ date: dateOf(row), legs: documentLegs(model, row), ignore: ignore(row) }))
@@ -40,8 +43,11 @@ async function legacySnapshot(tx: Prisma.TransactionClient, accountId: string) {
     ...collect("sale", sales, r => r.soldAt, r => r.type === "CREDITO"),
     ...collect("supplierPayment", supplierPayments, r => r.paidAt),
     ...collect("payment", payments, r => r.paidAt), ...collect("purchase", purchases, r => r.purchasedAt),
-    ...collect("operatingExpense", expenses, r => r.expenseDate),
-    ...collect("return", returns, r => r.returnedAt, r => r.sale.type === "CREDITO"),
+    ...collect("operatingExpense", expenses, r => r.expenseDate, r => r.fundingSource === "EMPLOYEE"),
+    ...collect("employeeExpenseSettlement", expenseSettlements, r => r.createdAt),
+    ...collect("return", returns, r => r.returnedAt, r => r.sale.type === "CREDITO" || Boolean((r as typeof r & { fiscalAdjustmentId?: string | null }).fiscalAdjustmentId)),
+    // La activación debe conservar reembolsos fiscales previos sin contabilizar otra vez la devolución física.
+    ...collect("fiscalAdjustmentApplication", fiscalRefunds, r => r.createdAt),
     ...collect("treasuryTransfer", transfers, r => r.transferredAt), ...collect("treasuryOpeningBalance", openings, r => r.effectiveAt),
   ]
   const balances = new Map(accounts.map(a => [a.id, 0]))
@@ -194,7 +200,7 @@ export async function getCashShiftReport(actor: Actor, deviceHash: string, id: s
     const movementIds = (type: string) => [...new Set(movements.filter(row => row.sourceType === type).map(row => row.sourceId))]
     const [movementSales, movementPayments, movementReturns] = await Promise.all([
       tx.sale.findMany({ where: { accountId: actor.accountId, id: { in: movementIds("sale") } }, select: { id: true, customer: { select: { name: true } } } }),
-      tx.payment.findMany({ where: { id: { in: movementIds("payment") }, ar: { sale: { accountId: actor.accountId } } }, select: { id: true, ar: { select: { customer: { select: { name: true } } } } } }),
+      tx.payment.findMany({ where: { id: { in: movementIds("payment") }, ar: { accountId: actor.accountId } }, select: { id: true, ar: { select: { customer: { select: { name: true } } } } } }),
       tx.return.findMany({ where: { accountId: actor.accountId, id: { in: movementIds("return") } }, select: { id: true, sale: { select: { customer: { select: { name: true } } } } } }),
     ])
     const customerNames = new Map<string, string | null>([
@@ -207,7 +213,7 @@ export async function getCashShiftReport(actor: Actor, deviceHash: string, id: s
       tx.purchase.findMany({ where: { accountId: actor.accountId, id: { in: ids("purchase") } }, select: { id: true, totalCents: true, cancelledAt: true, createdAt: true } }),
       tx.operatingExpense.findMany({ where: { accountId: actor.accountId, id: { in: ids("operatingExpense") } }, select: { id: true, description: true, amountCents: true, cancelledAt: true, createdAt: true } }),
       tx.return.findMany({ where: { accountId: actor.accountId, id: { in: ids("return") } }, select: { id: true, returnCode: true, totalCents: true, cancelledAt: true, createdAt: true, sale: { select: { customer: { select: { name: true } } } } } }),
-      tx.payment.findMany({ where: { id: { in: ids("payment") }, ar: { sale: { accountId: actor.accountId } } }, select: { id: true, receiptCode: true, amountCents: true, cancelledAt: true, createdAt: true, ar: { select: { customer: { select: { name: true } } } } } }),
+      tx.payment.findMany({ where: { id: { in: ids("payment") }, ar: { accountId: actor.accountId } }, select: { id: true, receiptCode: true, amountCents: true, cancelledAt: true, createdAt: true, ar: { select: { customer: { select: { name: true } } } } } }),
     ])
     const documents = [
       ...sales.map(row => ({ sourceType: "sale", id: row.id, reference: row.invoiceCode, amountCents: row.totalCents, cancelled: !!row.cancelledAt, recordedAt: row.createdAt, customerName: row.customer?.name ?? null })),
@@ -339,7 +345,7 @@ export async function correctClosedCashDocument(actor: Actor, deviceHash: string
     if (input.sourceType === "payment") await (await import("@/app/(app)/ar/actions")).cancelPayment(input.sourceId, input.reason)
     if (input.sourceType === "supplierPayment") await (await import("@/lib/accounts-payable")).cancelSupplierPayment(actor, input.sourceId, input.reason)
     if (input.sourceType === "purchase") await (await import("@/app/(app)/purchases/actions")).cancelPurchase(input.sourceId)
-    if (input.sourceType === "return") await (await import("@/app/(app)/returns/actions")).cancelReturn(input.sourceId)
+    if (input.sourceType === "return") await (await import("@/app/(app)/returns/actions")).cancelReturn(input.sourceId, input.reason)
     if (input.sourceType === "operatingExpense") await (await import("@/app/(app)/operating-expenses/actions")).deleteOperatingExpense(input.sourceId)
     if (input.sourceType === "treasuryTransfer") await (await import("@/app/(app)/treasury/actions")).reverseTreasuryTransfer({ transferId: input.sourceId, reason: input.reason })
     // También conservar el motivo cuando no hubo dinero: no existe un asiento monetario donde guardarlo.

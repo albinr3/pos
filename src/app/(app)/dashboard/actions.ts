@@ -120,23 +120,19 @@ export async function getDashboardStats() {
     }),
     prisma.accountReceivable.aggregate({
       where: {
+        accountId: user.accountId,
         status: { in: ["PENDIENTE", "PARCIAL"] },
-        sale: { 
-          accountId: user.accountId,
-          cancelledAt: null, // Excluir ventas canceladas
-        },
+        OR: [{ sale: { cancelledAt: null } }, { debitAdjustment: { state: "PREPARADO_PENDIENTE_CONEXION" } }],
       },
       _sum: { balanceCents: true },
       _count: true,
     }),
     prisma.accountReceivable.aggregate({
       where: {
+        accountId: user.accountId,
         status: { in: ["PENDIENTE", "PARCIAL"] },
         dueDate: { lte: to },
-        sale: {
-          accountId: user.accountId,
-          cancelledAt: null, // Excluir ventas canceladas
-        },
+        OR: [{ sale: { cancelledAt: null } }, { debitAdjustment: { state: "PREPARADO_PENDIENTE_CONEXION" } }],
       },
       _count: true,
     }),
@@ -144,11 +140,7 @@ export async function getDashboardStats() {
       where: {
         paidAt: { gte: from, lte: to },
         cancelledAt: null, // Excluir cancelados
-        ar: {
-          sale: {
-            accountId: user.accountId,
-          },
-        },
+        ar: { accountId: user.accountId },
       },
       _sum: { amountCents: true },
       _count: true,

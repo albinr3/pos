@@ -7,12 +7,14 @@ import { listTreasuryAccounts } from "../treasury/actions"
 import { ARClient } from "./ar-client"
 import { CashShiftGate } from "@/components/app/cash-shift-gate"
 import { prisma } from "@/lib/db"
+import { FiscalCustomerCredits } from "./fiscal-customer-credits"
 
 export default async function AccountsReceivablePage() {
   const actor = await requireModuleAccess("canAccessAccountsReceivable")
-  const [treasuryAccounts, cashControl] = await Promise.all([
+  const [treasuryAccounts, cashControl, fiscalSettings] = await Promise.all([
     listTreasuryAccounts(),
     prisma.cashControl.findUnique({ where: { accountId: actor.accountId }, select: { enabled: true } }),
+    prisma.fiscalSettings.findUnique({ where: { accountId: actor.accountId }, select: { accountId: true } }),
   ])
 
   return (
@@ -31,6 +33,7 @@ export default async function AccountsReceivablePage() {
         </div>
       </div>
       <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }} cashControlEnabled={cashControl?.enabled ?? false}>
+        {fiscalSettings && (actor.isOwner || actor.canViewFiscalDocuments) && <FiscalCustomerCredits actor={{ id: actor.id, accountId: actor.accountId }} />}
         <ARClient initialTreasuryAccounts={treasuryAccounts} actor={{ id: actor.id, accountId: actor.accountId, username: actor.username }} />
       </CashShiftGate>
     </div>

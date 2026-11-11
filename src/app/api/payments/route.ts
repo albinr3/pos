@@ -5,6 +5,7 @@ import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { addPayment } from "@/app/(app)/ar/actions"
 import { PaymentMethod } from "@prisma/client"
 import { prisma } from "@/lib/db"
+import { cashDeviceHashFromRequest, cashRequest } from "@/lib/cash-context"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -34,6 +35,8 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
+    // La API de recibos debe exigir el mismo permiso que la pantalla de pagos.
+    if (!user.isOwner && !user.canAccessPayments) return NextResponse.json({ error: "Sin acceso a recibos" }, { status: 403 })
 
     const searchParams = request.nextUrl.searchParams
     const query = (searchParams.get("query") || "").trim()
@@ -45,11 +48,7 @@ export async function GET(request: NextRequest) {
 
     const payments = await prisma.payment.findMany({
       where: {
-        ar: {
-          sale: {
-            accountId: user.accountId,
-          },
-        },
+        ar: { accountId: user.accountId },
         ...(query
           ? {
               OR: [
@@ -69,6 +68,7 @@ export async function GET(request: NextRequest) {
           include: {
             customer: { select: { id: true, visualId: true, name: true, phone: true } },
             sale: { select: { id: true, invoiceCode: true, cancelledAt: true } },
+            debitAdjustment: { select: { id: true, fiscalDocumentId: true } },
           },
         },
         user: { select: { id: true, username: true, name: true } },
@@ -112,6 +112,7 @@ export async function GET(request: NextRequest) {
               cancelledAt: p.ar.sale.cancelledAt ? p.ar.sale.cancelledAt.toISOString() : null,
             }
           : null,
+        origin: p.ar.sale ? { kind: "SALE", reference: p.ar.sale.invoiceCode } : { kind: "DEBIT_NOTE", reference: `ND-${p.ar.debitAdjustment!.id.slice(-8).toUpperCase()}`, adjustmentId: p.ar.debitAdjustment!.id, documentId: p.ar.debitAdjustment!.fiscalDocumentId },
         user: p.user
           ? {
               id: p.user.id,
@@ -152,8 +153,9 @@ export async function POST(request: NextRequest) {
     // Convertir amount de pesos a centavos si viene como número decimal
     const amountCents = body.amountCents ?? (body.amount ? Math.round(body.amount * 100) : undefined)
     
-    if (!amountCents || amountCents <= 0) {
-      return NextResponse.json({ error: "El monto debe ser mayor a 0" }, { status: 400 })
+    // amountCents ya está en centavos y no admite fracciones ni cadenas.
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || amountCents > 2147483647) {
+      return NextResponse.json({ error: "El monto debe ser un número entero válido de centavos" }, { status: 400 })
     }
 
     // Convertir paymentMethod al enum
@@ -191,7 +193,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "arId o saleId es requerido" }, { status: 400 })
     }
 
-    const paymentResult = await addPayment({
+    if (!user.isOwner && !user.canAccessAccountsReceivable) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
+    const paymentResult = await cashRequest.run({ trustedActor: user, deviceHash: cashDeviceHashFromRequest(request) }, () => addPayment({
       cashOperation: body.cashOperation,
       arId,
       amountCents,
@@ -199,7 +202,7 @@ export async function POST(request: NextRequest) {
       transferBankName: body.transferBankName || null,
       treasuryAccountId: body.treasuryAccountId || null,
       note: body.note || null,
-    }, user)
+    }))
 
     // Obtener el pago completo para retornarlo
     const { prisma } = await import("@/lib/db")

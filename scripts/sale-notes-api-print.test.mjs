@@ -84,6 +84,10 @@ function fixture(notes = null) {
   mocks["@/components/ui/button"] = { Button: nullComponent }
   // Las demás operaciones de caja no se ejecutan en estos casos.
   for (const name of ["@/app/(app)/ar/actions", "@/lib/cash-financial-db", "@/lib/accounts-payable", "@/app/(app)/purchases/actions", "@/app/(app)/purchases/ocr-actions", "@/app/(app)/operating-expenses/actions", "@/app/(app)/returns/actions", "@/app/(app)/treasury/actions"]) mocks[name] = {}
+  // Las pruebas de ventas no deben cargar ni ejecutar los servicios fiscales incorporados a la cola de caja.
+  for (const [name, method] of [["credit-drafts", "confirmCreditAdjustment"], ["customer-credit", "applyCustomerCredit"], ["debit-drafts", "confirmDebitAdjustment"]]) {
+    mocks[`@/lib/fiscal/core/${name}`] = { [method]: () => assert.fail("Una venta ordinaria no debe ejecutar operaciones fiscales") }
+  }
   const load = loader(mocks)
   const { normalizeSaleNotes } = load("@/lib/sale-notes")
   const { UnsupportedFiscalInputError } = load("@/lib/fiscal/core/input")

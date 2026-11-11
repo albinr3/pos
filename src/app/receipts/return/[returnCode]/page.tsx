@@ -5,6 +5,8 @@ import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-
 import { PrintButton } from "@/components/app/print-button"
 import { formatRD } from "@/lib/money"
 import { formatCustomerName } from "@/lib/customer-display"
+import { hasPermission } from "@/lib/permissions"
+import Link from "next/link"
 
 // Evitar prerender durante el build
 export const dynamic = "force-dynamic"
@@ -61,6 +63,7 @@ export default async function ReturnReceiptPage({
             name: true,
           },
         },
+        fiscalAdjustment: { select: { fiscalDocumentId: true, actorUserId: true } },
         items: {
           include: {
             product: true,
@@ -71,6 +74,9 @@ export default async function ReturnReceiptPage({
   ])
 
   if (!returnRecord) return notFound()
+  const fiscalReturn = Boolean(returnRecord.fiscalAdjustmentId)
+  const fiscalDocumentId = returnRecord.fiscalAdjustment?.fiscalDocumentId
+  const canPrintFiscal = fiscalDocumentId && (hasPermission(user, "canViewFiscalDocuments") || (hasPermission(user, "canPrepareFiscalDocuments") && returnRecord.fiscalAdjustment?.actorUserId === user.id))
   const itbisModeLabel = returnRecord.salePricesIncludeItbis ? "incluido" : "no incluido"
   const uniqueItbisRates = Array.from(
     new Set(returnRecord.items.map((item) => item.itbisRateBp ?? (company?.itbisRateBp ?? 1800)))
@@ -98,6 +104,7 @@ export default async function ReturnReceiptPage({
         <DownloadReceiptPdfButton 
           filename={`recibo-devolucion-${returnRecord.returnCode}`}
         />
+        {fiscalDocumentId && canPrintFiscal && <Link className="underline" href={`/invoices/fiscal/${encodeURIComponent(fiscalDocumentId)}`}>Ver nota fiscal</Link>}
       </div>
 
       <div className="text-center">
@@ -115,16 +122,18 @@ export default async function ReturnReceiptPage({
 
       {returnRecord.cancelledAt && (
         <div className="my-2 border-2 border-red-500 bg-red-50 p-2 text-center">
-          <div className="text-[14px] font-bold text-red-600">⚠️ DEVOLUCIÓN CANCELADA</div>
+          <div className="text-[14px] font-bold text-red-600">{fiscalReturn ? "REVERSIÓN FÍSICA" : "⚠️ DEVOLUCIÓN CANCELADA"}</div>
           <div className="text-[11px] text-red-600">
             Cancelada el {fmtDate(returnRecord.cancelledAt)}
             {returnRecord.cancelledUser && ` por ${returnRecord.cancelledUser.name}`}
+            {fiscalReturn && <div>La nota y sus aplicaciones siguen vigentes.{returnRecord.cancellationReason && ` Motivo: ${returnRecord.cancellationReason}`}</div>}
           </div>
         </div>
       )}
 
       <div className="my-2 border-t border-b border-dashed py-2">
-        <div className="text-center text-[14px] font-bold">DEVOLUCIÓN</div>
+        <div className="text-center text-[14px] font-bold">{fiscalReturn ? "REPOSICIÓN FÍSICA" : "DEVOLUCIÓN"}</div>
+        {fiscalReturn && <div className="text-center">Documento de prueba / No emitido fiscalmente</div>}
         <div className="flex justify-between">
           <span>Devolución:</span>
           <span className="font-semibold">{returnRecord.returnCode}</span>
@@ -152,16 +161,14 @@ export default async function ReturnReceiptPage({
               <span className="font-semibold">{item.product.name}</span>
             </div>
             <div className="flex justify-between text-[11px] text-gray-600">
-              <span>
-                {decimalToNumber(item.qty)} x {formatRD(item.unitPriceCents)}
-              </span>
-              <span>{formatRD(item.lineTotalCents)}</span>
+              <span>{fiscalReturn ? decimalToNumber(item.qty) : `${decimalToNumber(item.qty)} x ${formatRD(item.unitPriceCents)}`}</span>
+              {!fiscalReturn && <span>{formatRD(item.lineTotalCents)}</span>}
             </div>
           </div>
         ))}
       </div>
 
-      <div className="my-2 border-t border-dashed pt-2">
+      {fiscalReturn ? <div className="my-2 border-t border-dashed pt-2">Movimiento físico. El importe económico, la deuda y cualquier reembolso constan en la nota fiscal de prueba.</div> : <div className="my-2 border-t border-dashed pt-2">
         {returnRecord.discountTotalCents > 0 && (
           <div className="flex justify-between text-emerald-700">
             <span>Descuento ({(returnRecord.discountPercentBp / 100).toFixed(2)}%):</span>
@@ -186,7 +193,7 @@ export default async function ReturnReceiptPage({
           <span>TOTAL:</span>
           <span>{formatRD(returnRecord.totalCents)}</span>
         </div>
-      </div>
+      </div>}
 
       {returnRecord.notes && (
         <div className="my-2 border-t border-dashed pt-2 text-[11px]">

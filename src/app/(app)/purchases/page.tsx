@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { getCurrentUser } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
 import { PurchasesClient } from "./purchases-client"
+import { getFiscalCapabilities } from "@/lib/fiscal/core/policy"
 
 export default async function PurchasesPage() {
   const user = await getCurrentUser()
@@ -15,6 +16,7 @@ export default async function PurchasesPage() {
     redirect("/app")
   }
 
+  const fiscal = await getFiscalCapabilities(user)
   return (
     <div className="grid gap-6">
       <div className="flex items-start justify-between gap-4">
@@ -36,7 +38,7 @@ export default async function PurchasesPage() {
           </div>
         </div>
       </div>
-      <PurchasesClient canRegisterSupplierPayments={hasPermission(user, "canRegisterSupplierPayments")} />
+      <PurchasesClient canRegisterSupplierPayments={hasPermission(user, "canRegisterSupplierPayments")} canPrepareE41={fiscal?.operations.prepare ?? false} />
     </div>
   )
 }

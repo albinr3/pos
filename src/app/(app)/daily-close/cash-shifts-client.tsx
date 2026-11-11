@@ -24,7 +24,7 @@ import { shiftCollectionsByMethod, snapshotBreakdown, snapshotSalesSummary } fro
 type History = Awaited<ReturnType<typeof listCashHistory>>
 const HISTORY_PAGE_SIZE = 10
 const SHIFT_REMINDER_KEY = "cash-shift-reminder-dismissed"
-const pendingLabels: Record<CashQueuedOperation["kind"], string> = { sale: "Venta", payment: "Abono", batchPayment: "Abono múltiple", purchase: "Compra", supplierPayment: "Pago a proveedor", ocrPurchase: "Compra por escaneo", expense: "Gasto", return: "Devolución", transfer: "Traspaso" }
+const pendingLabels: Record<CashQueuedOperation["kind"], string> = { sale: "Venta", payment: "Abono", batchPayment: "Abono múltiple", purchase: "Compra", supplierPayment: "Pago a proveedor", foreignPayment: "Pago al exterior", ocrPurchase: "Compra por escaneo", expense: "Gasto", fiscalExpense: "Gasto fiscal", employeeExpenseSettlement: "Reembolso al empleado", return: "Devolución", fiscalCredit: "Devolución fiscal pendiente", fiscalFinancialCredit: "Nota financiera pendiente", fiscalDebit: "Nota de débito pendiente", applyFiscalCustomerCredit: "Aplicación de saldo pendiente", transfer: "Traspaso" }
 async function post(body: object) {
   const response = await fetch("/api/cash-shifts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
   const result = await response.json()

@@ -166,7 +166,7 @@ async function fullBusiness(f, sharedKey) {
   const sale = await db.sale.create({ data: { accountId, userId, customerId: customer.id, invoiceNumber: 1, invoiceCode: "A-00001", type: "CREDITO", subtotalCents: 1000, itbisCents: 0, totalCents: 1000, items: { create: { productId: product.id, qty: 1, unitPriceCents: 1000, lineTotalCents: 1000 } } } })
   const item = await db.saleItem.findFirstOrThrow({ where: { saleId: sale.id } })
   await db.saleItemConsumption.create({ data: { saleItemId: item.id, ingredientId: ingredient.id, qty: 1 } })
-  const ar = await db.accountReceivable.create({ data: { saleId: sale.id, customerId: customer.id, totalCents: 1000, balanceCents: 900 } })
+  const ar = await db.accountReceivable.create({ data: { accountId, saleId: sale.id, customerId: customer.id, totalCents: 1000, balanceCents: 900 } })
   await db.payment.create({ data: { arId: ar.id, userId, receiptNumber: 1, receiptCode: "R-1", amountCents: 100 } })
   await db.return.create({ data: { accountId, userId, saleId: sale.id, returnNumber: 1, returnCode: "DEV-1", subtotalCents: 100, itbisCents: 0, totalCents: 100, items: { create: { saleItemId: item.id, productId: product.id, qty: 1, unitPriceCents: 100, lineTotalCents: 100 } } } })
   const supplier = await db.supplier.create({ data: { accountId, name: "Proveedor" } })

@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db"
 import { getCurrentUser } from "@/lib/auth"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
+import { receivableOriginLabel } from "@/lib/receivable-origin"
 
 export interface ReceiptFilters {
   startDate?: string
@@ -20,11 +21,7 @@ export async function getReceiptsReport(filters: ReceiptFilters = {}) {
   if (!user) throw new Error("No autenticado")
 
   const where: any = {
-    ar: {
-      sale: {
-        accountId: user.accountId,
-      },
-    },
+    ar: { accountId: user.accountId },
   }
 
   // Filtrar por rango de fechas
@@ -95,6 +92,7 @@ export async function getReceiptsReport(filters: ReceiptFilters = {}) {
               totalCents: true,
             },
           },
+          debitAdjustment: { select: { id: true } },
         },
       },
       user: {
@@ -190,7 +188,7 @@ export async function exportReceiptsToCSV(filters: ReceiptFilters = {}) {
     p.paidAt.toISOString().split('T')[0],
     p.ar.customer.name,
     p.ar.customer.phone || "",
-    p.ar.sale.invoiceCode,
+    receivableOriginLabel(p.ar),
     (p.amountCents / 100).toFixed(2),
     formatPaymentWithBank(p.method, p.transferBankName),
     p.transferBankName || "",

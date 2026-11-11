@@ -76,18 +76,19 @@ export default async function DailyClosePage({
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm text-muted-foreground">Total de ventas</CardTitle>
+              <CardTitle className="text-sm text-muted-foreground">Ventas y cargos</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-semibold">{formatRD(data.sales.totalCents)}</div>
               <div className="mt-1 text-xs text-muted-foreground">{data.sales.totalCount} facturas</div>
+              {data.sales.debitNoteCount > 0 && <div className="mt-1 text-xs text-muted-foreground">{data.sales.debitNoteCount} notas de débito: {formatRD(data.sales.debitNoteCents)}</div>}
             </CardContent>
           </Card>
 
           {data.sales.returnsCents > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-sm text-muted-foreground">Devoluciones contado</CardTitle>
+                <CardTitle className="text-sm text-muted-foreground">Devoluciones y notas de crédito</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-semibold text-red-600">-{formatRD(data.sales.returnsCents)}</div>

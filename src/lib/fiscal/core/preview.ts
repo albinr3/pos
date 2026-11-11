@@ -6,7 +6,7 @@ import { calculateFiscalDocument, FiscalDocumentError } from "./document"
 import { Decimal } from "@prisma/client/runtime/library"
 
 type Actor = PermissionAwareUser & { id: string; accountId: string }
-export async function previewFiscalDocument(actor: Actor, input: unknown, db: Prisma.TransactionClient = prisma) {
+export async function previewFiscalDocument(actor: Actor, input: unknown, db: Prisma.TransactionClient = prisma, reconciledLineLimits?: ReadonlyMap<number, number>) {
   if (!hasPermission(actor, "canPrepareFiscalDocuments")) throw new FiscalDocumentError("FORBIDDEN", "Sin permiso para preparar documentos fiscales", 403)
   const policy = await resolveFiscalPolicy(actor.accountId, db)
   if (policy.jurisdiction !== "DO" || policy.regime !== "DO_ECF") throw new FiscalDocumentError("PROFILE_UNAVAILABLE", "Configura el perfil DO_ECF para previsualizar", 409)
@@ -15,6 +15,9 @@ export async function previewFiscalDocument(actor: Actor, input: unknown, db: Pr
     if (expected !== undefined && (!Number.isSafeInteger(expected) || expected !== policy.version)) throw new FiscalDocumentError("VERSION_CONFLICT", "La política fiscal cambió; vuelve a cargarla", 409, [{ field: "expectedPolicyVersion", message: "Versión desactualizada" }])
   }
   const result = calculateFiscalDocument(input, policy.version ?? 0)
+  if (result.type === "E41" && (!hasPermission(actor,"canManagePurchases") || (result.source?.kind === "PAYABLE" && !hasPermission(actor,"canAccessAccountsPayable")))) throw new FiscalDocumentError("FORBIDDEN", "Sin permiso para consultar el origen de la compra", 403)
+  if (result.type === "E43" && !hasPermission(actor,"canManageExpenses")) throw new FiscalDocumentError("FORBIDDEN", "Sin permiso para consultar el gasto", 403)
+  if (result.type === "E47" && !hasPermission(actor,"canAccessAccountsPayable")) throw new FiscalDocumentError("FORBIDDEN", "Sin permiso para consultar el pago", 403)
   const accountId = actor.accountId
   const missing = () => new FiscalDocumentError("NOT_FOUND", "La referencia no existe o no pertenece a la empresa", 404)
   const settings = await db.fiscalSettings.findUnique({ where: { accountId }, select: { legalName: true, taxId: true } })
@@ -30,7 +33,7 @@ export async function previewFiscalDocument(actor: Actor, input: unknown, db: Pr
   if (conceptIds.length && await db.fiscalConcept.count({ where: { accountId, id: { in: conceptIds } } }) !== conceptIds.length) throw missing()
   if (result.source) {
     const where = { id: result.source.id, accountId }
-    const found = result.source.kind === "SALE" ? await db.sale.findFirst({ where, select: { id: true } }) : result.source.kind === "PURCHASE" ? await db.purchase.findFirst({ where, select: { id: true } }) : result.source.kind === "RETURN" ? await db.return.findFirst({ where, select: { id: true } }) : await db.operatingExpense.findFirst({ where, select: { id: true } })
+    const found = result.source.kind === "SALE" ? await db.sale.findFirst({ where, select: { id: true } }) : result.source.kind === "PURCHASE" ? await db.purchase.findFirst({ where, select: { id: true } }) : result.source.kind === "PAYABLE" ? await db.accountPayable.findFirst({ where: { ...where, purchaseId: null }, select: { id: true } }) : result.source.kind === "RETURN" ? await db.return.findFirst({ where, select: { id: true } }) : result.source.kind === "SUPPLIER_PAYMENT" ? await db.supplierPayment.findFirst({ where, select: { id: true } }) : await db.operatingExpense.findFirst({ where, select: { id: true } })
     if (!found) throw missing()
   }
   if (result.reference) {
@@ -69,7 +72,10 @@ export async function previewFiscalDocument(actor: Actor, input: unknown, db: Pr
           if (original.kind !== line.kind || original.unit !== line.unit || original.taxTreatment !== line.taxTreatment || original.priceIncludesTax !== line.priceIncludesTax || (original.productId ?? null) !== (line.productId ?? null) || (original.conceptId ?? null) !== (line.conceptId ?? null) || (!line.productId && !line.conceptId && original.description !== line.description) || !new D(original.unitPrice).eq(line.unitPrice)) return fail("Conserva concepto, unidad, precio y tratamiento fiscal originales")
           const quantity = new D(line.quantity)
           const limit = new D(original.gross).mul(quantity).div(original.quantity).toDecimalPlaces(2, D.ROUND_HALF_UP)
-          if (quantity.gt(original.quantity) || new D(line.gross).gt(limit)) return fail("La cantidad o el importe proporcional supera la línea original")
+          // Solo el servicio de devoluciones aporta límites conciliados; la API genérica conserva el límite proporcional.
+          const reconciledLimit = reconciledLineLimits?.get(number)
+          const effectiveLimit = reconciledLimit === undefined ? limit : new D(reconciledLimit).div(100)
+          if (quantity.gt(original.quantity) || new D(line.gross).gt(effectiveLimit)) return fail("La cantidad o el importe proporcional supera la línea original")
         })
       }
     }

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation"
 import { getCurrentUser } from "@/lib/auth"
 import { hasPermission } from "@/lib/permissions"
 import { PurchasesListClient } from "./purchases-list-client"
+import { getFiscalCapabilities } from "@/lib/fiscal/core/policy"
 
 export default async function PurchasesListPage() {
   const user = await getCurrentUser()
@@ -14,13 +15,14 @@ export default async function PurchasesListPage() {
     redirect("/app")
   }
 
+  const fiscal = await getFiscalCapabilities(user)
   return (
     <div className="grid gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Compras</h1>
         <p className="text-sm text-muted-foreground">Consulta, edita y elimina compras registradas.</p>
       </div>
-      <PurchasesListClient />
+      <PurchasesListClient canPrepareE41={canManagePurchases && (fiscal?.operations.prepare ?? false)} />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth"
 import { formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
+import { receivableOriginLabel } from "@/lib/receivable-origin"
 import { DownloadReceiptPdfButton } from "@/components/app/download-receipt-pdf-button"
 import { PrintButton } from "@/components/app/print-button"
 import { Button } from "@/components/ui/button"
@@ -37,18 +38,15 @@ export default async function PaymentReceiptPage({
     prisma.payment.findFirst({
       where: {
         id: paymentId,
-        // Verificar que el payment pertenece a una venta del mismo account
-        ar: {
-          sale: {
-            accountId: user.accountId,
-          },
-        },
+        // La empresa procede de la cuenta por cobrar, también cuando su origen es una nota.
+        ar: { accountId: user.accountId },
       },
       include: {
         ar: {
           include: {
             customer: true,
             sale: true,
+            debitAdjustment: { select: { id: true, fiscalDocumentId: true } },
           },
         },
         user: true,
@@ -62,17 +60,14 @@ export default async function PaymentReceiptPage({
     where: {
       receiptCode: payment.receiptCode,
       cancelledAt: null,
-      ar: {
-        sale: {
-          accountId: user.accountId,
-        },
-      },
+      ar: { accountId: user.accountId },
     },
     include: {
       ar: {
         include: {
           customer: true,
           sale: true,
+          debitAdjustment: { select: { id: true, fiscalDocumentId: true } },
         },
       },
     },
@@ -106,11 +101,11 @@ export default async function PaymentReceiptPage({
         <DownloadReceiptPdfButton
           filename={`recibo-${payment.receiptCode}`}
         />
-        <Button variant="outline" size="sm" asChild>
-          <Link href={`/invoices/${payment.ar.sale.invoiceCode}`} target="_blank" rel="noopener noreferrer">
-            Factura carta
+        {(payment.ar.sale || payment.ar.debitAdjustment?.fiscalDocumentId) && <Button variant="outline" size="sm" asChild>
+          <Link href={payment.ar.sale ? `/invoices/${payment.ar.sale.invoiceCode}` : `/invoices/fiscal/${payment.ar.debitAdjustment?.fiscalDocumentId}`} target="_blank" rel="noopener noreferrer">
+            Ver documento
           </Link>
-        </Button>
+        </Button>}
       </div>
 
       <div className="text-center">
@@ -154,7 +149,7 @@ export default async function PaymentReceiptPage({
         ) : (
           <div className="flex justify-between mt-1">
             <span>Factura:</span>
-            <span className="font-semibold">{payment.ar.sale.invoiceCode}</span>
+            <span className="font-semibold">{receivableOriginLabel(payment.ar)}</span>
           </div>
         )}
         <div className="mt-2">
@@ -183,7 +178,7 @@ export default async function PaymentReceiptPage({
           <div className="space-y-1 text-[14.5px]">
             {visibleReceiptPayments.map((p) => (
               <div key={p.id} className="flex justify-between gap-2">
-                <span className="truncate">{p.ar.sale.invoiceCode}</span>
+                <span className="truncate">{receivableOriginLabel(p.ar)}</span>
                 <span className="font-semibold">{formatRD(p.amountCents)}</span>
               </div>
             ))}

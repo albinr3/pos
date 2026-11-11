@@ -1446,6 +1446,7 @@ async function createSaleInternal(input: {
 
         await tx.accountReceivable.create({
           data: {
+            accountId: user.accountId,
             saleId: sale.id,
             customerId: customerIdForAR,
             totalCents,
@@ -1599,8 +1600,9 @@ export async function getSaleById(id: string) {
   }
 }
 
-export async function cancelSale(id: string, username: string, reason: string, currentUserArg?: any) {
-  const user = currentUserArg ?? await getCurrentUser()
+export async function cancelSale(id: string, username: string, reason: string) {
+  // La identidad solo puede proceder de la sesión o del contexto autenticado de la API.
+  const user = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
   if (!user) return { success: false, error: "No autenticado" }
   const normalizedReason = reason.trim()
   // Validación defensiva: evita cancelar sin motivo desde UI o API.
@@ -1633,6 +1635,9 @@ export async function cancelSale(id: string, username: string, reason: string, c
 
       // Si tiene cuenta por cobrar, verificar que no tenga pagos no cancelados
       if (sale.ar) {
+        // Anular la venta sin revertir sus aplicaciones borraría una deuda ya saldada con crédito fiscal.
+        const fiscalApplications = await tx.fiscalCustomerCreditApplication.count({ where: { accountId: user.accountId, receivableId: sale.ar.id } })
+        if (fiscalApplications > 0) return { success: false, error: "No se puede cancelar: la cuenta tiene saldo a favor fiscal aplicado y requiere conciliación." }
         const activePayments = await tx.payment.count({
           where: {
             arId: sale.ar.id,
@@ -1727,7 +1732,8 @@ export async function updateSale(input: {
   user?: any
 }) {
   assertNoFiscalInput(input)
-  const user = input.user ?? await getCurrentUser()
+  // Ignorar identidades enviadas en input: una acción pública no debe confiar en datos del navegador.
+  const user = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
   if (!user) throw new Error("No autenticado")
   const soldAt = parseOptionalDateInput(input.soldAt)
   const requestedCustomerId = normalizeRequestedCustomerId(input.customerId)
@@ -1777,6 +1783,9 @@ export async function updateSale(input: {
 
     // Si tiene cuenta por cobrar, verificar que no tenga pagos no cancelados
     if (existingSale.ar) {
+      // La edición reinicia el saldo; bloquearla si hay aplicaciones fiscales evita perderlas o cambiarles de cliente.
+      const fiscalApplications = await tx.fiscalCustomerCreditApplication.count({ where: { accountId: user.accountId, receivableId: existingSale.ar.id } })
+      if (fiscalApplications > 0) throw new Error("No se puede editar: la cuenta tiene saldo a favor fiscal aplicado y requiere conciliación.")
       const activePayments = await tx.payment.count({
         where: {
           arId: existingSale.ar.id,
@@ -2175,6 +2184,7 @@ export async function updateSale(input: {
 
         await tx.accountReceivable.create({
           data: {
+            accountId: user.accountId,
             saleId: input.id,
             customerId,
             totalCents,

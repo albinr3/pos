@@ -85,7 +85,9 @@ const MOVEMENT_SOURCE_LABELS: Record<string, string> = {
   PURCHASE: "Compra",
   SUPPLIER_PAYMENT: "Pago a proveedor",
   OPERATING_EXPENSE: "Gasto operativo",
+  EMPLOYEE_REIMBURSEMENT: "Reembolso de gasto al empleado",
   CASH_RETURN: "Devolución",
+  FISCAL_REFUND: "Reembolso de nota de crédito",
   TREASURY_TRANSFER: "Transferencia interna",
 }
 

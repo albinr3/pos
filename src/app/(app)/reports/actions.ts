@@ -136,14 +136,10 @@ export async function getPaymentsReport(input: { from?: string; to?: string }) {
     where: {
       paidAt: { gte: from, lte: to },
       cancelledAt: null, // Excluir cancelados
-      ar: {
-        sale: {
-          accountId: user.accountId,
-        },
-      },
+      ar: { accountId: user.accountId },
     },
     orderBy: { paidAt: "desc" },
-    include: { ar: { include: { customer: true, sale: true } } },
+    include: { ar: { include: { customer: true, sale: true, debitAdjustment: { select: { id: true } } } } },
     take: 500,
   })
 
@@ -183,7 +179,8 @@ export async function getTitheReport(input: { from?: string; to?: string }) {
   const from = startOfDay(fromDate)
   const to = endOfDay(toDate)
 
-  const [cashSales, creditPayments, cashReturns, operatingExpenses] = await Promise.all([
+  const fiscalSettings = await prisma.fiscalSettings.findUnique({ where: { accountId: user.accountId }, select: { accountId: true } })
+  const [cashSales, creditPayments, cashReturns, operatingExpenses, debitPayments, fiscalRefunds, creditFiscalReturns] = await Promise.all([
     prisma.sale.findMany({
       where: {
         accountId: user.accountId,
@@ -280,9 +277,24 @@ export async function getTitheReport(input: { from?: string; to?: string }) {
         amountCents: true,
       },
     }),
+    fiscalSettings ? prisma.payment.findMany({
+      where: { paidAt: { gte: from, lte: to }, cancelledAt: null, ar: { accountId: user.accountId, debitAdjustment: { state: "PREPARADO_PENDIENTE_CONEXION" } } },
+      select: { amountCents: true, ar: { select: { totalCents: true, debitAdjustment: { select: { snapshot: true } } } } },
+    }) : Promise.resolve([]),
+    fiscalSettings ? prisma.fiscalAdjustmentApplication.findMany({
+      where: { accountId: user.accountId, kind: "REFUND", createdAt: { gte: from, lte: to } },
+      select: { amountCents: true, adjustment: { select: { snapshot: true } } },
+    }) : Promise.resolve([]),
+    fiscalSettings ? prisma.return.findMany({
+      where: { accountId: user.accountId, returnedAt: { gte: from, lte: to }, cancelledAt: null, fiscalAdjustmentId: { not: null }, sale: { cancelledAt: null, type: "CREDITO" } },
+      include: {
+        sale: { select: { soldAt: true, totalCents: true, ar: { select: { payments: { where: { cancelledAt: null }, select: { paidAt: true, amountCents: true } } } } } },
+        items: { include: { saleItem: { select: { qty: true, costCents: true, consumptions: { select: { ingredientId: true, qty: true, ingredient: { select: { costCents: true } } } } } } } },
+      },
+    }) : Promise.resolve([]),
   ])
 
-  const creditSaleIds = Array.from(new Set(creditPayments.map((payment) => payment.ar.saleId)))
+  const creditSaleIds = Array.from(new Set(creditPayments.map((payment) => payment.ar.saleId).filter((id): id is string => id !== null)))
 
   const creditSales = creditSaleIds.length
     ? await prisma.sale.findMany({
@@ -318,6 +330,7 @@ export async function getTitheReport(input: { from?: string; to?: string }) {
     ...cashSales.map((sale) => sale.soldAt),
     ...creditSales.map((sale) => sale.soldAt),
     ...cashReturns.map((ret) => ret.sale.soldAt),
+    ...creditFiscalReturns.map((ret) => ret.sale.soldAt),
   ]
 
   const maxSoldAt = soldDatesForCost.length > 0
@@ -337,6 +350,7 @@ export async function getTitheReport(input: { from?: string; to?: string }) {
           item.saleItem?.consumptions.map((consumption) => consumption.ingredientId) ?? []
         )
       ),
+      ...creditFiscalReturns.flatMap((ret) => ret.items.flatMap((item) => item.saleItem?.consumptions.map((consumption) => consumption.ingredientId) ?? [])),
     ])
   )
 
@@ -394,9 +408,11 @@ export async function getTitheReport(input: { from?: string; to?: string }) {
     return total + saleCost
   }, 0)
 
-  const cashReturnsTotalCents = cashReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
-  const cashReturnsLegalTipCents = cashReturns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0)
-  const cashReturnsItbisCents = cashReturns.reduce((sum, ret) => sum + ret.itbisCents, 0)
+  // La devolución fiscal física solo repone inventario; su salida de dinero procede del reembolso aplicado.
+  const ordinaryCashReturns = cashReturns.filter(ret => !ret.fiscalAdjustmentId)
+  const cashReturnsTotalCents = ordinaryCashReturns.reduce((sum, ret) => sum + ret.totalCents, 0)
+  const cashReturnsLegalTipCents = ordinaryCashReturns.reduce((sum, ret) => sum + (ret.legalTipCents ?? 0), 0)
+  const cashReturnsItbisCents = ordinaryCashReturns.reduce((sum, ret) => sum + ret.itbisCents, 0)
   const cashReturnsRevenueNoTipCents = cashReturnsTotalCents - cashReturnsLegalTipCents
 
   const cashReturnsCostCents = cashReturns.reduce((total, ret) => {
@@ -427,9 +443,24 @@ export async function getTitheReport(input: { from?: string; to?: string }) {
     return total + returnCost
   }, 0)
 
+  const creditFiscalReturnsCostCents = creditFiscalReturns.reduce((total, ret) => {
+    const paid = ret.sale.ar?.payments.filter(payment => payment.paidAt <= ret.returnedAt).reduce((sum, payment) => sum + payment.amountCents, 0) ?? 0
+    const paidRatio = ret.sale.totalCents > 0 ? Math.min(paid / ret.sale.totalCents, 1) : 0
+    const restoredCost = ret.items.reduce((sum, item) => {
+      const soldQty = toQty(item.saleItem.qty), returnedQty = toQty(item.qty)
+      if (soldQty <= 0 || returnedQty <= 0) return sum
+      if (item.saleItem.costCents > 0) return sum + Math.round(item.saleItem.costCents * returnedQty)
+      const consumptions = item.saleItem.consumptions.map(consumption => ({ ingredientId: consumption.ingredientId, qty: toQty(consumption.qty) * returnedQty / soldQty, ingredient: consumption.ingredient }))
+      return sum + calculateConsumptionsCostCents(costsByProductId, consumptions, ret.sale.soldAt)
+    }, 0)
+    // El costo de crédito se reconoció según lo cobrado: revertir la misma proporción.
+    return total + Math.round(restoredCost * paidRatio)
+  }, 0)
+
   const paymentsBySaleId = new Map<string, number>()
   for (const payment of creditPayments) {
     const saleId = payment.ar.saleId
+    if (!saleId) continue
     paymentsBySaleId.set(saleId, (paymentsBySaleId.get(saleId) ?? 0) + payment.amountCents)
   }
 
@@ -470,16 +501,40 @@ export async function getTitheReport(input: { from?: string; to?: string }) {
   }
 
   const creditPaymentsTotalCents = creditPayments.reduce((sum, payment) => sum + payment.amountCents, 0)
+  const debitPaymentsTotalCents = debitPayments.reduce((sum, payment) => sum + payment.amountCents, 0)
+  const fiscalRefundsTotalCents = fiscalRefunds.reduce((sum, refund) => sum + refund.amountCents, 0)
+  const fiscalAmount = (value: unknown) => {
+    // Una copia incompleta no debe convertirse silenciosamente en ITBIS o propina cero.
+    if (typeof value !== "string" || !/^\d+(?:\.\d{1,2})?$/.test(value)) throw new Error("La copia fiscal no contiene importes suficientes para este reporte")
+    return new Decimal(value).mul(100).toDecimalPlaces(0, Decimal.ROUND_HALF_UP).toNumber()
+  }
+  const debitPaymentsItbisCents = debitPayments.reduce((sum, payment) => {
+    const snapshot = payment.ar.debitAdjustment?.snapshot as { totals?: { tax?: string } } | null
+    if (payment.ar.totalCents <= 0) throw new Error("La nota de débito no contiene un importe válido para este reporte")
+    return sum + Math.round(fiscalAmount(snapshot?.totals?.tax) * payment.amountCents / payment.ar.totalCents)
+  }, 0)
+  const fiscalRefundBreakdown = fiscalRefunds.reduce((totals, refund) => {
+    const snapshot = refund.adjustment.snapshot as { adjustment?: { economicCents?: number }; lines?: Array<{ kind?: string; gross?: string; tax?: string; taxNotCreditable?: string; withholdings?: Array<{ amount?: string }> }> }
+    const economic = snapshot.adjustment?.economicCents ?? 0
+    if (!Number.isSafeInteger(economic) || economic <= 0 || !Array.isArray(snapshot.lines)) throw new Error("La nota de crédito no contiene importes suficientes para este reporte")
+    const ratio = Math.min(refund.amountCents / economic, 1)
+    const lines = snapshot.lines
+    const tax = lines.reduce((sum, line) => sum + fiscalAmount(line.tax) - fiscalAmount(line.taxNotCreditable), 0)
+    const tip = lines.filter(line => line.kind === "PROPINA").reduce((sum, line) => sum + fiscalAmount(line.gross) - fiscalAmount(line.taxNotCreditable) - (line.withholdings ?? []).reduce((part, item) => part + fiscalAmount(item.amount), 0), 0)
+    totals.taxCents += Math.round(tax * ratio)
+    totals.tipCents += Math.round(tip * ratio)
+    return totals
+  }, { taxCents: 0, tipCents: 0 })
 
   const collectedRevenueNoTipCents =
     cashSalesRevenueNoTipCents +
-    creditCollectedRevenueNoTipCents -
-    cashReturnsRevenueNoTipCents
+    creditCollectedRevenueNoTipCents + debitPaymentsTotalCents -
+    cashReturnsRevenueNoTipCents - (fiscalRefundsTotalCents - fiscalRefundBreakdown.tipCents)
 
   const collectedCostCents =
     cashSalesCostCents +
     creditCollectedCostCents -
-    cashReturnsCostCents
+    cashReturnsCostCents - creditFiscalReturnsCostCents
 
   const collectedGrossProfitCents = collectedRevenueNoTipCents - collectedCostCents
 
@@ -490,13 +545,13 @@ export async function getTitheReport(input: { from?: string; to?: string }) {
 
   const totalCollectedInHandCents =
     cashSalesTotalCents +
-    creditPaymentsTotalCents -
-    cashReturnsTotalCents
+    creditPaymentsTotalCents + debitPaymentsTotalCents -
+    cashReturnsTotalCents - fiscalRefundsTotalCents
 
   const collectedItbisReferenceCents =
     cashSalesItbisCents +
-    creditCollectedItbisCents -
-    cashReturnsItbisCents
+    creditCollectedItbisCents + debitPaymentsItbisCents -
+    cashReturnsItbisCents - fiscalRefundBreakdown.taxCents
 
   return {
     from,
@@ -504,7 +559,13 @@ export async function getTitheReport(input: { from?: string; to?: string }) {
     cashSalesCount: cashSales.length,
     creditPaymentsCount: creditPayments.length,
     creditSalesWithCollectionsCount,
-    cashReturnsCount: cashReturns.length,
+    cashReturnsCount: ordinaryCashReturns.length,
+    debitPaymentsCount: debitPayments.length,
+    debitPaymentsTotalCents,
+    fiscalRefundsCount: fiscalRefunds.length,
+    fiscalRefundsTotalCents,
+    fiscalRefundRevenueCents: fiscalRefundsTotalCents - fiscalRefundBreakdown.tipCents,
+    creditFiscalReturnsCostCents,
     operatingExpensesCount: operatingExpenses.length,
     cashSalesTotalCents,
     creditPaymentsTotalCents,

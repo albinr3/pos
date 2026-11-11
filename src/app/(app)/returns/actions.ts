@@ -1,5 +1,6 @@
 "use server"
 
+import { randomUUID } from "node:crypto"
 import { assertNoFiscalInput } from "@/lib/fiscal/core/input"
 
 import { cashRequest, withCashOperation, type CashOperationInput } from "@/lib/cash-context"
@@ -14,6 +15,7 @@ import { TRANSACTION_OPTIONS } from "@/lib/transactions"
 import { logAuditEvent } from "@/lib/audit-log"
 import { isGenericCustomerQuery } from "@/lib/customer-display"
 import { ensureDefaultTreasuryAccount, requireTreasuryAccount } from "@/lib/treasury"
+import { hasPermission } from "@/lib/permissions"
 
 function returnCode(number: number): string {
   return `DEV-${String(number).padStart(5, "0")}`
@@ -57,6 +59,10 @@ type ReturnUserLike = {
   username?: string | null
   role?: string
   canCancelReturns?: boolean
+  canAccessReturns?: boolean
+  canPrepareFiscalDocuments?: boolean
+  canViewFiscalDocuments?: boolean
+  isOwner?: boolean
 }
 
 function assertReturnUserLike(user: unknown): asserts user is ReturnUserLike {
@@ -67,12 +73,18 @@ function assertReturnUserLike(user: unknown): asserts user is ReturnUserLike {
   if (typeof candidate.accountId !== "string" || candidate.accountId.length === 0) throw new Error("No autenticado")
 }
 
+async function requireReturnActor() {
+  // Las acciones expuestas al navegador no deben confiar en identidades enviadas como argumentos.
+  const user = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
+  assertReturnUserLike(user)
+  if (!hasPermission(user, "canAccessReturns")) throw new Error("Sin acceso a devoluciones")
+  return user
+}
+
 export async function listReturns(
-  currentUserArg?: unknown,
   options?: { skip?: number; take?: number }
 ) {
-  const user = currentUserArg ?? await getCurrentUser()
-  assertReturnUserLike(user)
+  const user = await requireReturnActor()
   const skip = Math.max(0, Number(options?.skip ?? 0) || 0)
   const take = Math.min(500, Math.max(1, Number(options?.take ?? 500) || 500))
 
@@ -91,6 +103,7 @@ export async function listReturns(
           username: true,
         },
       },
+      fiscalAdjustment: { select: { fiscalDocumentId: true, actorUserId: true } },
       items: {
         include: {
           product: {
@@ -108,18 +121,20 @@ export async function listReturns(
     take,
   })
 
-  return returnsList.map((r) => ({
-    ...r,
-    items: r.items.map((item) => ({
-      ...item,
-      qty: toNumber(item.qty),
-    })),
-  }))
+  return returnsList.map((r) => {
+    const { fiscalAdjustment, ...commercialReturn } = r
+    const canViewNote = hasPermission(user, "canViewFiscalDocuments") || (hasPermission(user, "canPrepareFiscalDocuments") && fiscalAdjustment?.actorUserId === user.id)
+    // La nota nueva tiene origen en el ajuste, por lo que buscarla por returnId no la encuentra.
+    return {
+      ...commercialReturn,
+      fiscalDocumentId: canViewNote ? fiscalAdjustment?.fiscalDocumentId ?? null : null,
+      items: r.items.map((item) => ({ ...item, qty: toNumber(item.qty) })),
+    }
+  })
 }
 
 export async function getReturnById(id: string) {
-  const user = await getCurrentUser()
-  if (!user) throw new Error("No autenticado")
+  const user = await requireReturnActor()
 
   const returnRecord = await prisma.return.findFirst({
     where: { accountId: user.accountId, id },
@@ -192,9 +207,8 @@ export async function getReturnById(id: string) {
   }
 }
 
-export async function getSaleForReturn(saleId: string, currentUserArg?: unknown) {
-  const user = currentUserArg ?? await getCurrentUser()
-  assertReturnUserLike(user)
+export async function getSaleForReturn(saleId: string) {
+  const user = await requireReturnActor()
 
   const sale = await prisma.sale.findFirst({
     where: { accountId: user.accountId, id: saleId },
@@ -228,6 +242,7 @@ export async function getSaleForReturn(saleId: string, currentUserArg?: unknown)
           status: true,
         },
       },
+      fiscalDocuments: { where: { state: "PREPARADO_PENDIENTE_CONEXION", type: { in: ["E31", "E32", "E44", "E45", "E46"] } }, select: { id: true, type: true }, take: 1 },
     },
   })
 
@@ -262,7 +277,15 @@ export async function getSaleForReturn(saleId: string, currentUserArg?: unknown)
     currentBalanceCents: null,
   }
 
-  if (sale.type === "CREDITO") {
+  const fiscalDocument = sale.fiscalDocuments?.[0]
+  const settings = fiscalDocument ? await prisma.fiscalSettings.findUnique({ where: { accountId: user.accountId }, select: { enabled: true, configurationStatus: true, jurisdiction: true, regime: true, environment: true } }) : null
+  const fiscalEnabled = Boolean(settings?.enabled && settings.configurationStatus === "VALIDATED" && settings.jurisdiction === "DO" && settings.regime === "DO_ECF" && settings.environment === "TEST")
+  const mayPrepare = hasPermission(user, "canAccessReturns") && hasPermission(user, "canPrepareFiscalDocuments")
+
+  if (fiscalDocument) {
+    // Una factura fiscal siempre requiere nota, incluso si el perfil se apaga después de prepararla.
+    returnPolicy = { canCreateReturn: fiscalEnabled && mayPrepare, blockedReason: !fiscalEnabled ? "Activa el perfil fiscal de prueba para preparar una nota sobre esta factura." : !mayPrepare ? "Se necesita permiso para preparar la nota fiscal." : null, maxReturnCents: null, currentBalanceCents: sale.ar?.balanceCents ?? null }
+  } else if (sale.type === "CREDITO") {
     if (!sale.ar) {
       returnPolicy = {
         canCreateReturn: false,
@@ -287,10 +310,12 @@ export async function getSaleForReturn(saleId: string, currentUserArg?: unknown)
     }
   }
 
+  const { fiscalDocuments: _fiscalDocuments, ...commercialSale } = sale
   return {
-    ...sale,
+    ...commercialSale,
     items: itemsWithAvailable,
     returnPolicy,
+    ...(fiscalDocument && mayPrepare ? { fiscal: { documentId: fiscalDocument.id, type: fiscalDocument.type, enabled: fiscalEnabled } } : {}),
   }
 }
 
@@ -301,11 +326,11 @@ type ReturnItemInput = {
   unitPriceCents: number
 }
 
-export async function createReturn(input: Parameters<typeof createReturnInternal>[0], currentUserArg?: unknown) {
+export async function createReturn(input: Parameters<typeof createReturnInternal>[0]) {
   // No confirmar efectos ordinarios cuando el cliente solicita una operación fiscal no admitida.
   assertNoFiscalInput(input)
   const { cashOperation, ...payload } = input
-  return withCashOperation(cashOperation, { kind: "createReturn", ...payload }, () => createReturnInternal(input, currentUserArg))
+  return withCashOperation(cashOperation, { kind: "createReturn", ...payload }, () => createReturnInternal(input))
 }
 
 async function createReturnInternal(input: {
@@ -315,9 +340,8 @@ async function createReturnInternal(input: {
   refundMethod?: PaymentMethod | null
   refundTreasuryAccountId?: string | null
   cashOperation?: CashOperationInput
-}, currentUserArg?: unknown) {
-  const currentUser = currentUserArg ?? cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
-  assertReturnUserLike(currentUser)
+}) {
+  const currentUser = await requireReturnActor()
 
   if (!input.items.length) throw new Error("La devolución no tiene productos.")
 
@@ -348,11 +372,14 @@ async function createReturnInternal(input: {
             status: true,
           },
         },
+        fiscalDocuments: { where: { state: "PREPARADO_PENDIENTE_CONEXION", type: { in: ["E31", "E32", "E44", "E45", "E46"] } }, select: { id: true }, take: 1 },
       },
     })
 
     if (!sale) throw new Error("Venta no encontrada")
     if (sale.cancelledAt) throw new Error("No se puede devolver una venta cancelada")
+    // El perfil apagado no libera el historial: una venta preparada nunca se devuelve por la ruta ordinaria.
+    if (sale.fiscalDocuments?.length) throw new Error("Esta factura requiere una nota de crédito fiscal")
 
     // Calcular cantidades ya devueltas
     const returnedQtys = new Map<string, number>()
@@ -591,8 +618,9 @@ async function createReturnInternal(input: {
   }, TRANSACTION_OPTIONS)
 }
 
-export async function cancelReturn(id: string) {
-  const currentUser = await getCurrentUser()
+export async function cancelReturn(id: string, reason?: string) {
+  // Las correcciones móviles usan exclusivamente el actor autenticado del contexto.
+  const currentUser = cashRequest.getStore()?.trustedActor ?? await getCurrentUser()
   if (!currentUser) throw new Error("No autenticado")
 
   const dbUser = await prisma.user.findFirst({ 
@@ -628,9 +656,39 @@ export async function cancelReturn(id: string) {
 
     if (!returnRecord) throw new Error("Devolución no encontrada")
     if (returnRecord.cancelledAt) throw new Error("Esta devolución ya está cancelada")
+    const fiscalAdjustmentId = (returnRecord as typeof returnRecord & { fiscalAdjustmentId?: string | null }).fiscalAdjustmentId
+    const reversalReason = reason?.trim() || cashRequest.getStore()?.correction?.reason?.trim() || ""
+    let fiscalRevision: number | null = null
+    if (fiscalAdjustmentId) {
+      if (!reversalReason) throw new Error("Indica el motivo de la reversión física")
+      const documents = await tx.$queryRaw<Array<{ state: string; revision: number }>>`SELECT state,revision FROM "FiscalAdjustment" WHERE "accountId"=${currentUser.accountId} AND id=${fiscalAdjustmentId}`
+      if (documents[0]?.state !== "PREPARADO_PENDIENTE_CONEXION") throw new Error("La nota fiscal asociada no está preparada")
+      fiscalRevision = documents[0].revision
+      const scope = cashRequest.getStore()
+      if (scope?.trustedActor?.id !== currentUser.id || scope.trustedActor.accountId !== currentUser.accountId) throw new Error("La identidad de caja no coincide")
+      // Solo se autoriza revertir inventario; el comprobante y sus aplicaciones permanecen intactos.
+      scope.fiscalAdjustmentAuthorizedAccountId = currentUser.accountId
+    }
 
     const returnConsumptions = aggregateConsumptions(
       returnRecord.items.flatMap((item) => {
+        const stored = (item as typeof item & { fiscalRestorations?: unknown }).fiscalRestorations
+        if (fiscalAdjustmentId && stored !== null && stored !== undefined) {
+          // Revertir el reparto guardado evita perder milésimas si hubo devoluciones sucesivas o reversiones intercaladas.
+          if (!Array.isArray(stored)) throw new Error("La reposición fiscal requiere conciliación")
+          const allowed = new Set(item.saleItem.consumptions.map(consumption => consumption.ingredientId))
+          const seen = new Set<string>()
+          const entries = stored.map((value: unknown) => {
+            if (!value || typeof value !== "object") throw new Error("La reposición fiscal requiere conciliación")
+            const entry = value as { ingredientId?: unknown; quantity?: unknown }
+            if (typeof entry.ingredientId !== "string" || !allowed.has(entry.ingredientId) || seen.has(entry.ingredientId) || typeof entry.quantity !== "string" || !/^\d{1,10}\.\d{3}$/.test(entry.quantity)) throw new Error("La reposición fiscal requiere conciliación")
+            seen.add(entry.ingredientId)
+            return { ingredientId: entry.ingredientId, qty: Number(entry.quantity) }
+          })
+          if (seen.size !== allowed.size) throw new Error("La reposición fiscal requiere conciliación")
+          return entries
+        }
+        // Los registros anteriores a este desglose usaban el cálculo proporcional individual.
         const soldQty = toNumber(item.saleItem.qty)
         return item.saleItem.consumptions.map((consumption) => ({
           ingredientId: consumption.ingredientId,
@@ -648,7 +706,7 @@ export async function cancelReturn(id: string) {
     }
 
     // Si la venta era a crédito, restaurar el balance de la cuenta por cobrar
-    if (returnRecord.sale.type === "CREDITO") {
+    if (returnRecord.sale.type === "CREDITO" && !fiscalAdjustmentId) {
       const ar = await tx.accountReceivable.findFirst({
         where: {
           saleId: returnRecord.sale.id,
@@ -677,9 +735,15 @@ export async function cancelReturn(id: string) {
       data: {
         cancelledAt: new Date(),
         cancelledBy: dbUser.id,
+        ...(fiscalAdjustmentId ? { cancellationReason: reversalReason } : {}),
       },
     })
     if (cancelled.count === 0) throw new Error("Devolución no encontrada")
+
+    if (fiscalAdjustmentId && fiscalRevision !== null) {
+      // La auditoría fiscal es parte de la misma transacción, aunque el registro comercial de auditoría falle.
+      await tx.$executeRaw`INSERT INTO "FiscalAdjustmentEvent" (id,"accountId","adjustmentId","actorUserId",state,revision,details) VALUES (${randomUUID()},${currentUser.accountId},${fiscalAdjustmentId},${currentUser.id},'PREPARADO_PENDIENTE_CONEXION',${fiscalRevision},${JSON.stringify({ action: "PHYSICAL_REVERSED", returnId: returnRecord.id, reason: reversalReason })}::jsonb)`
+    }
 
     await logAuditEvent({
       accountId: currentUser.accountId,
@@ -694,6 +758,7 @@ export async function cancelReturn(id: string) {
         saleId: returnRecord.saleId,
         totalCents: returnRecord.totalCents,
         itemsCount: returnRecord.items.length,
+        ...(fiscalAdjustmentId ? { fiscalAdjustmentId, physicalReversalOnly: true, reason: reversalReason } : {}),
       },
     }, tx)
 
@@ -710,11 +775,9 @@ export async function cancelReturn(id: string) {
 
 export async function searchSalesForReturn(
   query: string,
-  currentUserArg?: unknown,
   options?: { customerId?: string | null }
 ) {
-  const user = currentUserArg ?? await getCurrentUser()
-  assertReturnUserLike(user)
+  const user = await requireReturnActor()
 
   const q = query.trim()
   const normalizedVisualQuery = q ? q.replace(/^#/, "") : ""
@@ -723,6 +786,9 @@ export async function searchSalesForReturn(
   const normalizedCustomerId = options?.customerId?.trim() || null
   const customerId = normalizedCustomerId?.toLowerCase() === "generic" ? null : normalizedCustomerId
   if (!q && !customerId) return []
+  const matchingFiscalSales = /^E(?:31|32|44|45|46)\d{1,10}$/i.test(q) && hasPermission(user, "canViewFiscalDocuments")
+    ? await prisma.$queryRaw<Array<{ saleId: string }>>`SELECT d."saleId" FROM "FiscalDocument" d JOIN "FiscalNumberAllocation" n ON n."accountId"=d."accountId" AND n."documentId"=d.id WHERE d."accountId"=${user.accountId} AND n."eNcf" ILIKE ${`%${q}%`} AND d."saleId" IS NOT NULL AND d.state='PREPARADO_PENDIENTE_CONEXION'`
+    : []
 
   const sales = await prisma.sale.findMany({
     where: {
@@ -734,6 +800,7 @@ export async function searchSalesForReturn(
             OR: [
               { invoiceCode: { contains: q, mode: "insensitive" } },
               { customer: { name: { contains: q, mode: "insensitive" } } },
+              ...(matchingFiscalSales.length ? [{ id: { in: matchingFiscalSales.map(item => item.saleId) } }] : []),
               ...(visualIdQuery !== null ? [{ customer: { visualId: visualIdQuery } }] : []),
               ...(shouldIncludeLegacyNullGeneric ? [{ customerId: null }] : []),
             ],

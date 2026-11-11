@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { dateKeyDO, formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
+import { receivableOriginLabel } from "@/lib/receivable-origin"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -32,6 +33,7 @@ interface ARItem {
   totalCents: number
   balanceCents: number
   dueDate: Date | null
+  createdAt: Date
   customer: {
     visualId: number
     name: string
@@ -42,7 +44,11 @@ interface ARItem {
     invoiceCode: string
     soldAt: Date
     totalCents: number
-  }
+    returns: Array<{ totalCents: number }>
+  } | null
+  debitAdjustment: { id: string; createdAt: Date } | null
+  fiscalAdjustmentApplications: Array<{ amountCents: number }>
+  fiscalCustomerCreditApplications: Array<{ amountCents: number }>
   payments: Array<{
     amountCents: number
     paidAt: Date
@@ -174,10 +180,11 @@ export function ARReportClient({
           : 0
         
         return [
-          ar.sale.invoiceCode,
-          formatDateDO(ar.sale.soldAt),
+          receivableOriginLabel(ar),
+          formatDateDO(ar.sale?.soldAt ?? ar.debitAdjustment?.createdAt ?? ar.createdAt),
           ar.customer.name.substring(0, 20),
           formatRD(ar.totalCents),
+          formatRD((ar.sale?.returns.reduce((sum, item) => sum + item.totalCents, 0) ?? 0) + ar.fiscalAdjustmentApplications.reduce((sum, item) => sum + item.amountCents, 0) + ar.fiscalCustomerCreditApplications.reduce((sum, item) => sum + item.amountCents, 0)),
           formatRD(ar.balanceCents),
           ar.status,
           ar.dueDate && diasVencido > 0 ? `${diasVencido}d` : "-",
@@ -186,7 +193,7 @@ export function ARReportClient({
 
       autoTable(doc, {
         startY: yPos,
-        head: [["Factura", "Fecha", "Cliente", "Total", "Pendiente", "Estado", "Vencido"]],
+        head: [["Factura", "Fecha", "Cliente", "Total", "Ajustes", "Pendiente", "Estado", "Vencido"]],
         body: tableData,
         theme: "striped",
         styles: {
@@ -202,10 +209,11 @@ export function ARReportClient({
           0: { fontStyle: "bold", font: "courier" },
           3: { halign: "right", fontStyle: "bold" },
           4: { halign: "right", fontStyle: "bold" },
-          5: { fontStyle: "bold" },
+          5: { halign: "right", fontStyle: "bold" },
+          6: { fontStyle: "bold" },
         },
         didParseCell: (data: any) => {
-          if (data.section === "body" && data.column.index === 6) {
+          if (data.section === "body" && data.column.index === 7) {
             const diasVencido = data.cell.text[0]
             if (diasVencido !== "-" && diasVencido !== "0d") {
               data.cell.styles.textColor = [220, 38, 38]
@@ -405,6 +413,7 @@ export function ARReportClient({
                 <th className="p-3 text-left text-sm font-medium">Cliente</th>
                 <th className="p-3 text-right text-sm font-medium">Total</th>
                 <th className="p-3 text-right text-sm font-medium">Pagado</th>
+                <th className="p-3 text-right text-sm font-medium">Ajustes aplicados</th>
                 <th className="p-3 text-right text-sm font-medium">Pendiente</th>
                 <th className="p-3 text-left text-sm font-medium">Estado</th>
                 <th className="p-3 text-left text-sm font-medium">Vencimiento</th>
@@ -414,13 +423,14 @@ export function ARReportClient({
             <tbody>
               {initialData.arItems.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-neutral-500">
+                  <td colSpan={10} className="p-8 text-center text-neutral-500">
                     No se encontraron cuentas por cobrar con los filtros seleccionados
                   </td>
                 </tr>
               ) : (
                 initialData.arItems.map((ar) => {
-                  const totalPagado = ar.totalCents - ar.balanceCents
+                  const totalPagado = ar.payments.reduce((sum, payment) => sum + payment.amountCents, 0)
+                  const totalAjustado = (ar.sale?.returns.reduce((sum, item) => sum + item.totalCents, 0) ?? 0) + ar.fiscalAdjustmentApplications.reduce((sum, item) => sum + item.amountCents, 0) + ar.fiscalCustomerCreditApplications.reduce((sum, item) => sum + item.amountCents, 0)
                   const diasVencido = getDiasVencido(ar.dueDate)
                   const isOverdue = diasVencido > 0
 
@@ -432,9 +442,9 @@ export function ARReportClient({
                       }`}
                     >
                       <td className="p-3">
-                        <div className="font-mono font-semibold">{ar.sale.invoiceCode}</div>
+                        <div className="font-mono font-semibold">{receivableOriginLabel(ar)}</div>
                       </td>
-                      <td className="p-3 text-sm">{fmtDate(ar.sale.soldAt)}</td>
+                      <td className="p-3 text-sm">{fmtDate(ar.sale?.soldAt ?? ar.debitAdjustment?.createdAt ?? ar.createdAt)}</td>
                       <td className="p-3">
                         <div className="font-medium">#{ar.customer.visualId} {ar.customer.name}</div>
                         {ar.customer.phone && (
@@ -443,6 +453,7 @@ export function ARReportClient({
                       </td>
                       <td className="p-3 text-right font-medium">{formatRD(ar.totalCents)}</td>
                       <td className="p-3 text-right text-green-600">{formatRD(totalPagado)}</td>
+                      <td className="p-3 text-right">{formatRD(totalAjustado)}</td>
                       <td className="p-3 text-right">
                         <div className="font-bold text-orange-600">{formatRD(ar.balanceCents)}</div>
                       </td>

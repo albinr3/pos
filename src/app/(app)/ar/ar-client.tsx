@@ -79,6 +79,7 @@ function parseVisualIdSearch(rawQuery: string) {
 function matchesARQuery(
   ar: {
     sale?: { invoiceCode?: string | null } | null
+    origin?: { reference?: string | null } | null
     customer?: { name?: string | null; visualId?: number | null } | null
   },
   rawQuery: string
@@ -90,7 +91,7 @@ function matchesARQuery(
   const normalizedVisualSearch = parseVisualIdSearch(q)
 
   return (
-    (ar.sale?.invoiceCode || "").toLowerCase().includes(q) ||
+    (ar.origin?.reference || ar.sale?.invoiceCode || "").toLowerCase().includes(q) ||
     (ar.customer?.name || "").toLowerCase().includes(q) ||
     (normalizedVisualSearch ? visualIdText.includes(normalizedVisualSearch) : false)
   )
@@ -530,7 +531,7 @@ export function ARClient({
       pickTreasuryAccountIdForPaymentMethod(
         treasuryAccounts,
         PaymentMethod.EFECTIVO,
-        ar.sale.treasuryAccountId
+        ar.sale?.treasuryAccountId
       )
     )
     setNote("")
@@ -809,7 +810,7 @@ export function ARClient({
                         onChange={() => toggleSelect(ar)}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">{ar.sale.invoiceCode}</TableCell>
+                    <TableCell className="font-medium">{ar.origin?.reference ?? ar.sale?.invoiceCode ?? "Cargo"}</TableCell>
                     <TableCell>{formatCustomerLabel(ar.customer)}</TableCell>
                     <TableCell>
                       {ar.dueDate ? (
@@ -861,12 +862,13 @@ export function ARClient({
                             <span className="sm:hidden">{ar.payments?.length ?? 0}</span>
                           </Button>
                         )}
-                        <Button size="sm" asChild className="bg-blue-500 hover:bg-blue-600 text-white" title="Reimprimir">
-                          <Link href={`/api/print/sale/${ar.sale.invoiceCode}`} target="_blank">
+                        {ar.debitEligibleOriginalId && <Button size="sm" variant="outline" asChild><Link href={`/fiscal/debit-notes?originalDocumentId=${encodeURIComponent(ar.debitEligibleOriginalId)}`}>Nota de débito</Link></Button>}
+                        {(ar.sale || (ar.origin?.kind === "DEBIT_NOTE" && ar.origin.documentId)) && <Button size="sm" asChild className="bg-blue-500 hover:bg-blue-600 text-white" title="Reimprimir">
+                          <Link href={ar.sale ? `/api/print/sale/${ar.sale.invoiceCode}` : `/invoices/fiscal/${ar.origin.kind === "DEBIT_NOTE" ? ar.origin.documentId : ""}`} target="_blank">
                             <Printer className="h-4 w-4 sm:mr-2" />
                             <span className="hidden sm:inline">Reimprimir</span>
                           </Link>
-                        </Button>
+                        </Button>}
 
                       </div>
                     </TableCell>
@@ -922,7 +924,7 @@ export function ARClient({
             <div className="grid gap-3 overflow-y-auto pr-1">
               <div className="rounded-md border p-3 text-sm">
                 <div className="flex items-center gap-2 font-semibold">
-                  <CreditCard className="h-4 w-4" /> {selected.sale.invoiceCode}
+                  <CreditCard className="h-4 w-4" /> {selected.origin?.reference ?? selected.sale?.invoiceCode ?? "Cargo"}
                 </div>
                 <div className="text-muted-foreground">{formatCustomerLabel(selected.customer)}</div>
                 <Separator className="my-2" />
@@ -930,6 +932,7 @@ export function ARClient({
                   <span>Total</span>
                   <span className="font-semibold">{formatRD(selected.totalCents)}</span>
                 </div>
+                {selected.adjustments && <div className="flex items-center justify-between"><span>Ajustes aplicados</span><span>{formatRD(selected.adjustments.ordinaryReturnsCents + selected.adjustments.creditNotesCents + selected.adjustments.customerCreditsCents)}</span></div>}
                 <div className="flex items-center justify-between">
                   <span>Pendiente</span>
                   <span className="font-semibold">{formatRD(selected.balanceCents)}</span>
@@ -1077,7 +1080,7 @@ export function ARClient({
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>
-              Recibos de Pago{selectedForReceipts?.sale.invoiceCode ? ` - ${selectedForReceipts.sale.invoiceCode}` : ""}
+              Recibos de Pago{selectedForReceipts ? ` - ${selectedForReceipts.origin?.reference ?? selectedForReceipts.sale?.invoiceCode ?? "Cargo"}` : ""}
             </DialogTitle>
           </DialogHeader>
 
@@ -1085,7 +1088,7 @@ export function ARClient({
             <div className="grid gap-4">
               <div className="rounded-md border p-3 text-sm">
                 <div className="flex items-center gap-2 font-semibold">
-                  <CreditCard className="h-4 w-4" /> {selectedForReceipts.sale.invoiceCode}
+                  <CreditCard className="h-4 w-4" /> {selectedForReceipts.origin?.reference ?? selectedForReceipts.sale?.invoiceCode ?? "Cargo"}
                 </div>
                 <div className="text-muted-foreground">{formatCustomerLabel(selectedForReceipts.customer)}</div>
                 <Separator className="my-2" />
@@ -1093,6 +1096,7 @@ export function ARClient({
                   <span>Total</span>
                   <span className="font-semibold">{formatRD(selectedForReceipts.totalCents)}</span>
                 </div>
+                {selectedForReceipts.adjustments && <div className="flex items-center justify-between"><span>Ajustes aplicados</span><span>{formatRD(selectedForReceipts.adjustments.ordinaryReturnsCents + selectedForReceipts.adjustments.creditNotesCents + selectedForReceipts.adjustments.customerCreditsCents)}</span></div>}
                 <div className="flex items-center justify-between">
                   <span>Pendiente</span>
                   <span className="font-semibold">{formatRD(selectedForReceipts.balanceCents)}</span>
@@ -1186,7 +1190,7 @@ export function ARClient({
                   .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
                   .map((ar) => (
                   <div key={ar.id} className="flex items-center justify-between py-1">
-                    <span className="text-muted-foreground">{ar.sale.invoiceCode}</span>
+                    <span className="text-muted-foreground">{ar.origin?.reference ?? ar.sale?.invoiceCode ?? "Cargo"}</span>
                     <span className="font-semibold">{formatRD(ar.balanceCents)}</span>
                   </div>
                 ))}

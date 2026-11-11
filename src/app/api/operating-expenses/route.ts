@@ -7,6 +7,10 @@ import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../_helpers/auth"
 import { logAuditEvent } from "@/lib/audit-log"
 import { hasPermissionOrLog } from "@/lib/permission-guard"
+import { hasPermission } from "@/lib/permissions"
+import { purchaseAPI } from "@/lib/purchase-http"
+import { PurchaseError } from "@/lib/purchase-credit"
+import { createFiscalExpense, type FiscalExpenseInput } from "@/lib/fiscal/core/employee-expenses"
 import { endOfDay, parseDateParam, startOfDay } from "@/lib/dates"
 import {
   ensureDefaultTreasuryAccount,
@@ -95,6 +99,9 @@ export async function GET(request: NextRequest) {
     const hasMore = items.length > take
     const pageItems = hasMore ? items.slice(0, take) : items
     const nextSkip = hasMore ? effectiveSkip + take : null
+    const fiscalIds = pageItems.filter(item => item.fiscalExpenseDetails).map(item => item.id)
+    const canSeeFiscal = hasPermission(user, "canManageExpenses") && (hasPermission(user, "canPrepareFiscalDocuments") || hasPermission(user, "canViewFiscalDocuments"))
+    const fiscalDocuments = canSeeFiscal && fiscalIds.length ? await prisma.fiscalDocument.findMany({ where: { accountId: user.accountId, expenseId: { in: fiscalIds }, state: { not: "DESCARTADO" } }, select: { id: true, expenseId: true, type: true, state: true, revision: true } }) : []
 
     return NextResponse.json({
       data: pageItems.map((item) => ({
@@ -106,6 +113,8 @@ export async function GET(request: NextRequest) {
         expenseDate: item.expenseDate.toISOString(),
         category: item.category,
         notes: item.notes,
+        ...(hasPermission(user, "canManageExpenses") && item.fiscalExpenseDetails ? { fundingSource: item.fundingSource, fiscalExpenseDetails: item.fiscalExpenseDetails } : {}),
+        ...(canSeeFiscal && item.fiscalExpenseDetails ? { fiscalDocuments: fiscalDocuments.filter(document => document.expenseId === item.id) } : {}),
         user: item.user,
         createdAt: item.createdAt.toISOString(),
         updatedAt: item.updatedAt.toISOString(),
@@ -127,6 +136,11 @@ export async function GET(request: NextRequest) {
 // POST /api/operating-expenses - Crear gasto operativo
 export async function POST(request: NextRequest) {
   const body = await request.clone().json().catch(() => ({}))
+  if (body?.fiscalExpense !== undefined) return purchaseAPI(request, async actor => {
+    if (!body.fiscalExpense || typeof body.fiscalExpense !== "object" || Array.isArray(body.fiscalExpense) || Object.keys(body).some(key => !["fiscalExpense", "cashOperation"].includes(key))) throw new PurchaseError("INVALID_BODY", "Envía únicamente el gasto y el contexto de caja")
+    if (body.cashOperation && body.fiscalExpense.cashOperation) throw new PurchaseError("INVALID_BODY", "Envía un solo contexto de caja")
+    return createFiscalExpense(actor, { ...body.fiscalExpense, ...(body.cashOperation ? { cashOperation: body.cashOperation } : {}) } as FiscalExpenseInput)
+  })
   const { cashOperation, ...payload } = body
   return withCashOperation(cashOperation, { kind: "api-expense", ...payload }, () => postCashDocument(request))
 }

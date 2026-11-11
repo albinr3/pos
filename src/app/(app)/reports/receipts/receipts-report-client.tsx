@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { dateKeyDO, formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import { formatRD } from "@/lib/money"
 import { formatPaymentWithBank } from "@/lib/payment-methods"
+import { receivableOriginLabel } from "@/lib/receivable-origin"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -46,7 +47,8 @@ interface Payment {
     sale: {
       invoiceCode: string
       totalCents: number
-    }
+    } | null
+    debitAdjustment: { id: string } | null
     balanceCents: number
   }
   user: {
@@ -189,7 +191,7 @@ export function ReceiptsReportClient({
         p.receiptCode,
         formatDateDO(p.paidAt),
         `#${p.ar.customer.visualId} ${p.ar.customer.name}`.substring(0, 25),
-        p.ar.sale.invoiceCode,
+        receivableOriginLabel(p.ar),
         formatRD(p.amountCents),
         formatPaymentWithBank(p.method, p.transferBankName),
         p.user.name.substring(0, 15),
@@ -463,7 +465,7 @@ export function ReceiptsReportClient({
                       )}
                     </td>
                     <td className="p-3">
-                      <div className="font-mono text-sm">{payment.ar.sale.invoiceCode}</div>
+                      <div className="font-mono text-sm">{receivableOriginLabel(payment.ar)}</div>
                     </td>
                     <td className="p-3 text-right">
                       <div className="font-semibold">{formatRD(payment.amountCents)}</div>

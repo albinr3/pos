@@ -4,7 +4,7 @@ import { requireModuleAccess } from "@/lib/module-access"
 import { ReturnsClient } from "./returns-client"
 
 export default async function ReturnsPage() {
-  await requireModuleAccess("canAccessReturns")
+  const actor = await requireModuleAccess("canAccessReturns")
 
   return (
     <div className="grid gap-6">
@@ -19,7 +19,7 @@ export default async function ReturnsPage() {
           </Button>
         </div>
       </div>
-      <ReturnsClient />
+      <ReturnsClient actor={{ id: actor.id, accountId: actor.accountId }} />
     </div>
   )
 }

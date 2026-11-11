@@ -27,6 +27,7 @@ import {
 
 import { createReturn, getSaleForReturn, searchSalesForReturn } from "./actions"
 import { listTreasuryAccounts } from "../treasury/actions"
+import { FiscalCreditForm } from "./fiscal-credit-form"
 
 type SaleForReturn = NonNullable<Awaited<ReturnType<typeof getSaleForReturn>>>
 type SaleSearchResult = Awaited<ReturnType<typeof searchSalesForReturn>>[number]
@@ -44,7 +45,7 @@ type ReturnItem = {
   itbisRateBp: number
 }
 
-export function ReturnsClient() {
+export function ReturnsClient({ actor }: { actor: { id: string; accountId: string } }) {
   const router = useRouter()
   const [saleSearchQuery, setSaleSearchQuery] = useState("")
   const [saleSearchResults, setSaleSearchResults] = useState<SaleSearchResult[]>([])
@@ -365,6 +366,10 @@ export function ReturnsClient() {
             )}
           </CardContent>
         </Card>
+      ) : selectedSale.fiscal ? (
+        selectedSale.fiscal.enabled
+          ? <FiscalCreditForm originalDocumentId={selectedSale.fiscal.documentId} actor={actor} treasuryAccounts={treasuryAccounts} onClose={() => setSelectedSale(null)} />
+          : <Card><CardContent className="grid gap-3 pt-6"><p>Activa el perfil fiscal de prueba para corregir esta factura.</p><Button variant="outline" onClick={() => setSelectedSale(null)}>Cambiar venta</Button></CardContent></Card>
       ) : (
         <>
           <Card>

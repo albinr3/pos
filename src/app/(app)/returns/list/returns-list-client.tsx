@@ -29,6 +29,7 @@ export function ReturnsListClient() {
   const [query, setQuery] = useState("")
   const [openCancel, setOpenCancel] = useState(false)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [cancellationReason, setCancellationReason] = useState("")
   const [isCancelling, startCancelling] = useTransition()
   const [user, setUser] = useState<CurrentUser | null>(null)
 
@@ -74,6 +75,7 @@ export function ReturnsListClient() {
 
   async function handleCancel(id: string) {
     setCancellingId(id)
+    setCancellationReason("")
     setOpenCancel(true)
   }
 
@@ -82,7 +84,7 @@ export function ReturnsListClient() {
 
     startCancelling(async () => {
       try {
-        await cancelReturn(cancellingId)
+        await cancelReturn(cancellingId, cancellationReason)
         toast({ title: "Cancelada", description: "Devolución cancelada exitosamente" })
         setOpenCancel(false)
         setCancellingId(null)
@@ -156,7 +158,7 @@ export function ReturnsListClient() {
                 ) : (
                   filtered.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.returnCode}<FiscalSourceLink allowed={canViewFiscal} kind="RETURN" id={r.id}/></TableCell>
+                      <TableCell className="font-medium">{r.returnCode}{r.fiscalDocumentId ? <Link className="ml-2 text-xs underline" href={`/invoices/fiscal/${encodeURIComponent(r.fiscalDocumentId)}`}>Nota fiscal</Link> : <FiscalSourceLink allowed={canViewFiscal} kind="RETURN" id={r.id}/>}</TableCell>
                       <TableCell>
                         <Link
                           href={`/sales/list`}
@@ -224,9 +226,11 @@ export function ReturnsListClient() {
           </DialogHeader>
           <div className="py-4">
             <p className="text-sm text-muted-foreground">
-              ¿Estás seguro de que deseas cancelar esta devolución? Esta acción revertirá el stock y los cambios en
-              cuentas por cobrar.
+              {((returns.find(item => item.id === cancellingId) as (Return & { fiscalAdjustmentId?: string | null }) | undefined)?.fiscalAdjustmentId)
+                ? "Se revertirá el movimiento físico. La nota fiscal y sus aplicaciones financieras se conservarán."
+                : "Se revertirá el stock y los cambios en cuentas por cobrar."}
             </p>
+            {((returns.find(item => item.id === cancellingId) as (Return & { fiscalAdjustmentId?: string | null }) | undefined)?.fiscalAdjustmentId) && <Input className="mt-3" value={cancellationReason} onChange={event => setCancellationReason(event.target.value)} placeholder="Motivo de la reversión física" />}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpenCancel(false)} disabled={isCancelling}>

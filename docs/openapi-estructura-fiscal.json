@@ -5,49 +5,2788 @@
     "version": "1.3.0"
   },
   "paths": {
+    "/api/purchases": {
+      "post": {
+        "summary": "Registrar compra con soporte del proveedor",
+        "description": "Acepta el contrato comercial existente y los campos opcionales supplierReceiptNumber, e41CashPaidCents y e41DeclaredUnregistered. El pago neto solo corresponde a una compra al contado sin comprobante recibido, con proveedor declarado no registrado y perfil fiscal TEST activo.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "supplierReceiptNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 50
+                  },
+                  "e41CashPaidCents": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "e41DeclaredUnregistered": {
+                    "type": "boolean"
+                  },
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Compra registrada"
+          },
+          "400": {
+            "description": "Datos inválidos"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "409": {
+            "description": "Conflicto"
+          }
+        }
+      }
+    },
+    "/api/accounts-payable/{id}": {
+      "patch": {
+        "summary": "Actualizar vencimiento o notas de una obligación sin inventario",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "dueDate": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Obligación actualizada"
+          },
+          "400": {
+            "description": "Datos inválidos"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Origen no encontrado"
+          },
+          "409": {
+            "description": "Datos fiscales congelados"
+          }
+        }
+      }
+    },
+    "/api/fiscal/purchases/template": {
+      "get": {
+        "summary": "Proponer E41 desde una compra u obligación",
+        "description": "Requiere permisos fiscales y de compras; PAYABLE también requiere acceso a cuentas por pagar. La condición del proveedor se declara y no equivale a verificación oficial.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "source",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PURCHASE",
+                "PAYABLE"
+              ]
+            }
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Documento propuesto para revisión"
+          },
+          "400": {
+            "description": "Origen inválido"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "409": {
+            "description": "Origen o configuración no disponible"
+          }
+        }
+      }
+    },
+    "/api/accounts-payable": {
+      "post": {
+        "summary": "Crear obligación sin inventario",
+        "description": "Requiere permisos de compras y cuentas por pagar; operationId establece idempotencia.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "supplierId",
+                  "description",
+                  "totalCents",
+                  "dueDate",
+                  "operationId"
+                ],
+                "properties": {
+                  "supplierId": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "supplierReceiptNumber": {
+                    "type": "string",
+                    "nullable": true,
+                    "maxLength": 50
+                  },
+                  "totalCents": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "dueDate": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Obligación registrada"
+          },
+          "400": {
+            "description": "Datos inválidos"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          }
+        }
+      }
+    },
+    "/api/accounts-receivable/operations/{operationId}": {
+      "get": {
+        "summary": "Recuperar un resultado de cuentas por cobrar",
+        "description": "Consulta un cobro, aplicación de saldo o confirmación E33 del mismo usuario y empresa sin volver a ejecutarlo. Requiere canAccessAccountsReceivable.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado confirmado con operationId, status y result"
+          },
+          "400": {
+            "description": "Identificador inválido"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin acceso a cuentas por cobrar"
+          },
+          "404": {
+            "description": "Operación ajena, no encontrada o no relacionada con cuentas por cobrar"
+          }
+        }
+      }
+    },
+    "/api/accounts-receivable": {
+      "get": {
+        "summary": "Listar cuentas por cobrar y su origen",
+        "description": "Requiere canAccessAccountsReceivable. Origin.kind distingue SALE de DEBIT_NOTE; customerId limita la consulta a la empresa autenticada.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 10
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página con data y nextSkip; importes comerciales en centavos"
+          },
+          "400": {
+            "description": "Paginación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin acceso a cuentas por cobrar"
+          }
+        }
+      }
+    },
+    "/api/returns": {
+      "get": {
+        "summary": "Listar devoluciones",
+        "description": "Requiere canAccessReturns; fiscal incluye el ajuste y sus aplicaciones cuando el actor tiene permiso fiscal.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista privada por empresa"
+          },
+          "400": {
+            "description": "Solicitud inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin acceso a devoluciones"
+          },
+          "404": {
+            "description": "No encontrado"
+          },
+          "409": {
+            "description": "Conflicto de política, revisión u operación"
+          },
+          "422": {
+            "description": "Validación fiscal o comercial fallida"
+          }
+        }
+      },
+      "post": {
+        "summary": "Registrar devolución ordinaria o confirmar E34 física validada",
+        "description": "La confirmación fiscal conserva la misma operación de caja en los reintentos. Las devoluciones físicas pueden utilizar la cola existente; las notas financieras requieren conexión.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "saleId",
+                      "items"
+                    ],
+                    "properties": {
+                      "saleId": {
+                        "type": "string"
+                      },
+                      "items": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "object",
+                          "required": [
+                            "saleItemId",
+                            "productId",
+                            "qty",
+                            "unitPriceCents"
+                          ],
+                          "properties": {
+                            "saleItemId": {
+                              "type": "string"
+                            },
+                            "productId": {
+                              "type": "string"
+                            },
+                            "qty": {
+                              "type": "number",
+                              "exclusiveMinimum": true,
+                              "minimum": 0
+                            },
+                            "unitPriceCents": {
+                              "type": "integer",
+                              "minimum": 1
+                            }
+                          }
+                        }
+                      },
+                      "notes": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "refundMethod": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "refundTreasuryAccountId": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "cashOperation": {
+                        "$ref": "#/components/schemas/AdjustmentCashOperation"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "fiscalAdjustmentId",
+                      "expectedRevision",
+                      "settlement",
+                      "cashOperation"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "fiscalAdjustmentId": {
+                        "type": "string"
+                      },
+                      "expectedRevision": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "settlement": {
+                        "$ref": "#/components/schemas/AdjustmentSettlement"
+                      },
+                      "cashOperation": {
+                        "$ref": "#/components/schemas/AdjustmentCashOperation"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Devolución o confirmación fiscal de prueba"
+          },
+          "400": {
+            "description": "Solicitud inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin acceso a devoluciones"
+          },
+          "404": {
+            "description": "No encontrado"
+          },
+          "409": {
+            "description": "Conflicto de política, revisión u operación"
+          },
+          "422": {
+            "description": "Validación fiscal o comercial fallida"
+          }
+        }
+      }
+    },
+    "/api/returns/sales": {
+      "get": {
+        "summary": "Buscar factura para devolución",
+        "description": "Busca por factura o e-NCF; este último requiere permiso fiscal de lectura.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Facturas de la empresa autenticada"
+          },
+          "400": {
+            "description": "Solicitud inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin acceso a devoluciones"
+          },
+          "404": {
+            "description": "No encontrado"
+          },
+          "409": {
+            "description": "Conflicto de política, revisión u operación"
+          },
+          "422": {
+            "description": "Validación fiscal o comercial fallida"
+          }
+        }
+      }
+    },
+    "/api/returns/sales/{saleId}": {
+      "get": {
+        "summary": "Consultar factura para devolución",
+        "description": "La respuesta incluye fiscal.documentId y disponibilidad comercial cuando el actor puede preparar la nota; consultar /api/credit-notes/availability para las reservas e importes.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "saleId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detalle y disponibilidad"
+          },
+          "400": {
+            "description": "Solicitud inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin acceso a devoluciones"
+          },
+          "404": {
+            "description": "No encontrado"
+          },
+          "409": {
+            "description": "Conflicto de política, revisión u operación"
+          },
+          "422": {
+            "description": "Validación fiscal o comercial fallida"
+          }
+        }
+      }
+    },
+    "/api/credit-notes/preview": {
+      "post": {
+        "summary": "Previsualizar borrador E34",
+        "description": "Borradores y confirmaciones E34 requieren canAccessReturns y el permiso fiscal correspondiente; la confirmación utiliza el servicio comercial transaccional.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado local",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "originalDocumentId",
+                  "expectedPolicyVersion",
+                  "modificationCode",
+                  "reason",
+                  "lines"
+                ],
+                "properties": {
+                  "originalDocumentId": {
+                    "type": "string"
+                  },
+                  "expectedPolicyVersion": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "modificationCode": {
+                    "type": "string",
+                    "enum": [
+                      "1",
+                      "2",
+                      "3"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "lines": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "originalLine",
+                        "quantity"
+                      ],
+                      "properties": {
+                        "originalLine": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "quantity": {
+                          "type": "string",
+                          "pattern": "^\\d{1,10}(\\.\\d{1,2})?$"
+                        },
+                        "physicalQuantity": {
+                          "type": "string",
+                          "default": "0"
+                        },
+                        "extraDiscountCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "default": 0
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 200
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credit-notes": {
+      "get": {
+        "summary": "Listar borradores E34",
+        "description": "Borradores y confirmaciones E34 requieren canAccessReturns y el permiso fiscal correspondiente; la confirmación utiliza el servicio comercial transaccional.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado local",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "originalDocumentId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "Crear borrador E34",
+        "description": "Borradores y confirmaciones E34 requieren canAccessReturns y el permiso fiscal correspondiente; la confirmación utiliza el servicio comercial transaccional.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Resultado local",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operationId",
+                  "note"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{8,100}$"
+                  },
+                  "note": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "originalDocumentId",
+                      "expectedPolicyVersion",
+                      "modificationCode",
+                      "reason",
+                      "lines"
+                    ],
+                    "properties": {
+                      "originalDocumentId": {
+                        "type": "string"
+                      },
+                      "expectedPolicyVersion": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "modificationCode": {
+                        "type": "string",
+                        "enum": [
+                          "1",
+                          "2",
+                          "3"
+                        ]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "lines": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "originalLine",
+                            "quantity"
+                          ],
+                          "properties": {
+                            "originalLine": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "quantity": {
+                              "type": "string",
+                              "pattern": "^\\d{1,10}(\\.\\d{1,2})?$"
+                            },
+                            "physicalQuantity": {
+                              "type": "string",
+                              "default": "0"
+                            },
+                            "extraDiscountCents": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "default": 0
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 200
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credit-notes/{id}": {
+      "get": {
+        "summary": "Consultar borrador E34",
+        "description": "Borradores y confirmaciones E34 requieren canAccessReturns y el permiso fiscal correspondiente; la confirmación utiliza el servicio comercial transaccional.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado local",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "put": {
+        "summary": "Editar borrador E34",
+        "description": "Edita una revisión no preparada. Una nota validada conserva su estado y reemplaza la reserva de manera atómica; un borrador permanece sin reservar.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado local",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operationId",
+                  "expectedRevision",
+                  "note"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{8,100}$"
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "note": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "originalDocumentId",
+                      "expectedPolicyVersion",
+                      "modificationCode",
+                      "reason",
+                      "lines"
+                    ],
+                    "properties": {
+                      "originalDocumentId": {
+                        "type": "string"
+                      },
+                      "expectedPolicyVersion": {
+                        "type": "integer",
+                        "minimum": 1
+                      },
+                      "modificationCode": {
+                        "type": "string",
+                        "enum": [
+                          "1",
+                          "2",
+                          "3"
+                        ]
+                      },
+                      "reason": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "lines": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "originalLine",
+                            "quantity"
+                          ],
+                          "properties": {
+                            "originalLine": {
+                              "type": "integer",
+                              "minimum": 1
+                            },
+                            "quantity": {
+                              "type": "string",
+                              "pattern": "^\\d{1,10}(\\.\\d{1,2})?$"
+                            },
+                            "physicalQuantity": {
+                              "type": "string",
+                              "default": "0"
+                            },
+                            "extraDiscountCents": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "default": 0
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 200
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credit-notes/{id}/validate": {
+      "post": {
+        "summary": "Reservar capacidad de un borrador E34",
+        "description": "Borradores y confirmaciones E34 requieren canAccessReturns y el permiso fiscal correspondiente; la confirmación utiliza el servicio comercial transaccional.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado local",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operationId",
+                  "expectedRevision"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{8,100}$"
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credit-notes/{id}/discard": {
+      "post": {
+        "summary": "Descartar borrador E34 y liberar reserva",
+        "description": "Borradores y confirmaciones E34 requieren canAccessReturns y el permiso fiscal correspondiente; la confirmación utiliza el servicio comercial transaccional.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado local",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operationId",
+                  "expectedRevision",
+                  "reason"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{8,100}$"
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credit-notes/{id}/confirm": {
+      "post": {
+        "summary": "Confirmar E34",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Confirmación TEST; el reintento idéntico recupera este resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustmentConfirmation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedRevision",
+                  "settlement",
+                  "cashOperation"
+                ],
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "settlement": {
+                    "$ref": "#/components/schemas/AdjustmentSettlement"
+                  },
+                  "cashOperation": {
+                    "$ref": "#/components/schemas/AdjustmentCashOperation"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/customer-credits": {
+      "get": {
+        "summary": "Consultar saldos a favor",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "customerId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "availableOnly",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          }
+        ]
+      }
+    },
+    "/api/customer-credits/{id}/apply": {
+      "post": {
+        "summary": "Aplicar saldo a favor",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "receivableId",
+                  "amountCents",
+                  "cashOperation"
+                ],
+                "properties": {
+                  "receivableId": {
+                    "type": "string"
+                  },
+                  "amountCents": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Centavos comerciales DOP"
+                  },
+                  "cashOperation": {
+                    "$ref": "#/components/schemas/AdjustmentCashOperation"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/debit-notes": {
+      "get": {
+        "summary": "Listar notas E33",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "originalDocumentId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 100
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "Crear borrador E33",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "201": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operationId",
+                  "note"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{8,100}$"
+                  },
+                  "note": {
+                    "$ref": "#/components/schemas/AdjustmentDebitNote"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/debit-notes/preview": {
+      "post": {
+        "summary": "Previsualizar E33",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustmentDebitNote"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/debit-notes/{id}": {
+      "get": {
+        "summary": "Consultar E33",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "put": {
+        "summary": "Editar borrador E33",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operationId",
+                  "expectedRevision",
+                  "note"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{8,100}$"
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "note": {
+                    "$ref": "#/components/schemas/AdjustmentDebitNote"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/debit-notes/{id}/validate": {
+      "post": {
+        "summary": "Validar E33",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operationId",
+                  "expectedRevision"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{8,100}$"
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/debit-notes/{id}/discard": {
+      "post": {
+        "summary": "Descartar E33",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operationId",
+                  "expectedRevision",
+                  "reason"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string",
+                    "pattern": "^[a-zA-Z0-9_-]{8,100}$"
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/debit-notes/{id}/confirm": {
+      "post": {
+        "summary": "Confirmar E33",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Confirmación TEST; el reintento idéntico recupera este resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdjustmentConfirmation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error fiscal o error de caja; no repetir con otro identificador si el resultado es incierto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/FiscalPreviewErrorBody"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AdjustmentCashError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedRevision",
+                  "cashOperation"
+                ],
+                "properties": {
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "cashOperation": {
+                    "$ref": "#/components/schemas/AdjustmentCashOperation"
+                  },
+                  "payment": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "method",
+                      "treasuryAccountId"
+                    ],
+                    "properties": {
+                      "method": {
+                        "type": "string",
+                        "enum": [
+                          "EFECTIVO",
+                          "TRANSFERENCIA",
+                          "TARJETA",
+                          "OTRO"
+                        ]
+                      },
+                      "treasuryAccountId": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/returns/{id}/cancel": {
+      "post": {
+        "summary": "Revertir devolución",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "description": "Solicitud inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto de revisión u operación"
+          },
+          "422": {
+            "description": "Validación comercial o fiscal fallida"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/credit-notes/availability": {
+      "get": {
+        "summary": "Consultar disponibilidad de E34",
+        "description": "Autenticación móvil mediante tokens Clerk y subusuario; consultar la guía para contenido, permisos, revisiones y límites de verificación. Los importes comerciales son centavos enteros y los fiscales decimales como cadenas.",
+        "responses": {
+          "200": {
+            "description": "Resultado privado"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "originalDocumentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/returns/{id}": {
+      "get": {
+        "summary": "Consultar devolución y resultado fiscal autorizado",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Devolución de la empresa autenticada"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin acceso"
+          },
+          "404": {
+            "description": "No encontrada"
+          }
+        }
+      }
+    },
+    "/api/credit-notes/{id}/preview": {
+      "post": {
+        "summary": "Previsualizar edición E34",
+        "description": "Excluye únicamente la reserva de esta nota sin liberarla. Requiere acceso a devoluciones y preparación fiscal.",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado local",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "originalDocumentId",
+                  "expectedPolicyVersion",
+                  "modificationCode",
+                  "reason",
+                  "lines"
+                ],
+                "properties": {
+                  "originalDocumentId": {
+                    "type": "string"
+                  },
+                  "expectedPolicyVersion": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "modificationCode": {
+                    "type": "string",
+                    "enum": [
+                      "1",
+                      "2",
+                      "3"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "lines": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "originalLine",
+                        "quantity"
+                      ],
+                      "properties": {
+                        "originalLine": {
+                          "type": "integer",
+                          "minimum": 1
+                        },
+                        "quantity": {
+                          "type": "string",
+                          "pattern": "^\\d{1,10}(\\.\\d{1,2})?$"
+                        },
+                        "physicalQuantity": {
+                          "type": "string",
+                          "default": "0"
+                        },
+                        "extraDiscountCents": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "default": 0
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 200
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/fiscal/sales/customer": {
       "get": {
         "summary": "Buscar comprador dominicano para una venta fiscal",
         "description": "Requiere permisos canAccessSales y canPrepareFiscalDocuments y perfil DO_ECF/TEST activo y validado. Solo devuelve clientes activos no genéricos de la empresa autenticada.",
-        "security": [{ "clerk": [], "subuser": [] }],
-        "parameters": [{
-          "name": "identification",
-          "in": "query",
-          "required": true,
-          "description": "RNC o cédula; acepta espacios y guiones.",
-          "schema": { "type": "string", "maxLength": 40 }
-        }],
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identification",
+            "in": "query",
+            "required": true,
+            "description": "RNC o cédula; acepta espacios y guiones.",
+            "schema": {
+              "type": "string",
+              "maxLength": 40
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Coincidencias privadas; no se selecciona automáticamente cuando hay duplicados",
-            "content": { "application/json": { "schema": {
-              "type": "object",
-              "required": ["matches", "hasMore"],
-              "properties": {
-                "hasMore": { "type": "boolean" },
-                "matches": { "type": "array", "maxItems": 20, "items": {
+            "content": {
+              "application/json": {
+                "schema": {
                   "type": "object",
-                  "required": ["id", "visualId", "name", "identification", "identificationType", "identificationCountry", "preferredReceiptType", "saleDiscountPercentBp"],
+                  "required": [
+                    "matches",
+                    "hasMore"
+                  ],
                   "properties": {
-                    "id": { "type": "string" },
-                    "visualId": { "type": "integer" },
-                    "name": { "type": "string" },
-                    "legalName": { "type": "string", "nullable": true },
-                    "identification": { "type": "string" },
-                    "identificationType": { "type": "string" },
-                    "identificationCountry": { "type": "string", "enum": ["DO"] },
-                    "preferredReceiptType": { "type": "string", "enum": ["E31", "E32", "E44", "E45", "E46"] },
-                    "saleDiscountPercentBp": { "type": "integer" }
+                    "hasMore": {
+                      "type": "boolean"
+                    },
+                    "matches": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "visualId",
+                          "name",
+                          "identification",
+                          "identificationType",
+                          "identificationCountry",
+                          "preferredReceiptType",
+                          "saleDiscountPercentBp"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "visualId": {
+                            "type": "integer"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "legalName": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "identification": {
+                            "type": "string"
+                          },
+                          "identificationType": {
+                            "type": "string"
+                          },
+                          "identificationCountry": {
+                            "type": "string",
+                            "enum": [
+                              "DO"
+                            ]
+                          },
+                          "preferredReceiptType": {
+                            "type": "string",
+                            "enum": [
+                              "E31",
+                              "E32",
+                              "E44",
+                              "E45",
+                              "E46"
+                            ]
+                          },
+                          "saleDiscountPercentBp": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
                   }
-                }}
+                }
               }
-            }}}
+            }
           },
-          "400": { "$ref": "#/components/responses/FiscalPreviewError" },
-          "401": { "$ref": "#/components/responses/FiscalPreviewError" },
-          "403": { "$ref": "#/components/responses/FiscalPreviewError" },
-          "409": { "$ref": "#/components/responses/FiscalPreviewError" },
-          "500": { "$ref": "#/components/responses/FiscalPreviewError" }
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "500": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
         }
       }
     },
@@ -55,10 +2794,70 @@
       "get": {
         "summary": "Preferencias y disponibilidad para facturar",
         "description": "Con perfil fiscal activo y validado devuelve la versión de política, preferencias de clientes y secuencias de prueba. Es informativa y no reserva números.",
-        "security": [{ "clerk": [], "subuser": [] }],
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
         "responses": {
-          "200": { "description": "Contexto privado", "content": { "application/json": { "schema": { "type": "object", "required": ["policyVersion", "customers", "sequences"], "properties": { "policyVersion": { "type": "integer" }, "customers": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "string" }, "preferredReceiptType": { "type": "string", "enum": ["E31", "E32", "E44", "E45", "E46"] } } } }, "sequences": { "type": "array", "items": { "type": "object", "additionalProperties": true } } } } } } },
-          "401": { "$ref": "#/components/responses/FiscalPreviewError" }, "403": { "$ref": "#/components/responses/FiscalPreviewError" }, "409": { "$ref": "#/components/responses/FiscalPreviewError" }
+          "200": {
+            "description": "Contexto privado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "policyVersion",
+                    "customers",
+                    "sequences"
+                  ],
+                  "properties": {
+                    "policyVersion": {
+                      "type": "integer"
+                    },
+                    "customers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "preferredReceiptType": {
+                            "type": "string",
+                            "enum": [
+                              "E31",
+                              "E32",
+                              "E44",
+                              "E45",
+                              "E46"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "sequences": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
         }
       }
     },
@@ -66,48 +2865,289 @@
       "post": {
         "summary": "Previsualizar una venta fiscal sin efectos",
         "description": "Calcula desde datos comerciales y fichas de la empresa; no crea venta, documento, inventario ni número. El perfil debe estar activo y validado y el usuario debe tener permisos de ventas y preparación.",
-        "security": [{ "clerk": [], "subuser": [] }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FiscalSaleRequest" } } } },
-        "responses": { "200": { "description": "Copia calculada sin emisión", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FiscalPreviewResult" } } } }, "400": { "$ref": "#/components/responses/FiscalPreviewError" }, "401": { "$ref": "#/components/responses/FiscalPreviewError" }, "403": { "$ref": "#/components/responses/FiscalPreviewError" }, "409": { "$ref": "#/components/responses/FiscalPreviewError" }, "422": { "$ref": "#/components/responses/FiscalPreviewError" } }
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FiscalSaleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Copia calculada sin emisión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FiscalPreviewResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        }
       }
     },
     "/api/fiscal/documents/{id}/discard": {
       "post": {
         "summary": "Descartar un borrador de venta sin numeración",
         "description": "Solo para borradores E44/E45/E46 con perfil activo; conserva el historial y no permite descartar documentos preparados.",
-        "security": [{ "clerk": [], "subuser": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["operationId", "expectedRevision", "reason"], "properties": { "operationId": { "type": "string" }, "expectedRevision": { "type": "integer", "minimum": 1 }, "reason": { "type": "string", "minLength": 3, "maxLength": 500 } } } } } },
-        "responses": { "200": { "description": "Borrador descartado o resultado del reintento" }, "400": { "$ref": "#/components/responses/FiscalPreviewError" }, "401": { "$ref": "#/components/responses/FiscalPreviewError" }, "403": { "$ref": "#/components/responses/FiscalPreviewError" }, "404": { "$ref": "#/components/responses/FiscalPreviewError" }, "409": { "$ref": "#/components/responses/FiscalPreviewError" } }
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operationId",
+                  "expectedRevision",
+                  "reason"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "expectedRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Borrador descartado o resultado del reintento"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        }
       }
     },
     "/api/fiscal/sales/{id}/preview": {
       "post": {
         "summary": "Revisar el comprobante de una venta existente",
         "description": "Requiere perfil TEST activo y permisos de ventas y preparación. Calcula desde la venta de la empresa sin modificarla ni reservar numeración.",
-        "security": [{ "clerk": [], "subuser": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FiscalSaleCommand" } } } },
-        "responses": { "200": { "description": "Copia calculada y huella sourceFingerprint para su confirmación" }, "400": { "$ref": "#/components/responses/FiscalPreviewError" }, "401": { "$ref": "#/components/responses/FiscalPreviewError" }, "403": { "$ref": "#/components/responses/FiscalPreviewError" }, "404": { "$ref": "#/components/responses/FiscalPreviewError" }, "409": { "$ref": "#/components/responses/FiscalPreviewError" }, "422": { "$ref": "#/components/responses/FiscalPreviewError" } }
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FiscalSaleCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Copia calculada y huella sourceFingerprint para su confirmación"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        }
       }
     },
     "/api/fiscal/sales/{id}/prepare": {
       "post": {
         "summary": "Preparar el comprobante de una venta existente",
         "description": "Revalida la huella y la política, y reserva numeración TEST sin repetir efectos comerciales. Reutilizar operationId en los reintentos.",
-        "security": [{ "clerk": [], "subuser": [] }],
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["operationId", "expectedSourceFingerprint", "fiscal"], "properties": { "operationId": { "type": "string" }, "expectedSourceFingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" }, "fiscal": { "$ref": "#/components/schemas/FiscalSaleCommand" } } } } } },
-        "responses": { "200": { "description": "Documento preparado o resultado del reintento" }, "400": { "$ref": "#/components/responses/FiscalPreviewError" }, "401": { "$ref": "#/components/responses/FiscalPreviewError" }, "403": { "$ref": "#/components/responses/FiscalPreviewError" }, "404": { "$ref": "#/components/responses/FiscalPreviewError" }, "409": { "$ref": "#/components/responses/FiscalPreviewError" }, "422": { "$ref": "#/components/responses/FiscalPreviewError" } }
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operationId",
+                  "expectedSourceFingerprint",
+                  "fiscal"
+                ],
+                "properties": {
+                  "operationId": {
+                    "type": "string"
+                  },
+                  "expectedSourceFingerprint": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "fiscal": {
+                    "$ref": "#/components/schemas/FiscalSaleCommand"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Documento preparado o resultado del reintento"
+          },
+          "400": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "401": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "403": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "404": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "409": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          },
+          "422": {
+            "$ref": "#/components/responses/FiscalPreviewError"
+          }
+        }
       }
     },
     "/api/sales": {
       "post": {
         "summary": "Crear una venta y preparar su comprobante de prueba",
         "description": "El bloque fiscal es opcional con el módulo apagado. Con el módulo activo debe enviarse un bloque o null explícito para venta ordinaria. La venta fiscal requiere cashOperation durable y fiscalPolicyVersion; el servidor calcula los importes y asigna el número en la misma transacción.",
-        "security": [{ "clerk": [], "subuser": [] }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FiscalSaleRequest" } } } },
-        "responses": { "201": { "description": "Venta confirmada o recuperada, con fiscal cuando corresponda" }, "400": { "description": "Entrada inválida" }, "401": { "description": "Sin sesión" }, "403": { "description": "Sin permiso" }, "409": { "description": "Política, secuencia o identificador en conflicto" }, "422": { "description": "Datos fiscales incompletos o incompatibles" } }
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FiscalSaleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Venta confirmada o recuperada, con fiscal cuando corresponda"
+          },
+          "400": {
+            "description": "Entrada inválida"
+          },
+          "401": {
+            "description": "Sin sesión"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "409": {
+            "description": "Política, secuencia o identificador en conflicto"
+          },
+          "422": {
+            "description": "Datos fiscales incompletos o incompatibles"
+          }
+        }
       }
     },
     "/api/fiscal/sequences": {
@@ -2610,6 +5650,16 @@
               }
             }
           },
+          "400": {
+            "description": "Entrada fiscal u otra validación rechazada; field solo aparece en algunos errores fiscales.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialMasterError"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Sin sesión.",
             "content": {
@@ -2622,16 +5672,6 @@
           },
           "500": {
             "description": "Error interno u otros errores que la ruta anterior todavía no clasifica como entrada o permiso.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommercialMasterError"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Entrada fiscal u otra validación rechazada; field solo aparece en algunos errores fiscales.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3205,6 +6245,16 @@
               }
             }
           },
+          "400": {
+            "description": "Entrada fiscal u otra validación rechazada; field solo aparece en algunos errores fiscales.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialMasterError"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Sin sesión.",
             "content": {
@@ -3227,16 +6277,6 @@
           },
           "500": {
             "description": "Error interno u otros errores que la ruta anterior todavía no clasifica como entrada o permiso.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommercialMasterError"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Entrada fiscal u otra validación rechazada; field solo aparece en algunos errores fiscales.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3832,6 +6872,16 @@
               }
             }
           },
+          "400": {
+            "description": "Entrada fiscal u otra validación rechazada; field solo aparece en algunos errores fiscales.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialMasterError"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Sin sesión.",
             "content": {
@@ -3844,16 +6894,6 @@
           },
           "500": {
             "description": "Error interno u otros errores que la ruta anterior todavía no clasifica como entrada o permiso.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommercialMasterError"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Entrada fiscal u otra validación rechazada; field solo aparece en algunos errores fiscales.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3903,8 +6943,8 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "Registro creado.",
+          "200": {
+            "description": "Producto reciente recuperado por localId.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3967,8 +7007,8 @@
               }
             }
           },
-          "200": {
-            "description": "Producto reciente recuperado por localId.",
+          "201": {
+            "description": "Registro creado.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4522,6 +7562,17 @@
           }
         ],
         "responses": {
+          "201": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
           "400": {
             "description": "Error estructurado: código, mensaje, campos, reintentabilidad e identificador de correlación"
           },
@@ -4542,17 +7593,6 @@
           },
           "500": {
             "description": "Error estructurado: código, mensaje, campos, reintentabilidad e identificador de correlación"
-          },
-          "201": {
-            "description": "Resultado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
           }
         },
         "requestBody": {
@@ -4924,6 +7964,829 @@
           }
         ]
       }
+    },
+    "/api/operating-expenses": {
+      "get": {
+        "summary": "Listar gastos operativos",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        }
+      },
+      "post": {
+        "summary": "Registrar gasto ordinario o fiscal",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "fiscalExpense"
+                    ],
+                    "properties": {
+                      "fiscalExpense": {
+                        "$ref": "#/components/schemas/FiscalEmployeeExpenseInput"
+                      },
+                      "cashOperation": {
+                        "type": "object",
+                        "description": "Contexto de caja firmado por la sesión, cuando corresponda",
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "description": "Contrato ordinario de gastos",
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Gasto fiscal creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Gasto ordinario creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        }
+      }
+    },
+    "/api/operating-expenses/{id}": {
+      "get": {
+        "summary": "Consultar gasto",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "put": {
+        "summary": "Revisar detalle fiscal o editar gasto ordinario",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "fiscalExpense"
+                    ],
+                    "properties": {
+                      "fiscalExpense": {
+                        "$ref": "#/components/schemas/FiscalEmployeeExpenseRevision"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "description": "Contrato ordinario de gastos",
+                    "additionalProperties": true
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/operating-expenses/{id}/settlements": {
+      "get": {
+        "summary": "Consultar reembolsos y saldo",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "Registrar reembolso idempotente",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmployeeSettlementInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/fiscal/expenses/template": {
+      "get": {
+        "summary": "Propuesta E43 desde gasto",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/fiscal/foreign-payments": {
+      "get": {
+        "summary": "Listar obligaciones al exterior",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ]
+      },
+      "post": {
+        "summary": "Registrar obligación exterior sin pagar",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForeignObligationInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        }
+      }
+    },
+    "/api/fiscal/foreign-payments/{id}": {
+      "get": {
+        "summary": "Consultar base, pagos y documentos",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/fiscal/foreign-payments/{id}/payments/preview": {
+      "post": {
+        "summary": "Previsualizar abono al exterior",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForeignPaymentPreviewInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForeignPaymentPreviewResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/fiscal/foreign-payments/{id}/payments": {
+      "post": {
+        "summary": "Registrar abono exterior idempotente",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ForeignPaymentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/fiscal/foreign-payments/template": {
+      "get": {
+        "summary": "Propuesta E47 desde pago",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validación inválida"
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Recurso no encontrado"
+          },
+          "409": {
+            "description": "Conflicto, versión o saldo"
+          },
+          "500": {
+            "description": "Error de procesamiento"
+          }
+        },
+        "parameters": [
+          {
+            "name": "paymentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/fiscal/operations/commercial/{operationId}": {
+      "get": {
+        "summary": "Recuperar resultado de gasto o pago exterior del mismo usuario",
+        "security": [
+          {
+            "clerk": [],
+            "subuser": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "operationId",
+                    "kind",
+                    "status",
+                    "result"
+                  ],
+                  "properties": {
+                    "operationId": {
+                      "type": "string"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "COMPLETED"
+                      ]
+                    },
+                    "result": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado"
+          },
+          "403": {
+            "description": "Sin permiso"
+          },
+          "404": {
+            "description": "Operación no encontrada"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4998,30 +8861,519 @@
       }
     },
     "schemas": {
-      "FiscalSaleCommand": {
-        "type": "object", "additionalProperties": false, "required": ["type", "expectedPolicyVersion"],
+      "AdjustmentCashOperation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "accountId",
+          "userId",
+          "clientOperationId",
+          "cashShiftId",
+          "clientSequence",
+          "fiscalPolicyVersion"
+        ],
         "properties": {
-          "type": { "type": "string", "enum": ["E31", "E32", "E44", "E45", "E46"] },
-          "expectedPolicyVersion": { "type": "integer", "minimum": 1 },
-          "expectedTotalCents": { "type": "integer", "minimum": 0, "description": "Condición de revisión: el servidor rechaza si el total calculado cambió; no lo usa para calcular." },
-          "currency": { "type": "string", "enum": ["DOP"] },
-          "incomeType": { "type": "string", "enum": ["01", "02", "03", "04", "05", "06"], "default": "01" },
-          "buyer": { "type": "object", "additionalProperties": false, "required": ["name", "identification", "country"], "properties": { "name": { "type": "string", "maxLength": 150 }, "identification": { "type": "string", "maxLength": 20 }, "country": { "type": "string", "minLength": 2, "maxLength": 2 } } },
-          "dueDate": { "type": "string", "format": "date" },
-          "shippingTaxTreatment": { "type": "string", "enum": ["EXENTO", "TASA_CERO"] },
-          "special": { "type": "object", "additionalProperties": false, "properties": {
-            "regime": { "type": "string", "maxLength": 100 }, "exemptionReference": { "type": "string", "maxLength": 200 }, "governmentEntity": { "type": "boolean" }, "purchaseOrder": { "type": "string", "maxLength": 20 }, "purchaseOrderDate": { "type": "string", "format": "date" }, "exportMode": { "type": "string", "enum": ["EXPORTACION", "ZONA_FRANCA", "ZONA_FRANCA_COMERCIAL_RESIDENTE", "ZONA_FRANCA_COMERCIAL_NO_RESIDENTE"] }, "destinationCountry": { "type": "string", "minLength": 2, "maxLength": 2 }, "shipmentNumber": { "type": "string", "maxLength": 25 }, "containerNumber": { "type": "string", "maxLength": 100 }, "departurePort": { "type": "string", "maxLength": 40 }, "deliveryTerms": { "type": "string", "maxLength": 3 }
-          } }
+          "accountId": {
+            "type": "string"
+          },
+          "userId": {
+            "type": "string"
+          },
+          "clientOperationId": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]{8,100}$"
+          },
+          "cashShiftId": {
+            "type": "string",
+            "nullable": true
+          },
+          "clientSequence": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1
+          },
+          "fiscalPolicyVersion": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "description": "La empresa y el usuario deben coincidir con la sesión. El identificador y el contenido deben conservarse en los reintentos."
+      },
+      "AdjustmentDebitNote": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "originalDocumentId",
+          "expectedPolicyVersion",
+          "reason",
+          "payment",
+          "lines"
+        ],
+        "properties": {
+          "originalDocumentId": {
+            "type": "string"
+          },
+          "expectedPolicyVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "issueDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Fecha dominicana; por defecto la fecha actual de Santo Domingo"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "payment": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "CONTADO",
+                  "CREDITO"
+                ]
+              },
+              "dueDate": {
+                "type": "string",
+                "format": "date"
+              }
+            }
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "description",
+                "kind",
+                "unit",
+                "quantity",
+                "unitPrice",
+                "taxTreatment",
+                "priceIncludesTax"
+              ],
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "SERVICIO",
+                    "RECARGO"
+                  ]
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "quantity": {
+                  "type": "string",
+                  "example": "1.00"
+                },
+                "unitPrice": {
+                  "type": "string",
+                  "example": "100.00"
+                },
+                "taxTreatment": {
+                  "type": "string",
+                  "enum": [
+                    "GRAVADO_18",
+                    "GRAVADO_16",
+                    "TASA_CERO",
+                    "EXENTO",
+                    "NO_FACTURABLE"
+                  ]
+                },
+                "priceIncludesTax": {
+                  "type": "boolean"
+                },
+                "discount": {
+                  "type": "string",
+                  "example": "0.00"
+                },
+                "conceptId": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "AdjustmentSettlement": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "NONE",
+              "REFUND",
+              "CUSTOMER_CREDIT"
+            ]
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "EFECTIVO",
+              "TRANSFERENCIA",
+              "TARJETA",
+              "OTRO"
+            ]
+          },
+          "treasuryAccountId": {
+            "type": "string"
+          }
+        },
+        "description": "REFUND requiere método y cuenta DOP; CUSTOMER_CREDIT requiere cliente identificado; NONE cuando no existe excedente."
+      },
+      "AdjustmentConfirmation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "PREPARADO_PENDIENTE_CONEXION"
+            ]
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "eNcf": {
+            "type": "string"
+          },
+          "amountCents": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Centavos comerciales DOP"
+          },
+          "economicCents": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Centavos comerciales DOP"
+          },
+          "debtCents": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Centavos comerciales DOP"
+          },
+          "excessCents": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Centavos comerciales DOP"
+          },
+          "receivableId": {
+            "type": "string"
+          },
+          "paymentId": {
+            "type": "string",
+            "nullable": true
+          },
+          "returnId": {
+            "type": "string",
+            "nullable": true
+          },
+          "creditId": {
+            "type": "string",
+            "nullable": true
+          },
+          "notice": {
+            "type": "string"
+          }
+        }
+      },
+      "AdjustmentCashError": {
+        "type": "object",
+        "required": [
+          "error",
+          "code"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "description": "Error de turno, identidad, secuencia o política de caja."
+      },
+      "FiscalSaleCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "expectedPolicyVersion"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "E31",
+              "E32",
+              "E44",
+              "E45",
+              "E46"
+            ]
+          },
+          "expectedPolicyVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expectedTotalCents": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Condición de revisión: el servidor rechaza si el total calculado cambió; no lo usa para calcular."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "DOP"
+            ]
+          },
+          "incomeType": {
+            "type": "string",
+            "enum": [
+              "01",
+              "02",
+              "03",
+              "04",
+              "05",
+              "06"
+            ],
+            "default": "01"
+          },
+          "buyer": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "identification",
+              "country"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 150
+              },
+              "identification": {
+                "type": "string",
+                "maxLength": 20
+              },
+              "country": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 2
+              }
+            }
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "shippingTaxTreatment": {
+            "type": "string",
+            "enum": [
+              "EXENTO",
+              "TASA_CERO"
+            ]
+          },
+          "special": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "regime": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "exemptionReference": {
+                "type": "string",
+                "maxLength": 200
+              },
+              "governmentEntity": {
+                "type": "boolean"
+              },
+              "purchaseOrder": {
+                "type": "string",
+                "maxLength": 20
+              },
+              "purchaseOrderDate": {
+                "type": "string",
+                "format": "date"
+              },
+              "exportMode": {
+                "type": "string",
+                "enum": [
+                  "EXPORTACION",
+                  "ZONA_FRANCA",
+                  "ZONA_FRANCA_COMERCIAL_RESIDENTE",
+                  "ZONA_FRANCA_COMERCIAL_NO_RESIDENTE"
+                ]
+              },
+              "destinationCountry": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 2
+              },
+              "shipmentNumber": {
+                "type": "string",
+                "maxLength": 25
+              },
+              "containerNumber": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "departurePort": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "deliveryTerms": {
+                "type": "string",
+                "maxLength": 3
+              }
+            }
+          }
         }
       },
       "FiscalSaleRequest": {
-        "type": "object", "required": ["type", "items"], "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "type",
+          "items"
+        ],
+        "additionalProperties": true,
         "properties": {
-          "type": { "type": "string", "enum": ["CONTADO", "CREDITO"] }, "customerId": { "type": "string", "nullable": true }, "paymentMethod": { "type": "string", "nullable": true }, "treasuryAccountId": { "type": "string", "nullable": true }, "shippingCents": { "type": "integer", "minimum": 0 }, "applyLegalTip": { "type": "boolean" }, "salePricesIncludeItbis": { "type": "boolean" }, "discountMode": { "type": "string", "enum": ["AUTO", "MANUAL"] }, "manualDiscountPercentBp": { "type": "integer" },
-          "items": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "type": "object", "required": ["productId", "unitPriceCents"], "properties": { "productId": { "type": "string" }, "qty": { "type": "number", "minimum": 0, "exclusiveMinimum": true }, "quantity": { "type": "number", "minimum": 0, "exclusiveMinimum": true }, "unitPriceCents": { "type": "integer", "minimum": 1 } } } },
-          "paymentSplits": { "type": "array", "items": { "type": "object", "required": ["method", "amountCents"], "properties": { "method": { "type": "string" }, "amountCents": { "type": "integer", "minimum": 1 }, "treasuryAccountId": { "type": "string", "nullable": true }, "transferBankName": { "type": "string", "nullable": true } } } },
-          "cashOperation": { "type": "object", "description": "Identidad durable de caja con versión fiscal; obligatoria para una venta fiscal.", "additionalProperties": true },
-          "fiscal": { "nullable": true, "allOf": [{ "$ref": "#/components/schemas/FiscalSaleCommand" }], "description": "Usar null para una venta ordinaria explícita con perfil activo." }
+          "type": {
+            "type": "string",
+            "enum": [
+              "CONTADO",
+              "CREDITO"
+            ]
+          },
+          "customerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "paymentMethod": {
+            "type": "string",
+            "nullable": true
+          },
+          "treasuryAccountId": {
+            "type": "string",
+            "nullable": true
+          },
+          "shippingCents": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "applyLegalTip": {
+            "type": "boolean"
+          },
+          "salePricesIncludeItbis": {
+            "type": "boolean"
+          },
+          "discountMode": {
+            "type": "string",
+            "enum": [
+              "AUTO",
+              "MANUAL"
+            ]
+          },
+          "manualDiscountPercentBp": {
+            "type": "integer"
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "productId",
+                "unitPriceCents"
+              ],
+              "properties": {
+                "productId": {
+                  "type": "string"
+                },
+                "qty": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMinimum": true
+                },
+                "quantity": {
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMinimum": true
+                },
+                "unitPriceCents": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            }
+          },
+          "paymentSplits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "method",
+                "amountCents"
+              ],
+              "properties": {
+                "method": {
+                  "type": "string"
+                },
+                "amountCents": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "treasuryAccountId": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "transferBankName": {
+                  "type": "string",
+                  "nullable": true
+                }
+              }
+            }
+          },
+          "cashOperation": {
+            "type": "object",
+            "description": "Identidad durable de caja con versión fiscal; obligatoria para una venta fiscal.",
+            "additionalProperties": true
+          },
+          "fiscal": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FiscalSaleCommand"
+              }
+            ],
+            "description": "Usar null para una venta ordinaria explícita con perfil activo."
+          }
         }
       },
       "FiscalSequenceCreate": {
@@ -5571,8 +9923,10 @@
                 "enum": [
                   "SALE",
                   "PURCHASE",
+                  "PAYABLE",
                   "RETURN",
-                  "EXPENSE"
+                  "EXPENSE",
+                  "SUPPLIER_PAYMENT"
                 ]
               },
               "id": {
@@ -5687,6 +10041,10 @@
                 },
                 "rate": {
                   "type": "string"
+                },
+                "amount": {
+                  "type": "string",
+                  "description": "Solo ISR E47: importe acumulado por abono; el servidor lo contrasta con el pago guardado"
                 }
               }
             }
@@ -7112,6 +11470,538 @@
           "existingProduct": {
             "type": "object",
             "additionalProperties": true
+          }
+        }
+      },
+      "FiscalEmployeeExpenseInput": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "expectedPolicyVersion",
+          "description",
+          "expenseDate",
+          "fundingSource",
+          "employee",
+          "supportReferences",
+          "eligibleMinorExpense",
+          "lines"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expectedPolicyVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "employee": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "identification": {
+                "type": "string"
+              },
+              "userId": {
+                "type": "string"
+              }
+            }
+          },
+          "beneficiary": {
+            "type": "string"
+          },
+          "supportReferences": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string"
+            }
+          },
+          "eligibleMinorExpense": {
+            "type": "boolean"
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "description",
+                "kind",
+                "amountCents",
+                "taxTreatment"
+              ],
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "BIEN",
+                    "SERVICIO"
+                  ]
+                },
+                "amountCents": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                },
+                "taxTreatment": {
+                  "type": "string",
+                  "enum": [
+                    "EXENTO",
+                    "GRAVADO_18",
+                    "GRAVADO_16",
+                    "TASA_CERO",
+                    "NO_FACTURABLE"
+                  ]
+                },
+                "withholdings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "description": {
+            "type": "string"
+          },
+          "expenseDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "fundingSource": {
+            "type": "string",
+            "enum": [
+              "COMPANY",
+              "EMPLOYEE",
+              "PETTY_CASH"
+            ]
+          },
+          "treasuryAccountId": {
+            "type": "string"
+          },
+          "paymentMethod": {
+            "type": "string",
+            "enum": [
+              "EFECTIVO",
+              "TRANSFERENCIA",
+              "TARJETA",
+              "OTRO"
+            ]
+          },
+          "cashOperation": {
+            "type": "object",
+            "description": "Contexto de caja firmado por la sesión, cuando corresponda",
+            "additionalProperties": true
+          },
+          "category": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
+      "FiscalEmployeeExpenseRevision": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "expectedPolicyVersion",
+          "expectedUpdatedAt",
+          "employee",
+          "supportReferences",
+          "eligibleMinorExpense",
+          "lines"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expectedPolicyVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "employee": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "identification": {
+                "type": "string"
+              },
+              "userId": {
+                "type": "string"
+              }
+            }
+          },
+          "beneficiary": {
+            "type": "string"
+          },
+          "supportReferences": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string"
+            }
+          },
+          "eligibleMinorExpense": {
+            "type": "boolean"
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "description",
+                "kind",
+                "amountCents",
+                "taxTreatment"
+              ],
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "BIEN",
+                    "SERVICIO"
+                  ]
+                },
+                "amountCents": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                },
+                "taxTreatment": {
+                  "type": "string",
+                  "enum": [
+                    "EXENTO",
+                    "GRAVADO_18",
+                    "GRAVADO_16",
+                    "TASA_CERO",
+                    "NO_FACTURABLE"
+                  ]
+                },
+                "withholdings": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  }
+                }
+              }
+            }
+          },
+          "expectedUpdatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EmployeeSettlementInput": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "amountCents",
+          "method",
+          "treasuryAccountId"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "amountCents": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "EFECTIVO",
+              "TRANSFERENCIA",
+              "TARJETA",
+              "OTRO"
+            ]
+          },
+          "treasuryAccountId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "cashOperation": {
+            "type": "object",
+            "description": "Contexto de caja firmado por la sesión, cuando corresponda",
+            "additionalProperties": true
+          }
+        }
+      },
+      "ForeignObligationInput": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "expectedPolicyVersion",
+          "supplierId",
+          "description",
+          "dueDate",
+          "currency",
+          "declaredDominicanSource",
+          "lines"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expectedPolicyVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "supplierId": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          },
+          "rate": {
+            "type": "string",
+            "description": "Obligatoria si la moneda es distinta de DOP"
+          },
+          "rateDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "declaredDominicanSource": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "supportReference": {
+            "type": "string"
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "description",
+                "kind",
+                "amountCents",
+                "isrRate"
+              ],
+              "properties": {
+                "description": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "SERVICIO"
+                  ]
+                },
+                "amountCents": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                },
+                "isrRate": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ForeignPaymentPreviewInput": {
+        "type": "object",
+        "required": [
+          "allocations"
+        ],
+        "properties": {
+          "allocations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "index",
+                "amountCents"
+              ],
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "amountCents": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                }
+              }
+            }
+          }
+        }
+      },
+      "ForeignPaymentInput": {
+        "type": "object",
+        "required": [
+          "operationId",
+          "expectedPolicyVersion",
+          "expectedNetDopCents",
+          "allocations",
+          "method",
+          "treasuryAccountId"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expectedPolicyVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expectedNetDopCents": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
+          },
+          "allocations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "index",
+                "amountCents"
+              ],
+              "properties": {
+                "index": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "amountCents": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                }
+              }
+            }
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "EFECTIVO",
+              "TRANSFERENCIA",
+              "TARJETA",
+              "OTRO"
+            ]
+          },
+          "treasuryAccountId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "cashOperation": {
+            "type": "object",
+            "description": "Contexto de caja firmado por la sesión, cuando corresponda",
+            "additionalProperties": true
+          },
+          "foreignOperationId": {
+            "type": "string",
+            "description": "Opcional; si se incluye debe coincidir con el identificador de la ruta"
+          }
+        }
+      },
+      "ForeignPaymentPreviewResult": {
+        "type": "object",
+        "required": [
+          "grossCents",
+          "withheldCents",
+          "grossDopCents",
+          "withheldDopCents",
+          "netDopCents",
+          "roundingCents",
+          "currency",
+          "rate"
+        ],
+        "properties": {
+          "grossCents": {
+            "type": "integer"
+          },
+          "withheldCents": {
+            "type": "integer"
+          },
+          "grossDopCents": {
+            "type": "integer"
+          },
+          "withheldDopCents": {
+            "type": "integer"
+          },
+          "netDopCents": {
+            "type": "integer"
+          },
+          "roundingCents": {
+            "type": "integer"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "rate": {
+            "type": "string"
+          },
+          "rateDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
           }
         }
       }

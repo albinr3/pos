@@ -130,8 +130,10 @@ export default async function PurchaseReceiptPage({
         <div className="mt-2">
           <span className="font-semibold">Proveedor:</span> {purchase.supplierName || "Sin proveedor"}
         </div>
+        {purchase.supplierReceiptNumber && <div><span className="font-semibold">Comprobante recibido:</span> {purchase.supplierReceiptNumber}</div>}
         <div><span className="font-semibold">Condición:</span> {purchase.type === "CREDITO" ? "Crédito" : "Contado"}</div>
-        {purchase.type === "CREDITO" && purchase.payable && <div><div>Abonado actual: {formatRD(purchase.cancelledAt ? 0 : purchase.totalCents - purchase.payable.balanceCents)}</div><div>Pendiente actual: {formatRD(purchase.cancelledAt ? 0 : purchase.payable.balanceCents)}</div><div>Vencimiento: {purchase.payable.dueDate.toISOString().slice(0, 10)}</div></div>}
+        {purchase.type === "CREDITO" && purchase.payable && <div><div>Abonado actual: {formatRD(purchase.cancelledAt ? 0 : purchase.payable.totalCents - purchase.payable.balanceCents)}</div><div>Pendiente actual: {formatRD(purchase.cancelledAt ? 0 : purchase.payable.balanceCents)}</div><div>Vencimiento: {purchase.payable.dueDate.toISOString().slice(0, 10)}</div></div>}
+        {purchase.supplierNetPaidCents != null && <div>Pagado al proveedor: {formatRD(purchase.supplierNetPaidCents)} · Diferencia sujeta a conciliación fiscal: {formatRD(purchase.totalCents - purchase.supplierNetPaidCents)}</div>}
         {purchase.paymentMethod && (
           <div className="mt-1">
             <span className="font-semibold">Pago:</span> {formatPaymentWithBank(purchase.paymentMethod)}

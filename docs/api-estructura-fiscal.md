@@ -1,5 +1,61 @@
 # API fiscal interna — preparación local
 
+## Compras, obligaciones y E41
+
+`POST /api/purchases` admite `supplierReceiptNumber` opcional (hasta 50 caracteres): es un comprobante recibido, no un número asignado por MOVOPos. Para una compra al contado sin comprobante que se revisará como E41, `e41CashPaidCents` indica el dinero neto entregado y `e41DeclaredUnregistered: true` registra la declaración administrativa. Requiere proveedor con identificación fiscal, permiso fiscal y perfil TEST activo. El bruto de la compra permanece en `totalCents`; la diferencia con el neto debe conciliarse al preparar el E41.
+
+`POST /api/accounts-payable` crea una obligación sin inventario con `{supplierId,description,totalCents,dueDate,operationId}` y opcionalmente `supplierReceiptNumber`; requiere permisos de compras y cuentas por pagar. Un comprobante recibido impide preparar E41 propio para esa obligación. `PATCH /api/accounts-payable/{id}` actualiza notas y vencimiento de ese origen. Los pagos siguen utilizando `/api/supplier-payments` y `operationId` evita duplicar la obligación.
+
+`GET /api/fiscal/purchases/template?source=PURCHASE&id=...` (o `source=PAYABLE`) propone el E41 con datos de la operación de la empresa autenticada. La aplicación debe completar o confirmar `supplier.declaredCondition: "NO_REGISTRADO"` y revisar retenciones antes de usar los endpoints de borrador y preparación de `/api/fiscal/documents`. La declaración no verifica la inscripción oficial. El origen, proveedor, líneas, importes y vencimiento se comprueban nuevamente al preparar; el pago neto y las retenciones deben conciliar. Las retenciones de la obligación figuran en `withheldItbisCents` y `withheldIsrCents`; no son abonos. El resultado es un documento de prueba pendiente de conexión, no una emisión.
+
+## Notas de crédito y débito: integración en curso
+
+Existen servicios comerciales y rutas para E34 y E33 con confirmación TEST y efectos financieros. La implementación y su verificación siguen en curso; consulta el registro de las etapas 9 y 10 antes de utilizarlas. No se han conectado proveedores ni se envían documentos.
+
+`POST /api/credit-notes/preview` recibe `{ "originalDocumentId":"id-documento", "expectedPolicyVersion":1, "modificationCode":"3", "reason":"Devolución parcial", "lines":[{ "originalLine":1, "quantity":"1.00", "physicalQuantity":"1.00", "extraDiscountCents":0 }] }`. El servidor toma emisor, comprador, moneda, precio y clasificación de la copia original, y calcula los importes. Las cantidades son cadenas con hasta dos decimales; `extraDiscountCents` es un entero en centavos aplicado además del descuento original proporcional. `physicalQuantity` debe ser cero para una reducción financiera. El código 2 admite `description` para corrección de texto sin importe o movimiento físico.
+
+Cuando una devolución física sigue a una reducción financiera, el cálculo aplica el descuento adicional necesario para limitar el importe acreditado a la parte proporcional aún disponible. El descuento total aparece en las líneas de la previsualización. Esta ampliación se añadió después de las pruebas registradas y todavía no está verificada.
+
+`POST /api/credit-notes` recibe `{ "operationId":"identificador-estable", "note":{ ... } }`. `GET /api/credit-notes` y `GET /api/debit-notes` admiten `originalDocumentId`, `skip` y `take` (máximo 100) y devuelven `data` y `nextSkip`. `GET /api/credit-notes/{id}` devuelve nota e historial. `POST /api/credit-notes/{id}/preview` previsualiza una edición excluyendo su propia reserva sin liberarla. `PUT /api/credit-notes/{id}` recibe `{ "operationId":"identificador-estable", "expectedRevision":1, "note":{ ... } }`: si la nota estaba validada, sustituye su reserva en la misma transacción y conserva el estado `VALIDADO`; un borrador sin validar permanece en `BORRADOR`.
+
+`POST /api/credit-notes/{id}/validate` recibe `{ "operationId":"identificador-estable", "expectedRevision":1 }`; reserva las cantidades físicas y los importes bajo bloqueo, sin numeración ni efectos financieros. `POST /api/credit-notes/{id}/discard` recibe esos dos campos y `reason`; descartar libera la reserva y conserva el historial, incluso si se apagó el perfil. Las solicitudes con igual identificador y contenido recuperan su resultado; reutilizarlo con otros datos devuelve conflicto. Una factura con devoluciones o E34 anteriores no conciliadas devuelve `RECONCILIATION_REQUIRED`.
+
+Estas rutas usan las credenciales móviles habituales. La consulta requiere `canAccessReturns` y `canViewFiscalDocuments`; crear, editar, previsualizar, validar o descartar requiere `canAccessReturns` y `canPrepareFiscalDocuments` (o ser dueño). Las operaciones de cálculo y reserva exigen configuración `DO_ECF`, ambiente `TEST`, activa y validada; las consultas históricas y el descarte de borradores permanecen disponibles tras desactivar el perfil. Los datos ajenos no son accesibles.
+
+`POST /api/credit-notes/{id}/confirm` recibe `expectedRevision`, `settlement` y `cashOperation`. El destino del excedente es `REFUND`, con `method` y `treasuryAccountId`, o `CUSTOMER_CREDIT` para un cliente identificado; cuando no hay excedente se utiliza `NONE`. El resultado identifica la copia TEST, la devolución física y las aplicaciones. También se puede confirmar una devolución mediante `POST /api/returns` con `fiscalAdjustmentId` y los mismos campos. `POST /api/returns/{id}/cancel` recibe `reason`; una devolución fiscal solo revierte su efecto físico y conserva la nota y sus aplicaciones. El motivo queda en `cancellationReason` y en la auditoría.
+
+`GET /api/returns` y `GET /api/returns/{id}` incluyen el resultado financiero de la E34 vinculada cuando el usuario tiene acceso fiscal. Las búsquedas y el detalle de la venta aceptan las credenciales móviles existentes y requieren acceso a devoluciones. La edición de reservas y estos contratos ampliados se incorporaron después de las comprobaciones registradas y siguen pendientes de verificación.
+
+`GET /api/customer-credits` consulta saldos y admite `customerId`, `availableOnly`, `skip` y `take` (máximo 100); devuelve `data` y `nextSkip`. `GET /api/accounts-receivable` admite `customerId`, `skip` y `take` (máximo 500), devuelve `nextSkip` y el origen tipado `SALE` o `DEBIT_NOTE`. `POST /api/customer-credits/{id}/apply` recibe `receivableId`, `amountCents` y `cashOperation`. Solo se aplica al mismo cliente y empresa; no produce un ingreso de caja. Los importes comerciales son centavos enteros y los importes fiscales, cadenas decimales. Las aplicaciones y confirmaciones comparten transacción con `CashOperation` y devuelven conflicto al cambiar el contenido de una operación repetida.
+
+Cada cuenta por cobrar incluye `paidCents` por recibos activos y `adjustments` con `ordinaryReturnsCents`, `creditNotesCents` y `customerCreditsCents`. Esos ajustes reducen la deuda sin presentarse como cobros. El desglose y su copia en la caché offline se añadieron después de las comprobaciones y permanecen sin verificar.
+
+`GET /api/accounts-receivable/operations/{clientOperationId}` recupera el resultado confirmado de un cobro, una aplicación de saldo o una E33 del mismo usuario y empresa sin repetirla. La paginación y esta recuperación se añadieron después de las comprobaciones y permanecen sin verificar.
+
+Una migración posterior añade restricciones de empresa para clientes, deudas, cuentas de tesorería y autores, y exige que una aplicación de saldo corresponda al mismo cliente. La migración no se ha aplicado ni verificado fuera de la implementación local.
+
+`GET /api/debit-notes`, `GET /api/debit-notes/{id}`, `POST /api/debit-notes/preview`, `POST /api/debit-notes`, `PUT /api/debit-notes/{id}` y las acciones `validate`, `discard` y `confirm` gestionan E33. La creación recibe `{operationId,note}` y la edición añade `expectedRevision`; la nota contiene `originalDocumentId`, `expectedPolicyVersion`, `reason`, `payment` y `lines`. El pago `CREDITO` requiere cliente identificado y `dueDate`; `CONTADO` requiere `payment: {method,treasuryAccountId}` en la confirmación. La confirmación crea una deuda independiente; no modifica inventario ni la venta original. La preparación exige permisos de ventas, cuentas por cobrar y preparación fiscal. Las notas financieras requieren conexión; las devoluciones físicas utilizan la cola existente.
+
+Ejemplo de creación móvil, con `X-Clerk-Authorization` y `X-SubUser-Token` en los encabezados y sin cookies:
+
+```json
+{
+  "operationId": "cargo-crear-001",
+  "note": {
+    "originalDocumentId": "documento-original",
+    "expectedPolicyVersion": 1,
+    "issueDate": "2026-11-10",
+    "reason": "Servicio adicional",
+    "payment": { "type": "CREDITO", "dueDate": "2026-12-10" },
+    "lines": [{ "description": "Servicio adicional", "kind": "SERVICIO", "unit": "UNIDAD", "quantity": "1", "unitPrice": "100.00", "taxTreatment": "GRAVADO_18", "priceIncludesTax": false }]
+  }
+}
+```
+
+La confirmación recibe `expectedRevision` y `cashOperation: {accountId,userId,clientOperationId,cashShiftId,clientSequence,fiscalPolicyVersion}`; contado añade `payment`. El identificador admite entre 8 y 100 letras, dígitos, guiones o guiones bajos; la versión de política debe conservarse en los reintentos. Los identificadores de empresa y usuario se verifican contra la sesión. `GET /api/fiscal/operations/{clientOperationId}` permite recuperar el resultado de confirmaciones E33/E34 autorizadas. La captura de fecha y esta recuperación se añadieron después de las comprobaciones registradas y quedan pendientes de verificación.
+
+Con control de turnos activo, la confirmación de notas y la aplicación de saldo requieren el turno y dispositivo del responsable, incluso si la operación no mueve efectivo. Una respuesta confirmada puede recuperarse con el mismo identificador después del cierre. Esta comprobación se añadió después de las pruebas registradas.
+
 `GET /api/fiscal/capabilities` requiere los mismos tokens móviles existentes: `X-Clerk-Authorization: Bearer <token>` y `X-SubUser-Token: <token>`. No requiere cookies. La empresa se obtiene exclusivamente de la sesión; no se acepta un identificador de empresa como autoridad.
 
 La respuesta incluye `policy`, `permissions`, `recognizedTypes`, `permittedTypes`, `operations` y `connectionRequired`. `operations.preview` es verdadero solo con permiso de preparación y perfil DO configurado, incluso apagado. `operations.manageSequences` indica permiso y perfil DO de prueba configurado. La preparación local requiere perfil activo y validado; la emisión externa permanece bloqueada. Sin configuración, `enabled` es `false` y perfil, ambiente, versión y fecha son `null`.
@@ -155,3 +211,66 @@ En `POST /api/sales` y en el `payload` de `POST /api/cash-shifts/operations` con
 Una venta fiscal requiere `cashOperation` con identificador durable, empresa y usuario de la sesión, turno y secuencia cuando correspondan, y `fiscalPolicyVersion`. El servidor confirma venta, inventario, deuda o caja, documento y número TEST en una transacción. Repetir la misma solicitud recupera el resultado; modificarla con el mismo identificador causa conflicto. La respuesta añade `fiscal` con ID, tipo, estado y e-NCF. Los errores por política, secuencia o datos inválidos no convierten la venta en ordinaria.
 
 Sin conexión, conservar íntegramente el mismo comando y su versión sin inventar e-NCF. Un cambio de política, rango agotado o dato incompatible conserva el pendiente para revisión. Solo se admite moneda DOP. Los campos y errores precisos constan en [OpenAPI](openapi-estructura-fiscal.json); estas rutas no firman ni envían comprobantes externos.
+
+## Gastos E43 y pagos E47 — contratos de las etapas 12 y 13
+
+Las rutas requieren sesión autenticada. Para móvil usar conjuntamente `X-Clerk-Authorization: Bearer <token>` y `X-SubUser-Token`; el servidor obtiene empresa y actor de esas credenciales. Para mutaciones con caja controlada se envía también `X-Cash-Device-Token` y el objeto `cashOperation` del protocolo existente. Cada `operationId` es estable por comando; reutilizarlo con otro contenido devuelve `OPERATION_CONFLICT`. Los importes terminados en `Cents` son enteros de centavos; las tasas son cadenas decimales. La preparación es local en TEST y no emite documentos ante la DGII.
+
+### Gastos y reembolsos
+
+`POST /api/operating-expenses` conserva el contrato ordinario y admite un bloque `fiscalExpense` para registrar el nuevo flujo:
+
+```json
+{
+  "fiscalExpense": {
+    "operationId": "gasto-00000001",
+    "expectedPolicyVersion": 1,
+    "description": "Transporte de trabajo",
+    "expenseDate": "2026-11-11",
+    "fundingSource": "EMPLOYEE",
+    "employee": { "name": "Empleado", "identification": "ID opcional" },
+    "beneficiary": "Beneficiario opcional",
+    "supportReferences": ["Recibo administrativo 1"],
+    "eligibleMinorExpense": true,
+    "lines": [{ "description": "Transporte", "kind": "SERVICIO", "amountCents": 10000, "taxTreatment": "EXENTO" }]
+  }
+}
+```
+
+`fundingSource` es `COMPANY`, `EMPLOYEE` o `PETTY_CASH`. Para `COMPANY` y `PETTY_CASH` enviar `paymentMethod` y `treasuryAccountId` dentro de `fiscalExpense`; para `EMPLOYEE` esos campos deben omitirse. `employee.userId` es opcional y, si se informa, debe pertenecer a la empresa. El indicador de elegibilidad es una declaración administrativa; el servidor bloquea E43 si es falso o si el detalle contiene impuestos o retenciones incompatibles. Las referencias de soporte son texto administrativo; la carga y descarga de archivos corresponde a la etapa 14.
+
+La reposición del fondo se registra como transferencia mediante `/api/treasury/transfers`, sin crear otro gasto. Con turnos controlados, el gasto de caja chica requiere actor autorizado y turno y dispositivo activos, aunque utilice una cuenta de caja chica distinta de la caja del turno.
+
+`GET /api/operating-expenses` y `GET /api/operating-expenses/{id}` incorporan `fundingSource` y `fiscalExpenseDetails` a los gastos de este flujo para usuarios con `canManageExpenses`. `PUT /api/operating-expenses/{id}` acepta `{ "fiscalExpense": { "operationId", "expectedPolicyVersion", "expectedUpdatedAt", "employee", "beneficiary", "supportReferences", "eligibleMinorExpense", "lines" } }`. La revisión conserva el importe y los movimientos existentes; falla si la fecha `updatedAt` cambió o si existe un documento preparado. Los borradores afectados deben revisarse de nuevo.
+
+`GET /api/operating-expenses/{id}/settlements` devuelve gasto, `paidCents`, `balanceCents` y abonos. `POST` en la misma ruta recibe `{ "operationId", "amountCents", "method", "treasuryAccountId", "note?", "cashOperation?" }`. El reembolso reduce la obligación del empleado y registra una salida, sin crear otro gasto. Puede liquidarse un saldo histórico tras desactivar el perfil fiscal.
+
+`GET /api/fiscal/expenses/template?id={expenseId}` construye una propuesta E43 desde los datos conservados. Usar después `POST /api/fiscal/documents/preview`, `POST /api/fiscal/documents` y `POST /api/fiscal/documents/{id}/prepare`; el origen es `EXPENSE`. Preparar exige `canManageExpenses` y `canPrepareFiscalDocuments`, secuencia TEST y política vigente.
+
+### Operaciones y pagos al exterior
+
+`POST /api/fiscal/foreign-payments` requiere `canManagePurchases` y `canAccessAccountsPayable` y crea una obligación sin pago ni E47. El beneficiario debe ser un proveedor de la empresa con identificación extranjera y residencia fiscal distinta de DO:
+
+```json
+{
+  "operationId": "exterior-00000001",
+  "expectedPolicyVersion": 1,
+  "supplierId": "proveedor",
+  "description": "Servicios profesionales",
+  "dueDate": "2026-12-01",
+  "currency": "USD",
+  "rate": "60.5000",
+  "rateDate": "2026-11-11",
+  "declaredDominicanSource": true,
+  "supportReference": "Contrato 1",
+  "lines": [{ "kind": "SERVICIO", "description": "Servicio", "amountCents": 10000, "isrRate": "10" }]
+}
+```
+
+Para DOP se omiten `rate` y `rateDate`; en otra moneda son obligatorias. `isrRate` se declara por concepto, no tiene porcentaje universal. La deuda y sus pagos se liquidan en DOP; las cuentas de tesorería en otra moneda se rechazan. Solo se admiten servicios y no se convierte una importación de bienes en E47.
+
+`GET /api/fiscal/foreign-payments?skip=0&take=50` devuelve `data` y `nextSkip`; `GET /api/fiscal/foreign-payments/{id}` devuelve moneda, tasa, base restante y documentada por línea, deuda y pagos. `POST /api/fiscal/foreign-payments/{id}/payments/preview` recibe `{ "allocations": [{ "index": 0, "amountCents": 5000 }] }`; cada índice es base cero y el importe corresponde a la moneda original. La respuesta contiene bruto, ISR y neto en ambas monedas y `roundingCents`. `POST /api/fiscal/foreign-payments/{id}/payments` recibe esa misma lista, `operationId`, `expectedPolicyVersion`, `expectedNetDopCents` de la previsualización, `method`, `treasuryAccountId`, y opcionalmente `note` y `cashOperation`. El servidor recalcula los importes y rechaza una previsualización desactualizada. El ISR acumulado se redondea por concepto; la diferencia por conversión se conserva en el último abono.
+
+`GET /api/fiscal/foreign-payments/template?paymentId={id}` produce una propuesta E47 ligada a `source.kind = SUPPLIER_PAYMENT`. Prepararla por las rutas comunes reserva un número por pago sin repetir su salida. Los pagos preparados no se pueden anular; los no preparados se anulan desde la ruta de pagos existente en orden inverso, descartando cualquier borrador asociado. `GET /api/accounts-payable/{id}` devuelve `foreignOperationId` para distinguir estas deudas. No usar el pago ordinario para una obligación exterior.
+
+`GET /api/fiscal/operations/commercial/{operationId}` recupera el resultado confirmado de un gasto fiscal, revisión, reembolso, obligación exterior o pago exterior. Solo lo consulta el autor de la misma empresa con los permisos de esa operación. Un 404 indica que no se encontró un resultado confirmado; reintentar el mismo comando con su identificador original es seguro.

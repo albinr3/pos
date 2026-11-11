@@ -53,7 +53,7 @@ function fromInputDateValue(value: string) {
   return new Date(Date.UTC(y, m - 1, day, 0, 0, 0, 0) - BUSINESS_TZ_OFFSET_MS)
 }
 
-export function OperatingExpensesClient() {
+export function OperatingExpensesClient({ fiscalEnabled = false }: { fiscalEnabled?: boolean }) {
   const canViewFiscal = useFiscalSourceAccess()
   const router = useRouter()
   const today = toInputDateValue(new Date())
@@ -253,7 +253,7 @@ export function OperatingExpensesClient() {
           </div>
           <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (v) resetForm(null) }}>
             <DialogTrigger asChild>
-              <Button onClick={() => { resetForm(null); setOpen(true) }}>
+              <Button disabled={fiscalEnabled} onClick={() => { resetForm(null); setOpen(true) }}>
                 <Plus className="mr-2 h-4 w-4" /> Nuevo
               </Button>
             </DialogTrigger>
@@ -427,6 +427,7 @@ export function OperatingExpensesClient() {
                         <Button
                           variant="secondary"
                           size="icon"
+                          disabled={fiscalEnabled || !!item.fiscalExpenseDetails}
                           onClick={() => {
                             resetForm(item)
                             setOpen(true)
@@ -435,7 +436,7 @@ export function OperatingExpensesClient() {
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => onDelete(item.id)} aria-label="Eliminar">
+                        <Button variant="ghost" size="icon" disabled={fiscalEnabled} onClick={() => onDelete(item.id)} aria-label="Eliminar">
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>

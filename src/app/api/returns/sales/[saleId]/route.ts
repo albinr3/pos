@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getCurrentUserFromRequest } from "../../../_helpers/auth"
 import { getSaleForReturn } from "@/app/(app)/returns/actions"
+import { cashRequest } from "@/lib/cash-context"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -21,7 +22,8 @@ export async function GET(
       return NextResponse.json({ error: "saleId es requerido" }, { status: 400 })
     }
 
-    const sale = await getSaleForReturn(saleId, user)
+    if (!user.isOwner && !user.canAccessReturns) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
+    const sale = await cashRequest.run({ trustedActor: user }, () => getSaleForReturn(saleId))
     if (!sale) {
       return NextResponse.json({ error: "Venta no encontrada" }, { status: 404 })
     }
@@ -41,6 +43,7 @@ export async function GET(
           }
         : null,
       returnPolicy: sale.returnPolicy,
+      ...(sale.fiscal ? { fiscal: sale.fiscal } : {}),
       items: sale.items.map((item) => ({
         id: item.id,
         saleItemId: item.id,

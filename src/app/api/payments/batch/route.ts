@@ -1,4 +1,4 @@
-import { withCashOperation } from "@/lib/cash-context"
+import { cashRequest, withCashOperation } from "@/lib/cash-context"
 import { assertNoFiscalInput, UnsupportedFiscalInputError } from "@/lib/fiscal/core/input"
 import { cashErrorResponse } from "@/lib/cash-http"
 import { NextRequest, NextResponse } from "next/server"
@@ -24,7 +24,7 @@ function getErrorMessage(error: unknown) {
 export async function POST(request: NextRequest) {
   const body = await request.clone().json().catch(() => ({}))
   const { cashOperation, ...payload } = body
-  return withCashOperation(cashOperation, { kind: "batch-api", ...payload }, () => postPaymentBatch(request))
+  return cashRequest.run({ ...cashRequest.getStore(), fiscalCollectionRequested: true }, () => withCashOperation(cashOperation, { kind: "batch-api", ...payload }, () => postPaymentBatch(request)))
 }
 
 async function postPaymentBatch(request: NextRequest) {
@@ -33,6 +33,8 @@ async function postPaymentBatch(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 })
     }
+    // El lote debe exigir el mismo permiso de cobro que el pago individual.
+    if (!user.isOwner && !user.canAccessAccountsReceivable) return NextResponse.json({ error: "Sin acceso al módulo" }, { status: 403 })
 
     const body = await request.json()
     // Evitar que el lote ignore metadatos fiscales y aplique pagos ordinarios.
@@ -61,8 +63,9 @@ async function postPaymentBatch(request: NextRequest) {
       body?.amountCents ??
       (body?.amount ? Math.round(Number(body.amount) * 100) : undefined)
 
-    if (!Number.isFinite(Number(amountCents)) || Number(amountCents) <= 0) {
-      return NextResponse.json({ error: "El monto debe ser mayor a 0" }, { status: 400 })
+    // Un lote no debe convertir centavos fraccionarios o cadenas en un cobro diferente.
+    if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || amountCents > 2147483647) {
+      return NextResponse.json({ error: "El monto debe ser un número entero válido de centavos" }, { status: 400 })
     }
 
     const methodMap: Record<string, PaymentMethod> = {
@@ -113,14 +116,16 @@ async function postPaymentBatch(request: NextRequest) {
       const ars = await tx.accountReceivable.findMany({
         where: {
           id: { in: arIds },
-          sale: { accountId: user.accountId },
+          accountId: user.accountId,
         },
         select: {
           id: true,
           totalCents: true,
           balanceCents: true,
           status: true,
+          customerId: true,
           sale: { select: { id: true, invoiceCode: true, cancelledAt: true } },
+          debitAdjustment: { select: { id: true, state: true } },
         },
       })
 
@@ -129,17 +134,19 @@ async function postPaymentBatch(request: NextRequest) {
         .map((id) => arById.get(id) || null)
         .filter((row): row is NonNullable<typeof row> => !!row)
 
-      if (!orderedArs.length) {
+      if (orderedArs.length !== arIds.length) {
         throw new Error("No se encontraron cuentas por cobrar válidas para este usuario")
       }
+      // Nunca combinar deudas de clientes distintos ni omitir silenciosamente IDs ajenos en un lote.
+      if (new Set(orderedArs.map(ar => ar.customerId)).size !== 1) throw new Error("Todas las cuentas deben pertenecer al mismo cliente")
+      // Rechazar el lote completo evita cobrar parcialmente una selección con un origen inválido.
+      if (orderedArs.some(ar => ar.sale?.cancelledAt || (!ar.sale && ar.debitAdjustment?.state !== "PREPARADO_PENDIENTE_CONEXION"))) throw new Error("Una cuenta seleccionada no tiene un origen vigente")
 
       let remaining = Math.round(Number(amountCents))
       const applications: Array<{ arId: string; invoiceCode: string | null; appliedCents: number; newBalanceCents: number }> = []
 
       for (const ar of orderedArs) {
         if (remaining <= 0) break
-        if (ar.sale?.cancelledAt) continue
-
         const currentBalance = Math.max(0, Number(ar.balanceCents || 0))
         if (currentBalance <= 0) continue
 
@@ -148,7 +155,7 @@ async function postPaymentBatch(request: NextRequest) {
 
         applications.push({
           arId: ar.id,
-          invoiceCode: ar.sale?.invoiceCode || null,
+          invoiceCode: ar.sale?.invoiceCode ?? (ar.debitAdjustment ? `ND-${ar.debitAdjustment.id.slice(-8).toUpperCase()}` : null),
           appliedCents,
           newBalanceCents,
         })

@@ -84,12 +84,16 @@ function calculatePricing(input: {
   })
 }
 
-export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRegisterSupplierPayments?: boolean }) {
+export function PurchasesClient({ canRegisterSupplierPayments = false, canPrepareE41 = false }: { canRegisterSupplierPayments?: boolean; canPrepareE41?: boolean }) {
   const router = useRouter()
   const [credit, setCredit] = useState<PurchaseCreditValue>({ type: "CONTADO", dueDate: "", initialPaymentCents: 0 })
   const operation = useRef({ signature: "", id: "" })
   const [supplierId, setSupplierId] = useState<string>("")
   const [supplierName, setSupplierName] = useState("")
+  const [supplierReceiptNumber, setSupplierReceiptNumber] = useState("")
+  const [reviewE41, setReviewE41] = useState(false)
+  const [e41CashPaid, setE41CashPaid] = useState("")
+  const [e41Declared, setE41Declared] = useState(false)
   const [notes, setNotes] = useState("")
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [treasuryAccounts, setTreasuryAccounts] = useState<TreasuryAccountOption[]>([])
@@ -347,6 +351,10 @@ export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRe
       toast({ title: "Proveedor requerido", description: "Debes seleccionar un proveedor para guardar la compra." })
       return
     }
+    if (reviewE41 && !supplierReceiptNumber.trim() && credit.type === "CONTADO" && (!e41Declared || e41CashPaid.trim() === "" || !Number.isFinite(Number(e41CashPaid)) || Number(e41CashPaid) < 0 || toCents(e41CashPaid) > Math.round(totalCents))) {
+      toast({ title: "Revisa el E41", description: "Declara la condición del proveedor e indica el dinero neto entregado, sin superar el bruto." })
+      return
+    }
     if ((credit.type === "CONTADO" || credit.initialPaymentCents > 0) && !availableTreasuryAccounts.some((account) => account.id === treasuryAccountId)) {
       toast({ title: "Cuenta requerida", description: "Debes seleccionar una cuenta de tesorería." })
       return
@@ -354,11 +362,13 @@ export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRe
 
     startSaving(async () => {
       try {
-        if (!navigator.onLine && credit.type === "CREDITO") throw new Error("Conéctate para registrar una compra a crédito")
+        if (!navigator.onLine && (credit.type === "CREDITO" || reviewE41)) throw new Error("Conéctate para registrar una compra a crédito o revisar un E41")
         const input = {
           ...credit,
           supplierId: supplierId || null,
           supplierName: supplierName || null,
+          supplierReceiptNumber: supplierReceiptNumber.trim() || null,
+          ...(canPrepareE41 && reviewE41 && !supplierReceiptNumber.trim() && credit.type === "CONTADO" ? { e41CashPaidCents: toCents(e41CashPaid), e41DeclaredUnregistered: e41Declared } : {}),
           notes: notes || null,
           paymentMethod: credit.type === "CONTADO" || credit.initialPaymentCents > 0 ? paymentMethod : null,
           treasuryAccountId: credit.type === "CONTADO" || credit.initialPaymentCents > 0 ? treasuryAccountId : null,
@@ -380,6 +390,7 @@ export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRe
         if (controlled?.pending) {
           toast({ title: "Guardado pendiente de sincronización", description: "La operación queda pendiente. Revísala en Cuadre diario antes de cerrar." })
           setCart([])
+          setSupplierReceiptNumber("")
           return
         }
         const purchase = controlled ? controlled.result : await createPurchase(command)
@@ -387,7 +398,7 @@ export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRe
 
         const printUrl = `/receipts/purchase/${purchase.id}`
         const printWindow = window.open(printUrl, "_blank")
-        if (!printWindow) {
+        if (!printWindow && !(canPrepareE41 && reviewE41 && !supplierReceiptNumber.trim())) {
           window.location.href = printUrl
         }
 
@@ -396,6 +407,10 @@ export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRe
         operation.current = { signature: "", id: "" }
         setSupplierId("")
         setSupplierName("")
+        setSupplierReceiptNumber("")
+        setReviewE41(false)
+        setE41CashPaid("")
+        setE41Declared(false)
         setNotes("")
         setPaymentMethod(PaymentMethod.EFECTIVO)
         setCart([])
@@ -406,6 +421,7 @@ export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRe
         setSaleMarginInputs({})
         setSalePriceInputs({})
         refreshPurchases()
+        if (canPrepareE41 && reviewE41 && !supplierReceiptNumber.trim()) router.push(`/fiscal/documents/new?source=PURCHASE&sourceId=${encodeURIComponent(purchase.id)}`)
       } catch (e) {
         toast({ title: "Error", description: e instanceof Error ? e.message : "No se pudo registrar" })
       }
@@ -455,6 +471,13 @@ export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRe
                   })()}
                 </div>
               )}
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="supplier-receipt">Comprobante fiscal recibido del proveedor (opcional)</Label>
+              <Input id="supplier-receipt" maxLength={50} value={supplierReceiptNumber} onChange={(e) => setSupplierReceiptNumber(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Si no recibiste un comprobante, conserva el soporte de la compra. La falta de comprobante no confirma que corresponda un E41.</p>
+              {canPrepareE41 && !supplierReceiptNumber.trim() && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={reviewE41} onChange={e => setReviewE41(e.target.checked)} /> Revisar si corresponde preparar un E41 después de guardar</label>}
+              {canPrepareE41 && reviewE41 && !supplierReceiptNumber.trim() && credit.type === "CONTADO" && <div className="grid gap-2 rounded border p-3"><label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={e41Declared} onChange={e => setE41Declared(e.target.checked)} /> Declaro que el proveedor no está registrado como contribuyente; esta declaración requiere verificación oficial.</label><Label htmlFor="e41-cash-paid">Dinero neto pagado al proveedor (RD$)</Label><Input id="e41-cash-paid" type="number" min="0" step="0.01" value={e41CashPaid} onChange={e => setE41CashPaid(e.target.value)} /><p className="text-xs text-muted-foreground">Indica el dinero realmente entregado después de las retenciones. Deberá coincidir con el E41 que revises.</p></div>}
             </div>
             <div className="grid gap-2">
               <Label>Nota (opcional)</Label>
@@ -908,6 +931,7 @@ export function PurchasesClient({ canRegisterSupplierPayments = false }: { canRe
                   </div>
                   <div className="mt-1 text-xs text-muted-foreground">
                     {p.supplierName ? `Suplidor: ${p.supplierName} · ` : ""}
+                    {p.supplierReceiptNumber ? `Comprobante recibido: ${p.supplierReceiptNumber} · ` : ""}
                     Items: {p.items.length}
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 import type { PaymentMethod } from "@prisma/client"
 import { getRawPrismaClient } from "@/lib/db"
 
-const labels: Record<string, string> = { sale: "SALE_CASH", payment: "AR_PAYMENT", purchase: "PURCHASE", supplierPayment: "SUPPLIER_PAYMENT", operatingExpense: "OPERATING_EXPENSE", return: "CASH_RETURN", treasuryTransfer: "TREASURY_TRANSFER", treasuryOpeningBalance: "OPENING_BALANCE" }
+const labels: Record<string, string> = { sale: "SALE_CASH", payment: "AR_PAYMENT", purchase: "PURCHASE", supplierPayment: "SUPPLIER_PAYMENT", operatingExpense: "OPERATING_EXPENSE", employeeExpenseSettlement: "EMPLOYEE_REIMBURSEMENT", return: "CASH_RETURN", fiscalAdjustmentApplication: "FISCAL_REFUND", treasuryTransfer: "TREASURY_TRANSFER", treasuryOpeningBalance: "OPENING_BALANCE" }
 export async function cashLedgerDashboard<T extends { movements: Array<{ occurredAt: Date; amountCents: number; direction: "IN" | "OUT" }> }>(accountId: string, from: Date, to: Date, legacy: T, canReverse: boolean): Promise<T> {
   const db = getRawPrismaClient()
   const config = await db.cashControl.findUnique({ where: { accountId } })

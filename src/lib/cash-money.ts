@@ -4,6 +4,9 @@ export type MoneyDocument = {
   cancelledAt?: Date | null; type?: string; paymentMethod?: string | null; method?: string | null;
   treasuryAccountId?: string | null; refundMethod?: string | null; refundTreasuryAccountId?: string | null;
   fromTreasuryAccountId?: string; toTreasuryAccountId?: string; totalCents?: number; amountCents?: number;
+  supplierNetPaidCents?: number | null;
+  fiscalAdjustmentId?: string | null; kind?: string;
+  fundingSource?: string;
   payments?: Array<{ treasuryAccountId?: string | null; method: string; amountCents: number }>;
   sale?: { type: string };
 }
@@ -75,10 +78,15 @@ export function documentLegs(model: string, row: MoneyDocument | undefined | nul
         : leg(row.treasuryAccountId, row.paymentMethod, row.totalCents)
     case "payment": return leg(row.treasuryAccountId, row.method, row.amountCents)
     // El crédito no mueve dinero: cada abono se registra una sola vez como supplierPayment.
-    case "purchase": return row.type === "CREDITO" ? [] : leg(row.treasuryAccountId, row.paymentMethod, -cents(row.totalCents))
+    // En E41 el efectivo entregado puede ser menor al bruto; la retención no es un pago al proveedor.
+    case "purchase": return row.type === "CREDITO" ? [] : leg(row.treasuryAccountId, row.paymentMethod, -cents(row.supplierNetPaidCents ?? row.totalCents))
     case "supplierPayment": return leg(row.treasuryAccountId, row.method, -cents(row.amountCents))
-    case "operatingExpense": return leg(row.treasuryAccountId, row.paymentMethod, -cents(row.amountCents))
-    case "return": return row.sale?.type === "CONTADO" ? leg(row.refundTreasuryAccountId, row.refundMethod, -cents(row.totalCents)) : []
+    // El empleado adelantó su dinero: la salida empresarial ocurre solo al reembolsarlo.
+    case "operatingExpense": return row.fundingSource === "EMPLOYEE" ? [] : leg(row.treasuryAccountId, row.paymentMethod, -cents(row.amountCents))
+    case "employeeExpenseSettlement": return leg(row.treasuryAccountId, row.method, -cents(row.amountCents))
+    // La devolución fiscal registra el reembolso por su aplicación financiera, no por el bruto físico.
+    case "return": return !row.fiscalAdjustmentId && row.sale?.type === "CONTADO" ? leg(row.refundTreasuryAccountId, row.refundMethod, -cents(row.totalCents)) : []
+    case "fiscalAdjustmentApplication": return row.kind === "REFUND" ? leg(row.treasuryAccountId, row.method, -cents(row.amountCents)) : []
     // REVERSED conserva el asiento original: el reverso es otra transferencia.
     case "treasuryTransfer": return [...leg(row.fromTreasuryAccountId, null, -cents(row.amountCents)), ...leg(row.toTreasuryAccountId, null, row.amountCents)]
     case "treasuryOpeningBalance": return leg(row.treasuryAccountId, null, row.amountCents)

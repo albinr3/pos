@@ -1,6 +1,8 @@
 // Prisma schema for MOVOPos - Multi-tenant POS System
 // Money is stored as integer cents (RD$ 1.00 => 100)
 
+// Tras modificar este esquema, detén el servidor y ejecuta npm run prisma:generate antes de reiniciarlo.
+// En Windows el servidor mantiene bloqueado el motor de Prisma y puede impedir su regeneración.
 generator client {
   provider = "prisma-client-js"
 }
@@ -255,6 +257,12 @@ model Account {
   fiscalSettings       FiscalSettings?
   fiscalPolicyChanges  FiscalPolicyChange[]
   fiscalDocuments      FiscalDocument[]
+  fiscalAdjustments    FiscalAdjustment[]
+  fiscalAdjustmentOperations FiscalAdjustmentOperation[]
+  fiscalAdjustmentApplications FiscalAdjustmentApplication[]
+  fiscalCustomerCredits FiscalCustomerCredit[]
+  fiscalCustomerCreditApplications FiscalCustomerCreditApplication[]
+  accountsReceivable AccountReceivable[]
   fiscalSequences      FiscalSequence[]
   customers            Customer[]
   suppliers            Supplier[]
@@ -428,10 +436,16 @@ model FiscalDocument {
   sale Sale? @relation(fields: [saleId], references: [id], onDelete: Restrict)
   purchaseId String?
   purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  payableId String?
+  payable AccountPayable? @relation(fields: [accountId, payableId], references: [accountId, id], onDelete: Restrict)
+  supplierPaymentId String?
+  supplierPayment SupplierPayment? @relation(fields: [accountId, supplierPaymentId], references: [accountId, id], onDelete: Restrict)
   returnId String?
   return Return? @relation(fields: [returnId], references: [id], onDelete: Restrict)
   expenseId String?
   expense OperatingExpense? @relation(fields: [expenseId], references: [id], onDelete: Restrict)
+  adjustmentId String?
+  adjustmentSource FiscalAdjustment? @relation("FiscalAdjustmentSource", fields: [accountId, adjustmentId], references: [accountId, id], onDelete: Restrict)
   type String
   state String @default("BORRADOR")
   policyVersion Int
@@ -444,8 +458,135 @@ model FiscalDocument {
   events FiscalDocumentEvent[]
   references FiscalDocumentReference[] @relation("FiscalReferenceSource")
   referencedBy FiscalDocumentReference[] @relation("FiscalReferenceTarget")
+  adjustments FiscalAdjustment[] @relation("FiscalAdjustmentOriginal")
+  adjustment FiscalAdjustment? @relation("FiscalAdjustmentDocument")
+  @@unique([accountId, adjustmentId])
   @@unique([accountId, id])
   @@index([accountId, state])
+}
+
+// Una corrección comercial tiene identidad propia y conserva la factura fiscal original.
+model FiscalAdjustment {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  originalDocumentId String
+  originalDocument FiscalDocument @relation("FiscalAdjustmentOriginal", fields: [accountId, originalDocumentId], references: [accountId, id], onDelete: Restrict)
+  fiscalDocumentId String?
+  fiscalDocument FiscalDocument? @relation("FiscalAdjustmentDocument", fields: [accountId, fiscalDocumentId], references: [accountId, id], onDelete: Restrict)
+  type String
+  state String @default("BORRADOR")
+  revision Int @default(1)
+  policyVersion Int
+  actorUserId String
+  input Json
+  snapshot Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lines FiscalAdjustmentLine[]
+  events FiscalAdjustmentEvent[]
+  sourceDocument FiscalDocument? @relation("FiscalAdjustmentSource")
+  applications FiscalAdjustmentApplication[]
+  customerCredit FiscalCustomerCredit?
+  physicalReturn Return?
+  receivable AccountReceivable? @relation("FiscalDebitReceivable")
+  @@unique([accountId, id])
+  @@unique([accountId, fiscalDocumentId])
+  @@index([accountId, originalDocumentId, state])
+}
+
+// Solo las líneas de notas validadas o preparadas reservan capacidad del original.
+model FiscalAdjustmentLine {
+  id String @id @default(cuid())
+  accountId String
+  adjustmentId String
+  adjustment FiscalAdjustment @relation(fields: [accountId, adjustmentId], references: [accountId, id], onDelete: Restrict)
+  originalLine Int
+  quantity Decimal @db.Decimal(12, 2)
+  physicalQuantity Decimal @default(0) @db.Decimal(12, 2)
+  amountCents Int
+  @@unique([accountId, adjustmentId, originalLine])
+  @@index([accountId, adjustmentId])
+}
+
+model FiscalAdjustmentEvent {
+  id String @id @default(cuid())
+  accountId String
+  adjustmentId String
+  adjustment FiscalAdjustment @relation(fields: [accountId, adjustmentId], references: [accountId, id], onDelete: Restrict)
+  actorUserId String
+  state String
+  revision Int
+  details Json
+  createdAt DateTime @default(now())
+  @@index([accountId, adjustmentId, createdAt])
+}
+
+model FiscalAdjustmentOperation {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  operationId String
+  actorUserId String
+  kind String
+  payloadHash String
+  result Json
+  createdAt DateTime @default(now())
+  @@unique([accountId, operationId])
+}
+
+// Cada importe tiene un destino propio; no se infiere dinero del bruto de la copia fiscal.
+model FiscalAdjustmentApplication {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  adjustmentId String
+  adjustment FiscalAdjustment @relation(fields: [accountId, adjustmentId], references: [accountId, id], onDelete: Restrict)
+  kind String
+  amountCents Int
+  receivableId String?
+  receivable AccountReceivable? @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+  treasuryAccountId String?
+  treasuryAccount TreasuryAccount? @relation(fields: [treasuryAccountId], references: [id], onDelete: Restrict)
+  method PaymentMethod?
+  userId String
+  createdAt DateTime @default(now())
+  @@unique([accountId, adjustmentId, kind])
+  @@index([accountId, receivableId])
+  @@index([accountId, treasuryAccountId, createdAt])
+}
+
+model FiscalCustomerCredit {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  adjustmentId String
+  adjustment FiscalAdjustment @relation(fields: [accountId, adjustmentId], references: [accountId, id], onDelete: Restrict)
+  customerId String
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  originalCents Int
+  balanceCents Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  applications FiscalCustomerCreditApplication[]
+  @@unique([accountId, id])
+  @@unique([accountId, adjustmentId])
+  @@index([accountId, customerId])
+}
+
+model FiscalCustomerCreditApplication {
+  id String @id @default(cuid())
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  creditId String
+  credit FiscalCustomerCredit @relation(fields: [accountId, creditId], references: [accountId, id], onDelete: Restrict)
+  receivableId String
+  receivable AccountReceivable @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+  amountCents Int
+  actorUserId String
+  createdAt DateTime @default(now())
+  @@index([accountId, receivableId])
+  @@index([accountId, creditId])
 }
 
 model FiscalDocumentLine {
@@ -622,6 +763,7 @@ model User {
   pushDeviceTokens               PushDeviceToken[]
 
   // Username único dentro del mismo account
+  @@unique([accountId, id])
   @@unique([accountId, username])
   @@index([accountId])
   @@index([whatsappNumber])
@@ -653,6 +795,7 @@ model TreasuryAccount {
   supplierPayments SupplierPayment[]
   operatingExpenses OperatingExpense[] @relation("OperatingExpenseTreasuryAccount")
   returnRefunds     Return[]           @relation("ReturnRefundTreasuryAccount")
+  fiscalAdjustmentApplications FiscalAdjustmentApplication[]
   openingBalances   TreasuryOpeningBalance[]
   outgoingTransfers TreasuryTransfer[] @relation("TreasuryTransferFromAccount")
   incomingTransfers TreasuryTransfer[] @relation("TreasuryTransferToAccount")
@@ -660,6 +803,7 @@ model TreasuryAccount {
   cashShifts        CashShift[]
   cashMovements     CashMovement[]
 
+  @@unique([accountId, id])
   @@unique([accountId, name])
   @@index([accountId, isActive])
   @@index([accountId, type, isActive])
@@ -997,8 +1141,10 @@ model Customer {
 
   sales   Sale[]
   arItems AccountReceivable[]
+  fiscalCustomerCredits FiscalCustomerCredit[]
   quotes  Quote[]
 
+  @@unique([accountId, id])
   @@unique([accountId, visualId])
   @@index([accountId])
   @@index([accountId, name])
@@ -1409,8 +1555,12 @@ model AccountReceivable {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  saleId String @unique
-  sale   Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  saleId String? @unique
+  sale Sale? @relation(fields: [accountId, saleId], references: [accountId, id], onDelete: Cascade)
+  debitAdjustmentId String?
+  debitAdjustment FiscalAdjustment? @relation("FiscalDebitReceivable", fields: [accountId, debitAdjustmentId], references: [accountId, id], onDelete: Restrict)
 
   customerId String
   customer   Customer @relation(fields: [customerId], references: [id])
@@ -1422,10 +1572,16 @@ model AccountReceivable {
   dueDate DateTime?
 
   payments Payment[]
+  fiscalAdjustmentApplications FiscalAdjustmentApplication[]
+  fiscalCustomerCreditApplications FiscalCustomerCreditApplication[]
 
   @@index([status])
   @@index([customerId])
   @@index([dueDate])
+  @@unique([accountId, id])
+  @@unique([accountId, saleId])
+  @@unique([accountId, debitAdjustmentId])
+  @@index([accountId, status])
 }
 
 model Payment {
@@ -1564,6 +1720,13 @@ model Purchase {
   supplier Supplier? @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   payable AccountPayable?
   supplierName String?
+  // Es un comprobante recibido del proveedor, nunca una numeración fiscal propia.
+  supplierReceiptNumber String?
+  // Solo en compras al contado con E41 pendiente: dinero realmente pagado al proveedor.
+  supplierNetPaidCents Int?
+  e41DeclaredUnregistered Boolean @default(false)
+  e41WithheldItbisCents Int @default(0)
+  e41WithheldIsrCents Int @default(0)
   paymentMethod PaymentMethod?
   treasuryAccountId String?
   treasuryAccount   TreasuryAccount? @relation("PurchaseTreasuryAccount", fields: [treasuryAccountId], references: [id], onDelete: SetNull)
@@ -1630,6 +1793,11 @@ model OperatingExpense {
   expenseDate DateTime @default(now())
   category    String?
 
+  // Los anticipos personales son gasto devengado, pero todavía no son salida de tesorería.
+  fundingSource String @default("COMPANY")
+  fiscalExpenseDetails Json?
+  settlements EmployeeExpenseSettlement[]
+
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
@@ -1647,6 +1815,21 @@ model OperatingExpense {
   @@index([treasuryAccountId])
 }
 
+model EmployeeExpenseSettlement {
+  id String @id @default(cuid())
+  accountId String
+  expenseId String
+  expense OperatingExpense @relation(fields: [accountId, expenseId], references: [accountId, id], onDelete: Restrict)
+  userId String
+  amountCents Int
+  method PaymentMethod
+  treasuryAccountId String
+  note String?
+  createdAt DateTime @default(now())
+  @@index([accountId, expenseId])
+  @@index([accountId, createdAt])
+}
+
 // ==========================================
 // RETURN
 // ==========================================
@@ -1658,8 +1841,11 @@ model Return {
   accountId String
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   fiscalDocuments FiscalDocument[]
+  fiscalAdjustmentId String?
+  fiscalAdjustment FiscalAdjustment? @relation(fields: [accountId, fiscalAdjustmentId], references: [accountId, id], onDelete: Restrict)
 
   @@unique([accountId, id])
+  @@unique([accountId, fiscalAdjustmentId])
 
   returnNumber Int
   returnCode   String // e.g. DEV-00001
@@ -1689,6 +1875,7 @@ model Return {
 
   cancelledAt   DateTime?
   cancelledBy   String?
+  cancellationReason String?
   cancelledUser User?     @relation("CancelledReturns", fields: [cancelledBy], references: [id])
 
   items ReturnItem[]
@@ -1717,6 +1904,8 @@ model ReturnItem {
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   qty Decimal @db.Decimal(10, 3)
+  // Conserva el reparto exacto de inventario fiscal para poder revertirlo sin volver a redondear.
+  fiscalRestorations Json?
 
   unitPriceCents Int
   itbisRateBp    Int @default(1800)
@@ -2294,8 +2483,15 @@ model AccountPayable {
   id String @id @default(cuid())
   accountId String
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  purchaseId String @unique
-  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  purchaseId String? @unique
+  purchase Purchase? @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  // Las obligaciones por servicios no deben crear compras ni movimientos de inventario.
+  description String?
+  notes String?
+  supplierReceiptNumber String?
+  // La retención es una obligación tributaria separada del saldo del proveedor.
+  withheldItbisCents Int @default(0)
+  withheldIsrCents Int @default(0)
   supplierId String
   supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
   totalCents Int
@@ -2305,6 +2501,9 @@ model AccountPayable {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   payments SupplierPayment[]
+  fiscalDocuments FiscalDocument[]
+  foreignOperation FiscalForeignOperation?
+  @@unique([accountId, id])
   @@index([accountId, status, dueDate])
   @@index([accountId, supplierId])
 }
@@ -2333,10 +2532,50 @@ model SupplierPayment {
   cancelledBy String?
   cancelledUser User? @relation("CancelledSupplierPayments", fields: [cancelledBy], references: [id])
   cancellationReason String?
+  foreignAllocation FiscalForeignPayment?
+  fiscalDocuments FiscalDocument[]
+  @@unique([accountId, id])
   @@index([accountId, paidAt, id])
   @@index([accountId, supplierId, paidAt])
   @@index([apId, cancelledAt])
   @@index([treasuryAccountId])
+}
+
+// Una deuda extranjera conserva su base en la moneda y tasa declaradas al registrarla.
+model FiscalForeignOperation {
+  id String @id @default(cuid())
+  accountId String
+  payableId String
+  payable AccountPayable @relation(fields: [accountId, payableId], references: [accountId, id], onDelete: Restrict)
+  currency String
+  rate Decimal @db.Decimal(16, 4)
+  rateDate DateTime? @db.Date
+  lines Json
+  supplierSnapshot Json
+  grossForeignCents Int
+  expectedWithheldForeignCents Int
+  grossDopCents Int
+  expectedWithheldDopCents Int
+  originalNetCents Int
+  createdAt DateTime @default(now())
+  payments FiscalForeignPayment[]
+  @@unique([accountId, id])
+  @@unique([accountId, payableId])
+}
+
+// Cada asignación representa un hecho pagado, no la deuda completa.
+model FiscalForeignPayment {
+  id String @id @default(cuid())
+  accountId String
+  foreignOperationId String
+  foreignOperation FiscalForeignOperation @relation(fields: [accountId, foreignOperationId], references: [accountId, id], onDelete: Restrict)
+  supplierPaymentId String
+  supplierPayment SupplierPayment @relation(fields: [accountId, supplierPaymentId], references: [accountId, id], onDelete: Restrict)
+  snapshot Json
+  roundingCents Int @default(0)
+  createdAt DateTime @default(now())
+  @@unique([accountId, supplierPaymentId])
+  @@index([accountId, foreignOperationId])
 }
 
 // Idempotencia independiente de CashControl para negocios que no usan turnos.

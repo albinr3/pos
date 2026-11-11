@@ -1,0 +1,90 @@
+import { test, after } from "node:test"
+import assert from "node:assert/strict"
+import { randomUUID } from "node:crypto"
+import { PrismaClient } from "@prisma/client"
+const { cashRequest } = await import("../src/lib/cash-context")
+const { createStandalonePayable, addSupplierPayment, cancelSupplierPayment } = await import("../src/lib/accounts-payable")
+const { createForeignObligation, addForeignPayment, getForeignObligation, previewForeignPayment } = await import("../src/lib/fiscal/core/foreign-payments")
+const { getE47Template } = await import("../src/lib/fiscal/core/foreign-document")
+const { createFiscalDraft, prepareFiscalDraft } = await import("../src/lib/fiscal/core/preparation")
+const url=new URL(process.env.TEST_DATABASE_URL ?? "")
+if(!["localhost","127.0.0.1"].includes(url.hostname)||url.port!=="55439"||!/^\/cash_test_stage13_\d+$/.test(url.pathname)) throw Error("Se requiere una base fiscal local aislada")
+const db=new PrismaClient({datasources:{db:{url:url.toString()}}})
+after(async()=>db.$disconnect())
+test("E47 documenta cada abono, conserva moneda y no repite pagos ni números",async()=>{
+ const suffix=randomUUID(),account=await db.account.create({data:{name:"Etapa 13",clerkUserId:`test-${suffix}`}})
+ const owner=await db.user.create({data:{accountId:account.id,name:"Prueba",username:`u-${suffix}`,passwordHash:"test",isOwner:true}})
+ const supplier=await db.supplier.create({data:{accountId:account.id,name:"Beneficiario",fiscalIdentification:"US-99999",fiscalIdentificationCountry:"US",fiscalResidence:"US",fiscalLegalName:"Beneficiario"}})
+ const local=await db.supplier.create({data:{accountId:account.id,name:"Local"}})
+ const bank=await db.treasuryAccount.create({data:{accountId:account.id,name:"Banco",type:"BANCO",currency:"DOP"}})
+ await db.fiscalSettings.create({data:{accountId:account.id,enabled:false,jurisdiction:"DO",regime:"DO_ECF",environment:"TEST",configurationStatus:"VALIDATED",version:1,legalName:"Empresa prueba",taxId:"123456789"}})
+ await cashRequest.run({trustedActor:owner,deviceHash:""},async()=>{
+  const ordinary=await createStandalonePayable(owner,{supplierId:local.id,description:"Servicio ordinario",totalCents:5000,dueDate:"2099-12-31",operationId:`ordinary-${suffix}`})
+  const ordinaryInput={apId:ordinary.id,amountCents:1000,method:"TRANSFERENCIA",treasuryAccountId:bank.id,operationId:`ordinary-pay-${suffix}`}
+  const ordinaryPaid=await addSupplierPayment(owner,ordinaryInput)
+  assert.deepEqual(await addSupplierPayment(owner,ordinaryInput),ordinaryPaid)
+  assert.equal((await db.accountPayable.findUniqueOrThrow({where:{id:ordinary.id}})).balanceCents,4000)
+  await db.fiscalSettings.update({where:{accountId:account.id},data:{enabled:true}})
+  await db.fiscalSequence.create({data:{accountId:account.id,type:"E47",rangeStart:BigInt(1),rangeEnd:BigInt(50),lastNumber:BigInt(0),expiresOn:new Date("2099-12-31"),active:true}})
+  const input={operationId:`foreign-${suffix}`,expectedPolicyVersion:1,supplierId:supplier.id,description:"Servicios exteriores",dueDate:"2099-12-31",currency:"USD",rate:"60.5000",rateDate:"2026-11-11",declaredDominicanSource:true,lines:[{kind:"SERVICIO" as const,description:"Servicio A",amountCents:10000,isrRate:"10"},{kind:"SERVICIO" as const,description:"Servicio B",amountCents:5000,isrRate:"27"}]}
+  const foreign=await createForeignObligation(owner,input)
+  assert.deepEqual(await createForeignObligation(owner,input),foreign)
+  assert.equal(await db.fiscalDocument.count({where:{accountId:account.id}}),0)
+  assert.equal(foreign.netDopCents,765325)
+  await assert.rejects(addSupplierPayment(owner,{...ordinaryInput,apId:foreign.payableId,operationId:`bypass-${suffix}`}),/Pago al exterior/)
+  const allocations=[{index:0,amountCents:5000},{index:1,amountCents:2000}]
+  const preview=await previewForeignPayment(owner,foreign.id,allocations)
+  assert.equal(preview.netDopCents,360580)
+  const foreignBank=await db.treasuryAccount.create({data:{accountId:account.id,name:"Banco USD",type:"BANCO",currency:"USD"}})
+  await assert.rejects(addForeignPayment(owner,foreign.id,{operationId:`unsupported-currency-${suffix}`,expectedPolicyVersion:1,expectedNetDopCents:preview.netDopCents,allocations,method:"TRANSFERENCIA",treasuryAccountId:foreignBank.id}),/DOP/)
+  const paymentInput={foreignOperationId:foreign.id,operationId:`foreign-pay1-${suffix}`,expectedPolicyVersion:1,expectedNetDopCents:preview.netDopCents,allocations,method:"TRANSFERENCIA",treasuryAccountId:bank.id}
+  const payment=await addForeignPayment(owner,foreign.id,paymentInput)
+  assert.deepEqual(await addForeignPayment(owner,foreign.id,paymentInput),payment)
+  await assert.rejects(db.fiscalForeignOperation.update({where:{id:foreign.id},data:{currency:"EUR"}}),/proteg/i)
+  const allocation=await db.fiscalForeignPayment.findFirstOrThrow({where:{supplierPaymentId:payment.id}})
+  await assert.rejects(db.fiscalForeignPayment.update({where:{id:allocation.id},data:{roundingCents:4}}),/proteg/i)
+  const template=await getE47Template(owner,payment.id,db)
+  assert.equal(template.currency.operation,"USD")
+  const draft=await createFiscalDraft(owner,{operationId:`e47-draft1-${suffix}`,document:template}) as {id:string}
+  await assert.rejects(createFiscalDraft(owner,{operationId:`e47-duplicate-${suffix}`,document:template}),/ya tiene un documento/)
+  const prepared=await prepareFiscalDraft(owner,draft.id,{operationId:`e47-prepare1-${suffix}`,expectedRevision:1})
+  assert.deepEqual(await prepareFiscalDraft(owner,draft.id,{operationId:`e47-prepare1-${suffix}`,expectedRevision:1}),prepared)
+  await assert.rejects(cancelSupplierPayment(owner,payment.id,"Corrección"),/E47 preparado/)
+  const rest=[{index:0,amountCents:5000},{index:1,amountCents:3000}]
+  const nextPreview=await previewForeignPayment(owner,foreign.id,rest)
+  const payment2=await addForeignPayment(owner,foreign.id,{...paymentInput,operationId:`foreign-pay2-${suffix}`,allocations:rest,expectedNetDopCents:nextPreview.netDopCents})
+  const template2=await getE47Template(owner,payment2.id,db)
+  const draft2=await createFiscalDraft(owner,{operationId:`e47-draft2-${suffix}`,document:template2}) as {id:string}
+  await prepareFiscalDraft(owner,draft2.id,{operationId:`e47-prepare2-${suffix}`,expectedRevision:1})
+  const stored=await getForeignObligation(owner,foreign.id)
+  assert.equal(stored.payable.balanceCents,0)
+  assert.equal(stored.payable.withheldIsrCents,142175)
+  assert.equal(stored.available[0].documentedCents,10000)
+  assert.equal(stored.available[1].documentedCents,5000)
+  assert.equal(await db.supplierPayment.count({where:{apId:foreign.payableId}}),2)
+  assert.equal(await db.fiscalDocument.count({where:{accountId:account.id,type:"E47",state:"PREPARADO_PENDIENTE_CONEXION"}}),2)
+  assert.equal(await db.fiscalNumberAllocation.count({where:{accountId:account.id,type:"E47"}}),2)
+  const rounding=await createForeignObligation(owner,{...input,operationId:`rounding-${suffix}`,lines:[{kind:"SERVICIO",description:"Fracciones",amountCents:3,isrRate:"10"}]})
+  const cent=[{index:0,amountCents:1}]
+  for(let i=0;i<2;i++) {
+   const calc=await previewForeignPayment(owner,rounding.id,cent)
+   await addForeignPayment(owner,rounding.id,{...paymentInput,foreignOperationId:rounding.id,operationId:`rounding-pay-${i}-${suffix}`,allocations:cent,expectedNetDopCents:calc.netDopCents})
+  }
+  const lastPreview=await previewForeignPayment(owner,rounding.id,cent)
+  assert.equal(lastPreview.roundingCents,1)
+  const last=await addForeignPayment(owner,rounding.id,{...paymentInput,foreignOperationId:rounding.id,operationId:`rounding-pay-last-${suffix}`,allocations:cent,expectedNetDopCents:lastPreview.netDopCents})
+  assert.equal(last.roundingCents,1)
+  const lastTemplate=await getE47Template(owner,last.id,db)
+  const lastDraft=await createFiscalDraft(owner,{operationId:`rounding-draft-${suffix}`,document:lastTemplate}) as {id:string}
+  await cancelSupplierPayment(owner,last.id,"Corrección de abono")
+  assert.equal((await db.fiscalDocument.findUniqueOrThrow({where:{id:lastDraft.id}})).state,"DESCARTADO")
+  assert.equal((await db.accountPayable.findUniqueOrThrow({where:{id:rounding.payableId}})).balanceCents,60)
+  await assert.rejects(createForeignObligation(owner,{...input,operationId:`invalid-currency-${suffix}`,rate:undefined}),/tasa de cambio/)
+  await assert.rejects(createForeignObligation(owner,{...input,operationId:`invalid-kind-${suffix}`,lines:[{...input.lines[0],kind:"BIEN"} as unknown as typeof input.lines[0]]}),/servicios/)
+  const other=await db.account.create({data:{name:"Otra empresa",clerkUserId:`other-${suffix}`}})
+  const otherOwner=await db.user.create({data:{accountId:other.id,name:"Otra",username:`other-${suffix}`,passwordHash:"test",isOwner:true}})
+  await assert.rejects(getForeignObligation(otherOwner,foreign.id),/no encontrada/)
+  await db.fiscalSettings.update({where:{accountId:account.id},data:{enabled:false}})
+  await assert.rejects(db.supplierPayment.update({where:{id:payment.id},data:{amountCents:1}}),/protegid/i)
+ })
+})

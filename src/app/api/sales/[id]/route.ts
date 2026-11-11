@@ -5,6 +5,7 @@ import { PaymentMethod, SaleType } from "@prisma/client"
 import { prisma } from "@/lib/db"
 import { getCurrentUserFromRequest } from "../../_helpers/auth"
 import { updateSale, cancelSale } from "@/app/(app)/sales/actions"
+import { cashDeviceHashFromRequest, cashRequest } from "@/lib/cash-context"
 
 export const dynamic = "force-dynamic"
 export const runtime = "nodejs"
@@ -269,7 +270,7 @@ export async function PUT(
     if (shouldCancel) {
       // Acepta alias para mantener compatibilidad con clientes existentes.
       const cancellationReason = String(body?.cancellationReason || body?.cancelReason || body?.reason || "").trim()
-      const result = await cancelSale(id, user.username || user.name || "api", cancellationReason, user)
+      const result = await cashRequest.run({ trustedActor: user, deviceHash: cashDeviceHashFromRequest(request) }, () => cancelSale(id, user.username || user.name || "api", cancellationReason))
       if (!result.success) {
         return NextResponse.json({ error: result.error || "No se pudo cancelar la venta" }, { status: 400 })
       }
@@ -370,7 +371,7 @@ export async function PUT(
       readBoolean(body?.cobrarPropinaLegal) ??
       readBoolean(body?.incluirPropinaLegal)
 
-    await updateSale({
+    await cashRequest.run({ trustedActor: user, deviceHash: cashDeviceHashFromRequest(request) }, () => updateSale({
       id,
       customerId,
       type,
@@ -384,8 +385,7 @@ export async function PUT(
       manualDiscountPercentBp,
       soldAt,
       username: user.username || user.name || "api",
-      user,
-    })
+    }))
 
     const updatedSale = await prisma.sale.findFirst({
       where: { id, accountId: user.accountId },
@@ -445,7 +445,7 @@ export async function DELETE(
     const { id } = await params
     const body = await request.json().catch(() => ({} as { cancellationReason?: string; cancelReason?: string; reason?: string }))
     const cancellationReason = String(body?.cancellationReason || body?.cancelReason || body?.reason || "").trim()
-    const result = await cancelSale(id, user.username || user.name || "api", cancellationReason, user)
+    const result = await cashRequest.run({ trustedActor: user, deviceHash: cashDeviceHashFromRequest(request) }, () => cancelSale(id, user.username || user.name || "api", cancellationReason))
     if (!result.success) {
       return NextResponse.json({ error: result.error || "No se pudo cancelar la venta" }, { status: 400 })
     }
