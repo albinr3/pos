@@ -31,8 +31,13 @@ export default async function SettingsPage() {
         fiscalSection={(user.isOwner || user.canManageFiscalSettings || user.canManageFiscalSequences || user.canPrepareFiscalDocuments || user.canViewFiscalDocuments) && (
           <div className="rounded-lg border p-6">
             <h2 className="font-semibold">Configuración fiscal</h2>
+            {/* La activación de la cuenta y la conexión externa son estados distintos: indicar ambos. */}
+            <p className={`mt-2 w-fit rounded-full px-3 py-1 text-sm font-medium ${fiscalSettings?.enabled === true ? "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-200" : "bg-muted text-muted-foreground"}`}>
+              {fiscalSettings?.enabled === true ? "Configuración fiscal activa · Ambiente de prueba" : "Configuración fiscal inactiva"}
+            </p>
             <p className="text-sm text-muted-foreground">Pendiente de conexión</p>
-            {user.isOwner && <p className="mt-3 text-sm"><a className="underline" href="/api/fiscal/history/export" download>Descargar historial fiscal</a></p>}
+            {/* Ser dueño no activa el módulo: ocultar también la descarga mientras esté apagado. */}
+            {fiscalSettings?.enabled === true && user.isOwner && <p className="mt-3 text-sm"><a className="underline" href="/api/fiscal/history/export" download>Descargar historial fiscal</a></p>}
             {(user.isOwner || user.canManageFiscalSettings) && <FiscalSettingsActivation enabled={fiscalSettings?.enabled === true} />}
             {/* La configuración guardada no equivale a una activación: no mostrar secuencias mientras el módulo esté apagado. */}
             {fiscalSettings?.enabled === true && (user.isOwner || user.canManageFiscalSequences) && <FiscalSequences />}

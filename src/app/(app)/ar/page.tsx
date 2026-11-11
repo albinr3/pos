@@ -14,7 +14,7 @@ export default async function AccountsReceivablePage() {
   const [treasuryAccounts, cashControl, fiscalSettings] = await Promise.all([
     listTreasuryAccounts(),
     prisma.cashControl.findUnique({ where: { accountId: actor.accountId }, select: { enabled: true } }),
-    prisma.fiscalSettings.findUnique({ where: { accountId: actor.accountId }, select: { accountId: true } }),
+    prisma.fiscalSettings.findUnique({ where: { accountId: actor.accountId }, select: { enabled: true } }),
   ])
 
   return (
@@ -33,7 +33,8 @@ export default async function AccountsReceivablePage() {
         </div>
       </div>
       <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }} cashControlEnabled={cashControl?.enabled ?? false}>
-        {fiscalSettings && (actor.isOwner || actor.canViewFiscalDocuments) && <FiscalCustomerCredits actor={{ id: actor.id, accountId: actor.accountId }} />}
+        {/* Conservar una configuración no habilita los créditos fiscales en el flujo ordinario. */}
+        {fiscalSettings?.enabled === true && (actor.isOwner || actor.canViewFiscalDocuments) && <FiscalCustomerCredits actor={{ id: actor.id, accountId: actor.accountId }} />}
         <ARClient initialTreasuryAccounts={treasuryAccounts} actor={{ id: actor.id, accountId: actor.accountId, username: actor.username }} />
       </CashShiftGate>
     </div>

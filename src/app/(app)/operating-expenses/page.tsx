@@ -24,7 +24,8 @@ export default async function OperatingExpensesPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Gastos Operativos</h1>
         <p className="text-sm text-muted-foreground">Registra y consulta los gastos operativos de la empresa.</p>
       </div>
-      {canManageExpenses && fiscal && <FiscalExpenses actor={{ id: user.id, accountId: user.accountId }} enabled={fiscal.enabled} version={fiscal.version} canPrepare={hasPermission(user, "canPrepareFiscalDocuments")} />}
+      {/* El perfil guardado puede estar apagado; no montar el panel ni sus consultas fiscales. */}
+      {canManageExpenses && fiscal?.enabled === true && <FiscalExpenses actor={{ id: user.id, accountId: user.accountId }} enabled={fiscal.enabled} version={fiscal.version} canPrepare={hasPermission(user, "canPrepareFiscalDocuments")} />}
       <OperatingExpensesClient fiscalEnabled={fiscal?.enabled === true} />
     </div>
   )

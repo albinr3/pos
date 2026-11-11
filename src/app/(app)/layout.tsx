@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster"
 import { getCurrentUser, getCurrentUserBillingState, hasClerkSession, hasSubUserSession, isInitialSetupComplete } from "@/lib/auth"
 import { headers } from "next/headers"
 import { redirect } from "next/navigation"
+import { prisma } from "@/lib/db"
 
 // Marcar como dinámico para evitar prerender (requiere autenticación)
 export const dynamic = "force-dynamic"
@@ -73,10 +74,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     }
   }
 
+  // Leer la activación real de la cuenta evita mostrar el menú por permisos o caché del usuario.
+  const fiscalSettings = await prisma.fiscalSettings.findUnique({ where: { accountId: user.accountId }, select: { enabled: true } })
+
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
       {billingState && <BillingBanner billingState={billingState} />}
-      <AppShell billingState={billingState}>{children}</AppShell>
+      <AppShell billingState={billingState} fiscalEnabled={fiscalSettings?.enabled === true}>{children}</AppShell>
       <Toaster />
     </ThemeProvider>
   )

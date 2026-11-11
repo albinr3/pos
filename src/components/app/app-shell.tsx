@@ -86,7 +86,9 @@ const OFFLINE_ALLOWED_ROUTES = new Set(["/sales", "/ar"])
 const USER_CACHE_KEY = clientStorageKeys.user
 const DISABLE_BACKUPS_NAV = true
 
-function canAccessNavItem(user: CurrentUser, href: string) {
+function canAccessNavItem(user: CurrentUser, href: string, fiscalEnabled: boolean) {
+  // La activación pertenece a la cuenta: ni siquiera el dueño debe ver el módulo apagado.
+  if (href === "/fiscal/documents" && !fiscalEnabled) return false
   if (user.isOwner) return true
 
   switch (href) {
@@ -143,9 +145,10 @@ function getCachedUser(): CurrentUser | null {
 
 type AppShellProps = PropsWithChildren<{
   billingState?: BillingState | null
+  fiscalEnabled?: boolean
 }>
 
-export function AppShell({ children, billingState }: AppShellProps) {
+export function AppShell({ children, billingState, fiscalEnabled = false }: AppShellProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -230,7 +233,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
     return nav
       .map((item) => {
         // Los canAccess... controlan si el módulo aparece en el menú.
-        if (!canAccessNavItem(user, item.href)) {
+        if (!canAccessNavItem(user, item.href, fiscalEnabled)) {
           return null
         }
 
@@ -300,7 +303,7 @@ export function AppShell({ children, billingState }: AppShellProps) {
         return item
       })
       .filter((item): item is (typeof nav)[number] => item !== null)
-  }, [user])
+  }, [user, fiscalEnabled])
   
   useEffect(() => {
     let isMounted = true

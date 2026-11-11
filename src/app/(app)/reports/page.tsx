@@ -14,7 +14,7 @@ export default async function ReportsPage() {
   await requireModuleAccess("canAccessReports")
 
   const user = await getCurrentUser()
-  const fiscalSettings = user && hasPermission(user, "canViewFiscalDocuments") ? await prisma.fiscalSettings.findUnique({ where: { accountId: user.accountId }, select: { accountId: true } }) : null
+  const fiscalSettings = user && hasPermission(user, "canViewFiscalDocuments") ? await prisma.fiscalSettings.findUnique({ where: { accountId: user.accountId }, select: { enabled: true } }) : null
   const canViewProfit = user
     ? hasPermission(user, "canViewProfitReport", { allowAdminBypass: false })
     : false
@@ -28,7 +28,8 @@ export default async function ReportsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {fiscalSettings && <Card><CardHeader><CardTitle>Fiscal y conciliación</CardTitle></CardHeader><CardContent><Button asChild><Link href="/reports/fiscal">Ver informe fiscal</Link></Button></CardContent></Card>}
+        {/* La tarjeta operativa requiere activación; la consulta histórica conserva su ruta. */}
+        {fiscalSettings?.enabled === true && <Card><CardHeader><CardTitle>Fiscal y conciliación</CardTitle></CardHeader><CardContent><Button asChild><Link href="/reports/fiscal">Ver informe fiscal</Link></Button></CardContent></Card>}
         {hasPermission(user, "canAccessAccountsPayable") && [{ path: "purchases", label: "Compras" }, { path: "accounts-payable", label: "Cuentas por pagar" }, { path: "supplier-payments", label: "Pagos a proveedores" }].map(r => <Card key={r.path}><CardHeader><CardTitle>{r.label}</CardTitle></CardHeader><CardContent><Button asChild><Link href={`/reports/${r.path}`}>Ver reporte</Link></Button></CardContent></Card>)}
         <Card>
           <CardHeader>
