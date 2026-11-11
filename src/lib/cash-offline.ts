@@ -30,7 +30,7 @@ export function assertCashShiftAccess(context: CashContext, actor?: CashActorIde
   const reason = cashShiftBlockReason(context, actor)
   if (reason) throw new CashShiftAccessError(context, reason)
 }
-export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "supplierPayment" | "foreignPayment" | "expense" | "fiscalExpense" | "employeeExpenseSettlement" | "return" | "fiscalCredit" | "fiscalFinancialCredit" | "fiscalDebit" | "applyFiscalCustomerCredit" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; reportAmountCents?: number; reportCreatedAt?: string; cashOperation: CashOperationInput; error?: string }
+export type CashQueuedOperation = { id: string; kind: "sale" | "payment" | "batchPayment" | "purchase" | "ocrPurchase" | "supplierPayment" | "foreignPayment" | "expense" | "fiscalExpense" | "employeeExpenseSettlement" | "return" | "fiscalCredit" | "fiscalFinancialCredit" | "fiscalDebit" | "applyFiscalCustomerCredit" | "transfer"; payload: Record<string, unknown>; stockConsumptions?: StockConsumption[]; reportAmountCents?: number; reportCreatedAt?: string; cashOperation: CashOperationInput; error?: string; errorCode?: string }
 type DocumentResult = { id?: string; reference?: string; invoiceCode?: string; returnCode?: string; documentId?: string; eNcf?: string; stockDecrements?: Array<{ ingredientId: string; qty: number }>; paymentId?: string; paymentIds?: string[] }
 type SubmitResult = { pending: true; result: null; error?: string } | { pending: false; result: DocumentResult }
 type ManualInput = { shiftId: string; kind: string; amountCents: number; otherAccountId?: string; note: string }
@@ -232,12 +232,15 @@ async function confirm(record: CashQueuedOperation, result: unknown) {
   await completed(tx)
   window.dispatchEvent(new Event("cash-outbox-changed"))
 }
-async function storeError(record: CashQueuedOperation, error: string) {
+async function storeError(record: CashQueuedOperation, error: string, errorCode?: string) {
   const db = await database(), tx = db.transaction("outbox", "readwrite")
   const store = tx.objectStore("outbox"), request = store.get(record.id)
   // Otra pestaña puede haber confirmado o anulado el pendiente mientras llegaba este error.
   // Actualizar solo si todavía existe; nunca resucitar una operación ya resuelta.
-  request.onsuccess = () => { if (request.result) store.put({ ...request.result, error }) }
+  request.onsuccess = () => {
+    // Un rechazo tardío de una versión anterior no debe sobrescribir la revisión del usuario.
+    if (request.result && JSON.stringify(request.result.payload) === JSON.stringify(record.payload) && JSON.stringify(request.result.cashOperation) === JSON.stringify(record.cashOperation)) store.put({ ...request.result, error, errorCode })
+  }
   await completed(tx)
 }
 async function flush(context: CashContext) {
@@ -246,7 +249,7 @@ async function flush(context: CashContext) {
     // Enviar también permite recuperar la respuesta de un commit anterior; el servidor nunca reasigna el turno.
     const response = await fetch("/api/cash-shifts/operations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(record) })
     const data = await response.json()
-    if (!response.ok) { await storeError(record, data.error ?? "No se pudo sincronizar"); throw new Error(data.error ?? "No se pudo sincronizar") }
+    if (!response.ok) { await storeError(record, data.error ?? "No se pudo sincronizar", typeof data.code === "string" ? data.code : undefined); throw new Error(data.error ?? "No se pudo sincronizar") }
     await confirm(record, data.result)
   }
 }
@@ -256,6 +259,67 @@ export async function syncCashOutbox(context?: CashContext) {
   const work = () => flush(current)
   if (navigator.locks) await navigator.locks.request(`cash-sync:${current.accountId}`, work)
   else await work()
+}
+
+type FiscalPendingReview = { id: string; accountId: string; userId: string; version: number; type: string; totalCents: number; original: string; expectedReview?: string; taxCents?: number; buyerLabel?: string }
+function reviewFingerprint(record: CashQueuedOperation) { return JSON.stringify({ payload: record.payload, cashOperation: record.cashOperation }) }
+// Un cambio posterior al visto bueno también exige una nueva revisión, sin perder la venta.
+function needsFiscalReview(code?: string) { return code === "FISCAL_POLICY_CHANGED" || code === "FISCAL_REVIEW_CHANGED" }
+
+/** La revisión no escribe ni intenta confirmar la venta. */
+export async function previewPendingFiscalPolicy(id: string): Promise<FiscalPendingReview> {
+  const context = await refreshCashContext()
+  const record = (await cashPending()).find(row => row.id === id)
+  if (!record || record.kind !== "sale" || !needsFiscalReview(record.errorCode) || record.cashOperation.accountId !== context.accountId || record.cashOperation.userId !== context.userId) throw new Error("El pendiente no está disponible para este empleado o necesita reintentarse primero")
+  const fiscal = record.payload.fiscal
+  if (!context.fiscalQueuePolicy?.enabled) throw new Error("El módulo fiscal está apagado. Solicita su activación de prueba para revisar esta venta; el pendiente se conserva")
+  if (!Number.isSafeInteger(record.reportAmountCents)) throw new Error("El importe original requiere revisión manual; se conserva la venta")
+  // Una venta originalmente ordinaria sigue siendo ordinaria solo por decisión expresa del empleado.
+  if (fiscal === null || fiscal === undefined) return { id, accountId: context.accountId, userId: context.userId, version: context.fiscalQueuePolicy.version, type: "ORDINARIO", totalCents: record.reportAmountCents!, original: reviewFingerprint(record) }
+  if (typeof fiscal !== "object" || Array.isArray(fiscal)) throw new Error("El comprobante original requiere revisión manual; se conserva la venta")
+  const fiscalFields = fiscal as Record<string, unknown>
+  if (typeof fiscalFields.type !== "string") throw new Error("Falta el tipo original; se conserva la venta")
+  const version = context.fiscalQueuePolicy.version
+  const response = await fetch("/api/fiscal/sales/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...record.payload, fiscal: { ...fiscalFields, expectedPolicyVersion: version } }) })
+  const data = await response.json()
+  if (!response.ok) throw new Error(data.error?.fields?.[0]?.message ?? data.error?.message ?? "No se pudo revisar la venta")
+  const totalCents = Math.round(Number(data.totals?.gross) * 100)
+  // Nunca aceptar automáticamente un cambio de importe, descuento o saldo en una venta ya cobrada offline.
+  if (!Number.isSafeInteger(totalCents) || totalCents !== record.reportAmountCents) throw new Error("El total cambió; conserva la venta y revisa sus importes antes de continuar")
+  if (typeof data.reviewSignature !== "string" || !data.reviewSignature) throw new Error("El servidor no proporcionó el detalle revisado; conserva la venta pendiente")
+  const tax = data.totals?.tax === undefined ? undefined : Math.round(Number(data.totals.tax) * 100)
+  const buyerLabel = typeof data.buyer?.name === "string" ? [data.buyer.name, typeof data.buyer.identification === "string" ? data.buyer.identification : null].filter(Boolean).join(" · ") : undefined
+  return { id, accountId: context.accountId, userId: context.userId, version, type: fiscalFields.type, totalCents, original: reviewFingerprint(record), expectedReview: data.reviewSignature, ...(typeof tax === "number" && Number.isSafeInteger(tax) ? { taxCents: tax } : {}), ...(buyerLabel ? { buyerLabel } : {}) }
+}
+
+/** Solo aplicar después de que el empleado confirme la previsualización. */
+export async function acceptPendingFiscalPolicy(review: FiscalPendingReview) {
+  const context = await refreshCashContext()
+  if (context.accountId !== review.accountId || context.userId !== review.userId || !context.fiscalQueuePolicy?.enabled || context.fiscalQueuePolicy.version !== review.version) throw new Error("La sesión o la política cambiaron; vuelve a revisar")
+  const save = async () => {
+    const db = await database(), tx = db.transaction(["state", "outbox"], "readwrite")
+    const store = tx.objectStore("outbox"), request = store.get(review.id)
+    let failure: Error | undefined
+    request.onsuccess = () => {
+      const record = request.result as CashQueuedOperation | undefined
+      const fiscal = record?.payload.fiscal
+      const sameType = review.type === "ORDINARIO" ? fiscal === undefined || fiscal === null : !!fiscal && typeof fiscal === "object" && !Array.isArray(fiscal) && (fiscal as Record<string, unknown>).type === review.type
+      if (!record || !needsFiscalReview(record.errorCode) || reviewFingerprint(record) !== review.original || record.cashOperation.accountId !== review.accountId || record.cashOperation.userId !== review.userId || record.reportAmountCents !== review.totalCents || !sameType || (review.type !== "ORDINARIO" && !review.expectedReview)) {
+        failure = new Error("El pendiente cambió; vuelve a revisarlo")
+        tx.abort(); return
+      }
+      // Cada rechazo 409 confirma que no se aplicó; una clave única conserva revisiones repetidas de la misma política.
+      tx.objectStore("state").put({ key: `policy-review:${record.id}:${record.cashOperation.fiscalPolicyVersion}:${crypto.randomUUID()}`, value: { record, reviewedAt: new Date().toISOString(), newVersion: review.version } })
+      const revisedPayload = review.type === "ORDINARIO"
+        ? { ...record.payload, fiscal: null, expectedTotalCents: review.totalCents }
+        : { ...record.payload, fiscal: { ...(fiscal as Record<string, unknown>), expectedPolicyVersion: review.version, expectedTotalCents: review.totalCents, expectedReview: review.expectedReview } }
+      store.put({ ...record, error: undefined, errorCode: undefined, payload: revisedPayload, cashOperation: { ...record.cashOperation, fiscalPolicyVersion: review.version } })
+    }
+    await completed(tx).catch(error => { throw failure ?? error })
+  }
+  if (navigator.locks) await navigator.locks.request(`cash-sync:${context.accountId}`, save)
+  else await save()
+  window.dispatchEvent(new Event("cash-outbox-changed"))
 }
 export async function submitControlledDocument(kind: CashQueuedOperation["kind"], payload: Record<string, unknown>, actor?: { id: string; accountId: string }, stockConsumptions?: StockConsumption[], reportAmountCents?: number): Promise<SubmitResult | undefined> {
   if (kind === "sale" && Array.isArray(payload.items) && payload.items.some(item => {

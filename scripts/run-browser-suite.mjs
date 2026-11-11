@@ -10,7 +10,7 @@ export async function runBrowserSuite(root, name, html) {
   fs.mkdirSync(path.dirname(target), { recursive: true })
   fs.writeFileSync(target, html)
   const profile = path.join(root, "tmp", `${name}-profile-${Date.now()}`)
-  const child = spawn(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--disable-extensions", "--disable-background-networking", "--disable-component-update", "--disable-sync", `--user-data-dir=${profile}`, "--allow-file-access-from-files", "--remote-debugging-port=0", "about:blank"], { windowsHide: true, stdio: "ignore" })
+  const child = spawn(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--disable-extensions", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-quic", "--no-proxy-server", "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost", `--user-data-dir=${profile}`, "--allow-file-access-from-files", "--remote-debugging-port=0", "about:blank"], { windowsHide: true, stdio: "ignore" })
   let startupError
   child.on("error", error => { startupError = error })
   const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
@@ -26,6 +26,8 @@ export async function runBrowserSuite(root, name, html) {
   }
   if (startupError || !address) { child.kill(); throw startupError ?? new Error("Chrome no inició su instancia temporal de pruebas") }
   const [port, socketPath] = address
+  // Permitir únicamente el puerto local que Chrome acaba de publicar; nunca abrir la red externa.
+  process.env.FISCAL_TEST_DEVTOOLS_PORT = port
   const socket = new WebSocket(`ws://127.0.0.1:${port}${socketPath}`)
   await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject })
   let nextId = 0
@@ -55,7 +57,7 @@ export async function runBrowserSuite(root, name, html) {
       const debug = await call("Runtime.evaluate", { expression: 'JSON.stringify({text:document.body.innerText,errors:window.__errors})', returnByValue: true }, sessionId)
       throw new Error(`El navegador no terminó: ${debug.result?.value}`)
     }
-  } finally { await call("Browser.close").catch(() => {}); socket.close() }
+  } finally { await call("Browser.close").catch(() => {}); socket.close(); delete process.env.FISCAL_TEST_DEVTOOLS_PORT }
   for (const result of results) console.log(`${result.ok ? "PASS" : "FAIL"} ${result.name ?? "Navegador"}${result.error ? ": " + result.error : ""}`)
   if (results.some(result => !result.ok)) process.exitCode = 1
 }

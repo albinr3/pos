@@ -31,6 +31,7 @@ Object.assign(env, {
 if (!env.CLERK_SECRET_KEY?.startsWith('sk_live_') || config.FISCAL_TEST_ALLOW_LIVE_IDENTITY_LOOKUP !== 'true') throw new Error('Configuración Clerk no autorizada')
 const authenticated = process.argv.includes('--authenticated')
 const preferencesOnly = process.env.FISCAL_PREFERENCES_ONLY === '1'
+const historyOnly = process.env.FISCAL_HISTORY_ONLY === '1'
 const stage4Only = process.env.FISCAL_STAGE4_ONLY === '1'
 const stage6Only = process.env.FISCAL_STAGE6_ONLY === '1'
 const identities = [config.FISCAL_TEST_CLERK_USER_A, config.FISCAL_TEST_CLERK_USER_B]
@@ -113,6 +114,24 @@ try {
       const fiscal = await capabilities.json()
       assert.equal(fiscal.policy.enabled, isolated && index === 1 && !stage4Only)
       assert.equal(fiscal.operations.emit, false)
+      if (historyOnly) {
+        const path = 'http://localhost:3100/api/fiscal/history/export'
+        const downloaded = await fetch(path, { headers, signal: AbortSignal.timeout(30000) })
+        assert.equal(downloaded.status, 200)
+        assert.match(downloaded.headers.get('cache-control') || '', /no-store/)
+        const history = await downloaded.json()
+        assert.equal(history.accountId, account.id)
+        assert.equal(history.documents.length, index === 0 ? 1 : 0)
+        const cashier = account.users.find(user => user.username === 'cajero'); assert.ok(cashier)
+        const cashierLogin = await fetch('http://localhost:3100/api/auth/subuser/login', { method:'POST', headers:{'Content-Type':'application/json','X-Clerk-Authorization':`Bearer ${token}`}, body:JSON.stringify({username:cashier.username,password:config.FISCAL_TEST_PIN}), signal:AbortSignal.timeout(30000) })
+        assert.equal(cashierLogin.status, 200)
+        const cashierData = await cashierLogin.json()
+        const denied = await fetch(path, { headers:{'X-Clerk-Authorization':`Bearer ${token}`,'X-SubUser-Token':cashierData.token}, signal:AbortSignal.timeout(30000) })
+        assert.equal(denied.status, 403)
+        sessions.push({sessionId:session.id,token:data.token,accountId:account.id,userId:owner.id})
+        console.log(`Cuenta ${index + 1}: exportación HTTP aislada y permiso del cajero comprobados`)
+        continue
+      }
       if (stage6Only) {
         const cashier = account.users.find(user => user.username === 'cajero'); assert.ok(cashier)
         const cashierLogin = await fetch('http://localhost:3100/api/auth/subuser/login', { method:'POST', headers:{'Content-Type':'application/json','X-Clerk-Authorization':`Bearer ${token}`}, body:JSON.stringify({username:cashier.username,password:config.FISCAL_TEST_PIN}), signal:AbortSignal.timeout(30000) })
@@ -247,6 +266,11 @@ try {
       assert.equal(rejected.status, 401, 'Se aceptó una firma Clerk falsa')
       sessions.push({ sessionId: session.id, token: data.token, accountId: account.id, userId: owner.id })
       console.log(`Cuenta ${index + 1}: inicio, sesión móvil y cookie web válidos; PIN y firma incorrectos rechazados`)
+    }
+    if (historyOnly) for (let index = 0; index < 2; index++) {
+      const token = (await clerk.sessions.getToken(sessions[index].sessionId)).jwt
+      const crossed = await fetch('http://localhost:3100/api/fiscal/history/export', { headers:{'X-Clerk-Authorization':`Bearer ${token}`,'X-SubUser-Token':sessions[1-index].token}, signal:AbortSignal.timeout(30000) })
+      assert.equal(crossed.status, 401, 'Una sesión cruzada no puede exportar historial')
     }
     if (!preferencesOnly) for (let index = 0; index < 2; index++) {
       // Una sesión vencida también devuelve 401: comprobar primero que el token fresco sí funciona.

@@ -35,7 +35,9 @@ function runPrisma(args) {
   if (result.status) throw new Error("No se pudo aplicar el esquema en la base de pruebas")
 }
 
-runPrisma(["db", "push", "--schema", path.join(root, "prisma/schema.prisma"), "--skip-generate"])
+// La opción de migraciones conserva triggers y restricciones; nunca se usa sobre una base no vacía.
+if (process.env.FISCAL_TEST_MIGRATE_FULL === "1") runPrisma(["migrate", "deploy", "--schema", path.join(root, "prisma/schema.prisma")])
+else runPrisma(["db", "push", "--schema", path.join(root, "prisma/schema.prisma"), "--skip-generate"])
 
 // Crear fixtures para los 3 perfiles de empresa requeridos en la Etapa 0:
 // 1. Empresa ordinaria dominicana (sin perfil fiscal, ITBIS 18% incluido, flujo comercial estándar).

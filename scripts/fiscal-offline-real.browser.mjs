@@ -93,9 +93,29 @@ export async function runRealOffline({ dbUrl, accountId, userId, freshHeaders, f
     if(fiscal) {
       const sales=await db.sale.findMany({where:{accountId},select:{id:true}})
       const newSales=sales.filter(sale=>!previousSaleIds.has(sale.id));assert.equal(newSales.length,1)
-      const document=await db.fiscalDocument.findFirst({where:{accountId,saleId:newSales[0].id}})
+      // La base de la etapa 7 usa la migración documental anterior, sin columnas de compras posteriores.
+      const [document]=await db.$queryRaw`SELECT id,state FROM "FiscalDocument" WHERE "accountId"=${accountId} AND "saleId"=${newSales[0].id} LIMIT 1`
       assert.equal(document?.state,'PREPARADO_PENDIENTE_CONEXION')
       assert.equal(await db.fiscalNumberAllocation.count({where:{accountId,documentId:document.id}}),1)
+      // Un rechazo anterior debe revisarse de nuevo si cambia el detalle antes de confirmar.
+      // La versión desactualizada debe ser válida: cero se rechaza antes de comparar la política.
+      const staleVersion=context.fiscalQueuePolicy.version+1
+      const reviewId=`review-${Date.now()}`
+      const reviewed={id:reviewId,kind:'sale',payload:{...payload,fiscal:{...payload.fiscal,expectedPolicyVersion:staleVersion}},reportAmountCents:15000,cashOperation:{accountId,userId,clientOperationId:reviewId,cashShiftId:null,clientSequence:null,fiscalPolicyVersion:staleVersion}}
+      await evaluate(`new Promise((resolve,reject)=>{const r=indexedDB.open('movopos-cash-v1');r.onerror=()=>reject(r.error);r.onsuccess=()=>{const tx=r.result.transaction('outbox','readwrite');tx.objectStore('outbox').put(${JSON.stringify(reviewed)});tx.oncomplete=()=>resolve(true);tx.onerror=()=>reject(tx.error)}})`)
+      await evaluate('window.api.syncCashOutbox().catch(()=>{})')
+      assert.equal((await evaluate('window.api.cashPending()'))[0].errorCode,'FISCAL_POLICY_CHANGED')
+      // Runtime.evaluate ejecuta una expresión: encadenar promesas evita usar await fuera de una función async.
+      await evaluate(`window.api.previewPendingFiscalPolicy(${JSON.stringify(reviewId)}).then(review => window.api.acceptPendingFiscalPolicy(review))`)
+      const product=await db.product.findUniqueOrThrow({where:{id:productId},select:{name:true}})
+      await db.product.update({where:{id:productId},data:{name:`${product.name} revisado`}})
+      await evaluate('window.api.syncCashOutbox().catch(()=>{})')
+      assert.equal((await evaluate('window.api.cashPending()'))[0].errorCode,'FISCAL_REVIEW_CHANGED')
+      assert.equal(await db.sale.count({where:{accountId}}),before+1,'El cambio de detalle debe revertir la venta')
+      await evaluate(`window.api.previewPendingFiscalPolicy(${JSON.stringify(reviewId)}).then(review => window.api.acceptPendingFiscalPolicy(review))`)
+      await evaluate('window.api.syncCashOutbox()')
+      assert.equal((await evaluate('window.api.cashPending()')).length,0)
+      assert.equal(await db.sale.count({where:{accountId}}),before+2,'La venta se confirma una sola vez tras la nueva revisión')
     }
     // Fixture antiguo con tres decimales: debe permanecer en IndexedDB para revisión, sin redondearse.
     const invalidPayload={...payload,items:[{...payload.items[0],qty:1.001}]}
@@ -105,7 +125,7 @@ export async function runRealOffline({ dbUrl, accountId, userId, freshHeaders, f
     const invalidMessage=await evaluate("window.api.syncCashOutbox().then(()=>null,e=>e.message)")
     assert.match(invalidMessage,/máximo dos decimales/)
     const remains=await evaluate('window.api.cashPending()'); assert.equal(remains.length,1); assert.equal(remains[0].payload.items[0].qty,1.001)
-    assert.equal(await db.sale.count({where:{accountId}}),before+1)
+    assert.equal(await db.sale.count({where:{accountId}}),before+(fiscal?2:1))
     assert.equal(rejectedExternal,0,'El navegador intentó acceder a un destino distinto del servidor aislado')
     console.log('Offline real: IndexedDB, recarga, respuesta perdida, reintento, inventario y pendiente incompatible verificados')
   } finally { await db.$disconnect(); await call('Browser.close').catch(()=>{}); socket.close(); stopBrowser(); process.removeListener('exit',stopBrowser) }

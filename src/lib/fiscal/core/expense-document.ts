@@ -20,5 +20,7 @@ export async function getE43Template(actor: Actor, id: string, db: Prisma.Transa
     if (line.taxTreatment !== "EXENTO" || (line.withholdings?.length ?? 0) > 0) return fail("El gasto contiene impuestos o retenciones incompatibles con E43; revisa el tipo de comprobante")
     return { description: line.description, kind: line.kind, unit: "UNIDAD", quantity: "1", unitPrice: new Decimal(line.amountCents).div(100).toFixed(2), taxTreatment: line.taxTreatment, priceIncludesTax: true }
   })
-  return { type: "E43", issueDate: expense.expenseDate.toISOString().slice(0, 10), expectedPolicyVersion: settings.version, currency: { operation: "DOP", reporting: "DOP" }, issuer: { id: actor.accountId, name: settings.legalName, identification: settings.taxId.replace(/[\s-]/g, ""), country: "DO" }, source: { kind: "EXPENSE", id }, lines }
+  // El gasto es un instante: usar UTC aquí cambia el día dominicano cerca de medianoche.
+  const issueDate = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo", year: "numeric", month: "2-digit", day: "2-digit" }).format(expense.expenseDate)
+  return { type: "E43", issueDate, expectedPolicyVersion: settings.version, currency: { operation: "DOP", reporting: "DOP" }, issuer: { id: actor.accountId, name: settings.legalName, identification: settings.taxId.replace(/[\s-]/g, ""), country: "DO" }, source: { kind: "EXPENSE", id }, lines }
 }

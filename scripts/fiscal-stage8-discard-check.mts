@@ -18,7 +18,8 @@ try {
  await prisma.$executeRaw`INSERT INTO "FiscalDocument" (id,"accountId","saleId",type,state,"policyVersion","ruleVersion",snapshot,"updatedAt") VALUES (${id},${accountId},${sale.id},'E44','BORRADOR',${policy.version},'test','{}'::jsonb,now())`
  const command={operationId:`discard-${randomUUID()}`,expectedRevision:1,reason:"Nueva revisión"}
  const result=await discardSaleFiscalDraft(actor,id,command),repeat=await discardSaleFiscalDraft(actor,id,command)
- assert.deepEqual(result,repeat);assert.equal(result.state,"DESCARTADO")
+ // La respuesta idempotente es JSON no tipado: comprobar su forma antes de leerla.
+ assert.deepEqual(result,repeat);assert.ok(result && typeof result === "object" && "state" in result);assert.equal(result.state,"DESCARTADO")
  assert.equal((await prisma.fiscalDocument.findUniqueOrThrow({where:{id}})).state,"DESCARTADO")
  assert.equal(await prisma.fiscalDocumentEvent.count({where:{accountId,documentId:id,state:"DESCARTADO"}}),1)
  const prepared=await prisma.fiscalDocument.findFirstOrThrow({where:{accountId,state:"PREPARADO_PENDIENTE_CONEXION"}})

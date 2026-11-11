@@ -35,6 +35,7 @@
     "fiscal-test:smoke": "node scripts/fiscal-test-smoke.mjs",
     "fiscal-test:integration": "node scripts/fiscal-baseline-integration.mjs",
     "fiscal-test:baseline": "node scripts/fiscal-baseline-integration.mjs --baseline-only",
+    "fiscal-test:stage14": "node scripts/fiscal-stage14-check.mjs",
     "fiscal-test:auth": "tsx --test scripts/fiscal-auth.integration.test.mts",
     "fiscal-test:clerk-live": "tsx scripts/fiscal-clerk-live-check.mts",
     "fiscal-test:clerk-temporary": "node scripts/fiscal-clerk-temporary.mjs",

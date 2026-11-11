@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client"
 
 const { previewFiscalSale } = await import("../src/lib/fiscal/core/sale-preview")
 const { parseFiscalSaleCommand } = await import("../src/lib/fiscal/core/sale-command")
+const { fiscalSaleReviewSignature } = await import("../src/lib/fiscal/core/sale-review-signature")
 const actor = { id: "owner", accountId: "a", isOwner: true }
 const settings = { enabled:true,jurisdiction:"DO",regime:"DO_ECF",environment:"TEST",configurationStatus:"VALIDATED",version:1,effectiveFrom:new Date("2026-11-09T00:00:00Z"),legalName:"Emisor",taxId:"123456789" }
 const generic = { id:"generic",name:"Cliente General",isGeneric:true,isActive:true,cedula:null,fiscalIdentification:null,fiscalIdentificationCountry:null,fiscalLegalName:null,saleDiscountPercentBp:0,creditDays:0 }
@@ -13,6 +14,15 @@ const input = { type:"CONTADO",customerId:null,paymentMethod:"EFECTIVO",items:[{
 function fixture(active = true) {
   return { fiscalSettings:{findUnique:async()=>({...settings,enabled:active})},companySettings:{findFirst:async()=>({salePricesIncludeItbis:true,legalTipEnabled:true})},customer:{findFirst:async({where}:any)=>where.id === "buyer" ? named : generic},product:{findMany:async()=>[product]},$queryRaw:async()=>[] } as unknown as Prisma.TransactionClient
 }
+
+test("el resumen detecta cambios de comprador o impuesto aunque el total coincida", async () => {
+  const preview = await previewFiscalSale(actor,input,fixture())
+  assert.equal(preview.reviewSignature, fiscalSaleReviewSignature(preview))
+  assert.notEqual(preview.reviewSignature, fiscalSaleReviewSignature({ ...preview, buyer: { name: "Otro", identification: "101111111", country: "DO" } }))
+  assert.notEqual(preview.reviewSignature, fiscalSaleReviewSignature({ ...preview, totals: { ...preview.totals, tax: "0.00" } }))
+  const twoLines = { ...preview, lines: [...preview.lines, { ...preview.lines[0], description: "Otro producto" }] }
+  assert.equal(fiscalSaleReviewSignature(twoLines), fiscalSaleReviewSignature({ ...twoLines, lines: [...twoLines.lines].reverse() }))
+})
 
 test("E32 calcula desde la venta, valida el umbral y acepta comprador extranjero", async () => {
   const result=await previewFiscalSale(actor,input,fixture());assert.equal(result.totals.gross,"118.00");assert.equal(result.totals.tax,"18.00")

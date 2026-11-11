@@ -188,6 +188,7 @@ function getCachedUser(): CurrentUser | null {
 }
 
 export function PosClient({
+  actor,
   defaultViewMode = "list",
   showItbisOnReceipts = true,
   salePricesIncludeItbis = true,
@@ -197,6 +198,7 @@ export function PosClient({
   onboardingAccountId = null,
   fiscalSale = null,
 }: {
+  actor: { id: string; accountId: string }
   defaultViewMode?: string
   showItbisOnReceipts?: boolean
   salePricesIncludeItbis?: boolean
@@ -206,6 +208,8 @@ export function PosClient({
   onboardingAccountId?: string | null
   fiscalSale?: { accountId: string; version: number; canPrepare: boolean } | null
 }) {
+  // El carrito no confirmado pertenece al empleado y no debe restaurarse en otra sesión.
+  const cartStorageKey = `movopos-cart:${JSON.stringify([actor.accountId, actor.id])}`
   const cashAccess = useCashShiftAccess()
   const isOnline = useOnlineStatus()
   const [mounted, setMounted] = useState(false)
@@ -272,7 +276,10 @@ export function PosClient({
   const [applyLegalTip, setApplyLegalTip] = useState(legalTipEnabled)
   const [discountMode, setDiscountMode] = useState<DiscountMode>("AUTO")
   const [manualDiscountInput, setManualDiscountInput] = useState("")
-  const [user, setUser] = useState<CurrentUser | null>(() => getCachedUser())
+  const [user, setUser] = useState<CurrentUser | null>(() => {
+    const cached = getCachedUser()
+    return cached?.accountId === actor.accountId && cached.id === actor.id ? cached : null
+  })
   // Usar el permiso del usuario para vender sin stock
   const allowNegativeStock = useMemo(() => user?.canSellWithoutStock || user?.isOwner || false, [user])
   const canApplyDiscounts = useMemo(() => user?.canApplyDiscounts || user?.isOwner || false, [user])
@@ -303,7 +310,7 @@ export function PosClient({
     const version = ++stockLoadVersion.current
     if (!user?.accountId) return null
     try {
-      const state = await readPosStockState(user.accountId)
+      const state = await readPosStockState(user.accountId, user.id)
       if (version === stockLoadVersion.current) setStockState(state)
       return state
     } catch {
@@ -551,7 +558,7 @@ export function PosClient({
     setTransferBankName("")
     setEditingPaymentAmounts({})
     setPaymentMethod(PaymentMethod.EFECTIVO)
-    localStorage.removeItem("posCartState")
+    localStorage.removeItem(cartStorageKey)
   }, [legalTipEnabled, treasuryAccounts])
 
   const applyStockDecrements = useCallback((decrements: Array<{ ingredientId: string; qty: number }>) => {
@@ -623,19 +630,19 @@ export function PosClient({
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then((data) => {
-        if (data.user) {
+        if (data.user && data.user.accountId === actor.accountId && data.user.id === actor.id) {
           setUser(data.user)
           cacheUser(data.user)
         }
       })
       .catch(() => {
         const cached = getCachedUser()
-        if (cached) {
+        if (cached?.accountId === actor.accountId && cached.id === actor.id) {
           setUser(cached)
         }
         console.error("Error fetching user")
       })
-  }, [])
+  }, [actor.accountId, actor.id])
 
   useEffect(() => {
     if (autoDiscountPercentBp > 0) {
@@ -668,7 +675,7 @@ export function PosClient({
       }
 
       const loadCustomersFromCache = async () => {
-        const cached = await getCustomersCache()
+        const cached = await getCustomersCache(actor)
         // Ordenar clientes: primero el genérico, luego el resto alfabéticamente
         const sorted = cached.sort((a, b) => {
           if (a.isGeneric && !b.isGeneric) return -1
@@ -684,7 +691,7 @@ export function PosClient({
           })
         }
         try {
-          const products = await getProductsCache()
+          const products = await getProductsCache(actor)
           if (products.length === 0) {
             toast({
               title: "Productos no disponibles offline",
@@ -744,7 +751,7 @@ export function PosClient({
 
       // Restaurar el estado del carrito
       try {
-        const saved = localStorage.getItem("posCartState")
+        const saved = localStorage.getItem(cartStorageKey)
         if (saved) {
           const state = JSON.parse(saved)
           // Verificar que el estado no sea muy antiguo (máximo 24 horas)
@@ -864,18 +871,18 @@ export function PosClient({
               })
             } else {
               // Si no hay items válidos, limpiar el estado
-              localStorage.removeItem("posCartState")
+              localStorage.removeItem(cartStorageKey)
             }
           } else {
             // El estado es muy antiguo o inválido, limpiarlo
-            localStorage.removeItem("posCartState")
+            localStorage.removeItem(cartStorageKey)
           }
         }
       } catch (error) {
         console.error("Error restaurando estado del carrito:", error)
         // Limpiar el estado corrupto
         try {
-          localStorage.removeItem("posCartState")
+          localStorage.removeItem(cartStorageKey)
           console.log("✅ Estado del carrito corrupto eliminado. Por favor recarga la página.")
         } catch (e) {
           console.error("No se pudo limpiar el localStorage:", e)
@@ -930,7 +937,7 @@ export function PosClient({
           }
 
           // Cargar desde cache offline
-          const cached = await getProductsCache()
+          const cached = await getProductsCache(actor)
           // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
           const normalized = cached.map((p: any) => {
             const price = p.priceCents ?? p.unitPriceCents ?? 0
@@ -979,15 +986,15 @@ export function PosClient({
           manualDiscountInput,
           timestamp: Date.now(),
         }
-        localStorage.setItem("posCartState", JSON.stringify(state))
+        localStorage.setItem(cartStorageKey, JSON.stringify(state))
       } catch (error) {
         console.error("Error guardando estado del carrito:", error)
         // Si hay error al guardar, limpiar el estado
-        localStorage.removeItem("posCartState")
+        localStorage.removeItem(cartStorageKey)
       }
     } else {
       // Si el carrito está vacío, limpiar el estado guardado
-      localStorage.removeItem("posCartState")
+      localStorage.removeItem(cartStorageKey)
     }
   }, [
     cart,
@@ -1052,7 +1059,7 @@ export function PosClient({
             manualDiscountInput,
             timestamp: Date.now(),
           }
-          localStorage.setItem("posCartState", JSON.stringify(state))
+          localStorage.setItem(cartStorageKey, JSON.stringify(state))
         } catch (error) {
           console.error("Error guardando estado del carrito:", error)
         }
@@ -1107,7 +1114,7 @@ export function PosClient({
             }
 
             // Buscar en cache offline
-            const r = await searchProductsCache(q)
+            const r = await searchProductsCache(q, actor)
             // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
             const normalized = r.map((p: any) => {
               const price = p.priceCents ?? p.unitPriceCents ?? 0
@@ -1146,7 +1153,7 @@ export function PosClient({
               }
 
               // Cargar desde cache offline
-              const cached = await getProductsCache()
+              const cached = await getProductsCache(actor)
               // Normalizar productos: asegurar que tengan priceCents e itbisRateBp
               const normalized = cached.map((p: any) => {
                 const price = p.priceCents ?? p.unitPriceCents ?? 0
@@ -1439,10 +1446,10 @@ export function PosClient({
         try {
           product = await findProductByBarcode(trimmedCode)
         } catch {
-          product = await findProductByBarcodeCache(trimmedCode)
+          product = await findProductByBarcodeCache(trimmedCode, actor)
         }
       } else {
-        product = await findProductByBarcodeCache(trimmedCode)
+        product = await findProductByBarcodeCache(trimmedCode, actor)
       }
 
       if (product) {
@@ -3401,7 +3408,7 @@ export function PosClient({
                       manualDiscountInput,
                       timestamp: Date.now(),
                     }
-                    localStorage.setItem("posCartState", JSON.stringify(state))
+                    localStorage.setItem(cartStorageKey, JSON.stringify(state))
                   } catch (error) {
                     console.error("Error guardando estado del carrito:", error)
                   }

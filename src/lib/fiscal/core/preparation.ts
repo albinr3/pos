@@ -214,12 +214,17 @@ async function verifySource(tx: Tx, actor: Actor, result: Awaited<ReturnType<typ
 }
 
 /** Registra una venta recién creada y su documento dentro de la misma transacción comercial. */
-export async function prepareFiscalSaleInTransaction(tx: Tx, actor: Actor, input: Record<string, unknown>, metadata: Record<string, unknown>) {
+export async function prepareFiscalSaleInTransaction(tx: Tx, actor: Actor, input: Record<string, unknown>, metadata: Record<string, unknown>, expectedReview?: string) {
  authorize(actor,"canPrepareFiscalDocuments")
  await lockAccount(tx,actor.accountId)
  await policy(tx,actor,input.expectedPolicyVersion)
  const calculated=await previewFiscalDocument(actor,input,tx)
  if(calculated.source?.kind!=="SALE" || !["E31","E32","E44","E45","E46"].includes(calculated.type)) fail("INVALID_INPUT","La preparación requiere una venta y un tipo compatible",400,"source")
+ if(expectedReview !== undefined) {
+  const { fiscalSaleReviewSignature } = await import("./sale-review-signature")
+  // El mismo total no garantiza el mismo comprador, tratamiento tributario ni fecha.
+  if(fiscalSaleReviewSignature(calculated) !== expectedReview) fail("FISCAL_REVIEW_CHANGED","El detalle fiscal cambió; vuelve a revisar la venta",409,"fiscal.expectedReview")
+ }
  await verifySource(tx,actor,calculated)
  const result={...await snapshotWithSourceFingerprint(tx,actor,calculated), sale:metadata}
  const src=sourceFields(result.source), id=randomUUID()
@@ -272,7 +277,7 @@ export async function prepareExistingFiscalSale(actor: Actor, saleId: string, ra
    const sale=await tx.sale.findFirst({where:{id:saleId,accountId:actor.accountId},select:{totalCents:true}})
    if(!sale || sale.totalCents!==command.expectedTotalCents) fail("DOCUMENT_CONFLICT","El total de la venta cambió; revisa el documento",409,"fiscal.expectedTotalCents")
   }
-  const result=await prepareFiscalSaleInTransaction(tx,actor,built.document,built.metadata)
+  const result=await prepareFiscalSaleInTransaction(tx,actor,built.document,built.metadata,command.expectedReview)
   await insertJob(tx,actor,op,"PREPARE",digest,result.id,result.revision,"COMPLETED",result)
   return result
  })
@@ -371,12 +376,17 @@ export async function getFiscalDocument(actor:Actor,id:string) {
  return {...doc,input:revisions[0]?.input ?? null,revisions,allocation:allocations[0] ?? null,jobs,references,notice:"Documento de prueba / No emitido fiscalmente"}
 }
 export async function listFiscalDocuments(actor:Actor,params:URLSearchParams) {
+ // Los filtros de fecha de registro usan días dominicanos, independientemente de la zona del servidor.
  authorize(actor,"canViewFiscalDocuments"); const take=Number(params.get("take") ?? "50"); if(!Number.isSafeInteger(take)||take<1||take>200)fail("INVALID_INPUT","Paginación inválida",400,"take")
  const source=params.get("source"),sourceId=params.get("sourceId"),type=params.get("type"),state=params.get("state"),party=params.get("party"),from=params.get("from"),to=params.get("to"),cursor=params.get("cursor")
  if(source && !["SALE","PURCHASE","PAYABLE","RETURN","EXPENSE","SUPPLIER_PAYMENT","ADJUSTMENT"].includes(source))fail("INVALID_INPUT","Origen inválido",400,"source")
- for(const [name,value] of [["from",from],["to",to]] as const) if(value && (!/^\d{4}-\d{2}-\d{2}$/.test(value)||Number.isNaN(Date.parse(value))))fail("INVALID_INPUT","Fecha inválida",400,name)
+ for(const [name,value] of [["from",from],["to",to]] as const) if(value) {
+  const parsed=new Date(`${value}T00:00:00Z`)
+  // Date.parse normaliza fechas imposibles como el 31 de febrero; no enviarlas a PostgreSQL.
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==value)fail("INVALID_INPUT","Fecha inválida",400,name)
+ }
  if(cursor && !(await prisma.$queryRaw<Array<{id:string}>>`SELECT id FROM "FiscalDocument" WHERE "accountId"=${actor.accountId} AND id=${cursor}`).length)fail("NOT_FOUND","Cursor no encontrado",404)
- const rows=await prisma.$queryRaw<Array<Record<string,unknown>>>`SELECT d.id,d.type,d.state,d.revision,d.snapshot,d."saleId",d."purchaseId",d."payableId",d."returnId",d."expenseId",d."adjustmentId",d."createdAt",a."eNcf" FROM "FiscalDocument" d LEFT JOIN "FiscalNumberAllocation" a ON a."accountId"=d."accountId" AND a."documentId"=d.id WHERE d."accountId"=${actor.accountId} AND (${type}::text IS NULL OR d.type=${type}) AND (${state}::text IS NULL OR d.state=${state}) AND (${source}::text IS NULL OR (${source}='SALE' AND d."saleId" IS NOT NULL) OR (${source}='PURCHASE' AND d."purchaseId" IS NOT NULL) OR (${source}='PAYABLE' AND d."payableId" IS NOT NULL) OR (${source}='RETURN' AND d."returnId" IS NOT NULL) OR (${source}='EXPENSE' AND d."expenseId" IS NOT NULL) OR (${source}='ADJUSTMENT' AND d."adjustmentId" IS NOT NULL) OR (${source}='SUPPLIER_PAYMENT' AND d.snapshot->'source'->>'kind'='SUPPLIER_PAYMENT')) AND (${sourceId}::text IS NULL OR d."saleId"=${sourceId} OR d."purchaseId"=${sourceId} OR d."payableId"=${sourceId} OR d."returnId"=${sourceId} OR d."expenseId"=${sourceId} OR d."adjustmentId"=${sourceId} OR (d.snapshot->'source'->>'kind'='SUPPLIER_PAYMENT' AND d.snapshot->'source'->>'id'=${sourceId})) AND (${party}::text IS NULL OR d.snapshot->'buyer'->>'id'=${party} OR d.snapshot->'supplier'->>'id'=${party} OR d.snapshot->'buyer'->>'name' ILIKE '%'||${party}||'%' OR d.snapshot->'supplier'->>'name' ILIKE '%'||${party}||'%') AND (${from}::text IS NULL OR d."createdAt">=${from}::date) AND (${to}::text IS NULL OR d."createdAt"<${to}::date + interval '1 day') AND (${cursor}::text IS NULL OR (d."createdAt",d.id)<(SELECT "createdAt",id FROM "FiscalDocument" WHERE "accountId"=${actor.accountId} AND id=${cursor})) ORDER BY d."createdAt" DESC,d.id DESC LIMIT ${take+1}`
+ const rows=await prisma.$queryRaw<Array<Record<string,unknown>>>`SELECT d.id,d.type,d.state,d.revision,d.snapshot,d."saleId",d."purchaseId",d."payableId",d."returnId",d."expenseId",d."adjustmentId",d."createdAt",a."eNcf" FROM "FiscalDocument" d LEFT JOIN "FiscalNumberAllocation" a ON a."accountId"=d."accountId" AND a."documentId"=d.id WHERE d."accountId"=${actor.accountId} AND (${type}::text IS NULL OR d.type=${type}) AND (${state}::text IS NULL OR d.state=${state}) AND (${source}::text IS NULL OR (${source}='SALE' AND d."saleId" IS NOT NULL) OR (${source}='PURCHASE' AND d."purchaseId" IS NOT NULL) OR (${source}='PAYABLE' AND d."payableId" IS NOT NULL) OR (${source}='RETURN' AND d."returnId" IS NOT NULL) OR (${source}='EXPENSE' AND d."expenseId" IS NOT NULL) OR (${source}='ADJUSTMENT' AND d."adjustmentId" IS NOT NULL) OR (${source}='SUPPLIER_PAYMENT' AND d.snapshot->'source'->>'kind'='SUPPLIER_PAYMENT')) AND (${sourceId}::text IS NULL OR d."saleId"=${sourceId} OR d."purchaseId"=${sourceId} OR d."payableId"=${sourceId} OR d."returnId"=${sourceId} OR d."expenseId"=${sourceId} OR d."adjustmentId"=${sourceId} OR (d.snapshot->'source'->>'kind'='SUPPLIER_PAYMENT' AND d.snapshot->'source'->>'id'=${sourceId})) AND (${party}::text IS NULL OR d.snapshot->'buyer'->>'id'=${party} OR d.snapshot->'supplier'->>'id'=${party} OR d.snapshot->'buyer'->>'name' ILIKE '%'||${party}||'%' OR d.snapshot->'supplier'->>'name' ILIKE '%'||${party}||'%') AND (${from}::text IS NULL OR d."createdAt">=(${from}::date::timestamp AT TIME ZONE 'America/Santo_Domingo' AT TIME ZONE 'UTC')) AND (${to}::text IS NULL OR d."createdAt"<((${to}::date + 1)::timestamp AT TIME ZONE 'America/Santo_Domingo' AT TIME ZONE 'UTC')) AND (${cursor}::text IS NULL OR (d."createdAt",d.id)<(SELECT "createdAt",id FROM "FiscalDocument" WHERE "accountId"=${actor.accountId} AND id=${cursor})) ORDER BY d."createdAt" DESC,d.id DESC LIMIT ${take+1}`
  const data=rows.slice(0,take);return {data,nextCursor:rows.length>take?data[data.length-1].id:null}
 }
 export async function fiscalHistory(actor:Actor,id:string,params:URLSearchParams) {

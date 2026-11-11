@@ -16,7 +16,9 @@ net.Socket.prototype.connect = function (...args) {
   const port = Number(options?.port)
   if (process.env.FISCAL_TEST_TRACE_NODE === '1' && tracedConnections++ < 12) console.error(`Fiscal red: ${['127.0.0.1', '::1'].includes(host) ? 'local' : 'otra'}:${Number.isFinite(port) ? port : 'sin-puerto'}`)
   // No permitir sockets de archivo, DNS externo ni otros puertos aunque sean locales.
-  if (!options || options.path || options.lookup || !['127.0.0.1', '::1'].includes(host) || ![3100, 55439].includes(port)) {
+  // CDP escucha en un puerto efímero local que solo la prueba de navegador puede declarar después de arrancarlo.
+  const devtoolsPort = Number(process.env.FISCAL_TEST_DEVTOOLS_PORT)
+  if (!options || options.path || options.lookup || !['127.0.0.1', '::1'].includes(host) || !([3100, 55439].includes(port) || (Number.isInteger(devtoolsPort) && devtoolsPort > 0 && port === devtoolsPort))) {
     const error = new Error(`Conexión bloqueada por el entorno fiscal de prueba (${options?.path ? 'socket' : ['127.0.0.1', '::1'].includes(host) ? 'local' : 'externa'}:${Number.isFinite(port) ? port : 'sin-puerto'})`)
     error.code = 'FISCAL_TEST_NETWORK_BLOCKED'
     throw error

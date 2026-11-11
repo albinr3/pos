@@ -11,7 +11,7 @@ import {
   saveCustomersCache,
   saveARCache,
 } from "./indexed-db"
-import { clientStorageKeys, getMigratedLocalStorageItem, legacyStorageKey } from "./client-storage"
+import { clientStorageKeys } from "./client-storage"
 
 const CACHE_SYNC_KEY = clientStorageKeys.cacheSync
 let activeCacheSync: Promise<boolean> | null = null
@@ -33,7 +33,7 @@ function parseLastSyncDay(raw: string | null) {
   return null
 }
 
-async function hasActiveSessionForCacheSync(): Promise<{ accountId?: string } | null> {
+async function hasActiveSessionForCacheSync(): Promise<{ accountId: string; id: string } | null> {
   try {
     // Preventivo: el sincronizador también se ejecuta desde el POS y al recuperar
     // conexión. Confirmar la sesión aquí evita que esas vías invoquen una Server
@@ -45,7 +45,7 @@ async function hasActiveSessionForCacheSync(): Promise<{ accountId?: string } | 
     if (!response.ok) return null
 
     const payload = await response.json()
-    return payload?.user ?? null
+    return typeof payload?.user?.accountId === "string" && typeof payload?.user?.id === "string" ? payload.user : null
   } catch {
     // Una comprobación de sesión fallida no debe impedir usar el caché offline
     // ni convertirse en una llamada de sincronización que termine en un 500.
@@ -54,31 +54,32 @@ async function hasActiveSessionForCacheSync(): Promise<{ accountId?: string } | 
 }
 
 // Verificar si necesita sincronizar el cache
-async function shouldSyncCache(accountId?: string): Promise<boolean> {
+async function shouldSyncCache(actor: { accountId: string; id: string }): Promise<boolean> {
   if (typeof window === "undefined") return false
   if (hasDirtyStockCache()) return true
   
-  const lastSyncRaw = getMigratedLocalStorageItem(CACHE_SYNC_KEY, legacyStorageKey("cacheSync"))
+  const lastSyncRaw = localStorage.getItem(`${CACHE_SYNC_KEY}:${actor.accountId}:${actor.id}`)
   const today = formatDateKey(new Date())
   const lastSyncDay = parseLastSyncDay(lastSyncRaw)
   if (!lastSyncDay || lastSyncDay !== today) return true
 
   const [products, customers, arItems] = await Promise.all([
-    getProductsCache(),
-    getCustomersCache(),
-    getARCache(),
+    getProductsCache(actor),
+    getCustomersCache(actor),
+    getARCache(actor),
   ])
 
   return products.length === 0 || customers.length === 0 || arItems.length === 0 || products.some(product =>
-    !product.accountId || (accountId && product.accountId !== accountId) || !product.stockSnapshotAt ||
+    !product.accountId || product.accountId !== actor.accountId || !product.stockSnapshotAt ||
     product.recipeItems?.some((ingredient: { ingredientStock?: number; ingredientIsActive?: boolean }) =>
       typeof ingredient.ingredientStock !== "number" || typeof ingredient.ingredientIsActive !== "boolean")
   )
 }
 
 // Marcar que se sincronizó el cache
-export function markCacheSynced() {
+export function markCacheSynced(actor?: { accountId: string; id: string }) {
   if (typeof window === "undefined") return
+  if (actor) localStorage.setItem(`${CACHE_SYNC_KEY}:${actor.accountId}:${actor.id}`, formatDateKey(new Date()))
   localStorage.setItem(CACHE_SYNC_KEY, formatDateKey(new Date()))
 }
 
@@ -106,15 +107,15 @@ export async function syncCacheData(options?: { force?: boolean }) {
         console.warn("[AutoSync] Se omitió la sincronización: no hay una sesión activa")
         return false
       }
-      if (!options?.force && !(await shouldSyncCache(session.accountId))) return false
+      if (!options?.force && !(await shouldSyncCache(session))) return false
 
       const stockToken = session.accountId ? stockCacheToken(session.accountId) : null
       console.log("[AutoSync] Sincronizando cache de datos...")
 
       const [productsData, customersData, arData] = await Promise.all([
-        syncProductsToIndexedDB(),
-        syncCustomersToIndexedDB(),
-        syncARToIndexedDB(),
+        syncProductsToIndexedDB(session),
+        syncCustomersToIndexedDB(session),
+        syncARToIndexedDB(session),
       ])
 
       // La sesión puede vencer mientras viajan las peticiones. No sobrescribir
@@ -124,14 +125,18 @@ export async function syncCacheData(options?: { force?: boolean }) {
         return false
       }
 
+      // Una respuesta lenta de otro empleado no puede llenar la caché de la sesión actual.
+      const current = await hasActiveSessionForCacheSync()
+      if (!current || current.id !== session.id || current.accountId !== session.accountId) return false
+
       await Promise.all([
-        saveProductsCache(productsData),
-        saveCustomersCache(customersData),
-        saveARCache(arData),
+        saveProductsCache(productsData, session),
+        saveCustomersCache(customersData, session),
+        saveARCache(arData, session),
       ])
 
       if (session.accountId) acknowledgeStockCache(session.accountId, stockToken)
-      markCacheSynced()
+      markCacheSynced(session)
       console.log("[AutoSync] Cache sincronizado exitosamente")
       return true
     } catch (error) {

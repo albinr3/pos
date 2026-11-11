@@ -12,9 +12,10 @@ function decimalToNumber(decimal: unknown): number {
   return 0
 }
 
-async function getSyncUser(source: string) {
+async function getSyncUser(source: string, expected?: { accountId: string; id: string }) {
   const result = await getCurrentUserWithDiagnostics({ source })
-  if (result.user) return result.user
+  // La identidad enviada solo coteja la sesión; nunca concede acceso por sí sola.
+  if (result.user && (!expected || (result.user.accountId === expected.accountId && result.user.id === expected.id))) return result.user
 
   // Preventivo: la sesión puede vencer entre el preflight del navegador y esta
   // acción. Es un estado esperado, no un 500. null significa "no sincronizar";
@@ -23,8 +24,8 @@ async function getSyncUser(source: string) {
   return null
 }
 
-export async function syncProductsToIndexedDB() {
-  const user = await getSyncUser("sync/products-cache")
+export async function syncProductsToIndexedDB(expected?: { accountId: string; id: string }) {
+  const user = await getSyncUser("sync/products-cache", expected)
   if (!user) return null
 
   const products = await prisma.product.findMany({
@@ -129,8 +130,8 @@ export async function syncProductsToIndexedDB() {
   return mapped
 }
 
-export async function syncCustomersToIndexedDB() {
-  const user = await getSyncUser("sync/customers-cache")
+export async function syncCustomersToIndexedDB(expected?: { accountId: string; id: string }) {
+  const user = await getSyncUser("sync/customers-cache", expected)
   if (!user) return null
 
   const customers = await prisma.customer.findMany({
@@ -152,8 +153,8 @@ export async function syncCustomersToIndexedDB() {
   }))
 }
 
-export async function syncARToIndexedDB() {
-  const user = await getSyncUser("sync/accounts-receivable-cache")
+export async function syncARToIndexedDB(expected?: { accountId: string; id: string }) {
+  const user = await getSyncUser("sync/accounts-receivable-cache", expected)
   if (!user) return null
 
   const arItems = await prisma.accountReceivable.findMany({

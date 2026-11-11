@@ -176,12 +176,14 @@ export function AppShell({ children, billingState }: AppShellProps) {
 
   const handleChangeUser = async () => {
     // Limpiar sesión de subusuario y redirigir a selección
+    navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_SCOPE" })
     await fetch("/api/auth/logout-subuser", { method: "POST" })
     router.push("/select-user")
   }
 
   const handleLogout = async () => {
     // Limpiar sesión de subusuario
+    navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_SCOPE" })
     await fetch("/api/auth/logout-subuser", { method: "POST" })
     // Cerrar sesión de Clerk
     await signOut({ redirectUrl: "/login" })
@@ -368,18 +370,18 @@ export function AppShell({ children, billingState }: AppShellProps) {
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") return
     if (!("serviceWorker" in navigator)) return
-    if (!navigator.onLine) return
+    if (!user?.accountId || !user.id) return
 
     // Warm the SW runtime cache on client-side route changes (no document navigation).
     const url = pathname || "/"
     navigator.serviceWorker.ready
       .then((registration) => {
-        registration.active?.postMessage({ type: "CACHE_URL", url })
+        registration.active?.postMessage({ type: "CACHE_URL", url, accountId: user.accountId, userId: user.id, warm: navigator.onLine })
       })
       .catch(() => {
         // Ignore service worker warmup errors
       })
-  }, [pathname])
+  }, [pathname, user?.accountId, user?.id])
 
   useEffect(() => {
     // Fetch company settings

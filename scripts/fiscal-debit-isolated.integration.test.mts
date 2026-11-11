@@ -3,7 +3,8 @@ import assert from "node:assert/strict"
 import fs from "node:fs"
 import vm from "node:vm"
 import { createRequire } from "node:module"
-const { PrismaClient } = createRequire(import.meta.url)("@prisma/client")
+// Conservar los tipos de Prisma aunque la carga CommonJS se resuelva dinámicamente.
+const { PrismaClient } = createRequire(import.meta.url)("@prisma/client") as typeof import("@prisma/client")
 import ts from "typescript"
 import { NextRequest } from "next/server.js"
 import crypto from "node:crypto"
@@ -16,7 +17,7 @@ const url = new URL(process.env.TEST_DATABASE_URL ?? "")
 if (!["localhost", "127.0.0.1"].includes(url.hostname) || url.port !== "55439" || !/^\/cash_test_stage10_\d+$/.test(url.pathname)) throw new Error("Se requiere una base fiscal local aislada de etapa 10")
 const db = new PrismaClient({ datasources: { db: { url: url.toString() } } })
 after(async () => { await db.$disconnect() })
-const owner = { id: "user-rd-owner", accountId: "baseline-account-rd", isOwner: true }
+const owner = { id: "user-rd-owner", accountId: "baseline-account-rd", isOwner: true, name: "Dueño de prueba" }
 const outsider = { id: "user-doprep-owner", accountId: "baseline-account-doprep", isOwner: true }
 const source = { type: "E32", issueDate: "2026-11-09", expectedPolicyVersion: 1, issuer: { id: owner.accountId, name: "Emisor prueba", identification: "123456789", country: "DO" }, source: { kind: "SALE", id: "stage10-sale" }, incomeType: "01", payment: { type: "CONTADO" }, currency: { operation: "DOP", reporting: "DOP" }, lines: [{ productId: "prod-rd-gravado", description: "Producto", kind: "BIEN", unit: "UNIDAD", quantity: "2", unitPrice: "118.00", taxTreatment: "GRAVADO_18", priceIncludesTax: true }] }
 const note = { originalDocumentId: "stage10-original", expectedPolicyVersion: 1, modificationCode: "3", reason: "Devolución de prueba", lines: [{ originalLine: 1, quantity: "2.00", physicalQuantity: "2.00", extraDiscountCents: 0 }] }
@@ -56,6 +57,39 @@ test("nota E33 crea deuda independiente y no mueve inventario", async () => {
   const debt=await db.accountReceivable.findUniqueOrThrow({where:{id:result.receivableId}})
   assert.equal(debt.saleId,null);assert.equal(debt.balanceCents,0);assert.equal(debt.debitAdjustmentId,draft.id)
   assert.equal(await db.payment.count({where:{arId:debt.id}}),1)
+  assert.equal((await db.product.findUniqueOrThrow({where:{id:'prod-rd-gravado'}})).stock.toString(),stockBefore)
+
+  // El cargo a crédito debe originar una deuda propia y admitir cobros sin crear otra venta.
+  await db.sale.create({data:{id:'debit-credit-sale',accountId:owner.accountId,userId:owner.id,customerId:'cust-rd-credit',invoiceNumber:99994,invoiceCode:'DEBIT-CREDIT',soldAt:new Date('2026-11-09T12:00:00Z'),type:'CONTADO',paymentMethod:'EFECTIVO',subtotalCents:20000,itbisCents:3600,totalCents:23600,items:{create:{id:'debit-credit-item',productId:'prod-rd-gravado',qty:2,unitPriceCents:11800,costCents:6000,itbisRateBp:1800,lineTotalCents:23600}}}})
+  const namedSource={...source,source:{kind:'SALE',id:'debit-credit-sale'},buyer:{id:'cust-rd-credit',name:'Cliente crédito',identification:'101111111',country:'DO'}}
+  const namedSnapshot={...calculateFiscalDocument(namedSource,1),sale:{commercialLines:[{saleItemId:'debit-credit-item',productId:'prod-rd-gravado'}]}}
+  await db.$transaction(async tx=>{
+    await tx.$executeRaw`INSERT INTO "FiscalDocument" (id,"accountId","saleId",type,state,"policyVersion","ruleVersion",snapshot,"updatedAt") VALUES ('debit-credit-original',${owner.accountId},'debit-credit-sale','E32','BORRADOR',1,'fixture',${JSON.stringify(namedSnapshot)}::jsonb,now())`
+    await tx.$executeRaw`UPDATE "FiscalDocument" SET state='VALIDADO' WHERE id='debit-credit-original'`
+    await reserveFiscalNumber(tx,owner,'debit-credit-original','E32')
+    await tx.$executeRaw`UPDATE "FiscalDocument" SET state='PREPARADO_PENDIENTE_CONEXION' WHERE id='debit-credit-original'`
+  })
+  const creditInput={...input,originalDocumentId:'debit-credit-original',payment:{type:'CREDITO',dueDate:'2099-12-31'}}
+  const creditDraft=await createDebitAdjustment(owner,'stage10-credit-create',creditInput)
+  await validateDebitAdjustment(owner,creditDraft.id,'stage10-credit-validate',1)
+  const creditCommand={expectedRevision:1,cashOperation:{...command.cashOperation,clientOperationId:'stage10-credit-confirm'}}
+  const confirmCredit=()=>cashRequest.run({trustedActor:owner,deviceHash:''},()=>confirmDebitAdjustment(owner,creditDraft.id,creditCommand))
+  const creditResult=await confirmCredit();assert.deepEqual(await confirmCredit(),creditResult)
+  assert.equal(creditResult.paymentId,null);assert.equal(creditResult.amountCents,11800)
+  assert.equal((await db.accountReceivable.findUniqueOrThrow({where:{id:creditResult.receivableId}})).balanceCents,11800)
+  assert.equal(await db.payment.count({where:{arId:creditResult.receivableId}}),0)
+  // Fuera de Next no hay caché de rutas: simular solo revalidatePath y mantener reales los cobros.
+  require.cache[require.resolve('next/cache')]={exports:{revalidatePath(){}}} as NodeModule
+  const {addPayment,cancelPayment}=await import('../src/app/(app)/ar/actions')
+  const payInput={arId:creditResult.receivableId,amountCents:5000,method:'EFECTIVO' as const,treasuryAccountId:treasury.id,cashOperation:{...command.cashOperation,clientOperationId:'stage10-credit-payment'}}
+  const pay=()=>cashRequest.run({trustedActor:owner,deviceHash:''},()=>addPayment(payInput))
+  const paid=await pay();assert.deepEqual(await pay(),paid)
+  assert.equal((await db.accountReceivable.findUniqueOrThrow({where:{id:creditResult.receivableId}})).balanceCents,6800)
+  assert.equal(await db.payment.count({where:{arId:creditResult.receivableId}}),1)
+  await cashRequest.run({trustedActor:owner,deviceHash:''},()=>cancelPayment(paid.paymentId,'Corrección de prueba'))
+  assert.equal((await db.accountReceivable.findUniqueOrThrow({where:{id:creditResult.receivableId}})).balanceCents,11800)
+  assert.ok((await db.payment.findUniqueOrThrow({where:{id:paid.paymentId}})).cancelledAt)
+  assert.equal((await db.fiscalAdjustment.findUniqueOrThrow({where:{id:creditDraft.id}})).state,'PREPARADO_PENDIENTE_CONEXION')
   assert.equal((await db.product.findUniqueOrThrow({where:{id:'prod-rd-gravado'}})).stock.toString(),stockBefore)
 })
 

@@ -17,18 +17,8 @@ import { Switch } from "@/components/ui/switch"
 import { toast } from "@/hooks/use-toast"
 import { useOnlineStatus } from "@/hooks/use-online-status"
 import { getPendingCounts } from "@/lib/indexed-db"
-import { markCacheSynced } from "@/lib/auto-sync"
+import { syncCacheData } from "@/lib/auto-sync"
 import { syncPendingData } from "@/lib/sync-manager"
-import {
-  syncProductsToIndexedDB,
-  syncCustomersToIndexedDB,
-  syncARToIndexedDB,
-} from "@/app/(app)/sync/actions"
-import {
-  saveProductsCache,
-  saveCustomersCache,
-  saveARCache,
-} from "@/lib/indexed-db"
 
 import { getSettings, updateLabelSizes, updateSalesSettings, updateReceiptSettings, updatePurchasePricingSettings, updatePrintFormats, updateShiftReportPrintFormat, updateSalePriceTaxMode, updateLegalTipSetting } from "./actions"
 import { updateCompanyInfo } from "./company-actions"
@@ -179,15 +169,8 @@ export function SettingsClient({ fiscalSection, fiscalEnabled, currentUserId, is
 
     setIsPreloading(true)
     try {
-      const [productsData, customersData, arData] = await Promise.all([
-        syncProductsToIndexedDB(),
-        syncCustomersToIndexedDB(),
-        syncARToIndexedDB(),
-      ])
-
-      // Preventivo: una sesión vencida no equivale a una lista vacía; conservar
-      // todos los stores offline y pedir autenticación sin provocar un 500.
-      if (productsData === null || customersData === null || arData === null) {
+      // El sincronizador verifica que la sesión siga siendo la misma antes de guardar.
+      if (!(await syncCacheData({ force: true }))) {
         toast({
           title: "Sesión no disponible",
           description: "Selecciona tu usuario nuevamente para pre-cargar los datos.",
@@ -196,12 +179,6 @@ export function SettingsClient({ fiscalSection, fiscalEnabled, currentUserId, is
         return
       }
 
-      await Promise.all([
-        saveProductsCache(productsData),
-        saveCustomersCache(customersData),
-        saveARCache(arData),
-      ])
-      markCacheSynced()
       setLastPreloadDay(formatDateKey(new Date()))
 
       toast({

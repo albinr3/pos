@@ -73,10 +73,11 @@ test("Un error real de base de datos sigue propagándose", async () => {
   await assert.rejects(actions.syncProductsToIndexedDB(), (error) => error === failure)
 })
 
-function clientHarness({ online = true, authorized = true, missingIndex = -1, storageError = false } = {}) {
+function clientHarness({ online = true, authorized = true, missingIndex = -1, storageError = false, switchSession = false } = {}) {
   let calls = 0
   let writes = 0
   let marks = 0
+  let sessionReads = 0
   const listeners = new Map()
   const timers = new Map()
   const cache = {
@@ -105,8 +106,8 @@ function clientHarness({ online = true, authorized = true, missingIndex = -1, st
       addEventListener: (name, callback) => listeners.set(name, callback),
       removeEventListener: (name) => listeners.delete(name),
     },
-    localStorage: { setItem() { marks++ } },
-    fetch: async () => ({ ok: authorized, json: async () => ({ user: authorized ? { id: "A" } : null }) }),
+    localStorage: { getItem() { if (storageError) throw new Error("storage denied"); return null }, setItem() { marks++ } },
+    fetch: async () => ({ ok: authorized, json: async () => ({ user: authorized ? { id: switchSession && ++sessionReads > 1 ? "B" : "A", accountId: "tenant-A" } : null }) }),
     setTimeout(callback) { timers.set(1, callback); return 1 },
     clearTimeout: (id) => timers.delete(id),
   })
@@ -132,7 +133,13 @@ for (let missingIndex = 0; missingIndex < 3; missingIndex++) {
 test("Dos llamadas simultáneas comparten una carga; las listas vacías se guardan", async () => {
   const harness = clientHarness()
   assert.deepEqual(await Promise.all([harness.module.syncCacheData(), harness.module.syncCacheData()]), [true, true])
-  assert.deepEqual(harness.stats(), { calls: 3, writes: 3, marks: 1 })
+  assert.deepEqual(harness.stats(), { calls: 3, writes: 3, marks: 2 })
+})
+
+test("Un cambio de empleado durante la carga conserva la caché anterior", async () => {
+  const harness = clientHarness({ switchSession: true })
+  assert.equal(await harness.module.syncCacheData(), false)
+  assert.deepEqual(harness.stats(), { calls: 3, writes: 0, marks: 0 })
 })
 
 test("El desmontaje cancela el timer y elimina el listener de reconexión", () => {

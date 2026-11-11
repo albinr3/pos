@@ -5,9 +5,9 @@ import { getPendingSales, getProductsCache } from "./indexed-db"
 import { getStockConsumptions, type StockConsumption, type StockProduct } from "./pos-stock"
 import { stockCacheToken } from "./stock-cache-state"
 
-export async function readPosStockState(accountId: string) {
+export async function readPosStockState(accountId: string, userId?: string) {
   const token = stockCacheToken(accountId)
-  const [cached, cash, legacy] = await Promise.all([getProductsCache(), cashPending(), getPendingSales()])
+  const [cached, cash, legacy] = await Promise.all([getProductsCache(userId ? { accountId, id: userId } : null), cashPending(), getPendingSales()])
   const products: StockProduct[] = cached.filter(product => product.accountId === accountId)
   const byId = new Map(products.map(product => [product.id, product]))
   const reserved: StockConsumption[] = []

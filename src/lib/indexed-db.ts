@@ -7,7 +7,7 @@ import { notifyStockAvailability } from "./stock-cache-state"
 
 const DB_NAME = "movopos-offline"
 const LEGACY_DB_NAME = "tejada-pos-offline"
-const DB_VERSION = 4
+const DB_VERSION = 5
 
 // Store names
 const STORES = {
@@ -18,6 +18,7 @@ const STORES = {
   CUSTOMERS_CACHE: "customersCache",
   AR_CACHE: "arCache",
   MIGRATION_META: "migrationMeta",
+  SCOPED_CACHE: "scopedCache",
 } as const
 
 const DATA_STORES = [
@@ -58,9 +59,20 @@ function requestResult<T>(request: IDBRequest<T>): Promise<T> {
 function openCurrentDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
+    let blocked = false
 
     request.onerror = () => reject(request.error)
-    request.onsuccess = () => resolve(request.result)
+    request.onblocked = () => {
+      blocked = true
+      // Otra pestaña antigua debe cerrarse antes de actualizar, sin borrar sus pendientes.
+      reject(new Error("Cierra las otras pestañas de MOVOPos y vuelve a cargar para actualizar los datos offline"))
+    }
+    request.onsuccess = () => {
+      const db = request.result
+      if (blocked) { db.close(); return }
+      db.onversionchange = () => { db.close(); dbPromise = null }
+      resolve(db)
+    }
 
     request.onupgradeneeded = (event) => {
       const db = (event.target as IDBOpenDBRequest).result
@@ -116,11 +128,20 @@ function openCurrentDatabase(): Promise<IDBDatabase> {
         db.createObjectStore(STORES.MIGRATION_META, { keyPath: "key" })
       }
 
+      if (!db.objectStoreNames.contains(STORES.SCOPED_CACHE)) {
+        db.createObjectStore(STORES.SCOPED_CACHE, { keyPath: "key" })
+      }
+
+      // Las bases antiguas pueden tener el almacén sin su índice; recrearlo sin borrar la cola.
+      for (const name of [STORES.PENDING_SALES, STORES.PENDING_PAYMENTS, STORES.PENDING_BATCH_PAYMENTS]) {
+        const store = request.transaction!.objectStore(name)
+        if (!store.indexNames.contains("createdAt")) store.createIndex("createdAt", "createdAt", { unique: false })
+      }
+      const pendingPayments = request.transaction!.objectStore(STORES.PENDING_PAYMENTS)
+      if (!pendingPayments.indexNames.contains("arId")) pendingPayments.createIndex("arId", "arId", { unique: false })
+
       if (oldVersion < 2) {
-        // Limpiar estructuras legacy para forzar cache y pendientes con el nuevo shape.
-        if (db.objectStoreNames.contains(STORES.PENDING_SALES)) {
-          request.transaction?.objectStore(STORES.PENDING_SALES).clear()
-        }
+        // Nunca borrar ventas sin sincronizar al actualizar una instalación antigua.
         if (db.objectStoreNames.contains(STORES.PRODUCTS_CACHE)) {
           request.transaction?.objectStore(STORES.PRODUCTS_CACHE).clear()
         }
@@ -171,7 +192,15 @@ async function migrateLegacyDatabase(db: IDBDatabase) {
 
   for (const [store, items] of records) {
     const targetStore = transaction.objectStore(store)
-    for (const item of items) targetStore.put(item)
+    for (const item of items) {
+      const keyPath = targetStore.keyPath
+      if (typeof keyPath !== "string" || !item || typeof item !== "object") continue
+      const key = (item as Record<string, IDBValidKey>)[keyPath]
+      if (key === undefined || key === null) continue
+      const current = targetStore.get(key)
+      // Una importación antigua no puede sobrescribir una operación actual con el mismo ID.
+      current.onsuccess = () => { if (current.result === undefined) targetStore.put(item) }
+    }
   }
 
   // Comentario preventivo: marcamos la migración solo tras copiar los pendientes. Así una venta
@@ -191,7 +220,7 @@ function openDB(): Promise<IDBDatabase> {
     const db = await openCurrentDatabase()
     await migrateLegacyDatabase(db)
     return db
-  })()
+  })().catch(error => { dbPromise = null; throw error })
 
   return dbPromise
 }
@@ -355,7 +384,7 @@ export type LegacyReviewItem = { kind: LegacyReviewKind; id: string; createdAt: 
 const legacyReviewStores = { sale: STORES.PENDING_SALES, payment: STORES.PENDING_PAYMENTS, batchPayment: STORES.PENDING_BATCH_PAYMENTS } as const
 
 export async function getReviewableLegacyPending(actor: { id: string; accountId: string; isOwner?: boolean }): Promise<LegacyReviewItem[]> {
-  const [sales, payments, batchPayments, products] = await Promise.all([getPendingSales(), getPendingPayments(), getPendingBatchPayments(), getProductsCache()])
+  const [sales, payments, batchPayments, products] = await Promise.all([getPendingSales(), getPendingPayments(), getPendingBatchPayments(), getProductsCache(actor)])
   const groups = [sales, payments, batchPayments]
   const names = new Map(products.filter(product => product.accountId === actor.accountId).map(product => [product.id, product.name]))
   const kinds: LegacyReviewKind[] = ["sale", "payment", "batchPayment"]
@@ -432,39 +461,44 @@ export async function deletePendingBatchPaymentsByArId(arId: string) {
   await waitForTransaction(tx)
 }
 
-// Products Cache
-export async function saveProductsCache(products: any[]) {
+export type CacheActor = { accountId: string; id: string }
+function scopedKey(actor: CacheActor | null | undefined, kind: string): string | null {
+  return actor?.accountId && actor.id ? JSON.stringify([actor.accountId, actor.id, kind]) : null
+}
+
+async function saveScopedCache(kind: string, values: any[], actor?: CacheActor | null) {
+  const key = scopedKey(actor, kind)
+  if (!key) throw new Error("Selecciona un usuario antes de guardar datos offline")
   const db = await openDB()
   assertOfflineWritesAllowed()
-  const tx = db.transaction(STORES.PRODUCTS_CACHE, "readwrite")
-  const store = tx.objectStore(STORES.PRODUCTS_CACHE)
-  store.clear()
-  for (const product of products) store.put(product)
+  const tx = db.transaction(STORES.SCOPED_CACHE, "readwrite")
+  tx.objectStore(STORES.SCOPED_CACHE).put({ key, values })
   await waitForTransaction(tx)
+}
+
+async function readScopedCache(kind: string, actor?: CacheActor | null): Promise<any[]> {
+  const key = scopedKey(actor, kind)
+  // Los registros antiguos sin autoría no pueden atribuirse a otro empleado.
+  if (!key) return []
+  const db = await openDB()
+  const row = await requestResult(db.transaction(STORES.SCOPED_CACHE, "readonly").objectStore(STORES.SCOPED_CACHE).get(key))
+  return Array.isArray(row?.values) ? row.values : []
+}
+
+// Products Cache
+export async function saveProductsCache(products: any[], actor?: CacheActor | null) {
+  if (actor && products.some(product => product.accountId !== actor.accountId)) throw new Error("Los productos pertenecen a otra empresa")
+  await saveScopedCache("products", products, actor)
   notifyStockAvailability()
   window.dispatchEvent(new Event("products-cache-changed"))
 }
 
-export async function getProductsCache(): Promise<any[]> {
-  const db = await openDB()
-  const tx = db.transaction(STORES.PRODUCTS_CACHE, "readonly")
-  const store = tx.objectStore(STORES.PRODUCTS_CACHE)
-  return new Promise((resolve, reject) => {
-    const request = store.getAll()
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
+export async function getProductsCache(actor?: CacheActor | null): Promise<any[]> {
+  return readScopedCache("products", actor)
 }
 
-export async function searchProductsCache(query: string): Promise<any[]> {
-  const db = await openDB()
-  const tx = db.transaction(STORES.PRODUCTS_CACHE, "readonly")
-  const store = tx.objectStore(STORES.PRODUCTS_CACHE)
-  const allProducts = await new Promise<any[]>((resolve, reject) => {
-    const request = store.getAll()
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
+export async function searchProductsCache(query: string, actor?: CacheActor | null): Promise<any[]> {
+  const allProducts = await getProductsCache(actor)
 
   if (!query.trim()) return allProducts
 
@@ -478,11 +512,11 @@ export async function searchProductsCache(query: string): Promise<any[]> {
   )
 }
 
-export async function findProductByBarcodeCache(code: string): Promise<any | null> {
+export async function findProductByBarcodeCache(code: string, actor?: CacheActor | null): Promise<any | null> {
   const trimmed = code.trim().toLowerCase()
   if (!trimmed) return null
 
-  const products = await getProductsCache()
+  const products = await getProductsCache(actor)
   const match = products.find(
     (p) =>
       (p.sku && String(p.sku).toLowerCase() === trimmed) ||
@@ -492,41 +526,16 @@ export async function findProductByBarcodeCache(code: string): Promise<any | nul
 }
 
 // Customers Cache
-export async function saveCustomersCache(customers: any[]) {
-  const db = await openDB()
-  assertOfflineWritesAllowed()
-  const tx = db.transaction(STORES.CUSTOMERS_CACHE, "readwrite")
-  const store = tx.objectStore(STORES.CUSTOMERS_CACHE)
-  
-  // Limpiar cache anterior
-  await store.clear()
-  
-  // Guardar nuevos clientes
-  for (const customer of customers) {
-    await store.put(customer)
-  }
+export async function saveCustomersCache(customers: any[], actor?: CacheActor | null) {
+  await saveScopedCache("customers", customers, actor)
 }
 
-export async function getCustomersCache(): Promise<any[]> {
-  const db = await openDB()
-  const tx = db.transaction(STORES.CUSTOMERS_CACHE, "readonly")
-  const store = tx.objectStore(STORES.CUSTOMERS_CACHE)
-  return new Promise((resolve, reject) => {
-    const request = store.getAll()
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
+export async function getCustomersCache(actor?: CacheActor | null): Promise<any[]> {
+  return readScopedCache("customers", actor)
 }
 
-export async function searchCustomersCache(query: string): Promise<any[]> {
-  const db = await openDB()
-  const tx = db.transaction(STORES.CUSTOMERS_CACHE, "readonly")
-  const store = tx.objectStore(STORES.CUSTOMERS_CACHE)
-  const allCustomers = await new Promise<any[]>((resolve, reject) => {
-    const request = store.getAll()
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
+export async function searchCustomersCache(query: string, actor?: CacheActor | null): Promise<any[]> {
+  const allCustomers = await getCustomersCache(actor)
 
   if (!query.trim()) return allCustomers
 
@@ -540,42 +549,16 @@ export async function searchCustomersCache(query: string): Promise<any[]> {
 }
 
 // AR Cache
-export async function saveARCache(arItems: any[]) {
-  const db = await openDB()
-  assertOfflineWritesAllowed()
-  const tx = db.transaction(STORES.AR_CACHE, "readwrite")
-  const store = tx.objectStore(STORES.AR_CACHE)
-  
-  // Limpiar cache anterior
-  await store.clear()
-  
-  // Guardar nuevos items
-  for (const item of arItems) {
-    await store.put(item)
-  }
+export async function saveARCache(arItems: any[], actor?: CacheActor | null) {
+  await saveScopedCache("receivables", arItems, actor)
 }
 
-export async function getARCache(): Promise<any[]> {
-  const db = await openDB()
-  const tx = db.transaction(STORES.AR_CACHE, "readonly")
-  const store = tx.objectStore(STORES.AR_CACHE)
-  return new Promise((resolve, reject) => {
-    const request = store.getAll()
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
+export async function getARCache(actor?: CacheActor | null): Promise<any[]> {
+  return readScopedCache("receivables", actor)
 }
 
-export async function getARCacheBySaleId(saleId: string): Promise<any | null> {
-  const db = await openDB()
-  const tx = db.transaction(STORES.AR_CACHE, "readonly")
-  const store = tx.objectStore(STORES.AR_CACHE)
-  const index = store.index("saleId")
-  return new Promise((resolve, reject) => {
-    const request = index.get(saleId)
-    request.onsuccess = () => resolve(request.result || null)
-    request.onerror = () => reject(request.error)
-  })
+export async function getARCacheBySaleId(saleId: string, actor?: CacheActor | null): Promise<any | null> {
+  return (await getARCache(actor)).find(item => item.saleId === saleId) ?? null
 }
 
 // Utility functions
@@ -596,6 +579,9 @@ export async function clearSyncedData() {
 // Limpiar todo el cache (productos, clientes, AR) - útil después de restaurar un backup
 export async function clearAllCache() {
   const db = await openDB()
+  const scopedTx = db.transaction(STORES.SCOPED_CACHE, "readwrite")
+  scopedTx.objectStore(STORES.SCOPED_CACHE).clear()
+  await waitForTransaction(scopedTx)
   
   // Limpiar cache de productos
   const productsTx = db.transaction(STORES.PRODUCTS_CACHE, "readwrite")
@@ -618,9 +604,10 @@ export async function clearAllCache() {
 export async function clearAllOfflineDataForDeletion() {
   blockOfflineWritesForDeletion()
   const db = await openDB()
-  const tx = db.transaction([...DATA_STORES, STORES.MIGRATION_META], "readwrite")
+  const tx = db.transaction([...DATA_STORES, STORES.MIGRATION_META, STORES.SCOPED_CACHE], "readwrite")
   const completed = waitForTransaction(tx)
   for (const store of DATA_STORES) tx.objectStore(store).clear()
+  tx.objectStore(STORES.SCOPED_CACHE).clear()
   // Conservar la marca evita volver a importar datos de una base legacy aún abierta en otra pestaña.
   tx.objectStore(STORES.MIGRATION_META).put({ key: LEGACY_MIGRATION_KEY, completedAt: Date.now() })
   await completed

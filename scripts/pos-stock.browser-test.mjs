@@ -30,6 +30,7 @@ async function browserSuite() {
     localStorage.clear(); sessionStorage.clear()
     const accountId = `pos-test-${++serial}`
     const f = window.__fixture = { accountId, products, fiscal, fiscalRequests: 0, toasts: [], preflights: 0, saves: 0, savedNotes: [], printed: 0, transactions: new Map(), user: { id: accountId, accountId, username: "ana", name: "Ana", isOwner: owner, canSellWithoutStock: permitted } }
+    f.cartKey = `movopos-cart:${JSON.stringify([accountId, f.user.id])}`
     f.snapshot = () => f.products.map(product => ({ ...product, accountId, stockSnapshotAt: Date.now(), recipeItems: product.recipeItems.map(item => ({ ...item, ingredientStock: f.products.find(p => p.id === item.ingredientId)?.stock ?? 0, ingredientIsActive: true })) }))
     f.check = items => {
       f.preflights++
@@ -65,9 +66,9 @@ async function browserSuite() {
       } catch (error) { return Response.json({ error: error.message }, { status: 400 }) }
     }
     window.open = () => { f.printed++; return { closed: false } }
-    if (restored) localStorage.setItem("posCartState", JSON.stringify({ timestamp: Date.now(), cart: restored, customerId: "generic", saleType: "CONTADO", paymentMethod: "EFECTIVO" }))
+    if (restored) localStorage.setItem(f.cartKey, JSON.stringify({ timestamp: Date.now(), cart: restored, customerId: "generic", saleType: "CONTADO", paymentMethod: "EFECTIVO" }))
     rootView = createRoot(document.getElementById("test-root"))
-    rootView.render(React.createElement(PosClient, { defaultViewMode: view, ...(fiscal ? { fiscalSale:{accountId,version:1,canPrepare:true} } : {}) }))
+    rootView.render(React.createElement(PosClient, { actor: f.user, defaultViewMode: view, ...(fiscal ? { fiscalSale:{accountId,version:1,canPrepare:true} } : {}) }))
     await until(() => document.querySelector('input[placeholder="Buscar productos"]'), "No montó el POS")
     if (view === "list") await input(document.querySelector('input[placeholder="Buscar productos"]'), products[0].name)
     await until(() => card(products[0].name) && !card(products[0].name).textContent.includes("Sincroniza para validar"), "No cargó el inventario")
@@ -189,7 +190,7 @@ async function browserSuite() {
     assert(card("pan").disabled && !qty("pan"), "Una segunda venta no puede reutilizar la existencia")
     rootView.unmount(); await sleep(20)
     rootView = createRoot(document.getElementById("test-root"))
-    rootView.render(React.createElement(PosClient, { defaultViewMode: "grid" }))
+    rootView.render(React.createElement(PosClient, { actor: f.user, defaultViewMode: "grid" }))
     await until(() => card("pan")?.disabled && card("pan").textContent.includes("Sin existencia"), "Recargar offline debe conservar la reserva")
     online = true
     await syncCashOutbox(); await syncCacheData({ force: true }); await sleep(80)
@@ -211,14 +212,14 @@ async function browserSuite() {
       const labels = [...document.querySelectorAll("label")].map(label => label.textContent)
       assert(labels.indexOf("Nota (opcional)") === labels.indexOf("Flete (opcional)") + 1, "La nota debe ir debajo de Flete")
       await input(field, "  Entregar mañana.\nLlamar a José.  ")
-      assert(JSON.parse(localStorage.getItem("posCartState")).notesInput === field.value, "Editar la nota debe guardar el carrito")
+      assert(JSON.parse(localStorage.getItem(f.cartKey)).notesInput === field.value, "Editar la nota debe guardar el carrito")
       rootView.unmount(); await sleep(20)
       rootView = createRoot(document.getElementById("test-root"))
-      rootView.render(React.createElement(PosClient, { defaultViewMode: "grid" }))
+      rootView.render(React.createElement(PosClient, { actor: f.user, defaultViewMode: "grid" }))
       await until(() => document.getElementById("sale-notes")?.value.includes("José"), "Debe restaurar la nota")
       await checkout()
       assert(f.saves === 1 && f.savedNotes[0] === "Entregar mañana.\nLlamar a José.", "Debe enviar la nota normalizada")
-      assert(document.getElementById("sale-notes").value === "" && !localStorage.getItem("posCartState"), "Debe limpiar nota y carrito tras guardar")
+      assert(document.getElementById("sale-notes").value === "" && !localStorage.getItem(f.cartKey), "Debe limpiar nota y carrito tras guardar")
     }
   })
   await test("Venta offline sin control de caja conserva su nota al sincronizar", async () => {
@@ -244,10 +245,10 @@ async function browserSuite() {
     try {
       link.click(); await until(() => button("Sí, guardar"), "No abrió el diálogo de navegación")
       button("Sí, guardar").click(); await sleep(30)
-      assert(JSON.parse(localStorage.getItem("posCartState")).notesInput === "Pedido para José", "Navegar con guardar debe conservar la nota")
+      assert(JSON.parse(localStorage.getItem(f.cartKey)).notesInput === "Pedido para José", "Navegar con guardar debe conservar la nota")
       link.click(); await until(() => button("No, salir sin guardar"), "No abrió el diálogo para descartar")
       button("No, salir sin guardar").click(); await sleep(30)
-      assert(document.getElementById("sale-notes").value === "" && !localStorage.getItem("posCartState"), "Descartar debe limpiar nota y carrito")
+      assert(document.getElementById("sale-notes").value === "" && !localStorage.getItem(f.cartKey), "Descartar debe limpiar nota y carrito")
       card("pan").click(); await sleep(20)
       await input(document.getElementById("sale-notes"), "Otra nota")
       button("Vaciar canasta").click(); await sleep(30)
@@ -270,12 +271,12 @@ async function browserSuite() {
   await test("Una nota restaurada que excede el límite no se factura ni se encola", async () => {
     const f = await setup([basic("pan", 2)])
     card("pan").click(); await sleep(20)
-    const state = JSON.parse(localStorage.getItem("posCartState"))
+    const state = JSON.parse(localStorage.getItem(f.cartKey))
     state.notesInput = "x".repeat(1001)
     rootView.unmount(); await sleep(20)
-    localStorage.setItem("posCartState", JSON.stringify(state))
+    localStorage.setItem(f.cartKey, JSON.stringify(state))
     rootView = createRoot(document.getElementById("test-root"))
-    rootView.render(React.createElement(PosClient, { defaultViewMode: "grid" }))
+    rootView.render(React.createElement(PosClient, { actor: f.user, defaultViewMode: "grid" }))
     await until(() => document.getElementById("sale-notes")?.value.length === 1001, "No restauró el carrito")
     target("sales-save-button").click(); await until(() => target("sales-change-amount"), "No abrió el cobro")
     await input(target("sales-change-amount").querySelector("input"), "100")

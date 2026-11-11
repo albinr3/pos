@@ -1,7 +1,10 @@
 import type { Prisma } from "@prisma/client"
+import { assertNoFiscalHistoryForDeletion } from "@/lib/fiscal/core/retention"
 
 /** Solo invocar desde una transacción autorizada, bajo maintenance y con Account bloqueado. */
 export async function purgeAccountData(tx: Prisma.TransactionClient, accountId: string) {
+  // La baja no puede borrar relaciones antes de comprobar el historial, incluso en mantenimiento.
+  await assertNoFiscalHistoryForDeletion(tx, accountId)
   await tx.cashSourceLink.deleteMany({ where: { accountId } })
   await tx.cashOperation.deleteMany({ where: { accountId } })
   await tx.cashMovement.deleteMany({ where: { accountId } })

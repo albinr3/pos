@@ -237,9 +237,13 @@ export function ARClient({
 
             // Pre-cargar a IndexedDB
             try {
-              const arData = await syncARToIndexedDB()
+              const arData = actor ? await syncARToIndexedDB(actor) : null
               // Preventivo: null indica sesión vencida; mantener el caché previo.
-              if (arData !== null) await saveARCache(arData)
+              if (arData !== null && actor) {
+                const session = await fetch("/api/auth/me", { cache: "no-store" }).then(response => response.ok ? response.json() : null)
+                // No atribuir una respuesta tardía a un empleado que ya cambió de sesión.
+                if (session?.user?.id === actor.id && session.user.accountId === actor.accountId) await saveARCache(arData, actor)
+              }
             } catch (error) {
               console.error("Error pre-cargando AR:", error)
             }
@@ -250,7 +254,7 @@ export function ARClient({
         }
 
         // Cargar desde cache offline
-        const cached = (await getARCache()).map((item: any) => ({
+        const cached = (await getARCache(actor)).map((item: any) => ({
           ...item,
           payments: item.payments ?? [],
         }))
@@ -297,7 +301,7 @@ export function ARClient({
         }
 
         // Cargar mas desde cache offline
-        const cached = (await getARCache()).map((item: any) => ({
+        const cached = (await getARCache(actor)).map((item: any) => ({
           ...item,
           payments: item.payments ?? [],
         }))

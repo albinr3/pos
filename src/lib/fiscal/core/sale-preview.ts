@@ -4,10 +4,12 @@ import { prisma } from "@/lib/db"
 import { calcDiscountedDocumentTotalsByTaxMode, calcPercentAmountCents, normalizeDiscountPercentBp } from "@/lib/money"
 import { hasPermission, type PermissionAwareUser } from "@/lib/permissions"
 import { calculateFiscalDocument, FiscalDocumentError } from "./document"
+import { addFiscalDays, fiscalDateIsFuture } from "./date"
 import { parseFiscalSaleCommand } from "./sale-command"
 import { requireFiscalSaleAccess } from "./sale-customer"
 import { calculateExemptSalePrices } from "./sale-pricing"
 import { buildFiscalSaleFromSource } from "./sale-document"
+import { fiscalSaleReviewSignature } from "./sale-review-signature"
 
 type Actor = PermissionAwareUser & { id: string; accountId: string }
 type Tx = Prisma.TransactionClient
@@ -71,10 +73,11 @@ export async function previewFiscalSale(actor: Actor, raw: unknown, db: Tx = pri
   if (!Number.isSafeInteger(total) || total > 2147483647) return invalid("items", "El total supera el límite admitido")
   const soldAt = body.soldAt === undefined ? new Date() : new Date(body.soldAt as string | number)
   if (!Number.isFinite(soldAt.getTime())) return invalid("soldAt", "Fecha de venta inválida")
+  if (fiscalDateIsFuture(soldAt)) return invalid("soldAt", "La fecha de la venta es futura; revisa el reloj del dispositivo")
   let dueDate: Date | null = null
   if (type === "CREDITO") {
     if (command.dueDate) dueDate = new Date(`${command.dueDate}T12:00:00.000Z`)
-    else if (customer.creditDays > 0) { dueDate = new Date(soldAt); dueDate.setDate(dueDate.getDate() + customer.creditDays) }
+    else if (customer.creditDays > 0) dueDate = addFiscalDays(soldAt, customer.creditDays)
   }
   const method = typeof body.paymentMethod === "string" ? body.paymentMethod : null
   const rawPayments = Array.isArray(body.paymentSplits) ? body.paymentSplits : []
@@ -86,5 +89,5 @@ export async function previewFiscalSale(actor: Actor, raw: unknown, db: Tx = pri
   const built = await buildFiscalSaleFromSource(db, actor, sale, settings, command)
   const snapshot = calculateFiscalDocument(built.document, settings.version)
   if (!new Decimal(snapshot.totals.gross).mul(100).eq(total)) return invalid("items", "Los importes fiscales no concilian con la venta")
-  return { ...snapshot, sale: { ...built.metadata, customerId: customer.id }, notice: "Previsualización local / No emitido fiscalmente", informational: true }
+  return { ...snapshot, sale: { ...built.metadata, customerId: customer.id }, reviewSignature: fiscalSaleReviewSignature(snapshot), notice: "Previsualización local / No emitido fiscalmente", informational: true }
 }

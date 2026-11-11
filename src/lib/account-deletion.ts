@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db"
 import { cashRequest } from "@/lib/cash-context"
 import { accountIdentityHash, withAccountIdentityLock } from "@/lib/account-deletion-guard"
 import { purgeAccountData } from "@/lib/account-purge"
+import { FISCAL_RETENTION_MESSAGE, hasFiscalHistory } from "@/lib/fiscal/core/retention"
 
 const PIN_WINDOW_MS = 15 * 60 * 1000
 const LEASE_MS = 3 * 60 * 1000
@@ -49,7 +50,11 @@ export async function requestAccountDeletion(input: {
   return withAccountIdentityLock(input.clerkUserId, async tx => {
     const clerkUserHash = accountIdentityHash(input.clerkUserId)
     const existing = await tx.accountDeletion.findUnique({ where: { clerkUserHash } })
-    if (existing && existing.accountId === input.accountId) return { success: true, job: existing }
+    if (existing && existing.accountId === input.accountId) {
+      // Una tarea antigua no debe cerrar la sesión ni reanudar proveedores si conserva historial fiscal.
+      if (await hasFiscalHistory(tx, input.accountId)) return { success: false, status: 409, code: "FISCAL_RETENTION_REQUIRED", error: FISCAL_RETENTION_MESSAGE }
+      return { success: true, job: existing }
+    }
 
     await tx.$queryRaw`SELECT id FROM "Account" WHERE id = ${input.accountId} FOR UPDATE`
     const account = await tx.account.findFirst({ where: { id: input.accountId, clerkUserId: input.clerkUserId } })
@@ -72,6 +77,9 @@ export async function requestAccountDeletion(input: {
       } })
       return { success: false, status: 400, code: "INVALID_PIN", error: "El PIN no es correcto." }
     }
+
+    // Comprobar bajo el bloqueo de la empresa antes de desactivar usuarios o cancelar servicios.
+    if (await hasFiscalHistory(tx, account.id)) return { success: false, status: 409, code: "FISCAL_RETENTION_REQUIRED", error: FISCAL_RETENTION_MESSAGE }
 
     const [files, sharedFiles, subscription] = await Promise.all([
       referencedFiles(tx, account.id), referencedFiles(tx, account.id, true),
@@ -145,6 +153,8 @@ export async function processAccountDeletion(id: string, adapters: DeletionProvi
       const job = await prisma.accountDeletion.findFirst({ where: { id, leaseToken } })
       if (!job) return false
       stage = job.stage
+      // Las tareas aceptadas por versiones anteriores también se detienen antes de efectos externos.
+      if (await hasFiscalHistory(prisma, job.accountId)) throw new DeletionProviderError("FISCAL_RETENTION_REQUIRED")
       let data: Prisma.AccountDeletionUpdateManyMutationInput
       switch (stage) {
         case "CANCEL_SUBSCRIPTION":

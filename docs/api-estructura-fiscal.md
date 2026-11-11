@@ -1,5 +1,56 @@
 # API fiscal interna — preparación local
 
+## Etapa 15: exportación y compatibilidad offline
+
+`GET /api/fiscal/history/export` descarga una instantánea JSON versionada de la empresa autenticada. Solo el dueño activo puede acceder, tanto con cookies web como con `X-Clerk-Authorization` y `X-SubUser-Token` móviles. La respuesta es privada y lleva `Cache-Control: private, no-store`. Incluye configuración y cambios, conceptos, secuencias y asignaciones, documentos, revisiones, operaciones, notas, soportes recibidos y fuentes comerciales y financieras vinculadas. Los `BigInt` son cadenas decimales. `format` es `movopos-fiscal-history` y `version` es `1`; no contiene credenciales y no es un archivo restaurable ni una emisión fiscal. Las respuestas 401, 403 y 500 usan `{error:{code,message,fields,retryable,correlationId}}`.
+
+La baja solicitada mediante `DELETE /api/account` responde 409 con código `FISCAL_RETENTION_REQUIRED` cuando la empresa tiene historial fiscal, incluso si el módulo se desactivó. El dueño puede descargar el historial desde Ajustes. La eliminación permanece suspendida hasta definir la política de conservación por jurisdicción; las empresas sin historial fiscal conservan el flujo anterior.
+
+| Operación | Sin conexión |
+|---|---|
+| Venta y cobro admitidos por el protocolo de caja | Se guardan con identidad y versión fiscal; el servidor vuelve a validar al sincronizar. |
+| Devolución física fiscal admitida por caja | Conserva su identificador y requiere validación del servidor al sincronizar. |
+| Notas financieras, aplicación de saldo, compras, pagos a proveedores, gastos y pagos al exterior | Requieren conexión; no deben encolarse como si fueran ventas. |
+| Consultas, configuración, secuencias, exportación e impresión de copia preparada | Requieren conexión. |
+
+Una venta pendiente conserva el ID local y no tiene e-NCF. La cola no debe convertirse en una nueva venta cuando se pierde una respuesta: reintenta con el mismo identificador y conserva conflictos para revisión. El e-NCF TEST se asigna únicamente en el servidor tras validar la operación. Un recibo offline no es un e-CF; las copias preparadas muestran «Documento de prueba / No emitido fiscalmente».
+
+Los cachés de productos, clientes y cuentas por cobrar se separan por empresa y empleado. Tras actualizar desde versiones anteriores, los datos sin autoría verificable no se atribuyen automáticamente a una sesión: volver a precargarlos con conexión. Los pendientes antiguos se conservan para revisión. Las fechas comerciales de `DO_ECF` se interpretan en `America/Santo_Domingo`; los instantes se conservan como ISO 8601. La emisión externa continúa deshabilitada.
+
+Para una venta fiscal nueva, el servidor compara el día de `soldAt` con su propio reloj y rechaza fechas futuras con `FISCAL_DATE_CONFLICT` (409). Una venta en cola se conserva para revisión y no reserva numeración mientras exista el conflicto. Los filtros `from` y `to` de la bandeja corresponden a fechas de registro en la zona dominicana.
+
+Cuando una venta pendiente recibe el rechazo confirmado `FISCAL_POLICY_CHANGED`, su autor puede abrirla en Cuadre diario y elegir «Revisar configuración fiscal». Si el perfil sigue activo, una venta fiscal se previsualiza y exige que el importe coincida con el originalmente guardado. La respuesta incluye `reviewSignature`, un resumen de revisión generado por el servidor, no una firma fiscal; al confirmar se envía como `fiscal.expectedReview`. El servidor vuelve a calcularlo dentro de la transacción y rechaza con `FISCAL_REVIEW_CHANGED` si cambió el detalle. Ese rechazo conserva el pendiente y permite al autor volver a revisarlo; cada revisión queda registrada en el dispositivo. Una venta originalmente ordinaria puede confirmarse explícitamente como ordinaria con `fiscal: null`; el cliente envía `expectedTotalCents` al nivel de la venta y el servidor vuelve a calcularlo antes de confirmar. En ambos casos el empleado confirma antes de actualizar la versión y reintentar con el mismo identificador. La versión anterior queda en el dispositivo. Si el perfil está apagado, faltan datos o cambia el total, la venta permanece pendiente y requiere revisión; no se convierte automáticamente en otra operación. La comparación del detalle y la revisión de una venta ordinaria se añadieron después del bloque de pruebas y todavía no están verificadas.
+
+## Etapa 14: copia, documentos recibidos e informes
+
+Las rutas usan los encabezados móviles `X-Clerk-Authorization: Bearer <token>` y `X-SubUser-Token`, sin requerir cookies. Las consultas son privadas y no se almacenan en caché. Ninguna ruta envía e-CF ni acredita aceptación de la DGII.
+
+`GET /api/fiscal/documents/{id}/printable` devuelve `id`, `state`, `notice`, `number`, `environment`, `referenceNumber`, `snapshot`, `official: null` y `text` (líneas para impresión). `GET /api/fiscal/documents/{id}/pdf` descarga un PDF generado con esas mismas líneas. Solo se imprimen documentos preparados; se respetan permisos fiscales, el acceso existente de ventas y la excepción para notas propias. Ambos mantienen la empresa y la copia histórica; los diez tipos muestran «Documento de prueba / No emitido fiscalmente». El número es una reserva TEST, no una emisión.
+
+`GET /api/fiscal/received-documents?sourceKind=PURCHASE&sourceId=...&take=50&cursor=...` lista `{data,nextCursor}`; `take` admite de 1 a 200 y el cursor se obtiene de la página anterior. `GET /api/fiscal/received-documents/{id}` incluye las revisiones y la diferencia con la operación. El origen es `PURCHASE`, `PAYABLE` (solo obligación independiente) o `EXPENSE`. No se guardan archivos, fotos, PDF ni enlaces de descarga de soportes.
+
+`POST /api/fiscal/received-documents` crea o actualiza un registro por origen; `PUT /api/fiscal/received-documents/{id}` actualiza el mismo origen. Se requiere el perfil fiscal activo y, además de los permisos del origen, `canViewFiscalDocuments` y `canPrepareFiscalDocuments`; para consulta basta la lectura fiscal y el permiso del origen. La consulta histórica sigue disponible con el perfil apagado. Ejemplo:
+
+```json
+{
+  "operationId": "recibido-20261111-001",
+  "sourceKind": "PURCHASE",
+  "sourceId": "id-compra",
+  "expectedRevision": 0,
+  "data": {
+    "number": "B0100000123", "type": "FACTURA", "issueDate": "2026-11-11",
+    "supplierName": "Proveedor", "supplierIdentification": "123456789", "currency": "DOP",
+    "baseCents": 10000, "taxCents": 1800, "withheldCents": 0, "totalCents": 11800
+  }
+}
+```
+
+La respuesta contiene `id`, `revision`, `data`, `operationTotalCents` y `differenceCents` (`null` si la moneda no es DOP). Importes escritos en centavos enteros; no corrigen ni crean pagos. La primera revisión usa `expectedRevision: 0`; para modificar, se envía la revisión actual. Conservar `operationId` y el mismo contenido tras una respuesta perdida: otro contenido o una revisión obsoleta devuelve 409. El número recibido se sincroniza con `supplierReceiptNumber`; no puede coexistir con un E41 propio de la misma operación. Los comprobantes existentes sin datos ampliados no se rellenan automáticamente.
+
+`GET /api/fiscal/reports/documents` consulta las copias y pendientes; `GET /api/fiscal/reports/reconciliation` presenta operaciones comerciales, notas, devoluciones, pagos y reembolsos. Ambos admiten `from`, `to` (fechas AAAA-MM-DD), `source`, `type`, `state`, `party`, `take` (1–200) y `cursor`, y devuelven `{data,nextCursor,balanceBasis:"CURRENT",notice}`. Las filas contienen fuente, contraparte, número, estado, moneda, bruto, impuesto, retención, cobrado/pagado, saldo, ajuste, total de copia y detalle; los importes comerciales terminados en `Cents` son centavos y pueden ser `null` cuando no aplican. Los pagos al exterior figuran también como detalle de su obligación: sus importes agregables son `null` para no duplicar el pago o el gasto.
+
+`format=csv` descarga todo el resultado filtrado como CSV administrativo, con encabezado y valores de texto protegidos contra fórmulas. No es un archivo de declaración 606/607/609. Los informes requieren `canAccessReports` y `canViewFiscalDocuments`; cada sección requiere también sus permisos comerciales: ventas y cuentas por cobrar, compras y cuentas por pagar, o gestión de gastos. Una sección sin permiso se omite. Los saldos son actuales, no saldos históricos al cierre de la fecha filtrada.
+
 ## Compras, obligaciones y E41
 
 `POST /api/purchases` admite `supplierReceiptNumber` opcional (hasta 50 caracteres): es un comprobante recibido, no un número asignado por MOVOPos. Para una compra al contado sin comprobante que se revisará como E41, `e41CashPaidCents` indica el dinero neto entregado y `e41DeclaredUnregistered: true` registra la declaración administrativa. Requiere proveedor con identificación fiscal, permiso fiscal y perfil TEST activo. El bruto de la compra permanece en `totalCents`; la diferencia con el neto debe conciliarse al preparar el E41.
@@ -84,7 +135,7 @@ curl -H "X-Clerk-Authorization: Bearer <CLERK_TOKEN>" -H "X-SubUser-Token: <SUBU
 
 La consulta requiere al menos uno de los cuatro permisos fiscales o ser dueño. Devuelve 401 sin autenticación, 403 sin permiso y 500 ante un fallo del servidor. Sus errores incluyen código, mensaje, campos afectados, posibilidad de reintento e identificador de correlación. Consultar y reintentar no produce cambios.
 
-Por ahora las rutas comerciales de ventas, compras, cobros, pagos a proveedores, devoluciones, gastos y la cola de caja rechazan los campos fiscales y tipos E no admitidos con HTTP 400 y código `FISCAL_NOT_AVAILABLE`. Si se fuerza un perfil activo en datos de prueba, las mutaciones comerciales protegidas se rechazan también cuando omiten el bloque fiscal. Todavía no hay preparación, numeración ni conexión a un proveedor.
+Las rutas comerciales rechazan los campos y tipos fiscales que no admite cada operación con HTTP 400 y código `FISCAL_NOT_AVAILABLE`. Con el perfil activo, las operaciones protegidas aplican las reglas y permisos correspondientes aunque el cliente omita el bloque fiscal. La preparación y la numeración son exclusivamente locales en `TEST`; no hay conexión a un proveedor.
 
 El contexto autenticado de `GET /api/cash-shifts` incluye `fiscalQueuePolicy: { "version": 0, "enabled": false }`; la versión cero significa que no existe configuración. La cola de caja conserva esa versión en `cashOperation.fiscalPolicyVersion`. Una operación nueva con versión distinta de la vigente recibe HTTP 409 y código `FISCAL_POLICY_CHANGED`, sin aplicar efectos; se conserva para revisión. Un reintento de una operación ya confirmada recupera su resultado aunque la política haya cambiado. La comparación se efectúa en la transacción y la versión confirmada queda registrada en `CashOperation`. Un descarte explícito con motivo continúa disponible. Los clientes anteriores sin versión siguen admitidos mientras la política esté desactivada, pero no pueden iniciar operaciones bajo una política activa.
 
@@ -185,7 +236,7 @@ Para los campos con catálogo, OpenAPI muestra los códigos admitidos para valor
 
 Todas las rutas requieren `X-Clerk-Authorization: Bearer <token>` y `X-SubUser-Token`. La empresa y el empleado proceden de la sesión. Las respuestas son privadas y no se almacenan en caché. `canPrepareFiscalDocuments` permite crear y editar borradores, confirmar y recuperar sus propias operaciones; `canViewFiscalDocuments` permite consultar bandeja, detalle, historial y operaciones de la empresa. Al apagar el módulo se mantienen las consultas y la recuperación de operaciones ya confirmadas.
 
-- `GET /api/fiscal/documents?source=SALE&type=E31&state=BORRADOR&party=texto&from=2026-11-01&to=2026-11-30&take=50&cursor=...`: listado `{data,nextCursor}`, fecha de registro, orden descendente por fecha e ID; `source` admite `SALE`, `PURCHASE`, `RETURN`, `EXPENSE`. `sourceId` filtra la operación de origen; `party` busca ID o nombre conservado.
+- `GET /api/fiscal/documents?source=SALE&type=E31&state=BORRADOR&party=texto&from=2026-11-01&to=2026-11-30&take=50&cursor=...`: listado `{data,nextCursor}`, fecha de registro dominicana, orden descendente por fecha e ID; `source` admite `SALE`, `PURCHASE`, `PAYABLE`, `RETURN`, `EXPENSE`, `SUPPLIER_PAYMENT` y `ADJUSTMENT`. `sourceId` filtra la operación de origen; `party` busca ID o nombre conservado.
 - `POST /api/fiscal/documents`: `{ "operationId": "uuid-estable", "document": { ... } }`, donde `document` tiene la forma de previsualización, `source` y `expectedPolicyVersion`. Devuelve `{id,revision,state}`. La revisión se valida antes de guardarse y el origen debe pertenecer a la empresa.
 - `GET /api/fiscal/documents/{id}` devuelve copia, entrada vigente, revisiones conservadas, asignación, referencias y trabajos. `PUT` recibe `{operationId,expectedRevision,document}`; el tipo y origen no cambian.
 - `GET /api/fiscal/documents/{id}/history?take=50&cursor=...` devuelve `{data,nextCursor}` en orden ascendente de fecha e ID.
@@ -208,9 +259,39 @@ Un borrador anterior E44, E45 o E46 vinculado a una venta puede descartarse con 
 
 En `POST /api/sales` y en el `payload` de `POST /api/cash-shifts/operations` con `kind: "sale"`, el bloque `fiscal` contiene `type`, `expectedPolicyVersion`, y opcionalmente `expectedTotalCents`, `incomeType`, `buyer`, `dueDate`, `shippingTaxTreatment` y `special`. `buyer` contiene `name`, `identification` y `country`; si el cliente general recibe un RNC que coincide con una única ficha activa, el servidor selecciona esa ficha y aplica sus condiciones. Si hay duplicados exige selección explícita; si no hay coincidencia, los datos temporales no modifican la ficha general. `expectedTotalCents` es una condición de revisión: el servidor calcula el importe por sí mismo y rechaza una diferencia; es obligatoria si la selección automática encuentra una ficha con descuento. `special` admite régimen y soporte para E44; confirmación de entidad y referencias de compra para E45; y modalidad, destino y datos logísticos para E46. Con perfil activo se usa `fiscal: null` para una venta ordinaria explícita. Sin perfil activo se conserva el contrato anterior omitiendo el bloque.
 
+Ejemplo común para crear una venta de prueba desde móvil; los IDs se sustituyen por recursos de la empresa y `clientOperationId` se guarda antes del primer envío:
+
+```json
+{
+  "kind": "sale",
+  "payload": {
+    "customerId": null, "type": "CONTADO", "paymentMethod": "EFECTIVO",
+    "treasuryAccountId": "id-caja", "items": [{ "productId": "id-producto", "qty": 1, "unitPriceCents": 11800 }],
+    "fiscal": { "type": "E32", "expectedPolicyVersion": 1 }
+  },
+  "cashOperation": {
+    "accountId": "id-empresa-autenticada", "userId": "id-empleado-autenticado",
+    "clientOperationId": "venta-prueba-0001", "cashShiftId": null,
+    "clientSequence": null, "fiscalPolicyVersion": 1
+  }
+}
+```
+
+Para probar los otros tipos de venta se conserva el mismo cuerpo y se reemplaza `payload.fiscal` por el bloque correspondiente. Los datos del producto, comprador y pago deben satisfacer las reglas del tipo elegido:
+
+| Tipo | Bloque `fiscal` de ejemplo |
+|---|---|
+| E31 | `{ "type":"E31", "expectedPolicyVersion":1, "buyer":{"name":"Cliente de prueba","identification":"101000001","country":"DO"} }` |
+| E32 | `{ "type":"E32", "expectedPolicyVersion":1 }` |
+| E44 | `{ "type":"E44", "expectedPolicyVersion":1, "special":{"regime":"Régimen de prueba","exemptionReference":"Soporte de prueba"} }` |
+| E45 | `{ "type":"E45", "expectedPolicyVersion":1, "special":{"governmentEntity":true,"purchaseOrder":"OC-PRUEBA"} }` |
+| E46 | `{ "type":"E46", "expectedPolicyVersion":1, "special":{"exportMode":"EXPORTACION","destinationCountry":"US"} }` |
+
+E44 y E46 requieren revisar el cálculo sin ITBIS; E45 requiere el comprador correspondiente y E46 un bien exportable. Para negocios con turno controlado se envían el turno y su secuencia y el encabezado de dispositivo. E33 y E34 usan los ejemplos de notas anteriores; E41, E43 y E47 usan los ejemplos de compra, gasto y pago exterior de esta guía.
+
 Una venta fiscal requiere `cashOperation` con identificador durable, empresa y usuario de la sesión, turno y secuencia cuando correspondan, y `fiscalPolicyVersion`. El servidor confirma venta, inventario, deuda o caja, documento y número TEST en una transacción. Repetir la misma solicitud recupera el resultado; modificarla con el mismo identificador causa conflicto. La respuesta añade `fiscal` con ID, tipo, estado y e-NCF. Los errores por política, secuencia o datos inválidos no convierten la venta en ordinaria.
 
-Sin conexión, conservar íntegramente el mismo comando y su versión sin inventar e-NCF. Un cambio de política, rango agotado o dato incompatible conserva el pendiente para revisión. Solo se admite moneda DOP. Los campos y errores precisos constan en [OpenAPI](openapi-estructura-fiscal.json); estas rutas no firman ni envían comprobantes externos.
+Sin conexión, conservar íntegramente el mismo comando y su versión sin inventar e-NCF. Si se pierde una respuesta, reenviar primero exactamente el mismo comando: el servidor recupera cualquier resultado confirmado. Solo después de recibir el rechazo explícito `FISCAL_POLICY_CHANGED` puede revisarse la venta con la política actual, conservando el ID y solicitando confirmación del empleado y del total; un error de red o una respuesta perdida no autorizan esa modificación. Un rango agotado o un dato incompatible conserva el pendiente. Solo se admite moneda DOP. Los campos y errores precisos constan en [OpenAPI](openapi-estructura-fiscal.json); estas rutas no firman ni envían comprobantes externos.
 
 ## Gastos E43 y pagos E47 — contratos de las etapas 12 y 13
 
@@ -237,7 +318,7 @@ Las rutas requieren sesión autenticada. Para móvil usar conjuntamente `X-Clerk
 }
 ```
 
-`fundingSource` es `COMPANY`, `EMPLOYEE` o `PETTY_CASH`. Para `COMPANY` y `PETTY_CASH` enviar `paymentMethod` y `treasuryAccountId` dentro de `fiscalExpense`; para `EMPLOYEE` esos campos deben omitirse. `employee.userId` es opcional y, si se informa, debe pertenecer a la empresa. El indicador de elegibilidad es una declaración administrativa; el servidor bloquea E43 si es falso o si el detalle contiene impuestos o retenciones incompatibles. Las referencias de soporte son texto administrativo; la carga y descarga de archivos corresponde a la etapa 14.
+`fundingSource` es `COMPANY`, `EMPLOYEE` o `PETTY_CASH`. Para `COMPANY` y `PETTY_CASH` enviar `paymentMethod` y `treasuryAccountId` dentro de `fiscalExpense`; para `EMPLOYEE` esos campos deben omitirse. `employee.userId` es opcional y, si se informa, debe pertenecer a la empresa. El indicador de elegibilidad es una declaración administrativa; el servidor bloquea E43 si es falso o si el detalle contiene impuestos o retenciones incompatibles. Las referencias de soporte son texto administrativo; esta preparación no almacena archivos adjuntos.
 
 La reposición del fondo se registra como transferencia mediante `/api/treasury/transfers`, sin crear otro gasto. Con turnos controlados, el gasto de caja chica requiere actor autorizado y turno y dispositivo activos, aunque utilice una cuenta de caja chica distinta de la caja del turno.
 

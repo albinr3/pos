@@ -22,7 +22,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   if (!response.ok) throw new Error(result.error || "No se pudo completar la operación")
   return result
 }
-export function AccountsPayableClient({ canPay, canCancel, canEdit, canReport = false, canPrepareE41 = false }: { canPay: boolean; canCancel: boolean; canEdit: boolean; canReport?: boolean; canPrepareE41?: boolean }) {
+export function AccountsPayableClient({ canPay, canCancel, canEdit, canReport = false, canPrepareE41 = false, canViewFiscal = false }: { canPay: boolean; canCancel: boolean; canEdit: boolean; canReport?: boolean; canPrepareE41?: boolean; canViewFiscal?: boolean }) {
   const [data, setData] = useState<Listing | null>(null), [detail, setDetail] = useState<Detail | null>(null)
   const [query, setQuery] = useState(""), [supplierId, setSupplierId] = useState(""), [status, setStatus] = useState(""), [overdue, setOverdue] = useState(false)
   const [skip, setSkip] = useState(0), [filters, setFilters] = useState(""), [error, setError] = useState(""), [busy, setBusy] = useState(false)
@@ -83,6 +83,7 @@ export function AccountsPayableClient({ canPay, canCancel, canEdit, canReport = 
       <p>Total {formatRD(detail.totalCents)} · Abonado {formatRD(detail.paidCents)} · <strong>Pendiente {formatRD(detail.balanceCents)}</strong>{detail.purchase?.cancelledAt && " · Compra anulada"}</p>
       {!detail.foreignOperationId && (detail.withheldItbisCents > 0 || detail.withheldIsrCents > 0) && <p>Retención ITBIS {formatRD(detail.withheldItbisCents)} · Retención ISR {formatRD(detail.withheldIsrCents)} · Bruto {formatRD(detail.totalCents + detail.withheldItbisCents + detail.withheldIsrCents)}</p>}
       {detail.supplierReceiptNumber && <p>Comprobante recibido: {detail.supplierReceiptNumber}</p>}
+      {canViewFiscal && canEdit && <Link className="text-sm underline" href={`/fiscal/received-documents?sourceKind=${detail.purchaseId ? "PURCHASE" : "PAYABLE"}&sourceId=${encodeURIComponent(detail.purchaseId ?? detail.id)}`}>Datos del comprobante recibido</Link>}
       {detail.foreignOperationId && <p>Esta obligación se liquida y documenta en la sección Pago al exterior.</p>}
       {canPrepareE41 && !detail.foreignOperationId && !detail.purchase?.cancelledAt && !detail.purchase?.supplierReceiptNumber && !detail.supplierReceiptNumber && <Link className="text-sm underline" href={`/fiscal/documents/new?source=${detail.purchaseId ? "PURCHASE" : "PAYABLE"}&sourceId=${encodeURIComponent(detail.purchaseId ?? detail.id)}`}>Revisar E41 de esta operación</Link>}
       {canEdit && !detail.purchase?.cancelledAt && <form className="grid gap-2 rounded border p-3" onSubmit={e => { e.preventDefault(); void act(() => json(detail.purchaseId ? `/api/purchases/${detail.purchaseId}` : `/api/accounts-payable/${detail.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dueDate, notes }) })) }}><Label>Vencimiento</Label><Input type="date" required value={dueDate} onChange={e => setDueDate(e.target.value)} /><Label>Notas</Label><Input value={notes} onChange={e => setNotes(e.target.value)} /><Button variant="outline" disabled={busy}>Guardar notas y vencimiento</Button></form>}

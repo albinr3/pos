@@ -49,7 +49,8 @@ function fixture(notes = null) {
   const sale = { id: "sale", invoiceCode: "A-00001", type: "CONTADO", notes, soldAt: new Date("2026-11-02T16:00:00Z"), items: [], payments: [], fiscalDocuments: [], customer: null, subtotalCents: 100, itbisCents: 0, totalCents: 100, salePricesIncludeItbis: true }
   const prisma = {
     companySettings: { findFirst: async () => null },
-    fiscalDocument: { findFirst: async () => ({ snapshot: { type:"E32", issueDate:"2026-11-10", issuer:{name:"Emisor congelado",identification:"123456789"}, buyer:null, payment:{type:"CONTADO",dueDate:null}, lines:[{description:"Producto congelado",quantity:"1.00",unit:"UNIDAD",unitPrice:"100.0000",base:"100.00",tax:"0.00",gross:"100.00"}], totals:{tax:"0.00",gross:"100.00"},sale:{invoiceCode:"A-00001",payments:[{code:"1",amountCents:10000}]}} }) },
+    fiscalDocument: { findFirst: async () => ({ snapshot: { type:"E32", issueDate:"2026-11-10", issuer:{name:"Emisor congelado",identification:"123456789"}, buyer:null, currency:{operation:"DOP",reporting:"DOP",rate:"1.0000",rateDate:null}, payment:{type:"CONTADO",dueDate:null}, lines:[{description:"Producto congelado",quantity:"1.00",unit:"UNIDAD",unitPrice:"100.0000",base:"100.00",tax:"0.00",gross:"100.00",taxTreatment:"EXENTO",withholdings:[]}], totals:{tax:"0.00",gross:"100.00"},sale:{invoiceCode:"A-00001",payments:[{code:"1",amountCents:10000}]}} }) },
+    fiscalNumberAllocation: { findFirst: async () => ({eNcf:"E320000000001",environment:"TEST"}) },
     $queryRaw: async () => [{ eNcf:"E320000000001" }],
     sale: {
       findMany: async ({ where }) => { assert.equal(where.accountId, actor.accountId); return [sale] },
@@ -76,6 +77,8 @@ function fixture(notes = null) {
     "@/lib/fiscal/core/sequences": { FiscalSequenceError: class extends Error {} },
     "@/lib/fiscal/core/sale-query": { getFiscalSaleSummaries: async () => null },
   }
+  // La copia fiscal compartida importa el mismo error con una ruta relativa.
+  mocks["./document"] = mocks["@/lib/fiscal/core/document"]
   for (const name of ["print-button", "auto-print-on-load", "download-receipt-pdf-button"]) {
     const exportName = { "print-button": "PrintButton", "auto-print-on-load": "AutoPrintOnLoad", "download-receipt-pdf-button": "DownloadReceiptPdfButton" }[name]
     mocks[`@/components/app/${name}`] = { [exportName]: nullComponent }
@@ -88,6 +91,9 @@ function fixture(notes = null) {
   for (const [name, method] of [["credit-drafts", "confirmCreditAdjustment"], ["customer-credit", "applyCustomerCredit"], ["debit-drafts", "confirmDebitAdjustment"]]) {
     mocks[`@/lib/fiscal/core/${name}`] = { [method]: () => assert.fail("Una venta ordinaria no debe ejecutar operaciones fiscales") }
   }
+  // La cola también despacha gastos y pagos exteriores, que no se ejecutan en estas pruebas de venta.
+  mocks["@/lib/fiscal/core/employee-expenses"] = { createFiscalExpense: () => assert.fail("Operación ajena"), createExpenseSettlement: () => assert.fail("Operación ajena") }
+  mocks["@/lib/fiscal/core/foreign-payments"] = { addForeignPayment: () => assert.fail("Operación ajena") }
   const load = loader(mocks)
   const { normalizeSaleNotes } = load("@/lib/sale-notes")
   const { UnsupportedFiscalInputError } = load("@/lib/fiscal/core/input")

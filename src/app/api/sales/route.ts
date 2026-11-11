@@ -61,6 +61,7 @@ type SaleCreateBody = {
   manualDiscountPercent?: number
   onboardingProductId?: string | null
   fiscal?: unknown
+  expectedTotalCents?: number
 }
 
 const methodMap: Record<string, PaymentMethod> = {
@@ -365,6 +366,7 @@ export async function POST(request: NextRequest) {
       manualDiscountPercentBp,
       salePricesIncludeItbis,
       soldAt,
+      ...(body.expectedTotalCents !== undefined ? { expectedTotalCents: body.expectedTotalCents } : {}),
       onboardingProductId: body.onboardingProductId || null,
       username: user.username,
       user,

@@ -21,7 +21,11 @@ await db.$disconnect()
 const has=(table,column)=>columns.some(row=>row.table_name===table&&row.column_name===column)
 const steps=[['Purchase','supplierReceiptNumber','20261110190000_purchase_supplier_receipt'],['AccountPayable','description','20261110200000_payable_without_inventory'],['FiscalDocument','payableId','20261110210000_fiscal_payable_source'],['Purchase','supplierNetPaidCents','20261110220000_fiscal_purchase_cash_net'],['AccountPayable','supplierReceiptNumber','20261110230000_payable_supplier_receipt'],...(!guards.length?[['FiscalGuard','id','20261110240000_fiscal_payable_protection']]:[]),...(fs.existsSync('prisma/migrations/20261111190000_fiscal_foreign_payments/migration.sql')&&!tables.length?[['FiscalForeignOperation','id','20261111190000_fiscal_foreign_payments']]:[])]
 for(const [table,column,dir] of steps) if(!has(table,column)) {
- const sql=fs.readFileSync(`prisma/migrations/${dir}/migration.sql`,'utf8')
+ let sql=fs.readFileSync(`prisma/migrations/${dir}/migration.sql`,'utf8')
+ if(dir==='20261110210000_fiscal_payable_source' && has('AccountPayable','withheldItbisCents') && has('AccountPayable','withheldIsrCents')) {
+  // db push ya crea estas columnas e índice; aplicar únicamente las restricciones y relaciones históricas faltantes.
+  sql=sql.replace(/^ALTER TABLE "AccountPayable" ADD COLUMN "withheldItbisCents"[^\n]*\n/m,'').replace('CREATE UNIQUE INDEX "AccountPayable_accountId_id_key"','CREATE UNIQUE INDEX IF NOT EXISTS "AccountPayable_accountId_id_key"')
+ }
  const run=spawnSync(path.resolve('tmp/fiscal-postgres17/pgsql/bin/psql.exe'),['-X','-1','-v','ON_ERROR_STOP=1','-h',source.hostname,'-p',source.port,'-U',decodeURIComponent(source.username),'-d',name],{input:sql,encoding:'utf8',windowsHide:true,timeout:20000,env:{...process.env,PGPASSWORD:decodeURIComponent(source.password),PGSSLMODE:'disable'}})
  if(run.error||run.status!==0) throw Error(`No se pudo actualizar la base aislada: ${run.error?.message || run.stderr}`)
 }

@@ -11,7 +11,7 @@ import { PriceInput } from "@/components/app/price-input"
 import { CashShiftWorkspace } from "@/components/app/cash-shift-workspace"
 import { CashControlActivation } from "@/components/app/cash-control-activation"
 import { ShiftCollectionsSummary } from "@/components/app/shift-collections-summary"
-import { clearCashShiftReport, discardCashPending, manualCashPending, sendManualCashMovement, cashPending, freezeCashShift, refreshCashContext, syncCashOutbox, unfreezeCashShift, type CashContext, type CashQueuedOperation } from "@/lib/cash-offline"
+import { acceptPendingFiscalPolicy, previewPendingFiscalPolicy, clearCashShiftReport, discardCashPending, manualCashPending, sendManualCashMovement, cashPending, freezeCashShift, refreshCashContext, syncCashOutbox, unfreezeCashShift, type CashContext, type CashQueuedOperation } from "@/lib/cash-offline"
 import { getPendingCounts, getReviewableLegacyPending, retireReviewedLegacyPending, type LegacyReviewItem } from "@/lib/indexed-db"
 import { openCashShiftFromClient } from "@/lib/cash-shift-opening"
 import { formatRD } from "@/lib/money"
@@ -76,7 +76,8 @@ export function CashShiftsClient() {
     setContext(state)
     if (!state.canTransfer && state.canRecordMovements) setKind("OWNER_OUT")
     if (state.activeShift) setManualPending(await manualCashPending(state.activeShift.id)); else setManualPending(null)
-    setPending((await cashPending()).filter(r => r.cashOperation.accountId === state.accountId))
+    // Un empleado sin permiso de supervisión no debe ver los errores de la cola de otro empleado.
+    setPending((await cashPending()).filter(r => r.cashOperation.accountId === state.accountId && (r.cashOperation.userId === state.userId || state.canViewAll)))
     const old = await getPendingCounts()
     setLegacyPending(old.sales + old.payments)
     setLegacyItems(await getReviewableLegacyPending({ id: state.userId, accountId: state.accountId, isOwner: state.isOwner }))
@@ -158,7 +159,19 @@ export function CashShiftsClient() {
       {manualPending && <div className="rounded-md border border-amber-400 p-3"><p>Hay un movimiento de caja sin confirmación. Reinténtalo para verificar si fue registrado.</p>{manualPending.userId === context?.userId ? <Button disabled={busy} onClick={() => run(() => sendManualCashMovement(manualPending.input))}>Reintentar movimiento pendiente</Button> : <p>Vuelve al empleado que registró este movimiento para confirmarlo.</p>}</div>}
       {legacyPending > 0 && <div className="grid gap-2 rounded-md border border-amber-400 p-3 text-sm"><p role="status">Este dispositivo conserva {legacyPending} operación(es) antigua(s). Las que no tienen autoría y política verificables no se sincronizan automáticamente.</p>{legacyItems.map(item => <div key={`${item.kind}:${item.id}`} className="rounded border p-2"><p>{item.detail}</p><p>{item.createdAt ? new Date(item.createdAt).toLocaleString("es-DO") : "Fecha no disponible"}</p><Button variant="outline" disabled={busy} onClick={() => { setLegacyReview(item); setLegacyReason("") }}>Revisar pendiente</Button></div>)}{legacyPending > legacyItems.length && <p>Algunos pendientes no identifican a esta empresa o no están disponibles para este empleado. Se conservarán en el dispositivo para revisión.</p>}</div>}
       {legacyReview && context && <div className="grid gap-2 rounded-md border p-3"><p>Compara este pendiente con las ventas o cobros registrados antes de retirarlo. Retirarlo no crea ni modifica ninguna operación comercial; se conserva una copia en la auditoría.</p><p>{legacyReview.detail}</p><Label htmlFor="legacy-review-reason">Resultado de la revisión y motivo</Label><Input id="legacy-review-reason" value={legacyReason} onChange={e => setLegacyReason(e.target.value)} /><div className="flex gap-2"><Button disabled={busy || !legacyReason.trim()} onClick={() => run(async () => { await retireReviewedLegacyPending({ id: context.userId, accountId: context.accountId }, legacyReview.kind, legacyReview.id, legacyReason); setLegacyReview(undefined); setLegacyReason("") })}>Retirar pendiente revisado</Button><Button variant="ghost" disabled={busy} onClick={() => setLegacyReview(undefined)}>Cancelar</Button></div></div>}
-      {pending.length > 0 && <div className="rounded-md border border-amber-400 p-3"><p className="font-medium">Operaciones pendientes: {pending.length}</p>{pending.map(p => <div className="text-sm" key={p.id}><p>{pendingLabels[p.kind]} · {p.error ?? "Pendiente de sincronización"}</p>{p.cashOperation.userId === context?.userId && <Button variant="ghost" disabled={busy} onClick={() => setPendingDiscard(p.id)}>Anular pendiente con motivo</Button>}</div>)}</div>}
+      {pending.length > 0 && <div className="rounded-md border border-amber-400 p-3"><p className="font-medium">Operaciones pendientes: {pending.length}</p>{pending.map(p => <div className="text-sm" key={p.id}><p>{pendingLabels[p.kind]} · {p.error ?? "Pendiente de sincronización"}</p>{p.cashOperation.userId === context?.userId && <>
+        {p.kind === "sale" && (p.errorCode === "FISCAL_POLICY_CHANGED" || p.errorCode === "FISCAL_REVIEW_CHANGED") && <Button variant="outline" disabled={busy} onClick={() => run(async () => {
+          const review = await previewPendingFiscalPolicy(p.id)
+          const description = review.type === "ORDINARIO" ? "ordinaria sin comprobante fiscal" : review.type
+          // Mostrar la contraparte y el impuesto de la previsualización, además del total confirmado.
+          const tax = review.taxCents === undefined ? "" : `\nITBIS: RD$ ${(review.taxCents / 100).toFixed(2)}`
+          const buyer = review.buyerLabel ? `\nComprador: ${review.buyerLabel}` : ""
+          if (!window.confirm(`Venta ${description}\nTotal: RD$ ${(review.totalCents / 100).toFixed(2)}${tax}${buyer}\n\n¿Confirmas revisarla con la configuración fiscal actual y volver a sincronizarla? El servidor volverá a comprobar el importe.`)) return
+          await acceptPendingFiscalPolicy(review)
+          await syncCashOutbox()
+        })}>Revisar configuración fiscal</Button>}
+        <Button variant="ghost" disabled={busy} onClick={() => setPendingDiscard(p.id)}>Anular pendiente con motivo</Button>
+      </>}</div>)}</div>}
       {pendingDiscard && <div className="grid gap-2 rounded-md border p-3"><Label htmlFor="cash-discard-reason">Motivo para anular el pendiente</Label><Input id="cash-discard-reason" value={discardReason} onChange={e => setDiscardReason(e.target.value)} /><Button disabled={busy} onClick={() => run(async () => { await discardCashPending(pendingDiscard, discardReason); setPendingDiscard(""); setDiscardReason("") })}>Confirmar anulación del pendiente</Button></div>}
     </CardContent></Card>
     {context?.canViewAll && history.length > 0 && <Card><CardContent><Accordion type="single" collapsible><AccordionItem value="history" className="border-0"><AccordionTrigger className="text-lg font-semibold">Historial de turnos</AccordionTrigger><AccordionContent>

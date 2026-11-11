@@ -1000,9 +1000,12 @@ async function createSaleInternal(input: {
   user?: any
   cashOperation?: CashOperationInput
   fiscal?: unknown
+  expectedTotalCents?: number
 }) {
   let user = input.user
   const hasFiscalSelection = Object.hasOwn(input, "fiscal")
+  // El total esperado de una venta ordinaria solo se admite al revisar explícitamente una cola fiscal.
+  if (input.expectedTotalCents !== undefined && (!hasFiscalSelection || input.fiscal !== null || !Number.isSafeInteger(input.expectedTotalCents) || input.expectedTotalCents < 0)) throw new CashControlError("FISCAL_TOTAL_INVALID", "El total de revisión no es válido", 400)
   let fiscalCommand: import("@/lib/fiscal/core/sale-command").FiscalSaleCommand | null = null
   if (hasFiscalSelection) {
     const { resolveCashIdentity } = await import("@/lib/cash-context")
@@ -1082,6 +1085,12 @@ async function createSaleInternal(input: {
         const scope = cashRequest.getStore()
         if (!scope) throw new Error("Falta contexto de caja para la venta fiscal")
         scope.fiscalSaleAuthorizedAccountId = user.accountId
+      }
+
+      if (fiscalCommand && soldAt) {
+        const { fiscalDateIsFuture } = await import("@/lib/fiscal/core/date")
+        // La recuperación idempotente ocurre antes: una fecha futura no impide recuperar un commit previo.
+        if (fiscalDateIsFuture(soldAt)) throw new CashControlError("FISCAL_DATE_CONFLICT", "La fecha de la venta es futura; conserva el pendiente y revisa el reloj del dispositivo", 409)
       }
 
       // Usar el permiso del usuario para vender sin stock
@@ -1226,6 +1235,7 @@ async function createSaleInternal(input: {
       const totalCents = itemsTotalCents + shippingCents + legalTipCents
       // El total recibido solo actúa como condición de revisión; nunca determina los importes guardados.
       if (fiscalCommand && ((autoSelectedFiscalCustomer && finalCustomer.saleDiscountPercentBp > 0 && fiscalCommand.expectedTotalCents === undefined) || (fiscalCommand.expectedTotalCents !== undefined && fiscalCommand.expectedTotalCents !== totalCents))) throw new CashControlError("FISCAL_TOTAL_CHANGED", "El total cambió al identificar al cliente; revisa la venta antes de confirmarla")
+      if (input.expectedTotalCents !== undefined && input.expectedTotalCents !== totalCents) throw new CashControlError("FISCAL_TOTAL_CHANGED", "El total de la venta pendiente cambió; revisa sus importes antes de confirmarla")
       const paymentSplits = input.paymentSplits ?? []
       const hasPaymentSplits = paymentSplits.length > 0
 
@@ -1440,7 +1450,10 @@ async function createSaleInternal(input: {
         let dueDate: Date | null = null
         if (finalCustomer && finalCustomer.creditDays > 0) {
           dueDate = new Date(soldAt ?? new Date())
-          dueDate.setDate(dueDate.getDate() + finalCustomer.creditDays)
+          if (fiscalCommand) {
+            const { addFiscalDays } = await import("@/lib/fiscal/core/date")
+            dueDate = addFiscalDays(dueDate, finalCustomer.creditDays)
+          } else dueDate.setDate(dueDate.getDate() + finalCustomer.creditDays)
         }
         if (fiscalCommand?.dueDate) dueDate = new Date(`${fiscalCommand.dueDate}T12:00:00.000Z`)
 
@@ -1489,7 +1502,7 @@ async function createSaleInternal(input: {
         const { buildFiscalSaleDocument } = await import("@/lib/fiscal/core/sale-document")
         const { prepareFiscalSaleInTransaction } = await import("@/lib/fiscal/core/preparation")
         const { document, metadata } = await buildFiscalSaleDocument(tx, user, sale.id, fiscalCommand)
-        const fiscal = await prepareFiscalSaleInTransaction(tx, user, document, metadata)
+        const fiscal = await prepareFiscalSaleInTransaction(tx, user, document, metadata, fiscalCommand.expectedReview)
         return { ...sale, stockDecrements, fiscal }
       }
       return { ...sale, stockDecrements }

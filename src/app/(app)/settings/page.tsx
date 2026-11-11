@@ -32,6 +32,7 @@ export default async function SettingsPage() {
           <div className="rounded-lg border p-6">
             <h2 className="font-semibold">Configuración fiscal</h2>
             <p className="text-sm text-muted-foreground">Pendiente de conexión</p>
+            {user.isOwner && <p className="mt-3 text-sm"><a className="underline" href="/api/fiscal/history/export" download>Descargar historial fiscal</a></p>}
             {(user.isOwner || user.canManageFiscalSettings) && <FiscalSettingsActivation enabled={fiscalSettings?.enabled === true} />}
             {/* La configuración guardada no equivale a una activación: no mostrar secuencias mientras el módulo esté apagado. */}
             {fiscalSettings?.enabled === true && (user.isOwner || user.canManageFiscalSequences) && <FiscalSequences />}

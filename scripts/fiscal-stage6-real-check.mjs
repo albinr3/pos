@@ -8,7 +8,15 @@ export async function runStage6Checks({sessions,clerk,dbUrl}) {
     'X-SubUser-Token':session.token,'Content-Type':'application/json'
   })))
   const read=new PrismaClient({datasources:{db:{url:dbUrl}}})
-  const req=(route,headers,method='GET',body)=>fetch(`http://localhost:3100${route}`,{method,headers,...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000)})
+  const originalTokens=credentials.map(value=>value['X-Clerk-Authorization'])
+  const tokenCache=originalTokens.map(value=>({value,issuedAt:Date.now()}))
+  const req=async(route,headers,method='GET',body)=>{
+    // Una suite larga no debe confundir la caducidad de Clerk con un fallo de idempotencia.
+    const index=originalTokens.indexOf(headers['X-Clerk-Authorization'])
+    if(index>=0 && Date.now()-tokenCache[index].issuedAt>35000) tokenCache[index]={value:`Bearer ${(await clerk.sessions.getToken(sessions[index].sessionId)).jwt}`,issuedAt:Date.now()}
+    const currentHeaders=index<0?headers:{...headers,'X-Clerk-Authorization':tokenCache[index].value}
+    return fetch(`http://localhost:3100${route}`,{method,headers:currentHeaders,...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(30000)})
+  }
   try {
     const originalFiscalSales=await read.sale.count({where:{accountId:sessions[1].accountId}})
     const originalFiscalStock=await read.product.findUniqueOrThrow({where:{id:'prod-doprep-item'},select:{stock:true}})

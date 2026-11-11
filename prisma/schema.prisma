@@ -257,6 +257,8 @@ model Account {
   fiscalSettings       FiscalSettings?
   fiscalPolicyChanges  FiscalPolicyChange[]
   fiscalDocuments      FiscalDocument[]
+  fiscalReceivedDocuments FiscalReceivedDocument[]
+  fiscalReceivedOperations FiscalReceivedOperation[]
   fiscalAdjustments    FiscalAdjustment[]
   fiscalAdjustmentOperations FiscalAdjustmentOperation[]
   fiscalAdjustmentApplications FiscalAdjustmentApplication[]
@@ -463,6 +465,43 @@ model FiscalDocument {
   @@unique([accountId, adjustmentId])
   @@unique([accountId, id])
   @@index([accountId, state])
+}
+
+// Registro administrativo escrito: no almacena archivos ni representa un e-CF emitido.
+model FiscalReceivedDocument {
+  id String @id
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  sourceKind String
+  sourceId String
+  data Json
+  revision Int @default(1)
+  createdBy String
+  updatedBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  operations FiscalReceivedOperation[]
+  @@unique([accountId, sourceKind, sourceId])
+  @@unique([accountId, id])
+  @@index([accountId, createdAt, id])
+}
+
+// Cada operación conserva el resultado y los datos para auditoría y reintentos seguros.
+model FiscalReceivedOperation {
+  id String @id
+  accountId String
+  account Account @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  operationId String
+  documentId String
+  document FiscalReceivedDocument @relation(fields: [accountId, documentId], references: [accountId, id], onDelete: Restrict)
+  actorUserId String
+  payloadHash String
+  revision Int
+  data Json
+  result Json
+  createdAt DateTime @default(now())
+  @@unique([accountId, operationId])
+  @@index([accountId, documentId, revision])
 }
 
 // Una corrección comercial tiene identidad propia y conserva la factura fiscal original.

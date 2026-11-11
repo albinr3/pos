@@ -52,6 +52,7 @@ export default async function SalesPage({
       <CashShiftGate key={`${actor.accountId}:${actor.id}`} actor={{ id: actor.id, accountId: actor.accountId }} cashControlEnabled={context?.cashEnabled ?? false} bypass={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}>
         {/* Cambiar de práctica a operación real descarta el carrito demo. */}
         <PosClient
+          actor={{ id: actor.id, accountId: actor.accountId }}
           key={`${actor.accountId}:${isDemoOnboarding && onboardingState?.phase === "DEMO_SALE" ? "practice" : "live"}`}
           defaultViewMode={settings.defaultViewMode}
           showItbisOnReceipts={settings.showItbisOnReceipts}

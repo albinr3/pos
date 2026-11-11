@@ -8,6 +8,7 @@ export type FiscalSaleCommand = {
   type: FiscalSaleType
   expectedPolicyVersion: number
   expectedTotalCents?: number
+  expectedReview?: string
   incomeType: string
   buyer?: FiscalSaleBuyer
   dueDate?: string
@@ -60,11 +61,12 @@ function country(value: unknown, field: string, required = false): string | unde
 
 /** Acepta únicamente intención y datos declarativos; los importes y números proceden del servidor. */
 export function parseFiscalSaleCommand(value: unknown): FiscalSaleCommand {
-  const body = record(value, "fiscal", ["type", "expectedPolicyVersion", "expectedTotalCents", "incomeType", "buyer", "dueDate", "shippingTaxTreatment", "special", "currency"])
+  const body = record(value, "fiscal", ["type", "expectedPolicyVersion", "expectedTotalCents", "expectedReview", "incomeType", "buyer", "dueDate", "shippingTaxTreatment", "special", "currency"])
   const type = text(body.type, "fiscal.type", 3, true) as FiscalSaleType
   if (!FISCAL_SALE_TYPES.includes(type)) return invalid("fiscal.type", "Selecciona un tipo de venta admitido")
   if (!Number.isSafeInteger(body.expectedPolicyVersion) || (body.expectedPolicyVersion as number) < 1) return invalid("fiscal.expectedPolicyVersion", "Indica la versión de configuración vigente")
   if (body.expectedTotalCents !== undefined && (!Number.isSafeInteger(body.expectedTotalCents) || (body.expectedTotalCents as number) < 0)) return invalid("fiscal.expectedTotalCents", "El total revisado es inválido")
+  if (body.expectedReview !== undefined && (typeof body.expectedReview !== "string" || body.expectedReview.length < 2 || body.expectedReview.length > 100000)) return invalid("fiscal.expectedReview", "El detalle revisado es inválido")
   if (body.currency !== undefined && body.currency !== "DOP") return invalid("fiscal.currency", "Por ahora solo se admiten ventas en DOP")
   const incomeType = text(body.incomeType, "fiscal.incomeType", 2) ?? "01"
   if (!["01", "02", "03", "04", "05", "06"].includes(incomeType)) return invalid("fiscal.incomeType", "Tipo de ingreso no admitido")
@@ -100,5 +102,5 @@ export function parseFiscalSaleCommand(value: unknown): FiscalSaleCommand {
   if (type !== "E44" && (special?.regime || special?.exemptionReference)) return invalid("fiscal.special", "El soporte de régimen especial solo corresponde a E44")
   if (type !== "E45" && (special?.governmentEntity !== undefined || special?.purchaseOrder || special?.purchaseOrderDate)) return invalid("fiscal.special", "La referencia gubernamental solo corresponde a E45")
   if (type !== "E46" && (special?.exportMode || special?.destinationCountry || special?.shipmentNumber || special?.containerNumber || special?.departurePort || special?.deliveryTerms)) return invalid("fiscal.special", "Los datos de exportación solo corresponden a E46")
-  return { type, expectedPolicyVersion: body.expectedPolicyVersion as number, ...(body.expectedTotalCents !== undefined ? { expectedTotalCents: body.expectedTotalCents as number } : {}), incomeType, ...(buyer ? { buyer } : {}), ...(dueDate ? { dueDate } : {}), ...(shippingTaxTreatment ? { shippingTaxTreatment: shippingTaxTreatment as "EXENTO" | "TASA_CERO" } : {}), ...(special ? { special } : {}) }
+  return { type, expectedPolicyVersion: body.expectedPolicyVersion as number, ...(body.expectedTotalCents !== undefined ? { expectedTotalCents: body.expectedTotalCents as number } : {}), ...(body.expectedReview !== undefined ? { expectedReview: body.expectedReview as string } : {}), incomeType, ...(buyer ? { buyer } : {}), ...(dueDate ? { dueDate } : {}), ...(shippingTaxTreatment ? { shippingTaxTreatment: shippingTaxTreatment as "EXENTO" | "TASA_CERO" } : {}), ...(special ? { special } : {}) }
 }
