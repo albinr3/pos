@@ -188,6 +188,12 @@ export type AccountDetail = AccountListItem & {
     proofsCount: number
   }[]
 
+  lastInvoiceAt: Date | null
+  productPage: number
+  productMatchCount: number
+  activeProductCount: number
+  productSearch: string
+
   // Products
   products: {
     id: string
@@ -292,7 +298,23 @@ export async function getAccounts(): Promise<AccountListItem[]> {
 // GET ACCOUNT DETAIL
 // ==========================================
 
-export async function getAccountDetail(accountId: string): Promise<AccountDetail | null> {
+export async function getAccountDetail(accountId: string, requestedPage = 1, search = ""): Promise<AccountDetail | null> {
+  const productSearch = search.trim().slice(0, 100)
+  const numericId = /^\d+$/.test(productSearch) ? Number(productSearch) : NaN
+  const productWhere = {
+    accountId,
+    ...(productSearch ? { OR: [
+      { name: { contains: productSearch, mode: "insensitive" as const } },
+      { sku: { contains: productSearch, mode: "insensitive" as const } },
+      ...(Number.isSafeInteger(numericId) && numericId <= 2147483647 ? [{ productId: numericId }] : []),
+    ] } : {}),
+  }
+  const [productMatchCount, activeProductCount] = await Promise.all([
+    prisma.product.count({ where: productWhere }),
+    prisma.product.count({ where: { accountId, isActive: true } }),
+  ])
+  // Acotar la página evita consultas vacías al borrar productos o modificar la URL.
+  const productPage = Math.min(Math.max(1, Number.isSafeInteger(requestedPage) ? requestedPage : 1), Math.max(1, Math.ceil(productMatchCount / 20)))
   const account = await prisma.account.findUnique({
     where: { id: accountId },
     include: {
@@ -314,8 +336,10 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
         orderBy: [{ isOwner: "desc" }, { createdAt: "asc" }],
       },
       products: {
+        where: productWhere,
         orderBy: [{ productId: "asc" }],
-        take: 500,
+        skip: (productPage - 1) * 20,
+        take: 20,
         select: {
           id: true,
           productId: true,
@@ -330,6 +354,7 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
           createdAt: true,
         },
       },
+      sales: { orderBy: { soldAt: "desc" }, take: 1, select: { soldAt: true } },
       _count: {
         select: {
           users: true,
@@ -415,6 +440,12 @@ export async function getAccountDetail(accountId: string): Promise<AccountDetail
       paidAt: p.paidAt,
       proofsCount: p.proofs.length,
     })),
+
+    lastInvoiceAt: account.sales[0]?.soldAt ?? null,
+    productPage,
+    productMatchCount,
+    activeProductCount,
+    productSearch,
 
     // Products
     products: account.products.map((p) => ({

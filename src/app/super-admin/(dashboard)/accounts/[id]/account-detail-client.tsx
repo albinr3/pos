@@ -3,8 +3,6 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { formatDistanceToNow } from "date-fns"
-import { es } from "date-fns/locale"
 import { formatDateDO, formatDateTimeDO } from "@/lib/date-time"
 import {
   ArrowLeft,
@@ -154,51 +152,48 @@ function formatProductPrice(cents: number) {
   return new Intl.NumberFormat("es-DO", { style: "currency", currency: "DOP" }).format(cents / 100)
 }
 
-function ProductsSection({ products }: { products: AccountDetail["products"] }) {
-  const [search, setSearch] = useState("")
-
-  const filtered = search.trim()
-    ? products.filter((p) => {
-        const q = search.trim().toLowerCase()
-        return (
-          p.name.toLowerCase().includes(q) ||
-          (p.sku && p.sku.toLowerCase().includes(q)) ||
-          String(p.productId).includes(q)
-        )
-      })
-    : products
-
-  const activeCount = products.filter((p) => p.isActive).length
-  const inactiveCount = products.length - activeCount
+function ProductsSection({ account }: { account: AccountDetail }) {
+  const { products, productPage, productMatchCount, productSearch, activeProductCount } = account
+  const pageCount = Math.max(1, Math.ceil(productMatchCount / 20))
+  const inactiveCount = account.productsCount - activeProductCount
+  const pageHref = (page: number) => {
+    const params = new URLSearchParams({ productPage: String(page) })
+    if (productSearch) params.set("productSearch", productSearch)
+    return `?${params.toString()}#productos`
+  }
 
   return (
-    <Card>
+    <Card id="productos">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="flex items-center gap-2">
               <Package className="h-5 w-5" />
-              Productos ({products.length})
+              Productos ({account.productsCount})
             </CardTitle>
             <CardDescription>
-              {activeCount} activos{inactiveCount > 0 ? `, ${inactiveCount} inactivos` : ""}
+              {activeProductCount} activos{inactiveCount > 0 ? `, ${inactiveCount} inactivos` : ""}
             </CardDescription>
           </div>
         </div>
-        <div className="relative mt-2">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nombre, SKU o ID..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
+        <form className="mt-2 flex gap-2" method="get">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+            placeholder="Buscar por nombre, SKU o ID exacto..."
+            name="productSearch"
+            defaultValue={productSearch}
+              className="pl-9"
+            />
+          </div>
+          <Button type="submit" variant="outline">Buscar</Button>
+          {productSearch && <Button variant="ghost" asChild><Link href="?productPage=1#productos">Limpiar</Link></Button>}
+        </form>
       </CardHeader>
       <CardContent>
-        {filtered.length === 0 ? (
+        {products.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
-            {search.trim() ? "No se encontraron productos" : "No hay productos registrados"}
+            {productSearch ? "No se encontraron productos" : "No hay productos registrados"}
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -216,7 +211,7 @@ function ProductsSection({ products }: { products: AccountDetail["products"] }) 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((product) => (
+                {products.map((product) => (
                   <TableRow key={product.id} className={!product.isActive ? "opacity-50" : undefined}>
                     <TableCell className="font-mono text-muted-foreground">{product.productId}</TableCell>
                     <TableCell className="font-medium">{product.name}</TableCell>
@@ -240,6 +235,17 @@ function ProductsSection({ products }: { products: AccountDetail["products"] }) 
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
+        {productMatchCount > 0 && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">
+              Mostrando {(productPage - 1) * 20 + 1}–{Math.min(productPage * 20, productMatchCount)} de {productMatchCount} · Página {productPage} de {pageCount}
+            </span>
+            <div className="flex gap-2">
+              {productPage > 1 && <Button variant="outline" size="sm" asChild><Link href={pageHref(productPage - 1)}>Anterior</Link></Button>}
+              {productPage < pageCount && <Button variant="outline" size="sm" asChild><Link href={pageHref(productPage + 1)}>Siguiente</Link></Button>}
+            </div>
           </div>
         )}
       </CardContent>
@@ -852,7 +858,7 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
           </Card>
 
           {/* Productos */}
-          <ProductsSection products={account.products} />
+          <ProductsSection account={account} />
         </div>
 
         {/* Sidebar */}
@@ -945,6 +951,14 @@ export function AccountDetailClient({ account }: { account: AccountDetail }) {
                   Ventas
                 </span>
                 <span className="font-medium">{account.salesCount}</span>
+              </div>
+              <Separator />
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  Última factura
+                </span>
+                <span className="text-sm font-medium">{account.lastInvoiceAt ? formatDateTimeDO(account.lastInvoiceAt) : "Sin facturas"}</span>
               </div>
             </CardContent>
           </Card>
