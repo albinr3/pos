@@ -17,6 +17,9 @@
 
 # next.js
 /.next/
+# Las pruebas fiscales generan estos archivos locales; no deben incluirse en commits.
+/.next-fiscal-test/
+/tsconfig.fiscal-test.json
 /out/
 
 # Cache local de auditorías SEO; contiene hallazgos efímeros y no debe versionarse.
