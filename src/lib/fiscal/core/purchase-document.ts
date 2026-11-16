@@ -27,9 +27,10 @@ export async function getE41Template(actor: Actor, kind: string, id: string, db:
  }
  const supplier=purchase?.supplier ?? obligation?.supplier
  if (!supplier?.fiscalIdentification) return fail("Completa la identificación fiscal en la ficha del proveedor")
- const rawLines=purchase ? purchase.items.map(item=>({ productId:item.productId,description:item.product.name,kind:item.product.fiscalItemType,unit:item.product.fiscalUnit,taxTreatment:item.product.fiscalTaxTreatment,qty:new Decimal(item.qty),gross:item.lineTotalCents })) : [{productId:undefined,description:obligation!.description!,kind:"SERVICIO",unit:"UNIDAD",taxTreatment:"EXENTO",qty:new Decimal(1),gross:obligation!.totalCents}]
+ const rawLines=purchase ? purchase.items.map(item=>({ productId:item.productId,description:item.product.name,kind:item.product.fiscalItemType,unit:item.product.fiscalUnit?.trim() || null,taxTreatment:item.product.fiscalTaxTreatment,qty:new Decimal(item.qty),gross:item.lineTotalCents })) : [{productId:undefined,description:obligation!.description!,kind:"SERVICIO",unit:"UNIDAD",taxTreatment:"EXENTO",qty:new Decimal(1),gross:obligation!.totalCents}]
  const lines=rawLines.map(item=>{
-  if (!item.kind || !item.unit || !item.taxTreatment || item.qty.decimalPlaces()>2) return fail(`Completa la clasificación fiscal y usa hasta dos decimales para ${item.description}`)
+  // La unidad fiscal ya no se solicita al crear productos y es opcional en el documento.
+  if (!item.kind || !item.taxTreatment || item.qty.decimalPlaces()>2) return fail(`Completa la clasificación fiscal y usa hasta dos decimales para ${item.description}`)
   const price=new Decimal(item.gross).div(100).div(item.qty).toDecimalPlaces(4,Decimal.ROUND_HALF_UP)
   const rounded=price.mul(item.qty).toDecimalPlaces(2,Decimal.ROUND_HALF_UP)
   const difference=rounded.minus(new Decimal(item.gross).div(100))

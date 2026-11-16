@@ -10694,7 +10694,6 @@
         "required": [
           "description",
           "kind",
-          "unit",
           "quantity",
           "unitPrice",
           "taxTreatment",
@@ -10726,7 +10725,9 @@
             ]
           },
           "unit": {
-            "type": "string"
+            "type": "string",
+            "nullable": true,
+            "description": "Unidad fiscal opcional; se conserva si está disponible."
           },
           "quantity": {
             "type": "string",

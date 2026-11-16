@@ -85,8 +85,8 @@ export async function buildFiscalSaleFromSource(tx: Tx, actor: Actor, sale: Fisc
     const kind = item.product.fiscalItemType
     if (kind !== "BIEN" && kind !== "SERVICIO") return invalid(`${field}.kind`, `Configura si ${item.product.name} es bien o servicio`)
     if (command.type === "E46" && kind !== "BIEN") return invalid(`${field}.kind`, "E46 solo admite bienes exportados")
-    const unit = item.product.fiscalUnit?.trim()
-    if (!unit) return invalid(`${field}.unit`, `Configura la unidad fiscal de ${item.product.name}`)
+    // La unidad fiscal es opcional y ya no se captura en la ficha; conservarla solo si existe.
+    const unit = item.product.fiscalUnit?.trim() || null
     const treatment = treatmentForRate(item.itbisRateBp, item.product.fiscalTaxTreatment, `${field}.taxTreatment`)
     const original = calcDiscountedLineTotalsByTaxMode(item.unitPriceCents, qty, item.itbisRateBp, sale.salePricesIncludeItbis, sale.discountPercentBp)
     commercialLines.push({ saleItemId: item.id, productId: item.productId, quantity: String(qty), unitPriceCents: item.unitPriceCents, itbisRateBp: item.itbisRateBp, priceIncludesTax: sale.salePricesIncludeItbis, originalBaseCents: original.subtotalCents, originalTaxCents: original.itbisCents, originalTotalCents: original.totalCents })

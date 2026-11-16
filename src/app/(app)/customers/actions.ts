@@ -23,6 +23,15 @@ function assertAuthActor(actor: unknown): asserts actor is AuthActor {
   if (typeof candidate.accountId !== "string" || candidate.accountId.length === 0) throw new Error("No autenticado")
 }
 
+async function requireCustomerReceiptPreference(accountId: string, value: string | null | undefined) {
+  if (parsePreferredReceiptTypes(value).some(type => type.trim())) return
+  const settings = await prisma.fiscalSettings.findUnique({ where: { accountId }, select: { enabled: true, jurisdiction: true, regime: true } })
+  // La venta y las fichas ordinarias no deben depender de preferencias fiscales con el módulo apagado.
+  if (settings?.enabled && settings.jurisdiction === "DO" && settings.regime === "DO_ECF") {
+    throw new FiscalMasterDataError("Selecciona al menos un comprobante preferido", "fiscalPreferredReceiptType")
+  }
+}
+
 async function validateReceiptProfile(accountId: string, value: string | null | undefined, existing: string | null) {
   if (!value) return
   const previous = parsePreferredReceiptTypes(existing)
@@ -184,6 +193,7 @@ export async function upsertCustomer(input: {
     const fiscalData = fiscalFields(input, customerFiscalFields)
     fiscalData.fiscalPreferredReceiptType = preserveLegacyPreferredReceipts(fiscalData.fiscalPreferredReceiptType, existing.fiscalPreferredReceiptType, input.preserveLegacyReceiptTypes === true)
     validateFiscalCatalogFields(fiscalData, existing)
+    await requireCustomerReceiptPreference(user.accountId, fiscalData.fiscalPreferredReceiptType === undefined ? existing.fiscalPreferredReceiptType : fiscalData.fiscalPreferredReceiptType)
     await validateReceiptProfile(user.accountId, fiscalData.fiscalPreferredReceiptType, existing.fiscalPreferredReceiptType)
 
     const updated = await prisma.customer.updateMany({
@@ -224,7 +234,9 @@ export async function upsertCustomer(input: {
       visualId: existing.visualId,
     }
   } else {
-    validateFiscalCatalogFields(fiscalFields(input, customerFiscalFields))
+    const fiscalData = fiscalFields(input, customerFiscalFields)
+    validateFiscalCatalogFields(fiscalData)
+    await requireCustomerReceiptPreference(user.accountId, fiscalData.fiscalPreferredReceiptType)
     await validateReceiptProfile(user.accountId, input.fiscalPreferredReceiptType, null)
     if (input.creditEnabled || normalizedCreditDays > 0) {
       await ensurePermission(user, "canApproveCredit", {

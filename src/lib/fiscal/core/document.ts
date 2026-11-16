@@ -168,7 +168,9 @@ export function calculateFiscalDocument(input: unknown, policyVersion: number) {
     // En E41 el ITBIS facturado se retiene íntegramente; no aceptar porcentajes parciales ni omitirlo.
     if (type === "E41" && treatment.startsWith("GRAVADO_") && !withholdings.some(w => w.kind === "ITBIS" && w.rate.eq(100))) return issue(`${field}.withholdings`, "E41 requiere retener el 100 % del ITBIS gravado")
     if (type === "E34" && reference?.creditIndicator === 1 && withholdings.some(w => w.kind === "ITBIS" && w.rate.gt(0))) return issue(`${field}.withholdings`, "El ITBIS fuera de plazo no puede generar una retención reembolsable")
-    return { originalLine, productId, conceptId, description: str(l.description, `${field}.description`), kind, unit: str(l.unit, `${field}.unit`), quantity, price, treatment, includes: l.priceIncludesTax, discount, surcharge, lineAmount, withholdings, retentionAgent, rate: new D(rates[treatment]) }
+    // No exigir ni inventar la unidad cuando la ficha no contiene una unidad fiscal.
+    const unit = l.unit == null ? null : str(l.unit, `${field}.unit`)
+    return { originalLine, productId, conceptId, description: str(l.description, `${field}.description`), kind, unit, quantity, price, treatment, includes: l.priceIncludesTax, discount, surcharge, lineAmount, withholdings, retentionAgent, rate: new D(rates[treatment]) }
   })
   if (type === "E46" && !lines.some(l => l.kind === "BIEN")) return issue("lines", "E46 requiere al menos un bien exportado")
   // DGII usa un indicador común para las líneas gravadas; no mezclar modos silenciosamente.

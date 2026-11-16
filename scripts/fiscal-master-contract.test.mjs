@@ -101,3 +101,20 @@ test('acción de clientes conserva históricos y exige perfil para nuevas prefer
   await assert.rejects(actions.upsertCustomer({...input,fiscalPreferredReceiptType:'E98'},actor),/no admitido/); assert.equal(writes,1)
   await actions.upsertCustomer({...input,fiscalPreferredReceiptType:'E31'},actor); assert.equal(writes,2)
 })
+test('clientes exigen comprobante preferido solo con perfil fiscal dominicano activo', async()=>{
+  const owner={id:'u',accountId:'a',isOwner:true}
+  let policy={enabled:true,jurisdiction:'DO',regime:'DO_ECF'}, writes=0
+  const existing={id:'cust',visualId:2,accountId:'a',isGeneric:false,name:'Cliente',creditEnabled:false,creditDays:0,saleDiscountPercentBp:0,fiscalPreferredReceiptType:null}
+  const mockDB={fiscalSettings:{findUnique:async()=>policy},customer:{findFirst:async()=>existing,updateMany:async()=>{writes++;return {count:1}},create:async()=>{writes++;return {id:'new',visualId:3}}}}
+  const actions=compile('src/app/(app)/customers/actions.ts',{'next/cache':{revalidatePath(){}},'@/lib/fiscal/core/master-data':master,'@/lib/db':{prisma:mockDB},'@/lib/auth':{getCurrentUser:async()=>owner},'@/lib/sanitize':{sanitizeString:x=>x,sanitizePhone:x=>x,sanitizeCedula:x=>x,validateLength:x=>!!x},'@/lib/audit-log':{logAuditEvent:async()=>{}},'@/lib/permission-guard':{ensurePermission:async()=>{}},'@/lib/customer-helpers':{ensureGenericCustomer:async()=>{},nextCustomerVisualId:async()=>3}})
+  const input={name:'Cliente',creditEnabled:false,creditDays:0}
+  await assert.rejects(actions.upsertCustomer(input,owner),/Selecciona al menos un comprobante/)
+  await assert.rejects(actions.upsertCustomer({...input,id:'cust'},owner),/Selecciona al menos un comprobante/)
+  assert.equal(writes,0)
+  await actions.upsertCustomer({...input,fiscalPreferredReceiptType:'E31'},owner)
+  await actions.upsertCustomer({...input,id:'cust',fiscalPreferredReceiptType:'E32'},owner)
+  policy={...policy,enabled:false}
+  await actions.upsertCustomer(input,owner)
+  await actions.upsertCustomer({...input,id:'cust'},owner)
+  assert.equal(writes,4)
+})

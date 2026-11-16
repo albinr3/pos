@@ -68,7 +68,7 @@ async function browserSuite() {
     window.open = () => { f.printed++; return { closed: false } }
     if (restored) localStorage.setItem(f.cartKey, JSON.stringify({ timestamp: Date.now(), cart: restored, customerId: "generic", saleType: "CONTADO", paymentMethod: "EFECTIVO" }))
     rootView = createRoot(document.getElementById("test-root"))
-    rootView.render(React.createElement(PosClient, { actor: f.user, defaultViewMode: view, ...(fiscal ? { fiscalSale:{accountId,version:1,canPrepare:true} } : {}) }))
+    rootView.render(React.createElement(PosClient, { actor: f.user, defaultViewMode: view, ...(fiscal ? { fiscalSale:{accountId,version:1,jurisdiction:'DO',canPrepare:true} } : {}) }))
     await until(() => document.querySelector('input[placeholder="Buscar productos"]'), "No montó el POS")
     if (view === "list") await input(document.querySelector('input[placeholder="Buscar productos"]'), products[0].name)
     await until(() => card(products[0].name) && !card(products[0].name).textContent.includes("Sincroniza para validar"), "No cargó el inventario")
@@ -98,8 +98,9 @@ async function browserSuite() {
       const f=await setup([basic("pan",2)],{fiscal:true})
       const section=document.querySelector('[aria-label="Comprobante de la venta"]')
       assert(section && section.textContent.includes('E32') && f.fiscalRequests>0,"Debe proponer consumo y consultar disponibilidad")
+      assert(!document.getElementById('fiscal-buyer-country') && !button('Buscar cliente por identificación'), "El país y el botón de búsqueda no deben ocupar espacio")
       await input(document.getElementById('fiscal-buyer-id'),'101111111')
-      button('Buscar cliente por identificación').click()
+      document.getElementById('fiscal-buyer-id').dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
       await until(()=>section.textContent.includes('E31'),"El RNC existente debe seleccionar al cliente y proponer su comprobante")
     })
     rootView?.unmount(); document.getElementById("result").textContent=JSON.stringify(results); return

@@ -61,7 +61,7 @@ export default async function SalesPage({
           onboardingDemoGuide={isDemoOnboarding && onboardingState?.phase === "DEMO_SALE"}
           onboardingSaleGuide={isOnboardingSale && onboardingState?.phase === "SALE"}
           onboardingAccountId={onboardingState?.accountId ?? null}
-          fiscalSale={fiscalEnabled && context?.version && !(isDemoOnboarding && onboardingState?.phase === "DEMO_SALE") ? { accountId: actor.accountId, version: context.version, canPrepare: actor.isOwner || actor.canPrepareFiscalDocuments } : null}
+          fiscalSale={fiscalEnabled && context?.version && context.jurisdiction && !(isDemoOnboarding && onboardingState?.phase === "DEMO_SALE") ? { accountId: actor.accountId, version: context.version, jurisdiction: context.jurisdiction, canPrepare: actor.isOwner || actor.canPrepareFiscalDocuments } : null}
         />
       </CashShiftGate>
     </div>

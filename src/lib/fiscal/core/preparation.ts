@@ -153,7 +153,8 @@ async function verifyE41Source(tx: Tx, actor: Actor, result: Awaited<ReturnType<
   const used=new Set<string>()
   for (const line of result.lines) {
    const item=purchase.items.find(i=>i.productId===line.productId)
-   if (!item || used.has(item.id) || !new Decimal(line.quantity).eq(item.qty) || !new Decimal(line.gross).mul(100).eq(item.lineTotalCents) || line.description!==item.product.name || line.kind!==item.product.fiscalItemType || line.unit!==item.product.fiscalUnit || line.taxTreatment!==item.product.fiscalTaxTreatment) fail("DOCUMENT_CONFLICT","Cada línea debe coincidir con la compra y la clasificación fiscal del producto",409,"lines")
+   // Comparar unidades normalizadas permite fichas sin unidad sin debilitar la revisión de la compra.
+   if (!item || used.has(item.id) || !new Decimal(line.quantity).eq(item.qty) || !new Decimal(line.gross).mul(100).eq(item.lineTotalCents) || line.description!==item.product.name || line.kind!==item.product.fiscalItemType || line.unit!==(item.product.fiscalUnit?.trim() || null) || line.taxTreatment!==item.product.fiscalTaxTreatment) fail("DOCUMENT_CONFLICT","Cada línea debe coincidir con la compra y la clasificación fiscal del producto",409,"lines")
    used.add(item!.id)
   }
  } else if (!payable || result.lines.length!==1 || result.lines[0].description!==payable.description) fail("DOCUMENT_CONFLICT","El concepto debe coincidir con la obligación",409,"lines")

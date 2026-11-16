@@ -811,6 +811,12 @@ export function ProductsClient({
     const priceCents = toCents(price)
     const costCents = toCents(cost)
     const shouldContinueOnboarding = onboardingProductGuide && !editing && !globallyCompleted
+    // Una tasa cero no indica por sí sola si el producto es exento o de tasa cero.
+    const taxTreatment = fiscalData.fiscalTaxTreatment
+    if (fiscalEnabled && taxTreatment !== "NO_FACTURABLE" && !((itbisRateBp === 1800 || itbisRateBp === 1600) && taxTreatment === "GRAVADO") && !(itbisRateBp === 0 && (taxTreatment === "EXENTO" || taxTreatment === "TASA_CERO"))) {
+      toast({ title: "Revisa el tratamiento de ITBIS", description: "Selecciona el tratamiento aplicable para guardar el producto.", variant: "destructive" })
+      return
+    }
     if (!trimmedName || priceCents <= 0 || costCents <= 0) {
       toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
       return
@@ -2533,8 +2539,29 @@ export function ProductsClient({
                         <Separator />
 
                         <div className="grid gap-2">
-                          <Label>ITBIS aplicable para venta</Label>
+                          <Label htmlFor="product-sale-itbis">{fiscalEnabled ? "Tratamiento de ITBIS para venta" : "ITBIS aplicable para venta"}</Label>
+                          {fiscalEnabled ? <>
+                          <select id="product-sale-itbis"
+                            value={fiscalData.fiscalTaxTreatment === "NO_FACTURABLE" ? "NO_FACTURABLE" : fiscalData.fiscalTaxTreatment === "GRAVADO" && (itbisRateBp === 1800 || itbisRateBp === 1600) ? `GRAVADO_${itbisRateBp}` : itbisRateBp === 0 && (fiscalData.fiscalTaxTreatment === "EXENTO" || fiscalData.fiscalTaxTreatment === "TASA_CERO") ? fiscalData.fiscalTaxTreatment : ""}
+                            onChange={e => {
+                              const choice = e.target.value
+                              if (!choice || choice === "NO_FACTURABLE") return
+                              // Actualizar tasa y clasificación juntas evita que una venta fiscal las rechace por inconsistentes.
+                              setItbisRateBp(choice === "GRAVADO_1800" ? 1800 : choice === "GRAVADO_1600" ? 1600 : 0)
+                              setFiscalData(previous => ({ ...previous, fiscalTaxTreatment: choice.startsWith("GRAVADO_") ? "GRAVADO" : choice }))
+                            }}
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                            <option value="" disabled>Selecciona el tratamiento aplicable</option>
+                            {fiscalData.fiscalTaxTreatment === "NO_FACTURABLE" && <option value="NO_FACTURABLE">No facturable (clasificación existente)</option>}
+                            <option value="GRAVADO_1800">Gravado al 18 %</option>
+                            <option value="GRAVADO_1600">Gravado al 16 %</option>
+                            <option value="EXENTO">Exento</option>
+                            <option value="TASA_CERO">Tasa cero</option>
+                          </select>
+                          <div className="text-xs text-muted-foreground">Exento y tasa cero son tratamientos distintos. {fiscalData.fiscalTaxTreatment === "NO_FACTURABLE" ? "Este producto no se puede incluir en una venta fiscal con su clasificación actual." : "Selecciona el tratamiento que corresponda al producto."}</div>
+                          </> : <>
                           <select
+                            id="product-sale-itbis"
                             value={itbisRateBp}
                             onChange={(e) => setItbisRateBp(Number(e.target.value))}
                             className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -2546,6 +2573,7 @@ export function ProductsClient({
                           <div className="text-xs text-muted-foreground">
                             El ITBIS se calcula automáticamente según el porcentaje seleccionado.
                           </div>
+                          </>}
                         </div>
 
                         <Separator />
@@ -2567,7 +2595,7 @@ export function ProductsClient({
 
                         <Separator />
 
-                        {fiscalEnabled && <FiscalMasterFields kind="product" value={fiscalData} onChange={setFiscalData} />}
+                        {fiscalEnabled && <FiscalMasterFields kind="product" value={fiscalData} onChange={setFiscalData} hideProductTaxTreatment />}
                         <div className="grid gap-2">
                           <Label>Imágenes del producto</Label>
                           <ProductImageUpload images={imageUrls} onChange={setImageUrls} maxImages={3} />

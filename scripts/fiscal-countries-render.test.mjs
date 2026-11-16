@@ -13,7 +13,8 @@ const source = fs.readFileSync(new URL('../src/components/app/fiscal-master-fiel
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText
 const exports = {}
 vm.runInNewContext(compiled, { exports, require(name) {
-  if (name === 'react/jsx-runtime') return require(name)
+  // El componente usa hooks de React para la consulta fiscal.
+  if (name === 'react' || name === 'react/jsx-runtime') return require(name)
   if (name === '@/lib/fiscal/core/countries') return { FISCAL_COUNTRIES }
   if (name === '@/lib/fiscal/core/master-data') return master
   if (name === '@/components/ui/input') return { Input: props => React.createElement('input', props) }
@@ -97,4 +98,10 @@ test('los formularios ofrecen los mismos códigos que el catálogo y filtran com
   const supplier = renderToStaticMarkup(React.createElement(exports.FiscalMasterFields, { kind: 'supplier', value: { fiscalDeclaredCondition:'Texto anterior' }, onChange() {} }))
   assert.match(supplier, /<option value="REGISTRADO">Contribuyente registrado<\/option>/)
   assert.match(supplier, /<option value="Texto anterior" selected="">Texto anterior<\/option>/)
+})
+
+test('Producto: oculta unidad fiscal y conserva los demás campos', () => {
+  const html = renderToStaticMarkup(React.createElement(exports.FiscalMasterFields, { kind: 'product', value: { fiscalUnit: 'unidad', fiscalItemType: 'BIEN' }, onChange() {} }))
+  assert.doesNotMatch(html, /Unidad fiscal|fiscal-fiscalUnit/)
+  assert.match(html, /Clasificación fiscal/); assert.match(html, /Tratamiento tributario/)
 })

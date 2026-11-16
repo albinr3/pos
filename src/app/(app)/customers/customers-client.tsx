@@ -1,9 +1,9 @@
 "use client"
 
 import { FiscalMasterFields } from "@/components/app/fiscal-master-fields"
-import { fiscalFields, customerFiscalFields } from "@/lib/fiscal/core/master-data"
+import { fiscalFields, customerFiscalFields, parsePreferredReceiptTypes } from "@/lib/fiscal/core/master-data"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useRef, useState, useTransition } from "react"
 import { Edit, Plus, Search, Trash2, Users } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -33,6 +33,7 @@ export function CustomersClient({ fiscalEnabled = false, defaultFiscalCountry = 
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Customer | null>(null)
   const [name, setName] = useState("")
+  const nameRevision = useRef(0)
   const [phone, setPhone] = useState("")
   const [address, setAddress] = useState("")
   const [cedula, setCedula] = useState("")
@@ -81,6 +82,7 @@ export function CustomersClient({ fiscalEnabled = false, defaultFiscalCountry = 
   }
 
   function resetForm(c?: Customer | null) {
+    nameRevision.current++
     setFiscalData(c ? fiscalFields(c, customerFiscalFields) : { fiscalIdentificationCountry: defaultFiscalCountry })
     setEditing(c ?? null)
     setName(c?.name ?? "")
@@ -97,6 +99,10 @@ export function CustomersClient({ fiscalEnabled = false, defaultFiscalCountry = 
     const trimmedName = name.trim()
     if (!trimmedName) {
       toast({ title: "Campos requeridos", description: "Hay que llenar todos los campos obligatorios.", variant: "destructive" })
+      return
+    }
+    if (fiscalEnabled && doFiscalProfile && !parsePreferredReceiptTypes(fiscalData.fiscalPreferredReceiptType).some(type => type.trim())) {
+      toast({ title: "Comprobante requerido", description: "Selecciona al menos un comprobante preferido.", variant: "destructive" })
       return
     }
     const parsedSaleDiscountPercent = saleDiscountInput.trim()
@@ -171,7 +177,7 @@ export function CustomersClient({ fiscalEnabled = false, defaultFiscalCountry = 
             <div className="text-sm text-muted-foreground">Administra clientes (crédito / historial).</div>
           </div>
 
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={value => { if (!value) nameRevision.current++; setOpen(value) }}>
             <DialogTrigger asChild>
               <Button onClick={() => { resetForm(null); setOpen(true) }}>
                 <Plus className="mr-2 h-4 w-4" /> Nuevo
@@ -193,7 +199,7 @@ export function CustomersClient({ fiscalEnabled = false, defaultFiscalCountry = 
                 </div>
                 <div className="grid gap-2">
                   <Label>Nombre</Label>
-                  <Input value={name} onChange={(e) => setName(e.target.value)} />
+                  <Input value={name} onChange={(e) => { nameRevision.current++; setName(e.target.value) }} />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="grid gap-2">
@@ -279,7 +285,11 @@ export function CustomersClient({ fiscalEnabled = false, defaultFiscalCountry = 
                 </div>
               </div>
 
-              {fiscalEnabled && <FiscalMasterFields kind="customer" value={fiscalData} onChange={setFiscalData} doProfile={doFiscalProfile} />}
+              {fiscalEnabled && <FiscalMasterFields kind="customer" value={fiscalData} onChange={setFiscalData} doProfile={doFiscalProfile} hideCustomerFiscalContact={!editing} onLookupStart={!editing ? () => {
+                const revision = nameRevision.current
+                // Una respuesta tardía no debe reemplazar un nombre editado ni otra ficha abierta después.
+                return legalName => { if (nameRevision.current === revision) setName(legalName) }
+              } : undefined} />}
               <DialogFooter>
                 <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
                   Cancelar

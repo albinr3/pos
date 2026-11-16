@@ -29,6 +29,24 @@ for (const type of ['E31','E32','E33','E34','E41','E43','E44','E45','E46','E47']
   assert.equal(result.totals.gross, '118.00')
   assert.equal(result.totals.withheld, type === 'E47' ? '11.80' : type === 'E41' ? '18.00' : '0.00')
 })
+test('venta fiscal conserva la unidad existente y permite facturar sin unidad fiscal', async () => {
+  const compile = path => ts.transpileModule(fs.readFileSync(path, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
+  const money = {}; vm.runInNewContext(compile('src/lib/money.ts'), { exports: money, Intl, Math, Number })
+  const saleModule = {}
+  vm.runInNewContext(compile('src/lib/fiscal/core/sale-document.ts'), { exports: saleModule, require: name => name === '@/lib/money' ? money : name === './document' ? load('core/document') : name === '@/lib/permissions' ? { hasPermission: () => true } : name === './sale-customer' ? {} : require(name), Date, Intl, Number, Math })
+  const sale = { id:'s', invoiceCode:'A-1', soldAt:new Date('2026-11-10T12:00:00Z'), type:'CONTADO', cancelledAt:null, totalCents:11800, shippingCents:0, legalTipCents:0, discountPercentBp:0, salePricesIncludeItbis:true, paymentMethod:'EFECTIVO', treasuryAccountId:null, transferBankName:null, customer:null, ar:null, payments:[], items:[{id:'i',productId:'p',qty:1,unitPriceCents:11800,itbisRateBp:1800,product:{id:'p',accountId:'a',name:'Producto',fiscalItemType:'BIEN',fiscalUnit:null,fiscalTaxTreatment:'GRAVADO'}}] }
+  const settings = { version:1, legalName:'Emisor', taxId:'123456789' }, command = { type:'E32', incomeType:'01' }
+  for (const unit of [null, 'KG']) {
+    sale.items[0].product.fiscalUnit = unit
+    const built = await saleModule.buildFiscalSaleFromSource({}, {id:'u',accountId:'a'}, sale, settings, command)
+    const result = calc(built.document, 1)
+    assert.equal(result.lines[0].unit, unit)
+    assert.equal(result.totals.gross, '118.00')
+    assert.equal(result.totals.tax, '18.00')
+  }
+  const invalid = example('E32'); invalid.lines[0].unit = 123
+  assert.throws(() => calc(invalid,1), e => e.issues[0].field === 'lines.0.unit')
+})
 test('descuento global por residuos y bases de distintas tasas concilian', () => {
   const input = example('E31')
   input.lines = ['GRAVADO_18','GRAVADO_16','EXENTO'].map(taxTreatment => ({ description: taxTreatment, kind:'BIEN', unit:'UNIDAD', quantity:'1', unitPrice:'10.00', taxTreatment, priceIncludesTax:false }))

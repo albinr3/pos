@@ -53,8 +53,14 @@ export async function requireFiscalSaleAccess(actor: Actor, db: Db = prisma) {
 
 export async function listFiscalSaleCustomers(actor: Actor, db: Db = prisma) {
   const policy = await requireFiscalSaleAccess(actor, db)
-  const rows = await db.customer.findMany({ where: { accountId: actor.accountId, isActive: true }, orderBy: [{ isGeneric: "desc" }, { name: "asc" }, { id: "asc" }], take: 1000, select: { id: true, isGeneric: true, fiscalPreferredReceiptType: true } })
-  return { policyVersion: policy.version, customers: rows.map(row => ({ id: row.id, preferredReceiptType: preferredSaleReceipt(row.isGeneric, row.fiscalPreferredReceiptType) })) }
+  const rows = await db.customer.findMany({ where: { accountId: actor.accountId, isActive: true }, orderBy: [{ isGeneric: "desc" }, { name: "asc" }, { id: "asc" }], take: 1000, select: { id: true, name: true, isGeneric: true, fiscalPreferredReceiptType: true, fiscalIdentification: true, fiscalIdentificationCountry: true, fiscalLegalName: true, cedula: true } })
+  return { policyVersion: policy.version, customers: rows.map(row => {
+    // La cédula histórica solo se usa si no hay identificación fiscal; nunca completar con la ficha genérica.
+    const fiscalId = row.fiscalIdentification?.trim() || null
+    const identification = row.isGeneric ? null : fiscalId || row.cedula?.trim() || null
+    const identificationCountry = identification ? (fiscalId ? row.fiscalIdentificationCountry?.trim().toUpperCase() || "DO" : "DO") : null
+    return { id: row.id, preferredReceiptType: preferredSaleReceipt(row.isGeneric, row.fiscalPreferredReceiptType), identification, identificationCountry, legalName: identification ? row.fiscalLegalName?.trim() || row.name : null }
+  }) }
 }
 
 export async function findSaleCustomerByIdentification(actor: Actor, input: unknown, db: Db = prisma) {

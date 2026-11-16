@@ -2660,3 +2660,16 @@ model FiscalPreparationOperation {
   @@unique([accountId, operationId])
   @@index([accountId, documentId, createdAt, id])
 }
+
+// Padrón dominicano compartido; la clave es texto para conservar ceros iniciales.
+model TaxpayerRegistry {
+  identification String @id
+  legalName      String
+}
+
+model TaxpayerRegistryImport {
+  id          Int      @id @default(1)
+  source      String
+  recordCount Int
+  importedAt  DateTime @default(now())
+}

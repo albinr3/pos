@@ -25,6 +25,7 @@ import { normalizeSaleNotes, SALE_NOTES_MAX_LENGTH } from "@/lib/sale-notes"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import {
@@ -102,7 +103,11 @@ type PaymentSplit = {
 
 type DiscountMode = "AUTO" | "MANUAL"
 type FiscalSaleType = "E31" | "E32" | "E44" | "E45" | "E46" | "ORDINARIO"
-type FiscalSaleContext = { policyVersion: number; customers: Array<{ id: string; preferredReceiptType: FiscalSaleType }>; sequences: Array<{ type: string; usable: boolean; remaining: string }> }
+const fiscalSaleTypeLabels: Record<FiscalSaleType, string> = {
+  E31: "E31 · Crédito fiscal", E32: "E32 · Consumidor final", E44: "E44 · Regímenes especiales",
+  E45: "E45 · Gubernamental", E46: "E46 · Exportaciones", ORDINARIO: "Sin comprobante fiscal",
+}
+type FiscalSaleContext = { policyVersion: number; customers: Array<{ id: string; preferredReceiptType: FiscalSaleType; identification: string | null; identificationCountry: string | null; legalName: string | null }>; sequences: Array<{ type: string; usable: boolean; remaining: string }> }
 type FiscalCustomerMatch = { id: string; visualId: number; name: string; legalName: string | null; identification: string }
 
 const USER_CACHE_KEY = clientStorageKeys.user
@@ -206,7 +211,7 @@ export function PosClient({
   onboardingDemoGuide?: boolean
   onboardingSaleGuide?: boolean
   onboardingAccountId?: string | null
-  fiscalSale?: { accountId: string; version: number; canPrepare: boolean } | null
+  fiscalSale?: { accountId: string; version: number; jurisdiction: string; canPrepare: boolean } | null
 }) {
   // El carrito no confirmado pertenece al empleado y no debe restaurarse en otra sesión.
   const cartStorageKey = `movopos-cart:${JSON.stringify([actor.accountId, actor.id])}`
@@ -232,12 +237,23 @@ export function PosClient({
   const [customerPickerOpen, setCustomerPickerOpen] = useState(false)
   const [customerPickerQuery, setCustomerPickerQuery] = useState("")
   const [fiscalType, setFiscalType] = useState<FiscalSaleType>("E32")
+  const [showConsumerRncWarning, setShowConsumerRncWarning] = useState(false)
+  const warnedConsumerRnc = useRef("")
   const [fiscalContext, setFiscalContext] = useState<FiscalSaleContext | null>(null)
   const [fiscalIdentification, setFiscalIdentification] = useState("")
   const [fiscalBuyerName, setFiscalBuyerName] = useState("")
-  const [fiscalBuyerCountry, setFiscalBuyerCountry] = useState("DO")
+  const fiscalLookupSequence = useRef(0)
+  const fiscalLookupPending = useRef("")
+  const fiscalLookupLatest = useRef({ identification: "", name: "" })
+  const preserveFiscalBuyerOnSelection = useRef(false)
+  const initializedFiscalCustomer = useRef<string | null | undefined>(undefined)
+  const fiscalBuyerDirty = useRef(false)
+  fiscalLookupLatest.current = { identification: fiscalIdentification, name: fiscalBuyerName }
+  // La jurisdicción se obtiene de la política activa, no de un valor fijo del formulario.
+  const fiscalBuyerCountry = fiscalSale?.jurisdiction ?? ""
   const [fiscalMatches, setFiscalMatches] = useState<FiscalCustomerMatch[]>([])
-  const [fiscalLookupMessage, setFiscalLookupMessage] = useState("")
+  const [fiscalLookupStatus, setFiscalLookupStatus] = useState<{ message: string; tone: "pending" | "success" | "error" }>({ message: "", tone: "pending" })
+  const setFiscalLookupMessage = useCallback((message: string, tone: "pending" | "success" | "error" = "error") => setFiscalLookupStatus({ message, tone }), [])
   const [fiscalDueDate, setFiscalDueDate] = useState("")
   const [fiscalShippingTreatment, setFiscalShippingTreatment] = useState("")
   const [fiscalRegime, setFiscalRegime] = useState("")
@@ -466,7 +482,7 @@ export function PosClient({
 
   useEffect(() => {
     if (!fiscalSale?.canPrepare) return
-    const key = `movopos:fiscal-sales:${fiscalSale.accountId}:${fiscalSale.version}`
+    const key = `movopos:fiscal-sales:v2:${fiscalSale.accountId}:${actor.id}:${fiscalSale.version}`
     let active = true
     try {
       const cached = sessionStorage.getItem(key)
@@ -479,33 +495,78 @@ export function PosClient({
       if (active) { setFiscalContext(data); sessionStorage.setItem(key, JSON.stringify(data)) }
     }).catch(() => { if (active) setFiscalLookupMessage("Conéctate para actualizar la disponibilidad fiscal.") })
     return () => { active = false }
-  }, [fiscalSale?.accountId, fiscalSale?.version, fiscalSale?.canPrepare])
+  }, [actor.id, fiscalSale?.accountId, fiscalSale?.version, fiscalSale?.canPrepare])
 
   useEffect(() => {
     if (!fiscalSale?.canPrepare) return
-    const preferred = selectedCustomer?.isGeneric ? "E32" : fiscalContext?.customers.find(customer => customer.id === effectiveCustomerId)?.preferredReceiptType ?? "E32"
-    setFiscalType(preferred)
-    setFiscalIdentification(""); setFiscalBuyerName(""); setFiscalBuyerCountry("DO"); setFiscalMatches([]); setFiscalLookupMessage("")
-  }, [effectiveCustomerId, selectedCustomer?.isGeneric, fiscalContext, fiscalSale?.canPrepare])
+    const changedCustomer = initializedFiscalCustomer.current !== effectiveCustomerId
+    initializedFiscalCustomer.current = effectiveCustomerId
+    // La selección obtenida por RNC conserva la identificación y la elección del comprobante.
+    if (changedCustomer && preserveFiscalBuyerOnSelection.current) { preserveFiscalBuyerOnSelection.current = false; fiscalBuyerDirty.current = true; return }
+    if (!changedCustomer && fiscalBuyerDirty.current) return
+    if (changedCustomer) fiscalBuyerDirty.current = false
+    const customer = selectedCustomer?.isGeneric ? undefined : fiscalContext?.customers.find(entry => entry.id === effectiveCustomerId)
+    setFiscalType(customer?.preferredReceiptType ?? "E32")
+    warnedConsumerRnc.current = ""; setShowConsumerRncWarning(false)
+    fiscalLookupSequence.current++; fiscalLookupPending.current = ""
+    setFiscalMatches([]); setFiscalLookupMessage("")
+    // El formulario actual solo admite identificación dominicana; el servidor conserva el país real de fichas extranjeras.
+    const domestic = customer?.identificationCountry === "DO"
+    const identification = domestic ? customer?.identification ?? "" : ""
+    const name = domestic && identification ? customer?.legalName ?? "" : ""
+    fiscalLookupLatest.current = { identification, name }
+    setFiscalIdentification(identification); setFiscalBuyerName(name)
+    if (customer?.identification && !domestic) setFiscalLookupMessage("El cliente tiene identificación extranjera; se usará la información guardada en su ficha.", "pending")
+  }, [effectiveCustomerId, selectedCustomer?.isGeneric, fiscalContext, fiscalSale?.canPrepare, setFiscalLookupMessage])
 
   const lookupFiscalBuyer = useCallback(async () => {
-    setFiscalMatches([])
-    if (!fiscalIdentification.trim()) { setFiscalLookupMessage("Indica el RNC o la cédula."); return }
-    if (!navigator.onLine) { setFiscalLookupMessage("Sin conexión: la identificación se comprobará al sincronizar."); return }
+    // El pegado seguido de Enter puede ocurrir antes del siguiente render.
+    const identification = fiscalLookupLatest.current.identification
+    if (!identification.trim()) return
+    // No descartar silenciosamente una identificación incompleta o con caracteres inválidos.
+    if (!/^[\d\s-]+$/.test(identification) || !/^(?:\d{9}|\d{11})$/.test(identification.replace(/[\s-]/g, ""))) {
+      setFiscalLookupMessage("Escribe un RNC de 9 dígitos o una cédula de 11 dígitos.")
+      return
+    }
+    if (fiscalLookupPending.current === identification) return
+    const normalizedIdentification = identification.replace(/[\s-]/g, "")
+    // El cierre del modal puede producir otro blur; no repetir la pregunta para el mismo RNC.
+    if (fiscalType === "E32" && normalizedIdentification.length === 9 && warnedConsumerRnc.current !== normalizedIdentification) {
+      warnedConsumerRnc.current = normalizedIdentification
+      setShowConsumerRncWarning(true)
+    }
+    if (!navigator.onLine) { setFiscalLookupMessage(fiscalType === "E32" ? "Sin conexión: deja la identificación vacía o consulta cuando tengas conexión." : "Sin conexión: escribe la razón social manualmente."); return }
+    const sequence = ++fiscalLookupSequence.current
+    const previousName = fiscalLookupLatest.current.name
+    fiscalLookupPending.current = identification
+    setFiscalMatches([]); setFiscalLookupMessage("Consultando identificación…", "pending")
     try {
-      const response = await fetch(`/api/fiscal/sales/customer?identification=${encodeURIComponent(fiscalIdentification)}`, { cache: "no-store" })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data?.error?.message || "No se pudo buscar el comprador")
-      const matches = data.matches as FiscalCustomerMatch[]
-      if (matches.length === 1 && !data.hasMore) {
-        setCustomerId(matches[0].id)
-        setFiscalLookupMessage(`Cliente seleccionado: ${matches[0].name}`)
+      const query = encodeURIComponent(identification)
+      const [customerResponse, registryResponse] = await Promise.all([
+        fetch(`/api/fiscal/sales/customer?identification=${query}`, { cache: "no-store" }),
+        fetch(`/api/fiscal/taxpayer?identification=${query}`, { cache: "no-store" }),
+      ])
+      const [customers, registry] = await Promise.all([customerResponse.json(), registryResponse.json()])
+      // Una respuesta vieja no debe reemplazar una identificación o nombre ya editados.
+      if (sequence !== fiscalLookupSequence.current || fiscalLookupLatest.current.identification !== identification) return
+      if (!customerResponse.ok) throw new Error(customers?.error?.message || "No se pudo buscar el comprador")
+      const matches = customers.matches as FiscalCustomerMatch[]
+      if (registryResponse.ok && registry.legalName && fiscalLookupLatest.current.name === previousName) setFiscalBuyerName(registry.legalName)
+      if (matches.length === 1 && !customers.hasMore) {
+        // Si el padrón no devuelve nombre, la ficha seleccionada sigue siendo una fuente válida.
+        if (!registry.legalName && fiscalLookupLatest.current.name === previousName) setFiscalBuyerName(matches[0].legalName?.trim() || matches[0].name)
+        if (matches[0].id !== effectiveCustomerId) { preserveFiscalBuyerOnSelection.current = true; setCustomerId(matches[0].id) }
+        // Una ficha existente no confirma que la identificación esté en el padrón.
+        const registryNotice = !registryResponse.ok ? "No se pudo consultar el padrón." : !registry.legalName ? "La identificación no aparece en el padrón." : ""
+        setFiscalLookupMessage(`Cliente seleccionado: ${matches[0].name}${registryNotice ? `. ${registryNotice}` : ""}`, registryNotice ? "error" : "success")
       } else if (matches.length) {
-        setFiscalMatches(matches)
-        setFiscalLookupMessage("Hay varios clientes con esa identificación; selecciona uno.")
-      } else setFiscalLookupMessage("No existe una ficha con esa identificación. Indica la razón social para esta factura.")
-    } catch (error) { setFiscalLookupMessage(error instanceof Error ? error.message : "No se pudo buscar el comprador") }
-  }, [fiscalIdentification])
+        setFiscalMatches(matches); setFiscalLookupMessage("Hay varios clientes con esa identificación; selecciona uno.")
+      } else if (!registryResponse.ok) setFiscalLookupMessage(fiscalType === "E32" ? "No se pudo consultar el padrón; inténtalo de nuevo o deja la identificación vacía." : registry?.error?.message || "No se pudo consultar el padrón; escribe la razón social.")
+      else setFiscalLookupMessage(registry.legalName ? "Razón social encontrada en el padrón." : fiscalType === "E32" ? "No se encontró la identificación; corrígela o déjala vacía." : "No se encontró la identificación; escribe la razón social.", registry.legalName ? "success" : "error")
+    } catch (error) {
+      if (sequence === fiscalLookupSequence.current) setFiscalLookupMessage(error instanceof Error ? error.message : "No se pudo buscar el comprador")
+    } finally { if (sequence === fiscalLookupSequence.current) fiscalLookupPending.current = "" }
+  }, [effectiveCustomerId, fiscalType, setFiscalLookupMessage])
 
   const selectedCustomerLabel = useMemo(() => {
     return formatCustomerLabel(selectedCustomer, { includeVisualId: true })
@@ -537,7 +598,9 @@ export function PosClient({
     cartRef.current = []
     setCart([])
     setCustomerId("generic")
-    setFiscalType("E32"); setFiscalIdentification(""); setFiscalBuyerName(""); setFiscalBuyerCountry("DO"); setFiscalMatches([]); setFiscalLookupMessage("")
+    fiscalBuyerDirty.current = false; initializedFiscalCustomer.current = undefined
+    setFiscalType("E32"); setFiscalIdentification(""); setFiscalBuyerName(""); setFiscalMatches([]); setFiscalLookupMessage("")
+    warnedConsumerRnc.current = ""; setShowConsumerRncWarning(false)
     setFiscalDueDate(""); setFiscalShippingTreatment(""); setFiscalRegime(""); setFiscalExemptionReference(""); setFiscalGovernment(false); setFiscalPurchaseOrder(""); setFiscalPurchaseOrderDate("")
     setFiscalExportMode("EXPORTACION"); setFiscalDestination(""); setFiscalShipmentNumber(""); setFiscalContainerNumber(""); setFiscalDeparturePort(""); setFiscalDeliveryTerms(""); setFiscalPricesConfirmed(false); setFiscalOrdinaryConfirmed(false)
     setSaleType(SaleType.CONTADO)
@@ -1555,7 +1618,7 @@ export function PosClient({
     if (fiscalSale && !fiscalSale.canPrepare && !fiscalOrdinaryConfirmed) { toast({ title: "Comprobante", description: "Confirma que la venta será sin comprobante fiscal.", variant: "destructive" }); return }
     if (fiscalSale?.canPrepare && fiscalType !== "ORDINARIO") {
       if (fiscalMatches.length) { toast({ title: "Selecciona el comprador", description: "Hay varias fichas con esa identificación.", variant: "destructive" }); return }
-      if ((fiscalIdentification.trim() && !fiscalBuyerName.trim()) || (!fiscalIdentification.trim() && fiscalBuyerName.trim())) { toast({ title: "Comprador incompleto", description: "Indica la identificación y la razón social.", variant: "destructive" }); return }
+      if ((fiscalIdentification.trim() && !fiscalBuyerName.trim()) || (!fiscalIdentification.trim() && fiscalBuyerName.trim())) { toast({ title: "Comprador incompleto", description: fiscalType === "E32" ? "Consulta una identificación que figure en el padrón o déjala vacía." : "Indica la identificación y la razón social.", variant: "destructive" }); return }
       if (fiscalType === "E44" && (!fiscalRegime.trim() || !fiscalExemptionReference.trim())) { toast({ title: "Régimen especial", description: "Indica el régimen y el soporte de exención.", variant: "destructive" }); return }
       if (fiscalType === "E45" && !fiscalGovernment) { toast({ title: "Entidad gubernamental", description: "Confirma que el comprador es elegible.", variant: "destructive" }); return }
       if (fiscalType === "E46" && !fiscalDestination.trim()) { toast({ title: "Exportación", description: "Indica el país de destino.", variant: "destructive" }); return }
@@ -1839,6 +1902,18 @@ export function PosClient({
 
   return (
     <div className={`grid gap-6 ${viewMode === "grid" ? "lg:grid-cols-[1fr_400px]" : "lg:grid-cols-[1fr_380px]"}`}>
+      <AlertDialog open={showConsumerRncWarning} onOpenChange={setShowConsumerRncWarning}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Facturar a consumidor final con RNC?</AlertDialogTitle>
+            <AlertDialogDescription>Ingresaste un RNC y seleccionaste consumidor final (E32). Si el cliente necesita crédito fiscal, cambia el comprobante a E31.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { fiscalBuyerDirty.current = true }}>Continuar con consumidor final</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { fiscalBuyerDirty.current = true; setFiscalType("E31") }}>Cambiar a crédito fiscal</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {saleGuideState?.step ? (
         <OnboardingGuide
           accountId={onboardingAccountId}
@@ -1932,42 +2007,6 @@ export function PosClient({
             </div>
           </CardHeader>
           <CardContent className="grid gap-4">
-            {fiscalSale && <section className="grid gap-3 rounded-md border p-3" aria-label="Comprobante de la venta">
-              {fiscalSale.canPrepare ? <>
-                <div className="grid gap-2">
-                  <Label>Comprobante</Label>
-                  <Select value={fiscalType} onValueChange={value => setFiscalType(value as FiscalSaleType)}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="E32">E32 · Consumidor final</SelectItem>
-                      <SelectItem value="E31">E31 · Crédito fiscal</SelectItem>
-                      <SelectItem value="E44">E44 · Regímenes especiales</SelectItem>
-                      <SelectItem value="E45">E45 · Gubernamental</SelectItem>
-                      <SelectItem value="E46">E46 · Exportaciones</SelectItem>
-                      <SelectItem value="ORDINARIO">Sin comprobante fiscal</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                {fiscalType !== "ORDINARIO" && <>
-                  <p className="text-xs text-muted-foreground">{!isOnline ? "Pendiente fiscal: el número se asignará al sincronizar." : fiscalContext?.sequences.some(sequence => sequence.type === fiscalType && sequence.usable) ? `Secuencia de prueba disponible · ${fiscalContext.sequences.find(sequence => sequence.type === fiscalType && sequence.usable)?.remaining} restantes` : "No hay una secuencia de prueba disponible para este tipo."}</p>
-                  <p className="text-xs text-muted-foreground">Documento de prueba / No emitido fiscalmente</p>
-                  <div className="grid gap-2 sm:grid-cols-3">
-                    <div className="grid gap-1"><Label htmlFor="fiscal-buyer-country">País de identificación</Label><Input id="fiscal-buyer-country" maxLength={2} value={fiscalBuyerCountry} onChange={event => { setFiscalBuyerCountry(event.target.value.toUpperCase()); setFiscalMatches([]) }} placeholder="DO" /></div>
-                    <div className="grid gap-1"><Label htmlFor="fiscal-buyer-id">RNC, cédula o identificación</Label><Input id="fiscal-buyer-id" value={fiscalIdentification} onChange={event => { setFiscalIdentification(event.target.value); setFiscalMatches([]); setFiscalLookupMessage("") }} onBlur={() => { if (fiscalBuyerCountry === "DO" && /^(?:\d{9}|\d{11})$/.test(fiscalIdentification.replace(/[\s-]/g, ""))) void lookupFiscalBuyer() }} /></div>
-                    <div className="grid gap-1"><Label htmlFor="fiscal-buyer-name">Nombre o razón social</Label><Input id="fiscal-buyer-name" value={fiscalBuyerName} onChange={event => setFiscalBuyerName(event.target.value)} /></div>
-                  </div>
-                  {fiscalBuyerCountry === "DO" && <Button type="button" variant="outline" size="sm" className="w-fit" onClick={() => void lookupFiscalBuyer()}>Buscar cliente por identificación</Button>}
-                  {fiscalLookupMessage && <p className="text-sm" role="status">{fiscalLookupMessage}</p>}
-                  {fiscalMatches.map(match => <Button key={match.id} type="button" variant="outline" onClick={() => { setCustomerId(match.id); setFiscalMatches([]) }}>#{match.visualId} {match.name}{match.legalName ? ` · ${match.legalName}` : ""}</Button>)}
-                  {saleType === SaleType.CREDITO && <div className="grid gap-1"><Label htmlFor="fiscal-due-date">Vencimiento de crédito (si no tiene plazo configurado)</Label><Input id="fiscal-due-date" type="date" value={fiscalDueDate} onChange={event => setFiscalDueDate(event.target.value)} /></div>}
-                  {shippingCents > 0 && !["E44", "E46"].includes(fiscalType) && <div className="grid gap-1"><Label>Tratamiento fiscal del envío</Label><Select value={fiscalShippingTreatment} onValueChange={setFiscalShippingTreatment}><SelectTrigger><SelectValue placeholder="Selecciona el tratamiento" /></SelectTrigger><SelectContent><SelectItem value="EXENTO">Exento</SelectItem><SelectItem value="TASA_CERO">Tasa cero</SelectItem></SelectContent></Select></div>}
-                  {fiscalType === "E44" && <div className="grid gap-2 sm:grid-cols-2"><div className="grid gap-1"><Label htmlFor="fiscal-regime">Régimen especial</Label><Input id="fiscal-regime" value={fiscalRegime} onChange={event => setFiscalRegime(event.target.value)} /></div><div className="grid gap-1"><Label htmlFor="fiscal-exemption">Referencia del soporte de exención</Label><Input id="fiscal-exemption" value={fiscalExemptionReference} onChange={event => setFiscalExemptionReference(event.target.value)} /></div></div>}
-                  {fiscalType === "E45" && <div className="grid gap-2"><div className="flex items-center gap-2"><Switch id="fiscal-government" checked={fiscalGovernment} onCheckedChange={setFiscalGovernment} /><Label htmlFor="fiscal-government">El comprador es una entidad gubernamental elegible</Label></div><div className="grid gap-2 sm:grid-cols-2"><Input aria-label="Orden de compra" placeholder="Orden de compra (opcional)" value={fiscalPurchaseOrder} onChange={event => setFiscalPurchaseOrder(event.target.value)} /><Input aria-label="Fecha de orden de compra" type="date" value={fiscalPurchaseOrderDate} onChange={event => setFiscalPurchaseOrderDate(event.target.value)} /></div></div>}
-                  {fiscalType === "E46" && <div className="grid gap-2"><Label>Datos de exportación</Label><div className="grid gap-2 sm:grid-cols-2"><Select value={fiscalExportMode} onValueChange={setFiscalExportMode}><SelectTrigger aria-label="Modalidad de exportación"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="EXPORTACION">Exportación nacional</SelectItem><SelectItem value="ZONA_FRANCA">Zona franca</SelectItem><SelectItem value="ZONA_FRANCA_COMERCIAL_RESIDENTE">Zona franca comercial · residente</SelectItem><SelectItem value="ZONA_FRANCA_COMERCIAL_NO_RESIDENTE">Zona franca comercial · no residente</SelectItem></SelectContent></Select><Input aria-label="País de destino" placeholder="País de destino (código ISO)" maxLength={2} value={fiscalDestination} onChange={event => setFiscalDestination(event.target.value.toUpperCase())} /><Input aria-label="Número de embarque" placeholder="Embarque (opcional)" value={fiscalShipmentNumber} onChange={event => setFiscalShipmentNumber(event.target.value)} /><Input aria-label="Número de contenedor" placeholder="Contenedor (opcional)" value={fiscalContainerNumber} onChange={event => setFiscalContainerNumber(event.target.value)} /><Input aria-label="Puerto de salida" placeholder="Puerto (opcional)" value={fiscalDeparturePort} onChange={event => setFiscalDeparturePort(event.target.value)} /><Input aria-label="Condiciones de entrega" placeholder="Entrega: FOB, CIF... (opcional)" maxLength={3} value={fiscalDeliveryTerms} onChange={event => setFiscalDeliveryTerms(event.target.value.toUpperCase())} /></div></div>}
-                  {exemptPreview && <div className="grid gap-2 rounded-md bg-muted p-3 text-sm"><p>Base conservada: {formatRD(exemptPreview.subtotalCents)} · ITBIS retirado: {formatRD(exemptPreview.originalItbisCents)} · Nuevo total: {formatRD(totalCents)}</p><div className="flex items-center gap-2"><Switch id="fiscal-confirm-prices" checked={fiscalPricesConfirmed} onCheckedChange={setFiscalPricesConfirmed} /><Label htmlFor="fiscal-confirm-prices">Confirmo el importe de esta venta</Label></div></div>}
-                </>}
-              </> : <div className="flex items-center gap-2"><Switch id="fiscal-ordinary-confirm" checked={fiscalOrdinaryConfirmed} onCheckedChange={setFiscalOrdinaryConfirmed} /><Label htmlFor="fiscal-ordinary-confirm">Confirmo que la venta será sin comprobante fiscal</Label></div>}
-            </section>}
             {!isSaleConfigCollapsed && (
               <>
                 <div className="grid gap-2" data-onboarding-target="sales-customer-field">
@@ -2160,6 +2199,46 @@ export function PosClient({
                     </p>
                   )}
                 </div>
+              </>
+            )}
+
+            {!isSaleConfigCollapsed && fiscalSale && <section className="grid gap-3 rounded-md border p-3" aria-label="Comprobante de la venta">
+              {fiscalSale.canPrepare ? <>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="grid gap-1">
+                  <Label>Comprobante</Label>
+                  <Select value={fiscalType} onValueChange={value => { fiscalBuyerDirty.current = true; setFiscalType(value as FiscalSaleType) }}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="E32">E32 · Consumidor final</SelectItem>
+                      <SelectItem value="E31">E31 · Crédito fiscal</SelectItem>
+                      <SelectItem value="E44">E44 · Regímenes especiales</SelectItem>
+                      <SelectItem value="E45">E45 · Gubernamental</SelectItem>
+                      <SelectItem value="E46">E46 · Exportaciones</SelectItem>
+                      <SelectItem value="ORDINARIO">Sin comprobante fiscal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  </div>
+                  {fiscalType !== "ORDINARIO" && <>
+                    <div className="grid gap-1"><Label htmlFor="fiscal-buyer-id">RNC, cédula o identificación</Label><Input id="fiscal-buyer-id" value={fiscalIdentification} onChange={event => { fiscalBuyerDirty.current = true; fiscalLookupSequence.current++; fiscalLookupPending.current = ""; warnedConsumerRnc.current = ""; setShowConsumerRncWarning(false); fiscalLookupLatest.current.identification = event.target.value; /* No asociar a otro RNC el nombre obtenido antes. */ fiscalLookupLatest.current.name = ""; setFiscalBuyerName(""); setFiscalIdentification(event.target.value); setFiscalMatches([]); setFiscalLookupMessage("") }} onBlur={() => { if (fiscalBuyerCountry === "DO") void lookupFiscalBuyer() }} onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (fiscalBuyerCountry === "DO") void lookupFiscalBuyer() } }} />{fiscalLookupStatus.message && <p className={`text-sm ${fiscalLookupStatus.tone === "success" ? "text-green-700 dark:text-green-300" : fiscalLookupStatus.tone === "error" ? "text-red-700 dark:text-red-300" : "text-muted-foreground"}`} role="status">{fiscalLookupStatus.message}</p>}</div>
+                    {fiscalType !== "E32" && <div className="grid gap-1"><Label htmlFor="fiscal-buyer-name">Nombre o razón social</Label><Input id="fiscal-buyer-name" value={fiscalBuyerName} onChange={event => { fiscalBuyerDirty.current = true; fiscalLookupLatest.current.name = event.target.value; setFiscalBuyerName(event.target.value) }} /></div>}
+                  </>}
+                </div>
+                {fiscalType !== "ORDINARIO" && <>
+                  <p className="text-xs text-muted-foreground">{!isOnline ? "Pendiente fiscal: el número se asignará al sincronizar." : fiscalContext?.sequences.some(sequence => sequence.type === fiscalType && sequence.usable) ? `Secuencia de prueba disponible · ${fiscalContext.sequences.find(sequence => sequence.type === fiscalType && sequence.usable)?.remaining} restantes` : "No hay una secuencia de prueba disponible para este tipo."}</p>
+                  <p className="text-xs text-muted-foreground">Documento de prueba / No emitido fiscalmente</p>
+                  {fiscalMatches.map(match => <Button key={match.id} type="button" variant="outline" onClick={() => { if (match.id !== effectiveCustomerId) preserveFiscalBuyerOnSelection.current = true; setCustomerId(match.id); setFiscalMatches([]) }}>#{match.visualId} {match.name}{match.legalName ? ` · ${match.legalName}` : ""}</Button>)}
+                  {saleType === SaleType.CREDITO && <div className="grid gap-1"><Label htmlFor="fiscal-due-date">Vencimiento de crédito (si no tiene plazo configurado)</Label><Input id="fiscal-due-date" type="date" value={fiscalDueDate} onChange={event => setFiscalDueDate(event.target.value)} /></div>}
+                  {shippingCents > 0 && !["E44", "E46"].includes(fiscalType) && <div className="grid gap-1"><Label>Tratamiento fiscal del envío</Label><Select value={fiscalShippingTreatment} onValueChange={setFiscalShippingTreatment}><SelectTrigger><SelectValue placeholder="Selecciona el tratamiento" /></SelectTrigger><SelectContent><SelectItem value="EXENTO">Exento</SelectItem><SelectItem value="TASA_CERO">Tasa cero</SelectItem></SelectContent></Select></div>}
+                  {fiscalType === "E44" && <div className="grid gap-2 sm:grid-cols-2"><div className="grid gap-1"><Label htmlFor="fiscal-regime">Régimen especial</Label><Input id="fiscal-regime" value={fiscalRegime} onChange={event => setFiscalRegime(event.target.value)} /></div><div className="grid gap-1"><Label htmlFor="fiscal-exemption">Referencia del soporte de exención</Label><Input id="fiscal-exemption" value={fiscalExemptionReference} onChange={event => setFiscalExemptionReference(event.target.value)} /></div></div>}
+                  {fiscalType === "E45" && <div className="grid gap-2"><div className="flex items-center gap-2"><Switch id="fiscal-government" checked={fiscalGovernment} onCheckedChange={setFiscalGovernment} /><Label htmlFor="fiscal-government">El comprador es una entidad gubernamental elegible</Label></div><div className="grid gap-2 sm:grid-cols-2"><Input aria-label="Orden de compra" placeholder="Orden de compra (opcional)" value={fiscalPurchaseOrder} onChange={event => setFiscalPurchaseOrder(event.target.value)} /><Input aria-label="Fecha de orden de compra" type="date" value={fiscalPurchaseOrderDate} onChange={event => setFiscalPurchaseOrderDate(event.target.value)} /></div></div>}
+                  {fiscalType === "E46" && <div className="grid gap-2"><Label>Datos de exportación</Label><div className="grid gap-2 sm:grid-cols-2"><Select value={fiscalExportMode} onValueChange={setFiscalExportMode}><SelectTrigger aria-label="Modalidad de exportación"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="EXPORTACION">Exportación nacional</SelectItem><SelectItem value="ZONA_FRANCA">Zona franca</SelectItem><SelectItem value="ZONA_FRANCA_COMERCIAL_RESIDENTE">Zona franca comercial · residente</SelectItem><SelectItem value="ZONA_FRANCA_COMERCIAL_NO_RESIDENTE">Zona franca comercial · no residente</SelectItem></SelectContent></Select><Input aria-label="País de destino" placeholder="País de destino (código ISO)" maxLength={2} value={fiscalDestination} onChange={event => setFiscalDestination(event.target.value.toUpperCase())} /><Input aria-label="Número de embarque" placeholder="Embarque (opcional)" value={fiscalShipmentNumber} onChange={event => setFiscalShipmentNumber(event.target.value)} /><Input aria-label="Número de contenedor" placeholder="Contenedor (opcional)" value={fiscalContainerNumber} onChange={event => setFiscalContainerNumber(event.target.value)} /><Input aria-label="Puerto de salida" placeholder="Puerto (opcional)" value={fiscalDeparturePort} onChange={event => setFiscalDeparturePort(event.target.value)} /><Input aria-label="Condiciones de entrega" placeholder="Entrega: FOB, CIF... (opcional)" maxLength={3} value={fiscalDeliveryTerms} onChange={event => setFiscalDeliveryTerms(event.target.value.toUpperCase())} /></div></div>}
+                  {exemptPreview && <div className="grid gap-2 rounded-md bg-muted p-3 text-sm"><p>Base conservada: {formatRD(exemptPreview.subtotalCents)} · ITBIS retirado: {formatRD(exemptPreview.originalItbisCents)} · Nuevo total: {formatRD(totalCents)}</p><div className="flex items-center gap-2"><Switch id="fiscal-confirm-prices" checked={fiscalPricesConfirmed} onCheckedChange={setFiscalPricesConfirmed} /><Label htmlFor="fiscal-confirm-prices">Confirmo el importe de esta venta</Label></div></div>}
+                </>}
+              </> : <div className="flex items-center gap-2"><Switch id="fiscal-ordinary-confirm" checked={fiscalOrdinaryConfirmed} onCheckedChange={setFiscalOrdinaryConfirmed} /><Label htmlFor="fiscal-ordinary-confirm">Confirmo que la venta será sin comprobante fiscal</Label></div>}
+            </section>}
+            {!isSaleConfigCollapsed && (
+              <>
                 {legalTipEnabled && (
                   <div className="flex items-center justify-between rounded-lg border p-3">
                     <div className="space-y-0.5">
@@ -2188,6 +2267,7 @@ export function PosClient({
                     {selectedCustomerLabel} ·{" "}
                     {saleType === SaleType.CONTADO ? "Contado" : "Crédito"}
                     {saleType === SaleType.CONTADO && paymentMethod ? ` · ${paymentMethod.toLowerCase().replace("_", " ")}` : ""}
+                    {fiscalSale ? ` · ${fiscalSaleTypeLabels[fiscalSale.canPrepare ? fiscalType : "ORDINARIO"]}` : ""}
                     {effectiveDiscountPercentBp > 0 ? ` · Desc. ${(effectiveDiscountPercentBp / 100).toFixed(2)}%` : ""}
                     {legalTipEnabled && applyLegalTip ? " · Propina 10%" : ""}
                   </span>

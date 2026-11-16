@@ -10,7 +10,7 @@ export type PrintableSnapshot = {
   supplier: { name: string; identification: string; country: string; residence?: string | null } | null
   currency: { operation: string; reporting: string; rate: string; rateDate: string | null }
   payment: { type: string; dueDate: string | null } | null
-  lines: Array<{ description: string; quantity: string; unit: string; unitPrice: string; base: string; tax: string; gross: string; taxTreatment: string; withholdings: Array<{kind: string; amount: string}> }>
+  lines: Array<{ description: string; quantity: string; unit: string | null; unitPrice: string; base: string; tax: string; gross: string; taxTreatment: string; withholdings: Array<{kind: string; amount: string}> }>
   totals: { bases: Record<string,string>; tax: string; gross: string; withheld?: string; withheldByKind?: Record<string,string>; net?: string; taxNotCreditable?: string; additionalTaxes?: Array<{ code: string; amount: string }> }
   reportingTotals?: { gross: string; withheld: string; net: string }
   reference?: { documentId: string; issueDate: string; modificationCode: string; creditIndicator: number | null } | null
@@ -48,7 +48,7 @@ export function printableText(doc: FiscalPrintable): string[] {
   if (currency !== "DOP") lines.push(`Moneda: ${currency} - Tasa DOP: ${s.currency.rate} - Fecha: ${s.currency.rateDate ?? "—"}`)
   lines.push("DETALLE")
   for (const line of s.lines) {
-    lines.push(line.description, `${line.quantity} ${line.unit} x ${amount(line.unitPrice)} = ${amount(line.gross)}`, `Base ${amount(line.base)} - ITBIS ${amount(line.tax)} - ${line.taxTreatment}`)
+    lines.push(line.description, `${line.quantity}${line.unit ? ` ${line.unit}` : ""} x ${amount(line.unitPrice)} = ${amount(line.gross)}`, `Base ${amount(line.base)} - ITBIS ${amount(line.tax)} - ${line.taxTreatment}`)
     for (const withholding of line.withholdings ?? []) lines.push(`Retención ${withholding.kind}: ${amount(withholding.amount)}`)
   }
   lines.push(`ITBIS: ${amount(s.totals.tax)}`)
